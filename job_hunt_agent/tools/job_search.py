@@ -11,18 +11,15 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode, urlparse
 from urllib.request import Request, urlopen
 
-try:
-    from job_hunt_agent.schemas import JobCriteria, Role
-except ModuleNotFoundError:
-    from schemas import JobCriteria, Role
+from ..schemas import JobCriteria, Role
 
 
 LOGGER = logging.getLogger(__name__)
 
 SERPAPI_SEARCH_ENDPOINT = "https://serpapi.com/search.json"
-DEFAULT_NUM_RESULTS_PER_QUERY = 5
+DEFAULT_NUM_RESULTS_PER_QUERY = 10
 DEFAULT_MAX_RESULTS = 5
-DEFAULT_MAX_QUERIES = 4
+DEFAULT_MAX_QUERIES = 9
 
 
 def search_jobs(criteria: JobCriteria | dict[str, Any]) -> list[Role]:
@@ -92,11 +89,7 @@ def _build_queries(criteria: JobCriteria) -> list[str]:
     queries: list[str] = []
     for keyword in keywords:
         for location in locations:
-            queries.append(f'site:linkedin.com/jobs "{keyword}" "{location}"')
-
-    if len(keywords) > 1:
-        joined_keywords = " ".join(keywords[:3])
-        queries.insert(0, f'site:linkedin.com/jobs "{joined_keywords}" "{locations[0]}"')
+            queries.append(f'site:linkedin.com/jobs/view "{keyword}" "{location}"')
 
     return _dedupe_strings(queries)
 
@@ -165,6 +158,10 @@ def _role_from_result(
         company = url_company
     if not title:
         return None
+    if _seniority_mismatches(criteria.seniority, title):
+        return None
+    if not _matches_required_title_keywords(criteria, title=title, url=url):
+        return None
 
     location = _infer_location(criteria, raw_title, snippet)
     summary = _build_summary(title=title, company=company, snippet=snippet)
@@ -191,12 +188,9 @@ def _is_linkedin_job_url(url: str) -> bool:
     parsed = urlparse(url)
     hostname = parsed.netloc.lower()
     path = parsed.path.lower()
-    if "linkedin.com" not in hostname:
+    if hostname != "linkedin.com" and not hostname.endswith(".linkedin.com"):
         return False
-    if "/jobs" not in path:
-        return False
-    blocked_fragments = ("/jobs/search", "/jobs/collections", "/jobs/jobs-in")
-    return not any(fragment in path for fragment in blocked_fragments)
+    return path.startswith("/jobs/view/")
 
 
 def _parse_title_and_company(raw_title: str) -> tuple[str, str]:
@@ -246,6 +240,88 @@ def _should_use_url_company(company: str) -> bool:
     return company.lower().strip() in generic_values
 
 
+def _seniority_mismatches(target_seniority: str, title: str) -> bool:
+    normalized = title.lower()
+    if target_seniority != "junior":
+        return False
+
+    senior_terms = (
+        r"\bsenior\b",
+        r"\bsr\.?\b",
+        r"\bstaff\b",
+        r"\bprincipal\b",
+        r"\blead\b",
+        r"\bmanager\b",
+        r"\barchitect\b",
+        r"\bsde\s*[- ]?(?:2|ii|3|iii|4|iv)\b",
+        r"\bsoftware (?:development )?engineer\s+(?:ii|iii|iv|2|3|4)\b",
+        r"\bbackend engineer\s+(?:ii|iii|iv|2|3|4)\b",
+    )
+    return any(re.search(pattern, normalized) for pattern in senior_terms)
+
+
+def _matches_required_title_keywords(criteria: JobCriteria, *, title: str, url: str) -> bool:
+    title_keywords = [
+        keyword for keyword in criteria.role_keywords if _keyword_requires_title_or_url_match(keyword)
+    ]
+    if not title_keywords:
+        return True
+    return any(_title_or_url_matches_keyword(title=title, url=url, keyword=keyword) for keyword in title_keywords)
+
+
+def _keyword_requires_title_or_url_match(keyword: str) -> bool:
+    normalized = _normalize_match_text(keyword)
+    role_terms = (
+        "sde",
+        "software engineer",
+        "software development engineer",
+        "backend engineer",
+        "back end engineer",
+        "frontend engineer",
+        "front end engineer",
+        "fullstack engineer",
+        "full stack engineer",
+        "developer",
+    )
+    return any(term in normalized for term in role_terms)
+
+
+def _title_or_url_matches_keyword(*, title: str, url: str, keyword: str) -> bool:
+    haystack = _normalize_match_text(f"{title} {urlparse(url).path}")
+    return any(alias in haystack for alias in _keyword_aliases(keyword))
+
+
+def _keyword_aliases(keyword: str) -> set[str]:
+    normalized = _normalize_match_text(keyword)
+    aliases = {normalized}
+
+    if normalized in {"sde 1", "sde i", "sde1"}:
+        aliases.update({"sde 1", "sde i", "sde1"})
+
+    if normalized in {
+        "software development engineer i",
+        "software development engineer 1",
+        "software developer engineer i",
+        "software developer engineer 1",
+    }:
+        aliases.update(
+            {
+                "software development engineer i",
+                "software development engineer 1",
+                "software developer engineer i",
+                "software developer engineer 1",
+                "sde 1",
+                "sde i",
+                "sde1",
+            }
+        )
+
+    if normalized == "backend engineer":
+        aliases.update({"backend engineer", "backend developer", "back end engineer", "back end developer"})
+
+    return aliases
+
+
 def _company_from_slug(slug: str) -> str:
     words = [word for word in slug.split("-") if word]
     return " ".join(_format_company_word(word) for word in words)
@@ -284,24 +360,79 @@ def _build_match_reason(
     location: str,
     query: str,
 ) -> str:
-    haystack = f"{title} {company} {snippet}".lower()
-    matched_keywords = [
-        keyword for keyword in criteria.role_keywords if keyword.strip() and keyword.lower() in haystack
-    ]
+    snippet_keywords = _keywords_matching_text(criteria.role_keywords, snippet)
+    title_keywords = _keywords_matching_text(
+        criteria.role_keywords,
+        f"{title} {company}",
+    )
+    matched_keywords = snippet_keywords or title_keywords
 
     reasons: list[str] = []
-    if matched_keywords:
-        reasons.append(f"Mentions {', '.join(matched_keywords[:3])} in the search result.")
+    snippet_signal = _snippet_signal(snippet)
+    visible_snippet_keywords = _keywords_matching_text(criteria.role_keywords, snippet_signal)
+    if visible_snippet_keywords:
+        keyword_text = _format_keyword_matches(matched_keywords)
+        reasons.append(f"Snippet matches {keyword_text} in context: {snippet_signal}.")
+    elif title_keywords:
+        keyword_text = _format_keyword_matches(matched_keywords)
+        reasons.append(f"Title matches {keyword_text}.")
+    elif snippet_keywords:
+        keyword_text = _format_keyword_matches(matched_keywords)
+        reasons.append(f"Search result snippet matches {keyword_text}.")
     else:
         reasons.append(f"Appeared for the query `{query}`.")
 
     if location and not location.startswith("Location not available"):
         reasons.append(f"Location signal matches {location}.")
 
-    if snippet:
-        reasons.append("Snippet gives enough context for a first-pass role fit check.")
-
     return " ".join(reasons)
+
+
+def _keywords_matching_text(keywords: list[str], text: str) -> list[str]:
+    haystack = _normalize_match_text(text)
+    matched: list[str] = []
+    for keyword in keywords:
+        if not keyword.strip():
+            continue
+        if any(alias in haystack for alias in _keyword_aliases(keyword)):
+            matched.append(keyword)
+    return matched
+
+
+def _format_keyword_matches(keywords: list[str]) -> str:
+    formatted: list[str] = []
+    has_sde_one = any(_is_sde_one_keyword(keyword) for keyword in keywords)
+    if has_sde_one:
+        formatted.append("SDE 1 / Software Development Engineer I")
+
+    for keyword in keywords:
+        if _is_sde_one_keyword(keyword):
+            continue
+        formatted.append(keyword)
+
+    return ", ".join(formatted[:3])
+
+
+def _is_sde_one_keyword(keyword: str) -> bool:
+    return _normalize_match_text(keyword) in {
+        "sde 1",
+        "sde i",
+        "sde1",
+        "software development engineer i",
+        "software development engineer 1",
+        "software developer engineer i",
+        "software developer engineer 1",
+    }
+
+
+def _snippet_signal(snippet: str) -> str:
+    if not snippet:
+        return ""
+    first_sentence = re.split(r"(?<=[.!?])\s+", snippet)[0]
+    first_sentence = first_sentence.strip(" .")
+    if len(first_sentence) > 160:
+        first_sentence = f"{first_sentence[:157].rstrip()}..."
+    return first_sentence
 
 
 def _dedupe_key(role: Role) -> str:
@@ -340,6 +471,12 @@ def _clean_company(value: str) -> str:
 
 def _normalize_space(value: str) -> str:
     return re.sub(r"\s+", " ", value).strip()
+
+
+def _normalize_match_text(value: str) -> str:
+    value = value.lower().replace("&", " and ")
+    value = re.sub(r"[^a-z0-9]+", " ", value)
+    return _normalize_space(value)
 
 
 def _read_error_body(exc: HTTPError) -> str:

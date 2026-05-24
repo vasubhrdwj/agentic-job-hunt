@@ -17,6 +17,7 @@ class AgentDefinitionTest(unittest.TestCase):
             "Do not pretend you found live roles or people",
             "Avoid LinkedIn-influencer tone",
             "the user reviews and exports",
+            "Always pass the user's resume text",
             "Assumptions:",
             "Tool-backed steps:",
         ]

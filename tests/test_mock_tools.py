@@ -65,6 +65,9 @@ class MockToolsTest(unittest.TestCase):
         self.assertIn(person.name.split()[0], message)
         self.assertIn(role.company, message)
         self.assertIn("SCIM", message)
+        self.assertIn("My background lines up through my recent SCIM and identity automation work.", message)
+        self.assertNotIn("around matches", message.lower())
+        self.assertNotIn("especially the parts of the role around", message.lower())
         self.assertNotIn("[", message)
         self.assertNotIn("]", message)
 

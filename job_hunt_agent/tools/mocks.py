@@ -4,10 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-try:
-    from job_hunt_agent.schemas import JobCriteria, Person, Role
-except ModuleNotFoundError:
-    from schemas import JobCriteria, Person, Role
+from ..schemas import JobCriteria, Person, Role
 
 
 def _validate_criteria(criteria: JobCriteria | dict[str, Any]) -> JobCriteria:
@@ -20,12 +17,6 @@ def _validate_role(role: Role | dict[str, Any]) -> Role:
 
 def _validate_person(person: Person | dict[str, Any]) -> Person:
     return Person.model_validate(person)
-
-
-def _sentence_case_fragment(value: str) -> str:
-    if not value:
-        return value
-    return value[0].lower() + value[1:]
 
 
 def search_jobs_mock(criteria: JobCriteria) -> list[dict[str, Any]]:
@@ -213,9 +204,9 @@ def draft_message_mock(
 
     return (
         f"Hi {person.name.split()[0]}, I saw {role.company}'s {role.title} role and "
-        f"your work as {person.title} stood out. {person.why_relevant} "
-        f"My background lines up through {resume_signal}, especially the parts of "
-        f"the role around {_sentence_case_fragment(role.match_reason)} "
+        f"your work as {person.title} caught my eye because it sits close to "
+        "this team's scope. "
+        f"My background lines up through {resume_signal}. "
         "Would you be open to a quick pointer on whether this team is the right "
         "place to apply?"
     )
