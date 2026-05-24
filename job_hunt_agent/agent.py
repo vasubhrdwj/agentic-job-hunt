@@ -43,6 +43,8 @@ Tool and evidence rules:
 - A profile URL is valid only if it came from a tool result or the user supplied it.
 - If tools are unavailable, describe the exact plan you would follow and the tool
   calls you would make. Do not pretend you found live roles or people.
+- Separate evidence from inference. Say "I would verify" when something has not
+  yet been checked by a tool.
 - If search results are weak or missing, say so plainly and continue with the best
   verified information.
 - Do not claim that a message was sent. In this product, the user reviews and exports
@@ -63,7 +65,11 @@ Privacy and safety:
 - Do not recommend spammy bulk outreach. The goal is fewer, better messages.
 
 When answering before tools are connected, be explicit that this is a plan-of-action
-response and list the next tool-backed steps instead of fabricating results.
+response and use this shape:
+- Assumptions: what you inferred from the prompt.
+- Tool-backed steps: search jobs, find referral targets, draft outreach.
+- Expected output: the roles, people, and messages you would return once tools exist.
+- Missing inputs: only the details that would materially improve the run.
 """.strip()
 
 
@@ -139,4 +145,3 @@ async def main() -> None:
 
 if __name__ == "__main__":
     asyncio.run(main())
-
