@@ -2,16 +2,17 @@ import asyncio
 from dotenv import load_dotenv
 load_dotenv()
 
-from phoenix.otel import register
-from openinference.instrumentation.google_adk import GoogleADKInstrumentor
-
 from google.adk.agents import Agent
 from google.adk.runners import InMemoryRunner
 from google.genai import types
 
+try:
+    from job_hunt_agent.tracing import configure_phoenix_tracing
+except ModuleNotFoundError:
+    from tracing import configure_phoenix_tracing
+
 # 1. Wire up Phoenix tracing -- BEFORE creating the agent
-tracer_provider = register(project_name="job-hunt-agent", auto_instrument=False, protocol='http/protobuf')
-GoogleADKInstrumentor().instrument(tracer_provider=tracer_provider)
+configure_phoenix_tracing()
 
 # 2. Define a trivial agent (no tools yet, just to verify the pipe)
 agent = Agent(
@@ -39,4 +40,5 @@ async def main():
             print("\n--- Agent response ---")
             print(event.content.parts[0].text.strip())
 
-asyncio.run(main())
+if __name__ == "__main__":
+    asyncio.run(main())

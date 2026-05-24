@@ -4,7 +4,7 @@
 **Deadline:** 2026-06-11
 **Today:** 2026-05-24
 **Team:** Vasu (agent + backend) · Arpita (tools + data + frontend)
-**Repo layout:** `job-hunt-agent/` (Python ADK app), frontend TBD week 2
+**Repo layout:** `job_hunt_agent/` (Python ADK app), frontend TBD week 2
 
 ---
 
@@ -62,7 +62,7 @@ A judge can:
 └──────┬──────┘
        │ HTTP
 ┌──────▼──────────────────────────────────────────┐
-│  Python ADK Agent (job-hunt-agent/)             │
+│  Python ADK Agent (job_hunt_agent/)             │
 │                                                  │
 │  Agent (Gemini)                                  │
 │    ├─ Tool: search_jobs(criteria) → [Role]      │
@@ -79,7 +79,7 @@ A judge can:
 ```
 
 **Tech locked:**
-- Google ADK (already working — `job-hunt-agent/hello_adk.py`)
+- Google ADK (already working — `job_hunt_agent/hello_adk.py`)
 - Gemini 2.5 Flash for tools, Gemini 3 Pro for final drafting (swap at end of week 2)
 - Phoenix Cloud (free tier) for tracing, datasets, evals
 - `openinference-instrumentation-google-adk` (already wired)
