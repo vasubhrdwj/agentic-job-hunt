@@ -11,19 +11,8 @@ from google.adk.agents import Agent
 from google.adk.runners import InMemoryRunner
 from google.genai import types
 
-try:
-    from job_hunt_agent.tracing import configure_phoenix_tracing
-except ModuleNotFoundError:
-    from tracing import configure_phoenix_tracing
-
-try:
-    from job_hunt_agent.tools.mocks import (
-        draft_message_mock,
-        find_referrals_mock,
-        search_jobs_mock,
-    )
-except ModuleNotFoundError:
-    from tools.mocks import draft_message_mock, find_referrals_mock, search_jobs_mock
+from .tools.mocks import draft_message_mock, find_referrals_mock, search_jobs_mock
+from .tracing import configure_phoenix_tracing
 
 
 APP_NAME = "job_hunt_app"
@@ -51,6 +40,8 @@ Tool and evidence rules:
 - Never invent job posting URLs, profile URLs, employers, titles, or personal details.
 - A profile URL is valid only if it came from a tool result or the user supplied it.
 - When tools are available, call them instead of describing hypothetical steps.
+- Always pass the user's resume text or relevant resume excerpts to draft_message;
+  a generic draft is a failure unless the user supplied no resume context.
 - If tools are unavailable, describe the exact plan you would follow and the tool
   calls you would make. Do not pretend you found live roles or people.
 - Separate evidence from inference. Say "I would verify" when something has not
@@ -119,7 +110,8 @@ async def run_prompt(
 
     agent = build_agent(model=model, use_mocks=use_mocks)
     runner = InMemoryRunner(agent=agent, app_name=APP_NAME)
-    session_id = session_id or f"v1-{uuid4().hex[:12]}"
+    session_prefix = "jh-mocks" if use_mocks else "jh"
+    session_id = session_id or f"{session_prefix}-{uuid4().hex[:12]}"
 
     await runner.session_service.create_session(
         app_name=APP_NAME,

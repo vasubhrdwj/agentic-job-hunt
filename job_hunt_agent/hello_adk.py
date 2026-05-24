@@ -1,9 +1,6 @@
 import asyncio
 
-try:
-    from job_hunt_agent.agent import run_prompt
-except ModuleNotFoundError:
-    from agent import run_prompt
+from .agent import run_prompt
 
 
 async def main() -> None:
