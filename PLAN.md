@@ -209,7 +209,7 @@ Web-search-backed job finder. Start with a single source (LinkedIn public job li
 **Deliverable:** `job_hunt_agent/tools/job_search.py` — `def search_jobs(criteria: JobCriteria) -> list[Role]`
 
 **Implementation hint:**
-- Use Google Programmable Search Engine or SerpAPI (free tier) — do not try to scrape LinkedIn directly
+- Use SerpAPI (free tier) with Google Search `site:linkedin.com/jobs` queries — do not try to scrape LinkedIn directly
 - Query template: `site:linkedin.com/jobs "{keyword}" "{location}"`
 - Gemini-extract structured `Role` from each result snippet + URL
 - Cap at top 5 results, dedupe by company+title

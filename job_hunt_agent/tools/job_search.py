@@ -1,4 +1,4 @@
-"""Google Custom Search backed job-search tool for A2."""
+"""SerpAPI-backed job-search tool."""
 
 from __future__ import annotations
 
@@ -19,7 +19,7 @@ except ModuleNotFoundError:
 
 LOGGER = logging.getLogger(__name__)
 
-GOOGLE_CSE_ENDPOINT = "https://www.googleapis.com/customsearch/v1"
+SERPAPI_SEARCH_ENDPOINT = "https://serpapi.com/search.json"
 DEFAULT_NUM_RESULTS_PER_QUERY = 5
 DEFAULT_MAX_RESULTS = 5
 DEFAULT_MAX_QUERIES = 4
@@ -28,32 +28,30 @@ DEFAULT_MAX_QUERIES = 4
 def search_jobs(criteria: JobCriteria | dict[str, Any]) -> list[Role]:
     """Return LinkedIn job postings that match the supplied criteria.
 
-    This is intentionally provider-shaped internally, but the public contract
-    stays fixed for the agent: JobCriteria -> list[Role].
+    Internals normalize SerpAPI's result shape, but the public contract stays
+    fixed for the agent: JobCriteria -> list[Role].
     """
     _load_dotenv_if_available()
     criteria = JobCriteria.model_validate(criteria)
 
-    api_key = os.getenv("GOOGLE_CSE_API_KEY")
-    search_engine_id = os.getenv("GOOGLE_CSE_ID")
-    if not api_key or not search_engine_id:
-        LOGGER.warning("GOOGLE_CSE_API_KEY or GOOGLE_CSE_ID is missing; returning no roles.")
+    api_key = _get_serpapi_api_key()
+    if not api_key:
+        LOGGER.warning("SERPAPI_API_KEY or SERPAPI_KEY is missing; returning no roles.")
         return []
 
     roles: list[Role] = []
     seen: set[str] = set()
 
     for query in _build_queries(criteria)[:DEFAULT_MAX_QUERIES]:
-        payload = _fetch_google_cse(
+        payload = _fetch_serpapi_search(
             query=query,
             api_key=api_key,
-            search_engine_id=search_engine_id,
             num_results=DEFAULT_NUM_RESULTS_PER_QUERY,
         )
         if not payload:
             continue
 
-        for item in payload.get("items", []):
+        for item in _iter_serpapi_results(payload):
             role = _role_from_result(item, criteria=criteria, query=query)
             if role is None:
                 continue
@@ -78,6 +76,10 @@ def _load_dotenv_if_available() -> None:
     load_dotenv()
 
 
+def _get_serpapi_api_key() -> str | None:
+    return os.getenv("SERPAPI_API_KEY") or os.getenv("SERPAPI_KEY")
+
+
 def _build_queries(criteria: JobCriteria) -> list[str]:
     keywords = [_clean_query_part(keyword) for keyword in criteria.role_keywords if keyword.strip()]
     locations = [_clean_query_part(location) for location in criteria.location if location.strip()]
@@ -99,34 +101,47 @@ def _build_queries(criteria: JobCriteria) -> list[str]:
     return _dedupe_strings(queries)
 
 
-def _fetch_google_cse(
+def _fetch_serpapi_search(
     *,
     query: str,
     api_key: str,
-    search_engine_id: str,
     num_results: int,
 ) -> dict[str, Any] | None:
     params = {
-        "key": api_key,
-        "cx": search_engine_id,
+        "engine": "google",
         "q": query,
+        "api_key": api_key,
         "num": str(min(max(num_results, 1), 10)),
+        "hl": "en",
     }
-    url = f"{GOOGLE_CSE_ENDPOINT}?{urlencode(params)}"
+    url = f"{SERPAPI_SEARCH_ENDPOINT}?{urlencode(params)}"
     request = Request(url, headers={"Accept": "application/json"})
 
     try:
         with urlopen(request, timeout=15) as response:
-            return json.loads(response.read().decode("utf-8"))
+            payload = json.loads(response.read().decode("utf-8"))
     except HTTPError as exc:
         body = _read_error_body(exc)
-        LOGGER.warning("Google CSE request failed with HTTP %s: %s", exc.code, body)
+        LOGGER.warning("SerpAPI request failed with HTTP %s: %s", exc.code, body)
     except (URLError, TimeoutError) as exc:
-        LOGGER.warning("Google CSE request failed: %s", exc)
+        LOGGER.warning("SerpAPI request failed: %s", exc)
     except json.JSONDecodeError as exc:
-        LOGGER.warning("Google CSE returned malformed JSON: %s", exc)
+        LOGGER.warning("SerpAPI returned malformed JSON: %s", exc)
+    else:
+        error = payload.get("error")
+        if error:
+            LOGGER.warning("SerpAPI returned an error: %s", error)
+            return None
+        return payload
 
     return None
+
+
+def _iter_serpapi_results(payload: dict[str, Any]) -> list[dict[str, Any]]:
+    organic_results = payload.get("organic_results", [])
+    if not isinstance(organic_results, list):
+        return []
+    return [item for item in organic_results if isinstance(item, dict)]
 
 
 def _role_from_result(
@@ -145,6 +160,9 @@ def _role_from_result(
         return None
 
     title, company = _parse_title_and_company(raw_title)
+    url_company = _company_from_linkedin_job_url(url)
+    if url_company and _should_use_url_company(company):
+        company = url_company
     if not title:
         return None
 
@@ -207,6 +225,38 @@ def _parse_title_and_company(raw_title: str) -> tuple[str, str]:
     return _clean_title(title), "Unknown company"
 
 
+def _company_from_linkedin_job_url(url: str) -> str | None:
+    path = urlparse(url).path.lower()
+    match = re.match(r"/jobs/view/.+-at-(?P<company>[a-z0-9-]+)-\d+/?$", path)
+    if not match:
+        return None
+    return _company_from_slug(match.group("company"))
+
+
+def _should_use_url_company(company: str) -> bool:
+    generic_values = {
+        "unknown company",
+        "remote",
+        "hybrid",
+        "onsite",
+        "on-site",
+        "india",
+        "remote india",
+    }
+    return company.lower().strip() in generic_values
+
+
+def _company_from_slug(slug: str) -> str:
+    words = [word for word in slug.split("-") if word]
+    return " ".join(_format_company_word(word) for word in words)
+
+
+def _format_company_word(word: str) -> str:
+    if len(word) <= 3 and word.isalpha():
+        return word.upper()
+    return word.capitalize()
+
+
 def _infer_location(criteria: JobCriteria, raw_title: str, snippet: str) -> str:
     haystack = f"{raw_title} {snippet}".lower()
     for location in criteria.location:
@@ -214,15 +264,15 @@ def _infer_location(criteria: JobCriteria, raw_title: str, snippet: str) -> str:
         location_tokens = normalized.replace("-", " ").lower()
         if location.lower() in haystack or location_tokens in haystack:
             return normalized
-    return criteria.location[0] if criteria.location else "Location not available in Google result"
+    return criteria.location[0] if criteria.location else "Location not available in search result"
 
 
 def _build_summary(*, title: str, company: str, snippet: str) -> str:
     if snippet:
         return snippet
     if company == "Unknown company":
-        return f"Google returned a LinkedIn job result for {title}."
-    return f"Google returned a LinkedIn job result for {title} at {company}."
+        return f"SerpAPI returned a LinkedIn job result for {title}."
+    return f"SerpAPI returned a LinkedIn job result for {title} at {company}."
 
 
 def _build_match_reason(
@@ -241,7 +291,7 @@ def _build_match_reason(
 
     reasons: list[str] = []
     if matched_keywords:
-        reasons.append(f"Mentions {', '.join(matched_keywords[:3])} in the Google result.")
+        reasons.append(f"Mentions {', '.join(matched_keywords[:3])} in the search result.")
     else:
         reasons.append(f"Appeared for the query `{query}`.")
 
@@ -255,9 +305,11 @@ def _build_match_reason(
 
 
 def _dedupe_key(role: Role) -> str:
-    if role.url:
-        return role.url.lower().rstrip("/")
-    return f"{role.company.lower()}::{role.title.lower()}"
+    company = role.company.lower().strip()
+    title = role.title.lower().strip()
+    if title and company and company != "unknown company":
+        return f"{company}::{title}"
+    return role.url.lower().rstrip("/")
 
 
 def _dedupe_strings(values: list[str]) -> list[str]:
@@ -302,7 +354,9 @@ def _read_error_body(exc: HTTPError) -> str:
         return body[:500]
 
     error = payload.get("error", {})
-    message = error.get("message")
+    if isinstance(error, str):
+        return error
+    message = error.get("message") if isinstance(error, dict) else None
     if message:
         return str(message)
     return body[:500]
