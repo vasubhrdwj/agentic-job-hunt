@@ -16,6 +16,15 @@ try:
 except ModuleNotFoundError:
     from tracing import configure_phoenix_tracing
 
+try:
+    from job_hunt_agent.tools.mocks import (
+        draft_message_mock,
+        find_referrals_mock,
+        search_jobs_mock,
+    )
+except ModuleNotFoundError:
+    from tools.mocks import draft_message_mock, find_referrals_mock, search_jobs_mock
+
 
 APP_NAME = "job_hunt_app"
 DEFAULT_MODEL = "gemini-2.5-flash"
@@ -41,6 +50,7 @@ Core workflow:
 Tool and evidence rules:
 - Never invent job posting URLs, profile URLs, employers, titles, or personal details.
 - A profile URL is valid only if it came from a tool result or the user supplied it.
+- When tools are available, call them instead of describing hypothetical steps.
 - If tools are unavailable, describe the exact plan you would follow and the tool
   calls you would make. Do not pretend you found live roles or people.
 - Separate evidence from inference. Say "I would verify" when something has not
@@ -73,8 +83,16 @@ response and use this shape:
 """.strip()
 
 
-def build_agent(model: str = DEFAULT_MODEL) -> Agent:
-    """Build the V1 job-hunt agent without tools."""
+def build_agent(model: str = DEFAULT_MODEL, use_mocks: bool = False) -> Agent:
+    """Build the job-hunt agent, optionally with V2 mock tools attached."""
+    tools = []
+    if use_mocks:
+        tools = [
+            search_jobs_mock,
+            find_referrals_mock,
+            draft_message_mock,
+        ]
+
     return Agent(
         name="job_hunt_agent",
         model=model,
@@ -83,6 +101,7 @@ def build_agent(model: str = DEFAULT_MODEL) -> Agent:
             "specific job-hunt outreach without fabricating profile data."
         ),
         instruction=SYSTEM_INSTRUCTION,
+        tools=tools,
     )
 
 
@@ -90,6 +109,7 @@ async def run_prompt(
     prompt: str,
     *,
     model: str = DEFAULT_MODEL,
+    use_mocks: bool = False,
     user_id: str = DEFAULT_USER_ID,
     session_id: str | None = None,
 ) -> str:
@@ -97,7 +117,7 @@ async def run_prompt(
     load_dotenv()
     configure_phoenix_tracing()
 
-    agent = build_agent(model=model)
+    agent = build_agent(model=model, use_mocks=use_mocks)
     runner = InMemoryRunner(agent=agent, app_name=APP_NAME)
     session_id = session_id or f"v1-{uuid4().hex[:12]}"
 
@@ -123,9 +143,14 @@ async def run_prompt(
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Run the V1 job-hunt agent.")
+    parser = argparse.ArgumentParser(description="Run the job-hunt agent.")
     parser.add_argument("prompt", help="Prompt to send to the agent.")
     parser.add_argument("--model", default=DEFAULT_MODEL, help="Gemini model name.")
+    parser.add_argument(
+        "--use-mocks",
+        action="store_true",
+        help="Attach schema-backed mock tools for the V2 loop.",
+    )
     parser.add_argument("--user-id", default=DEFAULT_USER_ID, help="ADK user id.")
     parser.add_argument("--session-id", help="Optional stable ADK session id.")
     return parser.parse_args()
@@ -136,6 +161,7 @@ async def main() -> None:
     response = await run_prompt(
         args.prompt,
         model=args.model,
+        use_mocks=args.use_mocks,
         user_id=args.user_id,
         session_id=args.session_id,
     )

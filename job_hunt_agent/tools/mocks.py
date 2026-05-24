@@ -1,0 +1,221 @@
+"""Schema-backed mock tools for the V2 agent loop."""
+
+from __future__ import annotations
+
+from typing import Any
+
+try:
+    from job_hunt_agent.schemas import JobCriteria, Person, Role
+except ModuleNotFoundError:
+    from schemas import JobCriteria, Person, Role
+
+
+def _validate_criteria(criteria: JobCriteria | dict[str, Any]) -> JobCriteria:
+    return JobCriteria.model_validate(criteria)
+
+
+def _validate_role(role: Role | dict[str, Any]) -> Role:
+    return Role.model_validate(role)
+
+
+def _validate_person(person: Person | dict[str, Any]) -> Person:
+    return Person.model_validate(person)
+
+
+def _sentence_case_fragment(value: str) -> str:
+    if not value:
+        return value
+    return value[0].lower() + value[1:]
+
+
+def search_jobs_mock(criteria: JobCriteria) -> list[dict[str, Any]]:
+    """Return three canned roles that match the supplied job criteria."""
+    criteria = _validate_criteria(criteria)
+    keywords = ", ".join(criteria.role_keywords) or "identity"
+    locations = ", ".join(criteria.location) or "Remote"
+
+    roles = [
+        Role(
+            company="Okta",
+            title="Senior Software Engineer, Lifecycle Management",
+            url="https://example.com/mock/jobs/okta-lifecycle-management",
+            location="Remote-India",
+            summary=(
+                "Build provisioning and lifecycle workflows for enterprise identity "
+                "customers. The role touches SCIM integrations, directory sync, and "
+                "large-scale account automation."
+            ),
+            match_reason=(
+                f"Matches {keywords} because the role centers on identity lifecycle "
+                f"automation and accepts locations compatible with {locations}."
+            ),
+        ),
+        Role(
+            company="Saviynt",
+            title="Backend Engineer, Identity Governance",
+            url="https://example.com/mock/jobs/saviynt-identity-governance",
+            location="Hyderabad",
+            summary=(
+                "Work on identity governance APIs, access workflows, and integrations "
+                "used by security teams. The role emphasizes backend reliability and "
+                "enterprise identity domain knowledge."
+            ),
+            match_reason=(
+                f"Matches {keywords} through IAM-adjacent backend work and a Hyderabad "
+                "location fit."
+            ),
+        ),
+        Role(
+            company="JumpCloud",
+            title="Software Engineer, Directory Platform",
+            url="https://example.com/mock/jobs/jumpcloud-directory-platform",
+            location="Remote",
+            summary=(
+                "Build directory platform services for device, user, and access "
+                "management. The team owns identity data flows used across customer "
+                "integrations."
+            ),
+            match_reason=(
+                f"Matches {keywords} because the work is centered on directory and "
+                "identity platform services."
+            ),
+        ),
+    ]
+    return [role.model_dump() for role in roles]
+
+
+def find_referrals_mock(role: Role) -> list[dict[str, Any]]:
+    """Return three canned referral targets for a role."""
+    role = _validate_role(role)
+    people_by_company = {
+        "Okta": [
+            Person(
+                name="Anika Rao",
+                title="Staff Engineer, Lifecycle Management",
+                company="Okta",
+                profile_url="https://example.com/mock/profiles/anika-rao",
+                source="other",
+                why_relevant=(
+                    "Works on lifecycle management, which directly overlaps with "
+                    "the role's provisioning and SCIM focus."
+                ),
+            ),
+            Person(
+                name="Rahul Mehta",
+                title="Engineering Manager, Identity Platform",
+                company="Okta",
+                profile_url="https://example.com/mock/profiles/rahul-mehta",
+                source="other",
+                why_relevant=(
+                    "Leads identity platform work and would understand the team fit "
+                    "for this backend role."
+                ),
+            ),
+            Person(
+                name="Meera Iyer",
+                title="Senior Product Engineer, Integrations",
+                company="Okta",
+                profile_url="https://example.com/mock/profiles/meera-iyer",
+                source="other",
+                why_relevant=(
+                    "Works near enterprise integrations, a key part of the role's "
+                    "lifecycle automation surface."
+                ),
+            ),
+        ],
+        "Saviynt": [
+            Person(
+                name="Karan Shah",
+                title="Principal Engineer, Identity Governance",
+                company="Saviynt",
+                profile_url="https://example.com/mock/profiles/karan-shah",
+                source="other",
+                why_relevant=(
+                    "Owns identity governance architecture, which maps closely to "
+                    "the role's access workflow work."
+                ),
+            ),
+            Person(
+                name="Nisha Menon",
+                title="Engineering Manager, Backend Platform",
+                company="Saviynt",
+                profile_url="https://example.com/mock/profiles/nisha-menon",
+                source="other",
+                why_relevant=(
+                    "Manages backend platform engineers and can judge fit for the "
+                    "role's reliability-heavy API work."
+                ),
+            ),
+            Person(
+                name="Arjun Nair",
+                title="Senior Software Engineer, Access Workflows",
+                company="Saviynt",
+                profile_url="https://example.com/mock/profiles/arjun-nair",
+                source="other",
+                why_relevant=(
+                    "Builds access workflow systems similar to the work described "
+                    "in the posting."
+                ),
+            ),
+        ],
+        "JumpCloud": [
+            Person(
+                name="Priya Das",
+                title="Staff Engineer, Directory Platform",
+                company="JumpCloud",
+                profile_url="https://example.com/mock/profiles/priya-das",
+                source="other",
+                why_relevant=(
+                    "Works on directory platform services, directly aligned with "
+                    "the target role."
+                ),
+            ),
+            Person(
+                name="Dev Patel",
+                title="Engineering Manager, Identity Data",
+                company="JumpCloud",
+                profile_url="https://example.com/mock/profiles/dev-patel",
+                source="other",
+                why_relevant=(
+                    "Leads identity data systems and could speak to team scope and "
+                    "technical expectations."
+                ),
+            ),
+            Person(
+                name="Sara Thomas",
+                title="Senior Engineer, Customer Integrations",
+                company="JumpCloud",
+                profile_url="https://example.com/mock/profiles/sara-thomas",
+                source="other",
+                why_relevant=(
+                    "Works on customer integrations that depend on reliable "
+                    "directory data flows."
+                ),
+            ),
+        ],
+    }
+
+    people = people_by_company.get(role.company, [])
+    return [person.model_dump() for person in people[:3]]
+
+
+def draft_message_mock(
+    role: Role,
+    person: Person,
+    resume_text: str = "",
+) -> str:
+    """Draft a concise mock outreach message for one role/person pair."""
+    role = _validate_role(role)
+    person = _validate_person(person)
+    resume_signal = "my backend and identity systems experience"
+    if "SCIM" in resume_text.upper():
+        resume_signal = "my recent SCIM and identity automation work"
+
+    return (
+        f"Hi {person.name.split()[0]}, I saw {role.company}'s {role.title} role and "
+        f"your work as {person.title} stood out. {person.why_relevant} "
+        f"My background lines up through {resume_signal}, especially the parts of "
+        f"the role around {_sentence_case_fragment(role.match_reason)} "
+        "Would you be open to a quick pointer on whether this team is the right "
+        "place to apply?"
+    )
