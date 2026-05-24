@@ -1,0 +1,122 @@
+import os
+import unittest
+from unittest.mock import patch
+
+from job_hunt_agent.schemas import JobCriteria, Role
+from job_hunt_agent.tools import job_search
+from job_hunt_agent.tools.job_search import search_jobs
+
+
+class JobSearchTest(unittest.TestCase):
+    def setUp(self) -> None:
+        self.criteria = JobCriteria(
+            role_keywords=["SCIM", "identity"],
+            seniority="senior",
+            location=["Remote-India"],
+        )
+
+    def test_search_jobs_returns_empty_when_env_missing(self) -> None:
+        with patch.dict(os.environ, {}, clear=True):
+            self.assertEqual(search_jobs(self.criteria), [])
+
+    def test_search_jobs_parses_google_cse_items(self) -> None:
+        payload = {
+            "items": [
+                {
+                    "title": "Okta hiring Senior Software Engineer, Identity in India | LinkedIn",
+                    "link": "https://www.linkedin.com/jobs/view/senior-software-engineer-identity-at-okta-123",
+                    "snippet": "Work on SCIM provisioning and identity lifecycle automation for enterprise customers.",
+                },
+                {
+                    "title": "Okta hiring Senior Software Engineer, Identity in India | LinkedIn",
+                    "link": "https://www.linkedin.com/jobs/view/senior-software-engineer-identity-at-okta-123",
+                    "snippet": "Duplicate result.",
+                },
+                {
+                    "title": "LinkedIn job search page",
+                    "link": "https://www.linkedin.com/jobs/search/?keywords=scim",
+                    "snippet": "Search page, not a posting.",
+                },
+            ]
+        }
+
+        with (
+            patch.dict(
+                os.environ,
+                {
+                    "GOOGLE_CSE_API_KEY": "fake-key",
+                    "GOOGLE_CSE_ID": "fake-cx",
+                },
+                clear=True,
+            ),
+            patch.object(job_search, "_fetch_google_cse", return_value=payload),
+        ):
+            roles = search_jobs(self.criteria)
+
+        self.assertEqual(len(roles), 1)
+        role = roles[0]
+        self.assertIsInstance(role, Role)
+        self.assertEqual(role.company, "Okta")
+        self.assertEqual(role.title, "Senior Software Engineer, Identity")
+        self.assertIn("linkedin.com/jobs/view", role.url)
+        self.assertIn("SCIM", role.match_reason)
+
+    def test_search_jobs_accepts_adk_style_dict_input(self) -> None:
+        payload = {
+            "items": [
+                {
+                    "title": "Saviynt hiring Backend Engineer, Identity Governance in Hyderabad | LinkedIn",
+                    "link": "https://www.linkedin.com/jobs/view/backend-engineer-at-saviynt-456",
+                    "snippet": "Build IAM workflows and identity governance APIs.",
+                },
+            ]
+        }
+
+        with (
+            patch.dict(
+                os.environ,
+                {
+                    "GOOGLE_CSE_API_KEY": "fake-key",
+                    "GOOGLE_CSE_ID": "fake-cx",
+                },
+                clear=True,
+            ),
+            patch.object(job_search, "_fetch_google_cse", return_value=payload),
+        ):
+            roles = search_jobs(self.criteria.model_dump())
+
+        self.assertEqual(len(roles), 1)
+        self.assertEqual(roles[0].company, "Saviynt")
+
+    def test_live_google_cse_query_shape(self) -> None:
+        if os.getenv("RUN_LIVE_GOOGLE_CSE") != "1":
+            self.skipTest("set RUN_LIVE_GOOGLE_CSE=1 to run the live Google CSE test")
+        job_search._load_dotenv_if_available()
+        api_key = os.getenv("GOOGLE_CSE_API_KEY")
+        search_engine_id = os.getenv("GOOGLE_CSE_ID")
+        if not api_key or not search_engine_id:
+            self.skipTest("GOOGLE_CSE_API_KEY and GOOGLE_CSE_ID are not set")
+
+        payload = job_search._fetch_google_cse(
+            query='site:linkedin.com/jobs "SCIM" "Remote India"',
+            api_key=api_key,
+            search_engine_id=search_engine_id,
+            num_results=1,
+        )
+        self.assertIsNotNone(
+            payload,
+            "Google CSE request failed; check whether this project has Custom Search JSON API access.",
+        )
+
+        roles = search_jobs(self.criteria)
+
+        self.assertLessEqual(len(roles), 5)
+        for role in roles:
+            self.assertIsInstance(role, Role)
+            self.assertTrue(role.company)
+            self.assertTrue(role.title)
+            self.assertTrue(role.url.startswith("http"))
+
+
+if __name__ == "__main__":
+    unittest.main()
