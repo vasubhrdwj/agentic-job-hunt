@@ -11,7 +11,7 @@ from google.adk.agents import Agent
 from google.adk.runners import InMemoryRunner
 from google.genai import types
 
-from .tools.mocks import draft_message_mock, find_referrals_mock, search_jobs_mock
+from .tools.registry import build_toolset
 from .tracing import configure_phoenix_tracing
 
 
@@ -75,15 +75,7 @@ response and use this shape:
 
 
 def build_agent(model: str = DEFAULT_MODEL, use_mocks: bool = False) -> Agent:
-    """Build the job-hunt agent, optionally with V2 mock tools attached."""
-    tools = []
-    if use_mocks:
-        tools = [
-            search_jobs_mock,
-            find_referrals_mock,
-            draft_message_mock,
-        ]
-
+    """Build the job-hunt agent with real tools or the all-mock V2 harness."""
     return Agent(
         name="job_hunt_agent",
         model=model,
@@ -92,7 +84,7 @@ def build_agent(model: str = DEFAULT_MODEL, use_mocks: bool = False) -> Agent:
             "specific job-hunt outreach without fabricating profile data."
         ),
         instruction=SYSTEM_INSTRUCTION,
-        tools=tools,
+        tools=build_toolset(use_mocks=use_mocks),
     )
 
 
@@ -141,7 +133,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--use-mocks",
         action="store_true",
-        help="Attach schema-backed mock tools for the V2 loop.",
+        help="Use the all-mock V2 tool loop instead of real available tools.",
     )
     parser.add_argument("--user-id", default=DEFAULT_USER_ID, help="ADK user id.")
     parser.add_argument("--session-id", help="Optional stable ADK session id.")

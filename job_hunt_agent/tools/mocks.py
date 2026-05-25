@@ -186,8 +186,57 @@ def find_referrals_mock(role: Role) -> list[dict[str, Any]]:
         ],
     }
 
-    people = people_by_company.get(role.company, [])
+    people = people_by_company.get(role.company, _fallback_people_for_role(role))
     return [person.model_dump() for person in people[:3]]
+
+
+def _fallback_people_for_role(role: Role) -> list[Person]:
+    """Return mock referral targets for real search results during V3 hybrid runs."""
+    company_slug = _mock_slug(role.company)
+    title_scope = role.title.split(",")[0]
+    return [
+        Person(
+            name="Asha Verma",
+            title=f"Engineering Manager, {title_scope}",
+            company=role.company,
+            profile_url=f"https://example.com/mock/profiles/{company_slug}-asha-verma",
+            source="other",
+            why_relevant=(
+                f"Mock contact for {role.company}; the title is close to the "
+                f"{role.title} role's likely engineering team."
+            ),
+        ),
+        Person(
+            name="Rohan Kapoor",
+            title=f"Senior Engineer, {title_scope}",
+            company=role.company,
+            profile_url=f"https://example.com/mock/profiles/{company_slug}-rohan-kapoor",
+            source="other",
+            why_relevant=(
+                f"Mock contact for {role.company}; senior engineering work is "
+                "likely adjacent to the role's implementation scope."
+            ),
+        ),
+        Person(
+            name="Neha Srinivasan",
+            title="Technical Recruiter",
+            company=role.company,
+            profile_url=f"https://example.com/mock/profiles/{company_slug}-neha-srinivasan",
+            source="other",
+            why_relevant=(
+                f"Mock contact for {role.company}; recruiting can route the "
+                f"candidate to the {role.title} hiring team."
+            ),
+        ),
+    ]
+
+
+def _mock_slug(value: str) -> str:
+    slug = "".join(
+        character.lower() if character.isalnum() else "-"
+        for character in value
+    )
+    return "-".join(part for part in slug.split("-") if part) or "unknown-company"
 
 
 def draft_message_mock(

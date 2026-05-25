@@ -52,6 +52,25 @@ class MockToolsTest(unittest.TestCase):
         self.assertEqual(len(people), 3)
         self.assertTrue(all(Person.model_validate(person).name for person in people))
 
+    def test_find_referrals_mock_returns_fallback_people_for_real_search_companies(self) -> None:
+        role = Role(
+            company="Twilio",
+            title="Engineer, Identity & Access",
+            url="https://www.linkedin.com/jobs/view/engineer-identity-access-at-twilio-4385523447",
+            location="Remote-India",
+            summary="Build identity and access systems.",
+            match_reason="Snippet matches SCIM.",
+        )
+
+        people = find_referrals_mock(role)
+
+        self.assertEqual(len(people), 3)
+        validated_people = [Person.model_validate(person) for person in people]
+        self.assertTrue(all(person.company == "Twilio" for person in validated_people))
+        self.assertTrue(
+            all(person.profile_url.startswith("https://example.com/mock/") for person in validated_people)
+        )
+
     def test_draft_message_mock_is_specific_and_has_no_placeholders(self) -> None:
         role = Role.model_validate(search_jobs_mock(self.criteria)[0])
         person = Person.model_validate(find_referrals_mock(role)[0])
@@ -78,6 +97,15 @@ class MockToolsTest(unittest.TestCase):
         self.assertEqual(
             [tool.__name__ for tool in agent.tools],
             ["search_jobs_mock", "find_referrals_mock", "draft_message_mock"],
+        )
+
+    def test_build_agent_uses_real_search_with_mock_followups_by_default(self) -> None:
+        agent = build_agent()
+
+        self.assertEqual(len(agent.tools), 3)
+        self.assertEqual(
+            [tool.__name__ for tool in agent.tools],
+            ["search_jobs", "find_referrals_mock", "draft_message_mock"],
         )
 
     def test_adk_can_build_function_declarations_for_mocks(self) -> None:
