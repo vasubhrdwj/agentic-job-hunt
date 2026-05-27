@@ -7,7 +7,7 @@ broken — both tracks rely on these shapes staying stable.
 import pytest
 from pydantic import ValidationError
 
-from job_hunt_agent.schemas import JobCriteria, Person, Role
+from job_hunt_agent.schemas import HuntResult, JobCriteria, OutreachDraft, Person, Role
 
 
 # --- JobCriteria ---------------------------------------------------------
@@ -101,3 +101,32 @@ def test_person_rejects_bad_source():
             source="twitter",  # not in the Literal
             why_relevant="...",
         )
+
+
+# --- HuntResult ----------------------------------------------------------
+
+def test_huntresult_round_trip():
+    role = Role(
+        company="Okta",
+        title="Senior Engineer, Identity",
+        url="https://okta.com/careers/role/123",
+        location="Bangalore",
+        summary="Build SCIM 2.0 provisioning for enterprise customers.",
+        match_reason="Listing explicitly mentions SCIM 2.0 + Okta lifecycle hooks.",
+    )
+    person = Person(
+        name="Priya Sharma",
+        title="Staff Engineer, Identity Platform",
+        company="Okta",
+        profile_url="https://linkedin.com/in/priya-sharma-example",
+        source="linkedin",
+        why_relevant="Leads the identity platform adjacent to the open role.",
+    )
+    draft = OutreachDraft(
+        role=role,
+        person=person,
+        message="Hi Priya, I saw the identity role and your platform work seems close to it.",
+    )
+    result = HuntResult(roles=[role], outreach=[draft])
+
+    assert HuntResult.model_validate_json(result.model_dump_json()) == result

@@ -5,6 +5,7 @@ Every tool in the pipeline consumes and returns one of these models:
     JobCriteria  -> search_jobs()       -> list[Role]
     Role         -> find_referrals()    -> list[Person]
     Role, Person -> draft_message()     -> str
+    run_hunt()   -> HuntResult
 
 Pydantic v2 is used so we get JSON-schema generation for free
 (the Google ADK uses these schemas to teach Gemini how to call the tools,
@@ -103,4 +104,26 @@ class Person(BaseModel):
             "specific role. Should reference something concrete about the role "
             "or the person's title — not generic praise."
         ),
+    )
+
+
+class OutreachDraft(BaseModel):
+    """One drafted outreach message for one role/person pair."""
+
+    role: Role = Field(description="Role this outreach draft is tied to.")
+    person: Person = Field(description="Referral target this draft is addressed to.")
+    message: str = Field(
+        description=(
+            "Concise referral-request message. Plain text, no markdown, no "
+            "placeholder fields."
+        ),
+    )
+
+
+class HuntResult(BaseModel):
+    """Structured output from the end-to-end job-hunt runner."""
+
+    roles: list[Role] = Field(description="Roles found for the supplied criteria.")
+    outreach: list[OutreachDraft] = Field(
+        description="Drafted outreach messages grouped by role/person pair.",
     )

@@ -8,6 +8,7 @@ so the agent loop stays runnable during parallel development.
 from __future__ import annotations
 
 from collections.abc import Callable
+from dataclasses import dataclass
 from importlib import import_module
 from importlib.util import find_spec
 from typing import Any
@@ -19,20 +20,39 @@ from .mocks import draft_message_mock, find_referrals_mock, search_jobs_mock
 ToolCallable = Callable[..., Any]
 
 
+@dataclass(frozen=True)
+class PipelineTools:
+    """Named tool bundle for deterministic orchestration code."""
+
+    search_jobs: ToolCallable
+    find_referrals: ToolCallable
+    draft_message: ToolCallable
+
+
 def build_toolset(*, use_mocks: bool = False) -> list[ToolCallable]:
     """Return the tool list the ADK agent should expose."""
-    if use_mocks:
-        return [
-            search_jobs_mock,
-            find_referrals_mock,
-            draft_message_mock,
-        ]
-
+    tools = build_pipeline_tools(use_mocks=use_mocks)
     return [
-        search_jobs,
-        _optional_tool("referrals", "find_referrals", find_referrals_mock),
-        _optional_tool("draft", "draft_message", draft_message_mock),
+        tools.search_jobs,
+        tools.find_referrals,
+        tools.draft_message,
     ]
+
+
+def build_pipeline_tools(*, use_mocks: bool = False) -> PipelineTools:
+    """Return named tools for non-agent orchestration."""
+    if use_mocks:
+        return PipelineTools(
+            search_jobs=search_jobs_mock,
+            find_referrals=find_referrals_mock,
+            draft_message=draft_message_mock,
+        )
+
+    return PipelineTools(
+        search_jobs=search_jobs,
+        find_referrals=_optional_tool("referrals", "find_referrals", find_referrals_mock),
+        draft_message=_optional_tool("draft", "draft_message", draft_message_mock),
+    )
 
 
 def _optional_tool(module_name: str, attribute_name: str, fallback: ToolCallable) -> ToolCallable:
