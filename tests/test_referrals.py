@@ -209,6 +209,26 @@ class ReferralsTest(unittest.TestCase):
         self.assertEqual(len(people), 1)
         self.assertEqual(people[0].title, "Back-End Engineer")
 
+    def test_find_referrals_removes_as_prefix_from_snippet_title(self) -> None:
+        payload = {
+            "organic_results": [
+                {
+                    "title": "Joe Ortiz | LinkedIn",
+                    "link": "https://www.linkedin.com/in/joe-ortiz-508808168/",
+                    "snippet": "Joe Ortiz · As a SOC Analyst at Twilio.",
+                },
+            ]
+        }
+
+        with (
+            patch.dict(os.environ, {"SERPAPI_API_KEY": "fake-key"}, clear=True),
+            patch.object(referrals, "_fetch_serpapi_search", return_value=payload),
+        ):
+            people = find_referrals(self.role)
+
+        self.assertEqual(len(people), 1)
+        self.assertEqual(people[0].title, "SOC Analyst")
+
     def test_find_referrals_removes_name_prefix_from_snippet_title(self) -> None:
         payload = {
             "organic_results": [

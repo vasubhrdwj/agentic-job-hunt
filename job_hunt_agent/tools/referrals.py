@@ -632,6 +632,7 @@ def _clean_person_title(value: str) -> str:
     value = value.replace("\u2026", "...")
     value = re.sub(r"\s+at\s+.+$", "", value, flags=re.I)
     value = re.sub(r"^(?:i\s+am\s+currently|currently|i'm)\s+(?:an?\s+)?", "", value, flags=re.I)
+    value = re.sub(r"^as\s+(?:an?\s+)?", "", value, flags=re.I)
     value = re.split(r"\s+(?:on|in|for)\s+the\s+", value, maxsplit=1, flags=re.I)[0]
     value = re.sub(r"\s+", " ", value).strip(" -,:")
     for separator in (",", "..."):
@@ -674,6 +675,7 @@ def _remove_name_prefix_from_title(title: str, name: str) -> str:
             flags=re.I,
         )
     cleaned = cleaned.strip(" -,:")
+    cleaned = re.sub(r"^as\s+(?:an?\s+)?", "", cleaned, flags=re.I)
     return re.sub(r"^(?:an?|the)\s+", "", cleaned, flags=re.I)
 
 

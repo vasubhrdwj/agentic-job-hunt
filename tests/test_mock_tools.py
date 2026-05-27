@@ -105,7 +105,7 @@ class MockToolsTest(unittest.TestCase):
         self.assertEqual(len(agent.tools), 3)
         self.assertEqual(
             [tool.__name__ for tool in agent.tools],
-            ["search_jobs", "find_referrals", "draft_message_mock"],
+            ["search_jobs", "find_referrals", "draft_message"],
         )
 
     def test_adk_can_build_function_declarations_for_mocks(self) -> None:

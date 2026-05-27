@@ -90,6 +90,51 @@ class RunHuntTest(unittest.TestCase):
         self.assertEqual(len(result.outreach), 9)
         self.assertTrue(all(draft.message for draft in result.outreach))
 
+    def test_run_hunt_can_emit_trace_spans_without_resume_attributes(self) -> None:
+        spans: list[tuple[str, dict[str, object]]] = []
+
+        class FakeSpan:
+            def __init__(self, name: str) -> None:
+                self.name = name
+                self.attributes: dict[str, object] = {}
+
+            def set_attribute(self, key: str, value: object) -> None:
+                self.attributes[key] = value
+
+        class FakeSpanContext:
+            def __init__(self, name: str) -> None:
+                self.span = FakeSpan(name)
+
+            def __enter__(self) -> FakeSpan:
+                return self.span
+
+            def __exit__(self, exc_type, exc, traceback) -> None:
+                spans.append((self.span.name, self.span.attributes))
+
+        class FakeTracer:
+            def start_as_current_span(self, name: str) -> FakeSpanContext:
+                return FakeSpanContext(name)
+
+        with patch("job_hunt_agent.run._build_tracer", return_value=FakeTracer()):
+            result = run_hunt(
+                resume_text="PRIVATE RESUME TEXT BUILT SCIM",
+                criteria=self.criteria,
+                use_mocks=True,
+                max_roles=1,
+                max_referrals_per_role=1,
+                enable_tracing=True,
+            )
+
+        self.assertEqual(len(result.outreach), 1)
+        flattened_attributes = {
+            value
+            for _, attributes in spans
+            for value in attributes.values()
+            if isinstance(value, str)
+        }
+        self.assertNotIn("PRIVATE RESUME TEXT BUILT SCIM", flattened_attributes)
+        self.assertIn("run_hunt", [name for name, _ in spans])
+
     def test_criteria_from_args_parses_cli_values(self) -> None:
         args = argparse.Namespace(
             keywords="SCIM, IAM, identity",

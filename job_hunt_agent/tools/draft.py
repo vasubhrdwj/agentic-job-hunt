@@ -53,6 +53,7 @@ def draft_message(
     resume_text: str = "",
 ) -> str:
     """Draft a personalized referral request for one role/person pair."""
+    _load_dotenv_if_available()
     role = Role.model_validate(role)
     person = Person.model_validate(person)
 
@@ -179,3 +180,11 @@ def _is_usable(text: str) -> bool:
 
 def _get_google_api_key() -> str:
     return os.environ.get("GOOGLE_API_KEY", "").strip()
+
+
+def _load_dotenv_if_available() -> None:
+    try:
+        from dotenv import load_dotenv
+    except ModuleNotFoundError:
+        return
+    load_dotenv()

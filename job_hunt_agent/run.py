@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+from contextlib import nullcontext
 from pathlib import Path
 from typing import Any
 
@@ -21,34 +22,70 @@ def run_hunt(
     max_roles: int = DEFAULT_MAX_ROLES,
     max_referrals_per_role: int = DEFAULT_MAX_REFERRALS_PER_ROLE,
     use_mocks: bool = False,
+    enable_tracing: bool = False,
 ) -> HuntResult:
     """Run job search, referral discovery, and message drafting."""
     criteria = JobCriteria.model_validate(criteria)
     tools = build_pipeline_tools(use_mocks=use_mocks)
+    tracer = _build_tracer(enable_tracing)
 
-    roles = [
-        Role.model_validate(role)
-        for role in tools.search_jobs(criteria)
-    ][:max_roles]
+    with _maybe_span(
+        tracer,
+        "run_hunt",
+        {
+            "job_hunt.criteria.keywords": ", ".join(criteria.role_keywords),
+            "job_hunt.criteria.locations": ", ".join(criteria.location),
+            "job_hunt.criteria.seniority": criteria.seniority,
+            "job_hunt.max_roles": max_roles,
+            "job_hunt.max_referrals_per_role": max_referrals_per_role,
+            "job_hunt.use_mocks": use_mocks,
+        },
+    ) as run_span:
+        with _maybe_span(tracer, "search_jobs"):
+            roles = [
+                Role.model_validate(role)
+                for role in tools.search_jobs(criteria)
+            ][:max_roles]
 
-    outreach: list[OutreachDraft] = []
-    for role in roles:
-        people = [
-            Person.model_validate(person)
-            for person in tools.find_referrals(role)
-        ][:max_referrals_per_role]
+        outreach: list[OutreachDraft] = []
+        for role in roles:
+            with _maybe_span(
+                tracer,
+                "find_referrals",
+                {
+                    "job_hunt.role.company": role.company,
+                    "job_hunt.role.title": role.title,
+                    "job_hunt.role.url": role.url,
+                },
+            ):
+                people = [
+                    Person.model_validate(person)
+                    for person in tools.find_referrals(role)
+                ][:max_referrals_per_role]
 
-        for person in people:
-            message = tools.draft_message(role, person, resume_text)
-            outreach.append(
-                OutreachDraft(
-                    role=role,
-                    person=person,
-                    message=str(message).strip(),
+            for person in people:
+                with _maybe_span(
+                    tracer,
+                    "draft_message",
+                    {
+                        "job_hunt.role.company": role.company,
+                        "job_hunt.role.title": role.title,
+                        "job_hunt.person.source": person.source,
+                        "job_hunt.person.title": person.title,
+                    },
+                ):
+                    message = tools.draft_message(role, person, resume_text)
+                outreach.append(
+                    OutreachDraft(
+                        role=role,
+                        person=person,
+                        message=str(message).strip(),
+                    )
                 )
-            )
 
-    return HuntResult(roles=roles, outreach=outreach)
+        run_span.set_attribute("job_hunt.roles.count", len(roles))
+        run_span.set_attribute("job_hunt.outreach.count", len(outreach))
+        return HuntResult(roles=roles, outreach=outreach)
 
 
 def parse_args() -> argparse.Namespace:
@@ -79,6 +116,11 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Use the all-mock tool pipeline for fast local smoke tests.",
     )
+    parser.add_argument(
+        "--trace",
+        action="store_true",
+        help="Emit Phoenix/OpenTelemetry spans for this deterministic pipeline run.",
+    )
     return parser.parse_args()
 
 
@@ -106,8 +148,50 @@ def main() -> None:
         max_roles=args.max_roles,
         max_referrals_per_role=args.max_referrals,
         use_mocks=args.use_mocks,
+        enable_tracing=args.trace,
     )
     print(result.model_dump_json(indent=2))
+
+
+class _NoopSpan:
+    def set_attribute(self, key: str, value: Any) -> None:
+        return None
+
+
+def _build_tracer(enable_tracing: bool) -> Any | None:
+    if not enable_tracing:
+        return None
+
+    from opentelemetry import trace
+
+    from .tracing import configure_phoenix_tracing
+
+    configure_phoenix_tracing()
+    return trace.get_tracer(__name__)
+
+
+def _maybe_span(tracer: Any | None, name: str, attributes: dict[str, Any] | None = None) -> Any:
+    if tracer is None:
+        return nullcontext(_NoopSpan())
+
+    span = tracer.start_as_current_span(name)
+    manager = span.__enter__()
+    if attributes:
+        for key, value in attributes.items():
+            manager.set_attribute(key, value)
+    return _SpanContext(span, manager)
+
+
+class _SpanContext:
+    def __init__(self, span_context: Any, span: Any) -> None:
+        self._span_context = span_context
+        self._span = span
+
+    def __enter__(self) -> Any:
+        return self._span
+
+    def __exit__(self, exc_type: Any, exc: Any, traceback: Any) -> bool | None:
+        return self._span_context.__exit__(exc_type, exc, traceback)
 
 
 if __name__ == "__main__":
