@@ -1,0 +1,44 @@
+Priya Ramesh
+Bengaluru, India · priya.ramesh.dev@example.com · github.com/priyaramesh-dev · linkedin.com/in/priyaramesh-dev
+
+SUMMARY
+Backend engineer with 3.5 years building identity, auth, and platform services in Python and Go. Shipped SCIM 2.0 provisioning at a B2B SaaS, owned the SSO migration off a legacy IdP, and have on-call experience for a service handling ~40M auth events/day. Comfortable across the stack but happiest writing protocol-level code and the integration tests that go with it.
+
+EXPERIENCE
+
+Senior Software Engineer — Tessera Identity (Series B, ~120 people)
+Aug 2023 – Present · Remote (HQ: Bengaluru)
+- Designed and shipped Tessera's SCIM 2.0 provisioning server from scratch (Go, Postgres). Now used by 38 enterprise customers including two Fortune 500s; covers Users, Groups, and custom schema extensions per RFC 7643/7644.
+- Led the migration of Tessera's SSO surface off a legacy Keycloak fork onto a hand-rolled OIDC provider. Cut p99 token-exchange latency from 410ms to 95ms; closed two long-standing PKCE compliance gaps surfaced in a customer audit.
+- Built the audit-log pipeline (Kafka -> ClickHouse) backing SOC 2 evidence collection. Reduced query times for compliance reports from minutes to sub-second.
+- On-call rotation for the auth service (~40M events/day). Authored the runbook the rest of the team uses for token-rotation incidents.
+
+Software Engineer — Lumen Logistics (Series A, ~40 people)
+Jul 2022 – Jul 2023 · Bengaluru (hybrid)
+- Built the customer-facing API gateway in Python/FastAPI. Introduced per-tenant rate limiting and structured request logging, both of which became table stakes for the enterprise tier.
+- Owned the OAuth2 integration with three shipping partners (FedEx, BlueDart, Delhivery). Wrote the test harness that simulates partner-side token revocation — caught two real bugs before they hit prod.
+- Migrated the legacy session-cookie auth to JWT-based access tokens with refresh rotation; documented the threat model in an internal RFC.
+
+Software Engineering Intern — Lumen Logistics
+Jan 2022 – Jun 2022 · Bengaluru
+- Wrote the first version of the internal admin tool (Django) used by ops to issue temporary API credentials to partners. Still in use.
+
+EDUCATION
+B.Tech, Computer Science — PES University, Bengaluru
+2018 – 2022 · CGPA 8.7/10
+- Final-year project: a toy implementation of OAuth2 with a focus on the PKCE flow. Open-sourced on GitHub (~80 stars).
+
+SKILLS
+- Languages: Go (primary, 2.5y), Python (4y), TypeScript (1y, side projects)
+- Identity & auth: SCIM 2.0, OIDC, OAuth 2.0 / 2.1, SAML 2.0 (read-only), PKCE, JWT, mTLS
+- Infra: Postgres, Kafka, ClickHouse, Redis, Docker, Kubernetes (user, not operator), GitHub Actions
+- Other: gRPC, REST, OpenAPI, Pydantic, FastAPI, basic Terraform
+
+OPEN SOURCE & WRITING
+- Maintainer of `scim-fuzz`, a small property-based testing library for SCIM 2.0 servers (Go, ~200 stars).
+- Wrote a four-part blog series on "things SCIM 2.0 specs don't tell you" (linked on GitHub profile). Two posts hit the front page of Hacker News.
+
+LOOKING FOR
+- Senior backend / platform roles with an identity, auth, or developer-platform focus
+- Remote-India or Bengaluru/Hyderabad hybrid
+- B2B SaaS or infra companies; size flexible but prefer Series B–D
