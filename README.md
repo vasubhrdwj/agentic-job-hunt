@@ -8,7 +8,7 @@ An agent that runs a focused, evidence-based job hunt: find 3 matching roles, su
 
 ```bash
 python -m venv .venv && .venv\Scripts\activate
-pip install google-adk google-genai openinference-instrumentation-google-adk opentelemetry-sdk python-dotenv pydantic fastapi uvicorn
+pip install google-adk google-genai openinference-instrumentation-google-adk openinference-instrumentation-google-genai opentelemetry-sdk python-dotenv pydantic fastapi uvicorn mcp
 cp .env.example .env  # fill in GOOGLE_API_KEY, SERPAPI_API_KEY, PHOENIX_*
 ```
 
@@ -87,7 +87,7 @@ job_hunt_agent/        ADK agent, schemas, pipeline runner, tracing
   tools/               search_jobs, find_referrals, draft_message (+ mocks)
 fixtures/              sample resume + JobCriteria fixtures
 scripts/               preview_drafts.py (eyeball check for Gemini draft tool)
-tests/                 pytest suite — 78 tests, all green on real-mode mocks
+tests/                 pytest suite — 86 tests, all green on real-mode mocks
 PLAN.md                Full 2-week plan
 ```
 

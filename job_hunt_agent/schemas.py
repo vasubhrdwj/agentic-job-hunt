@@ -129,6 +129,25 @@ class OutreachDraft(BaseModel):
     )
 
 
+class PastDraft(BaseModel):
+    """A previously generated draft retrieved from Phoenix traces."""
+
+    message: str = Field(description="Past outreach draft text.")
+    role_title: str = Field(description="Role title the past draft targeted.")
+    company: str = Field(description="Company the past draft targeted.")
+    eval_score: float | None = Field(
+        default=None,
+        ge=1,
+        le=5,
+        description="Composite 1-5 evaluation score, if one has been written.",
+    )
+    matched_keywords: list[str] = Field(
+        description="Query keywords that matched this draft's traced role keywords.",
+    )
+    span_id: str = Field(description="Phoenix/OpenTelemetry span ID for the draft.")
+    trace_id: str = Field(description="Phoenix/OpenTelemetry trace ID for the draft.")
+
+
 class HuntResult(BaseModel):
     """Structured output from the end-to-end job-hunt runner."""
 

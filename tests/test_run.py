@@ -3,7 +3,7 @@ import json
 import unittest
 from unittest.mock import patch
 
-from job_hunt_agent.run import criteria_from_args, run_hunt
+from job_hunt_agent.run import _maybe_span, criteria_from_args, run_hunt
 from job_hunt_agent.schemas import HuntResult, JobCriteria, OutreachDraft, Person, Role
 from job_hunt_agent.tools.registry import PipelineTools
 
@@ -133,7 +133,18 @@ class RunHuntTest(unittest.TestCase):
             def start_as_current_span(self, name: str) -> FakeSpanContext:
                 return FakeSpanContext(name)
 
-        with patch("job_hunt_agent.run._build_tracer", return_value=FakeTracer()):
+        tools = PipelineTools(
+            search_jobs=lambda criteria: [self.role],
+            find_referrals=lambda role: [self.person],
+            draft_message=lambda role, person, resume_text: (
+                f"Hi Priya, your {person.title} work at {role.company} lines up with SCIM."
+            ),
+        )
+
+        with (
+            patch("job_hunt_agent.run.build_pipeline_tools", return_value=tools),
+            patch("job_hunt_agent.run._build_tracer", return_value=FakeTracer()),
+        ):
             result = run_hunt(
                 resume_text="PRIVATE RESUME TEXT BUILT SCIM",
                 criteria=self.criteria,
@@ -155,6 +166,16 @@ class RunHuntTest(unittest.TestCase):
         self.assertIn("run_hunt", [name for name, _ in spans])
         run_span_attrs = next(attrs for name, attrs in spans if name == "run_hunt")
         self.assertEqual(run_span_attrs["job_hunt.run_id"], "trace-run-id")
+        draft_attributes = next(attributes for name, attributes in spans if name == "draft_message")
+        self.assertEqual(draft_attributes["job_hunt.role.keywords"], ("SCIM", "identity"))
+        self.assertEqual(
+            draft_attributes["job_hunt.draft.output_text"],
+            "Hi Priya, your Staff Engineer, Identity work at Okta lines up with SCIM.",
+        )
+
+    def test_noop_span_accepts_trace_attributes(self) -> None:
+        with _maybe_span(None, "draft_message") as span:
+            span.set_attribute("job_hunt.draft.output_text", "message")
 
     def test_criteria_from_args_parses_cli_values(self) -> None:
         args = argparse.Namespace(

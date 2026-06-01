@@ -23,11 +23,29 @@ def configure_phoenix_tracing(
     if _tracer_provider is not None:
         return _tracer_provider
 
+    _load_dotenv_if_available()
     _tracer_provider = register(
         project_name=project_name,
         auto_instrument=False,
         protocol=protocol,
     )
     GoogleADKInstrumentor().instrument(tracer_provider=_tracer_provider)
+    _instrument_google_genai_if_available(_tracer_provider)
     return _tracer_provider
 
+
+def _instrument_google_genai_if_available(tracer_provider: Any) -> None:
+    """Add direct google-genai spans when the optional package is installed."""
+    try:
+        from openinference.instrumentation.google_genai import GoogleGenAIInstrumentor
+    except ImportError:
+        return
+    GoogleGenAIInstrumentor().instrument(tracer_provider=tracer_provider)
+
+
+def _load_dotenv_if_available() -> None:
+    try:
+        from dotenv import load_dotenv
+    except ImportError:
+        return
+    load_dotenv()

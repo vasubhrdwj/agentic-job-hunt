@@ -14,6 +14,7 @@ from job_hunt_agent.schemas import (
     JobCriteria,
     OutcomeLog,
     OutreachDraft,
+    PastDraft,
     Person,
     Role,
 )
@@ -196,3 +197,20 @@ def test_outcome_log_round_trip_full():
 def test_outcome_log_rejects_bad_outcome():
     with pytest.raises(ValidationError):
         OutcomeLog(draft_id="draft-1", outcome="ghosted")
+
+
+# --- PastDraft -----------------------------------------------------------
+
+
+def test_pastdraft_round_trip():
+    draft = PastDraft(
+        message="Hi Priya, I saw the identity role and your platform work.",
+        role_title="Senior Engineer, Identity",
+        company="Okta",
+        eval_score=4.5,
+        matched_keywords=["SCIM"],
+        span_id="span-123",
+        trace_id="trace-456",
+    )
+
+    assert PastDraft.model_validate_json(draft.model_dump_json()) == draft

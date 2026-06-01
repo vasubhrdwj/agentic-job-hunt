@@ -14,6 +14,7 @@ from .tools.registry import build_pipeline_tools
 
 DEFAULT_MAX_ROLES = 3
 DEFAULT_MAX_REFERRALS_PER_ROLE = 3
+DRAFT_OUTPUT_ATTRIBUTE_LIMIT = 2_000
 
 
 def run_hunt(
@@ -74,11 +75,16 @@ def run_hunt(
                     {
                         "job_hunt.role.company": role.company,
                         "job_hunt.role.title": role.title,
+                        "job_hunt.role.keywords": tuple(criteria.role_keywords),
                         "job_hunt.person.source": person.source,
                         "job_hunt.person.title": person.title,
                     },
-                ):
+                ) as draft_span:
                     message = tools.draft_message(role, person, resume_text)
+                    draft_span.set_attribute(
+                        "job_hunt.draft.output_text",
+                        _trim_attribute(str(message).strip()),
+                    )
                 outreach.append(
                     OutreachDraft(
                         role=role,
@@ -145,6 +151,13 @@ def criteria_from_args(args: argparse.Namespace) -> JobCriteria:
 
 def _split_csv(value: str) -> list[str]:
     return [part.strip() for part in value.split(",") if part.strip()]
+
+
+def _trim_attribute(value: str, limit: int = DRAFT_OUTPUT_ATTRIBUTE_LIMIT) -> str:
+    """Keep custom trace attributes comfortably below exporter/UI limits."""
+    if len(value) <= limit:
+        return value
+    return value[:limit].rstrip()
 
 
 def main() -> None:
