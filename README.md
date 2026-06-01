@@ -8,7 +8,7 @@ An agent that runs a focused, evidence-based job hunt: find 3 matching roles, su
 
 ```bash
 python -m venv .venv && .venv\Scripts\activate
-pip install google-adk google-genai openinference-instrumentation-google-adk opentelemetry-sdk python-dotenv pydantic
+pip install google-adk google-genai openinference-instrumentation-google-adk opentelemetry-sdk python-dotenv pydantic fastapi uvicorn
 cp .env.example .env  # fill in GOOGLE_API_KEY, SERPAPI_API_KEY, PHOENIX_*
 ```
 
@@ -24,7 +24,28 @@ python -m job_hunt_agent.run \
 
 Output is structured JSON: `{ roles: [...], outreach: [{ role, person, message }, ...] }`.
 
-Add `--trace` to emit OpenTelemetry spans to your Phoenix project, or `--use-mocks` for the no-network smoke loop.
+Add `--trace` to emit OpenTelemetry spans to your Phoenix project, or `--use-mocks` for the no-network smoke loop. The CLI also prints the generated `run_id` so you can correlate the output with a Phoenix trace or the persisted SQLite row.
+
+## Run the API
+
+A6 wraps `run_hunt` in a small FastAPI service so the future frontend can drive it over HTTP.
+
+```bash
+uvicorn job_hunt_agent.api:app --reload
+```
+
+Endpoints:
+
+```
+POST /api/hunt                       { resume_text, criteria }       → HuntResult (with run_id)
+POST /api/runs/{run_id}/outcomes      { outcomes: [OutcomeLog] }      → { ok, inserted, outcomes }
+GET  /api/runs/{run_id}                                                → { hunt_result, outcomes }
+```
+
+Configure persistence and CORS via env:
+
+- `JOB_HUNT_DB_PATH` — SQLite file for runs + outcomes (default `outcomes.db`).
+- `ALLOWED_ORIGINS` — comma-separated CORS allowlist (default dev origins for localhost 3000/5173).
 
 ## Example output
 
@@ -61,10 +82,12 @@ Add `--trace` to emit OpenTelemetry spans to your Phoenix project, or `--use-moc
 
 ```
 job_hunt_agent/        ADK agent, schemas, pipeline runner, tracing
+  api.py               FastAPI surface (POST /api/hunt, outcomes, GET run)
+  persistence.py       SQLite layer for runs + outcomes
   tools/               search_jobs, find_referrals, draft_message (+ mocks)
 fixtures/              sample resume + JobCriteria fixtures
 scripts/               preview_drafts.py (eyeball check for Gemini draft tool)
-tests/                 pytest suite — 54 tests, all green on real-mode mocks
+tests/                 pytest suite — 78 tests, all green on real-mode mocks
 PLAN.md                Full 2-week plan
 ```
 

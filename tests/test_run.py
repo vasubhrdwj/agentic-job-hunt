@@ -52,6 +52,24 @@ class RunHuntTest(unittest.TestCase):
         self.assertEqual(len(result.outreach), 1)
         self.assertIsInstance(result.outreach[0], OutreachDraft)
         self.assertIn("SCIM", result.outreach[0].message)
+        self.assertTrue(result.run_id)
+        self.assertTrue(result.outreach[0].draft_id)
+
+    def test_run_hunt_preserves_explicit_run_id(self) -> None:
+        tools = PipelineTools(
+            search_jobs=lambda criteria: [self.role],
+            find_referrals=lambda role: [self.person],
+            draft_message=lambda role, person, resume_text: "message",
+        )
+
+        with patch("job_hunt_agent.run.build_pipeline_tools", return_value=tools):
+            result = run_hunt(
+                resume_text="resume",
+                criteria=self.criteria,
+                run_id="fixed-run-id-123",
+            )
+
+        self.assertEqual(result.run_id, "fixed-run-id-123")
 
     def test_run_hunt_limits_roles_and_referrals(self) -> None:
         roles = [
@@ -119,6 +137,7 @@ class RunHuntTest(unittest.TestCase):
             result = run_hunt(
                 resume_text="PRIVATE RESUME TEXT BUILT SCIM",
                 criteria=self.criteria,
+                run_id="trace-run-id",
                 use_mocks=True,
                 max_roles=1,
                 max_referrals_per_role=1,
@@ -134,6 +153,8 @@ class RunHuntTest(unittest.TestCase):
         }
         self.assertNotIn("PRIVATE RESUME TEXT BUILT SCIM", flattened_attributes)
         self.assertIn("run_hunt", [name for name, _ in spans])
+        run_span_attrs = next(attrs for name, attrs in spans if name == "run_hunt")
+        self.assertEqual(run_span_attrs["job_hunt.run_id"], "trace-run-id")
 
     def test_criteria_from_args_parses_cli_values(self) -> None:
         args = argparse.Namespace(

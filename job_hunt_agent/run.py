@@ -6,6 +6,7 @@ import argparse
 from contextlib import nullcontext
 from pathlib import Path
 from typing import Any
+from uuid import uuid4
 
 from .schemas import HuntResult, JobCriteria, OutreachDraft, Person, Role
 from .tools.registry import build_pipeline_tools
@@ -19,6 +20,7 @@ def run_hunt(
     resume_text: str,
     criteria: JobCriteria | dict[str, Any],
     *,
+    run_id: str | None = None,
     max_roles: int = DEFAULT_MAX_ROLES,
     max_referrals_per_role: int = DEFAULT_MAX_REFERRALS_PER_ROLE,
     use_mocks: bool = False,
@@ -26,6 +28,7 @@ def run_hunt(
 ) -> HuntResult:
     """Run job search, referral discovery, and message drafting."""
     criteria = JobCriteria.model_validate(criteria)
+    run_id = run_id or uuid4().hex
     tools = build_pipeline_tools(use_mocks=use_mocks)
     tracer = _build_tracer(enable_tracing)
 
@@ -33,6 +36,7 @@ def run_hunt(
         tracer,
         "run_hunt",
         {
+            "job_hunt.run_id": run_id,
             "job_hunt.criteria.keywords": ", ".join(criteria.role_keywords),
             "job_hunt.criteria.locations": ", ".join(criteria.location),
             "job_hunt.criteria.seniority": criteria.seniority,
@@ -85,7 +89,7 @@ def run_hunt(
 
         run_span.set_attribute("job_hunt.roles.count", len(roles))
         run_span.set_attribute("job_hunt.outreach.count", len(outreach))
-        return HuntResult(roles=roles, outreach=outreach)
+        return HuntResult(run_id=run_id, roles=roles, outreach=outreach)
 
 
 def parse_args() -> argparse.Namespace:
@@ -121,6 +125,10 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Emit Phoenix/OpenTelemetry spans for this deterministic pipeline run.",
     )
+    parser.add_argument(
+        "--run-id",
+        help="Optional stable run id. If omitted, one is generated and printed.",
+    )
     return parser.parse_args()
 
 
@@ -145,11 +153,13 @@ def main() -> None:
     result = run_hunt(
         resume_text=resume_text,
         criteria=criteria_from_args(args),
+        run_id=args.run_id,
         max_roles=args.max_roles,
         max_referrals_per_role=args.max_referrals,
         use_mocks=args.use_mocks,
         enable_tracing=args.trace,
     )
+    print(f"run_id: {result.run_id}")
     print(result.model_dump_json(indent=2))
 
 
