@@ -85,9 +85,9 @@ job_hunt_agent/        ADK agent, schemas, pipeline runner, tracing
   api.py               FastAPI surface (POST /api/hunt, outcomes, GET run)
   persistence.py       SQLite layer for runs + outcomes
   tools/               search_jobs, find_referrals, draft_message (+ mocks)
-fixtures/              sample resume + JobCriteria fixtures
-scripts/               preview_drafts.py (eyeball check for Gemini draft tool)
-tests/                 pytest suite — 86 tests, all green on real-mode mocks
+fixtures/              sample resume, JobCriteria fixtures, seed outreach corpus
+scripts/               preview_drafts.py, seed_phoenix.py
+tests/                 pytest suite — 96 passed, 3 live tests skipped
 PLAN.md                Full 2-week plan
 ```
 
