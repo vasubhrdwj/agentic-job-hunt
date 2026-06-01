@@ -7,8 +7,9 @@ class AgentDefinitionTest(unittest.TestCase):
     def test_build_agent_uses_job_hunt_identity(self) -> None:
         agent = build_agent()
 
-        self.assertEqual(agent.name, "job_hunt_agent")
+        self.assertEqual(agent.name, "job_hunt_signal")
         self.assertEqual(agent.model, DEFAULT_MODEL)
+        self.assertIn("Job Hunt Signal", agent.description)
         self.assertIn("referral targets", agent.description)
 
     def test_prompt_contains_v1_guardrails(self) -> None:

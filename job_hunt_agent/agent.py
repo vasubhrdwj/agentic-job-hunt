@@ -77,11 +77,12 @@ response and use this shape:
 def build_agent(model: str = DEFAULT_MODEL, use_mocks: bool = False) -> Agent:
     """Build the job-hunt agent with real tools or the all-mock V2 harness."""
     return Agent(
-        name="job_hunt_agent",
+        name="job_hunt_signal",
         model=model,
         description=(
-            "Finds relevant roles, identifies referral targets, and drafts "
-            "specific job-hunt outreach without fabricating profile data."
+            "Job Hunt Signal: finds relevant roles, identifies referral "
+            "targets, and drafts specific outreach without fabricating "
+            "profile data."
         ),
         instruction=SYSTEM_INSTRUCTION,
         tools=build_toolset(use_mocks=use_mocks),

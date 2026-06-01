@@ -2,15 +2,17 @@
 
 from __future__ import annotations
 
+import sys
 from pathlib import Path
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
 
 from dotenv import load_dotenv
 
 from job_hunt_agent.schemas import Person, Role
 from job_hunt_agent.tools.draft import draft_message
-
-
-REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
 def main() -> None:

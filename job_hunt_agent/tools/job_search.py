@@ -164,7 +164,12 @@ def _role_from_result(
         return None
 
     location = _infer_location(criteria, raw_title, snippet)
-    summary = _build_summary(title=title, company=company, snippet=snippet)
+    summary = _build_summary(
+        title=title,
+        company=company,
+        snippet=snippet,
+        criteria=criteria,
+    )
     match_reason = _build_match_reason(
         criteria=criteria,
         title=title,
@@ -343,12 +348,53 @@ def _infer_location(criteria: JobCriteria, raw_title: str, snippet: str) -> str:
     return criteria.location[0] if criteria.location else "Location not available in search result"
 
 
-def _build_summary(*, title: str, company: str, snippet: str) -> str:
+def _build_summary(
+    *,
+    title: str,
+    company: str,
+    snippet: str,
+    criteria: JobCriteria,
+) -> str:
     if snippet:
-        return snippet
+        return _trim_snippet(snippet, criteria.role_keywords)
     if company == "Unknown company":
         return f"SerpAPI returned a LinkedIn job result for {title}."
     return f"SerpAPI returned a LinkedIn job result for {title} at {company}."
+
+
+def _trim_snippet(snippet: str, keywords: list[str]) -> str:
+    """Trim Google-snippet bleed.
+
+    Cut at the first sentence boundary that comes after the first matched
+    keyword. Falls back to splitting on Google's literal " ... " fragment
+    joiner so trailing second-result text is dropped.
+    """
+    cleaned = snippet.strip()
+    if not cleaned:
+        return cleaned
+
+    keyword_pos = _first_keyword_position(cleaned, keywords)
+    if keyword_pos >= 0:
+        boundary = re.search(r"[.!?](?=\s|$)", cleaned[keyword_pos:])
+        if boundary:
+            return cleaned[: keyword_pos + boundary.end()].strip()
+
+    return cleaned.split(" ... ")[0].strip()
+
+
+def _first_keyword_position(snippet: str, keywords: list[str]) -> int:
+    lowered = snippet.lower()
+    earliest = -1
+    for keyword in keywords:
+        token = keyword.strip().lower()
+        if not token:
+            continue
+        position = lowered.find(token)
+        if position < 0:
+            continue
+        if earliest < 0 or position < earliest:
+            earliest = position
+    return earliest
 
 
 def _build_match_reason(

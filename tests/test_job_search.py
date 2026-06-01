@@ -214,6 +214,39 @@ class JobSearchTest(unittest.TestCase):
         self.assertEqual(roles[0].company, "Zexovo")
         self.assertEqual(roles[0].title, "SDE-1 (Backend / AWS Systems)")
 
+    def test_search_jobs_trims_snippet_second_result_bleed(self) -> None:
+        payload = {
+            "organic_results": [
+                {
+                    "title": "Duck Creek Technologies hiring Senior IAM Engineer | LinkedIn",
+                    "link": (
+                        "https://in.linkedin.com/jobs/view/"
+                        "senior-iam-engineer-at-duck-creek-technologies-4395060510"
+                    ),
+                    "snippet": (
+                        "Understanding of SCIM protocol, SAML, and OIDC/OAUTH. "
+                        "Strong problem-solving ... Software Developer "
+                        "(Full Stack) - Remote, India. LeewayHertz. Gurugram ..."
+                    ),
+                },
+            ]
+        }
+
+        with (
+            patch.dict(os.environ, {"SERPAPI_API_KEY": "fake-key"}, clear=True),
+            patch.object(job_search, "_fetch_serpapi_search", return_value=payload),
+        ):
+            roles = search_jobs(self.criteria)
+
+        self.assertEqual(len(roles), 1)
+        summary = roles[0].summary
+        self.assertEqual(
+            summary,
+            "Understanding of SCIM protocol, SAML, and OIDC/OAUTH.",
+        )
+        self.assertNotIn("LeewayHertz", summary)
+        self.assertNotIn("Gurugram", summary)
+
     def test_search_jobs_returns_empty_when_serpapi_request_fails(self) -> None:
         with (
             patch.dict(os.environ, {"SERPAPI_API_KEY": "fake-key"}, clear=True),
