@@ -81,6 +81,8 @@ def create_app() -> FastAPI:
 
     persistence.init_db()
 
+    use_mocks = os.getenv("USE_MOCKS", "0") == "1"
+
     @app.post("/api/hunt", response_model=HuntResult)
     def post_hunt(request: HuntRequest) -> HuntResult:
         """Run the pipeline once and persist the HuntResult."""
@@ -89,6 +91,7 @@ def create_app() -> FastAPI:
             resume_text=request.resume_text,
             criteria=request.criteria,
             run_id=new_run_id,
+            use_mocks=use_mocks,
         )
         persistence.save_run(result)
         return result
