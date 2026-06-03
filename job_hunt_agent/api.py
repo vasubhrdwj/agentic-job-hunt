@@ -35,6 +35,13 @@ DEFAULT_ALLOWED_ORIGINS = (
 class HuntRequest(BaseModel):
     resume_text: str = Field(description="Plain-text resume body.")
     criteria: JobCriteria = Field(description="Filters for the hunt.")
+    use_self_rag: bool = Field(
+        default=True,
+        description=(
+            "Toggle V8 self-RAG. Set False for the V10 round-1 baseline so the "
+            "demo can compare drafts with and without past-trace exemplars."
+        ),
+    )
 
 
 class OutcomesRequest(BaseModel):
@@ -92,6 +99,7 @@ def create_app() -> FastAPI:
             criteria=request.criteria,
             run_id=new_run_id,
             use_mocks=use_mocks,
+            use_self_rag=request.use_self_rag,
         )
         persistence.save_run(result)
         return result
