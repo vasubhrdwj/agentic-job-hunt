@@ -473,7 +473,8 @@ The thin HTTP layer between the frontend and `run_hunt()`. This is the contract 
 
 ```python
 POST /api/hunt           # body: {resume_text, criteria} -> HuntResult
-POST /api/outcomes        # body: {run_id, outcomes: list[OutcomeLog]} -> {ok}
+POST /api/runs/{run_id}/outcomes
+                         # body: {outcomes: list[OutcomeLog]} -> {ok, inserted, outcomes}
 GET  /api/runs/{run_id}   # -> {hunt_result, outcomes}
 ```
 
@@ -520,14 +521,16 @@ Three screens, no auth, no fancy state management. Optimize for: judge can use i
 
 The outcomes flow needs to actually persist across the demo. Also: the backend needs to be reachable from the Vercel frontend.
 
-**Deliverable:** deployed backend (Fly.io or Render free tier) + outcomes-logging page wired to `/api/outcomes`.
+**Deliverable:** Fly.io backend + Vercel frontend wired to `POST /api/runs/{run_id}/outcomes`, with SQLite persisted on a Fly volume and Phoenix tracing enabled for hosted `/api/hunt` runs.
 
 **Success checklist:**
-- [ ] Backend deployed to public URL; `/api/hunt` reachable from Vercel
-- [ ] All env vars (SERPAPI_KEY, GOOGLE_API_KEY, PHOENIX_*) set on the host
-- [ ] Outcomes page POSTs to `/api/outcomes` successfully
-- [ ] Logged outcomes show up on the `/runs/{run_id}` page
-- [ ] CORS configured so only the Vercel domain can hit the API in production
+- [ ] Backend deployed to public URL; `/health` and `/api/hunt` reachable from Vercel
+- [ ] Fly volume mounted at `/data`; `JOB_HUNT_DB_PATH=/data/outcomes.db`
+- [ ] Production env has `GOOGLE_API_KEY`, `SERPAPI_API_KEY`, `PHOENIX_API_KEY`, `PHOENIX_COLLECTOR_ENDPOINT`, `ALLOWED_ORIGINS`, and `ENABLE_TRACING=1`
+- [ ] Outcomes page POSTs to `/api/runs/{run_id}/outcomes` successfully
+- [ ] Logged outcomes show up on the `/runs/{run_id}` page and survive a redeploy
+- [ ] Browser CORS allowlist is restricted to the production Vercel URL
+- [ ] The `run_id` returned by hosted `/api/hunt` appears in Phoenix traces
 
 ### A9. Demo script + recorded video (Day 12–13)
 

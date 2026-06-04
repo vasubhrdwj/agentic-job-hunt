@@ -1,0 +1,11 @@
+.DS_Store
+.env
+.git/
+.pytest_cache/
+.venv/
+__pycache__/
+*.db
+*.pyc
+frontend/
+fixtures/
+tests/

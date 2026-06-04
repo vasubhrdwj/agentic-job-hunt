@@ -25,11 +25,14 @@ from .run import run_hunt
 from .schemas import HuntResult, JobCriteria, OutcomeLog
 
 
+TRUTHY_ENV_VALUES = {"1", "true", "yes", "on"}
+FALSY_ENV_VALUES = {"0", "false", "no", "off"}
 DEFAULT_ALLOWED_ORIGINS = (
     "http://localhost:3000,"
     "http://127.0.0.1:3000,"
     "http://localhost:5173"
 )
+LOCAL_ORIGIN_MARKERS = ("localhost", "127.0.0.1", "[::1]")
 
 
 class HuntRequest(BaseModel):
@@ -64,9 +67,74 @@ class RunDetailResponse(BaseModel):
     outcomes: list[OutcomeLog]
 
 
+class HealthResponse(BaseModel):
+    ok: bool
+
+
+def _env_bool(name: str, *, default: bool = False) -> bool:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    normalized = raw.strip().lower()
+    if normalized in TRUTHY_ENV_VALUES:
+        return True
+    if normalized in FALSY_ENV_VALUES:
+        return False
+    return default
+
+
+def _is_production() -> bool:
+    return os.getenv("ENVIRONMENT", "").strip().lower() == "production"
+
+
+def _tracing_enabled() -> bool:
+    return _env_bool("ENABLE_TRACING", default=_is_production())
+
+
 def _parse_allowed_origins() -> list[str]:
     raw = os.getenv("ALLOWED_ORIGINS", DEFAULT_ALLOWED_ORIGINS)
     return [origin.strip() for origin in raw.split(",") if origin.strip()]
+
+
+def _validate_production_config() -> None:
+    if not _is_production():
+        return
+
+    errors: list[str] = []
+    required = (
+        "GOOGLE_API_KEY",
+        "PHOENIX_API_KEY",
+        "PHOENIX_COLLECTOR_ENDPOINT",
+        "JOB_HUNT_DB_PATH",
+        "ALLOWED_ORIGINS",
+    )
+    for name in required:
+        if not os.getenv(name, "").strip():
+            errors.append(f"{name} is required when ENVIRONMENT=production")
+
+    if not (os.getenv("SERPAPI_API_KEY") or os.getenv("SERPAPI_KEY")):
+        errors.append("SERPAPI_API_KEY or SERPAPI_KEY is required when ENVIRONMENT=production")
+
+    if _env_bool("USE_MOCKS", default=False):
+        errors.append("USE_MOCKS must be false when ENVIRONMENT=production")
+
+    if not _tracing_enabled():
+        errors.append("ENABLE_TRACING must not be false when ENVIRONMENT=production")
+
+    db_path = os.getenv("JOB_HUNT_DB_PATH", "").strip()
+    if db_path and not os.path.isabs(db_path):
+        errors.append("JOB_HUNT_DB_PATH must be an absolute path when ENVIRONMENT=production")
+
+    allowed_origins = _parse_allowed_origins()
+    if "*" in allowed_origins:
+        errors.append("ALLOWED_ORIGINS must name the Vercel URL; '*' is not allowed in production")
+    for origin in allowed_origins:
+        if any(marker in origin for marker in LOCAL_ORIGIN_MARKERS):
+            errors.append("ALLOWED_ORIGINS must not include localhost in production")
+            break
+
+    if errors:
+        raise RuntimeError("Invalid production config: " + "; ".join(errors))
 
 
 def _unknown_draft_ids(
@@ -78,6 +146,7 @@ def _unknown_draft_ids(
 
 def create_app() -> FastAPI:
     """Application factory. Tests use this to swap the SQLite path per run."""
+    _validate_production_config()
     app = FastAPI(title="Job Hunt Signal API", version="0.1.0")
     app.add_middleware(
         CORSMiddleware,
@@ -88,7 +157,13 @@ def create_app() -> FastAPI:
 
     persistence.init_db()
 
-    use_mocks = os.getenv("USE_MOCKS", "0") == "1"
+    use_mocks = _env_bool("USE_MOCKS", default=False)
+    enable_tracing = _tracing_enabled()
+
+    @app.get("/health", response_model=HealthResponse)
+    def health() -> HealthResponse:
+        """Lightweight liveness check for the deployment platform."""
+        return HealthResponse(ok=True)
 
     @app.post("/api/hunt", response_model=HuntResult)
     def post_hunt(request: HuntRequest) -> HuntResult:
@@ -100,6 +175,7 @@ def create_app() -> FastAPI:
             run_id=new_run_id,
             use_mocks=use_mocks,
             use_self_rag=request.use_self_rag,
+            enable_tracing=enable_tracing,
         )
         persistence.save_run(result)
         return result

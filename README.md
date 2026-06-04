@@ -7,8 +7,9 @@ An agent that runs a focused, evidence-based job hunt: find 3 matching roles, su
 ## Install
 
 ```bash
-python -m venv .venv && .venv\Scripts\activate
-pip install google-adk google-genai openinference-instrumentation-google-adk openinference-instrumentation-google-genai opentelemetry-sdk python-dotenv pydantic fastapi uvicorn mcp
+python -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
 cp .env.example .env  # fill in GOOGLE_API_KEY, SERPAPI_API_KEY, PHOENIX_*
 ```
 
@@ -40,12 +41,75 @@ Endpoints:
 POST /api/hunt                       { resume_text, criteria }       → HuntResult (with run_id)
 POST /api/runs/{run_id}/outcomes      { outcomes: [OutcomeLog] }      → { ok, inserted, outcomes }
 GET  /api/runs/{run_id}                                                → { hunt_result, outcomes }
+GET  /health                                                           → { ok: true }
 ```
 
 Configure persistence and CORS via env:
 
 - `JOB_HUNT_DB_PATH` — SQLite file for runs + outcomes (default `outcomes.db`).
 - `ALLOWED_ORIGINS` — comma-separated CORS allowlist (default dev origins for localhost 3000/5173).
+- `ENABLE_TRACING` — set to `1` so API-triggered hunts emit Phoenix spans.
+
+## Deploy
+
+A8 deploys the FastAPI backend to Fly.io and the Next.js frontend to Vercel.
+The backend stores SQLite state on a Fly volume mounted at `/data`.
+
+One-time Fly setup:
+
+```bash
+fly launch --no-deploy --config fly.toml
+fly volumes create data --size 1 --region bom --config fly.toml
+fly secrets set \
+  GOOGLE_API_KEY=... \
+  SERPAPI_API_KEY=... \
+  PHOENIX_API_KEY=... \
+  PHOENIX_COLLECTOR_ENDPOINT=https://app.phoenix.arize.com/s/... \
+  ALLOWED_ORIGINS=https://<your-vercel-app>.vercel.app \
+  --config fly.toml
+./scripts/deploy.sh
+```
+
+The Fly config sets `ENVIRONMENT=production`, `ENABLE_TRACING=1`,
+`JOB_HUNT_DB_PATH=/data/outcomes.db`, `PHOENIX_QUERY_TRANSPORT=rest`, and a
+720-hour Phoenix lookback for seeded demo traces. Startup fails loudly in
+production if required secrets are missing, localhost CORS is configured, mocks
+are enabled, or the DB path is not absolute.
+
+One-time Vercel setup:
+
+```bash
+cd frontend
+cp .env.example .env.local
+vercel link
+vercel env add NEXT_PUBLIC_API_BASE_URL production
+vercel --prod
+```
+
+Set `NEXT_PUBLIC_API_BASE_URL` to `https://job-hunt-agent.fly.dev` (or the Fly
+URL printed by `fly status`). After Vercel prints the production URL, update
+Fly's `ALLOWED_ORIGINS` secret to that exact URL and redeploy.
+
+Production smoke test:
+
+```bash
+curl https://job-hunt-agent.fly.dev/health
+curl -X POST https://job-hunt-agent.fly.dev/api/hunt \
+  -H "Content-Type: application/json" \
+  -d @fixtures/sample_hunt_request.json
+
+RUN_ID=<run_id from the hunt response>
+DRAFT_ID=<draft_id from the hunt response>
+curl -X POST https://job-hunt-agent.fly.dev/api/runs/$RUN_ID/outcomes \
+  -H "Content-Type: application/json" \
+  -d "{\"outcomes\":[{\"draft_id\":\"$DRAFT_ID\",\"outcome\":\"replied\",\"notes\":\"deploy smoke\"}]}"
+fly deploy --config fly.toml
+curl https://job-hunt-agent.fly.dev/api/runs/$RUN_ID
+```
+
+The final response should still include the logged outcome after redeploy; that
+proves the Fly volume is mounted correctly. Also verify the same `run_id` is
+visible in Phoenix before recording the demo.
 
 ## Example output
 
