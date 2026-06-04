@@ -64,7 +64,7 @@ def api_module(
 
     api_mod = importlib.reload(api_mod)
 
-    def stub(*, resume_text, criteria, run_id, use_mocks=False):  # noqa: ARG001
+    def stub(*, resume_text, criteria, run_id, use_mocks=False, use_self_rag=True):  # noqa: ARG001
         return _fake_run_hunt(run_id=run_id)
 
     monkeypatch.setattr(api_mod, "run_hunt", stub)
@@ -218,7 +218,7 @@ def test_db_path_env_var_is_honored(tmp_path: Path, monkeypatch: pytest.MonkeyPa
 
     api_mod = importlib.reload(api_mod)
 
-    def stub(*, resume_text, criteria, run_id, use_mocks=False):  # noqa: ARG001
+    def stub(*, resume_text, criteria, run_id, use_mocks=False, use_self_rag=True):  # noqa: ARG001
         return _fake_run_hunt(run_id=run_id)
 
     monkeypatch.setattr(api_mod, "run_hunt", stub)

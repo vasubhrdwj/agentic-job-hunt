@@ -36,7 +36,7 @@ class RunHuntTest(unittest.TestCase):
         tools = PipelineTools(
             search_jobs=lambda criteria: [self.role],
             find_referrals=lambda role: [self.person],
-            draft_message=lambda role, person, resume_text: (
+            draft_message=lambda role, person, resume_text, **_kw: (
                 f"Hi Priya, your {person.title} work at {role.company} lines up with my SCIM work."
             ),
         )
@@ -59,7 +59,7 @@ class RunHuntTest(unittest.TestCase):
         tools = PipelineTools(
             search_jobs=lambda criteria: [self.role],
             find_referrals=lambda role: [self.person],
-            draft_message=lambda role, person, resume_text: "message",
+            draft_message=lambda role, person, resume_text, **_kw: "message",
         )
 
         with patch("job_hunt_agent.run.build_pipeline_tools", return_value=tools):
@@ -83,7 +83,7 @@ class RunHuntTest(unittest.TestCase):
         tools = PipelineTools(
             search_jobs=lambda criteria: roles,
             find_referrals=lambda role: people,
-            draft_message=lambda role, person, resume_text: "message",
+            draft_message=lambda role, person, resume_text, **_kw: "message",
         )
 
         with patch("job_hunt_agent.run.build_pipeline_tools", return_value=tools):
@@ -136,7 +136,7 @@ class RunHuntTest(unittest.TestCase):
         tools = PipelineTools(
             search_jobs=lambda criteria: [self.role],
             find_referrals=lambda role: [self.person],
-            draft_message=lambda role, person, resume_text: (
+            draft_message=lambda role, person, resume_text, **_kw: (
                 f"Hi Priya, your {person.title} work at {role.company} lines up with SCIM."
             ),
         )
@@ -192,6 +192,31 @@ class RunHuntTest(unittest.TestCase):
         self.assertEqual(criteria.location, ["Remote-India", "Hyderabad"])
         self.assertEqual(criteria.seniority, "staff")
         self.assertEqual(criteria.comp_min_lpa, 30)
+
+    def test_run_hunt_threads_use_self_rag_to_draft_message(self) -> None:
+        captured: list[dict[str, object]] = []
+
+        def draft_capture(role, person, resume_text, **kwargs):  # noqa: ARG001
+            captured.append(kwargs)
+            return "captured"
+
+        tools = PipelineTools(
+            search_jobs=lambda criteria: [self.role],
+            find_referrals=lambda role: [self.person],
+            draft_message=draft_capture,
+        )
+
+        with patch("job_hunt_agent.run.build_pipeline_tools", return_value=tools):
+            run_hunt(
+                resume_text="resume",
+                criteria=self.criteria,
+                use_self_rag=False,
+            )
+
+        self.assertEqual(len(captured), 1)
+        self.assertEqual(captured[0]["use_self_rag"], False)
+        self.assertEqual(captured[0]["keywords"], ("SCIM", "identity"))
+        self.assertIsInstance(captured[0]["exemplar_cache"], dict)
 
     def test_hunt_result_json_round_trip(self) -> None:
         result = run_hunt(

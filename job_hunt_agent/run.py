@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
-from .schemas import HuntResult, JobCriteria, OutreachDraft, Person, Role
+from .schemas import HuntResult, JobCriteria, OutreachDraft, PastDraft, Person, Role
 from .tools.registry import build_pipeline_tools
 
 
@@ -25,13 +25,20 @@ def run_hunt(
     max_roles: int = DEFAULT_MAX_ROLES,
     max_referrals_per_role: int = DEFAULT_MAX_REFERRALS_PER_ROLE,
     use_mocks: bool = False,
+    use_self_rag: bool = True,
     enable_tracing: bool = False,
 ) -> HuntResult:
-    """Run job search, referral discovery, and message drafting."""
+    """Run job search, referral discovery, and message drafting.
+
+    ``use_self_rag`` controls V8 self-retrieval inside ``draft_message``. Pass
+    False for the V10 round-1 baseline so the demo can A/B compare against the
+    same input.
+    """
     criteria = JobCriteria.model_validate(criteria)
     run_id = run_id or uuid4().hex
     tools = build_pipeline_tools(use_mocks=use_mocks)
     tracer = _build_tracer(enable_tracing)
+    exemplar_cache: dict[tuple[frozenset[str], int], list[PastDraft]] = {}
 
     with _maybe_span(
         tracer,
@@ -44,6 +51,7 @@ def run_hunt(
             "job_hunt.max_roles": max_roles,
             "job_hunt.max_referrals_per_role": max_referrals_per_role,
             "job_hunt.use_mocks": use_mocks,
+            "job_hunt.use_self_rag": use_self_rag,
         },
     ) as run_span:
         with _maybe_span(tracer, "search_jobs"):
@@ -78,9 +86,17 @@ def run_hunt(
                         "job_hunt.role.keywords": tuple(criteria.role_keywords),
                         "job_hunt.person.source": person.source,
                         "job_hunt.person.title": person.title,
+                        "job_hunt.rag.use_self_rag": use_self_rag,
                     },
                 ) as draft_span:
-                    message = tools.draft_message(role, person, resume_text)
+                    message = tools.draft_message(
+                        role,
+                        person,
+                        resume_text,
+                        keywords=tuple(criteria.role_keywords),
+                        use_self_rag=use_self_rag,
+                        exemplar_cache=exemplar_cache,
+                    )
                     draft_span.set_attribute(
                         "job_hunt.draft.output_text",
                         _trim_attribute(str(message).strip()),
@@ -127,6 +143,13 @@ def parse_args() -> argparse.Namespace:
         help="Use the all-mock tool pipeline for fast local smoke tests.",
     )
     parser.add_argument(
+        "--no-self-rag",
+        dest="use_self_rag",
+        action="store_false",
+        help="Disable V8 self-RAG retrieval. Use for the V10 round-1 baseline.",
+    )
+    parser.set_defaults(use_self_rag=True)
+    parser.add_argument(
         "--trace",
         action="store_true",
         help="Emit Phoenix/OpenTelemetry spans for this deterministic pipeline run.",
@@ -170,6 +193,7 @@ def main() -> None:
         max_roles=args.max_roles,
         max_referrals_per_role=args.max_referrals,
         use_mocks=args.use_mocks,
+        use_self_rag=args.use_self_rag,
         enable_tracing=args.trace,
     )
     print(f"run_id: {result.run_id}")

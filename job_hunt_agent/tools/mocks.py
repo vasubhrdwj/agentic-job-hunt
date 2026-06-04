@@ -243,6 +243,7 @@ def draft_message_mock(
     role: Role,
     person: Person,
     resume_text: str = "",
+    **_kwargs: object,
 ) -> str:
     """Draft a concise mock outreach message for one role/person pair."""
     role = _validate_role(role)
