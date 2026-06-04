@@ -1,0 +1,10 @@
+{
+  "resume_text": "Senior backend engineer who built SCIM 2.0 provisioning, OIDC login, IAM lifecycle automation, and identity integrations for enterprise customers.",
+  "criteria": {
+    "role_keywords": ["SCIM", "identity", "IAM", "OIDC"],
+    "seniority": "senior",
+    "location": ["Remote-India", "Bengaluru", "Hyderabad"],
+    "comp_min_lpa": null,
+    "comp_max_lpa": null
+  }
+}

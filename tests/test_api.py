@@ -64,7 +64,15 @@ def api_module(
 
     api_mod = importlib.reload(api_mod)
 
-    def stub(*, resume_text, criteria, run_id, use_mocks=False, use_self_rag=True):  # noqa: ARG001
+    def stub(  # noqa: ARG001
+        *,
+        resume_text,
+        criteria,
+        run_id,
+        use_mocks=False,
+        use_self_rag=True,
+        enable_tracing=False,
+    ):
         return _fake_run_hunt(run_id=run_id)
 
     monkeypatch.setattr(api_mod, "run_hunt", stub)
@@ -92,6 +100,12 @@ def _post_hunt(client: TestClient) -> dict:
     )
     assert response.status_code == 200, response.text
     return response.json()
+
+
+def test_health_endpoint_returns_ok(client: TestClient) -> None:
+    response = client.get("/health")
+    assert response.status_code == 200
+    assert response.json() == {"ok": True}
 
 
 def test_post_hunt_returns_hunt_result_with_run_id(client: TestClient) -> None:
@@ -218,7 +232,15 @@ def test_db_path_env_var_is_honored(tmp_path: Path, monkeypatch: pytest.MonkeyPa
 
     api_mod = importlib.reload(api_mod)
 
-    def stub(*, resume_text, criteria, run_id, use_mocks=False, use_self_rag=True):  # noqa: ARG001
+    def stub(  # noqa: ARG001
+        *,
+        resume_text,
+        criteria,
+        run_id,
+        use_mocks=False,
+        use_self_rag=True,
+        enable_tracing=False,
+    ):
         return _fake_run_hunt(run_id=run_id)
 
     monkeypatch.setattr(api_mod, "run_hunt", stub)
@@ -230,3 +252,96 @@ def test_db_path_env_var_is_honored(tmp_path: Path, monkeypatch: pytest.MonkeyPa
     assert db.exists()
     # The persistence module also reads the env var directly.
     assert persistence.load_run is not None  # sanity import check
+
+
+def test_post_hunt_passes_tracing_flag_from_env(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    db = tmp_path / "api.db"
+    monkeypatch.setenv("JOB_HUNT_DB_PATH", str(db))
+    monkeypatch.setenv("ALLOWED_ORIGINS", "http://localhost:3000")
+    monkeypatch.setenv("ENABLE_TRACING", "1")
+
+    from job_hunt_agent import api as api_mod
+
+    api_mod = importlib.reload(api_mod)
+    captured: dict[str, object] = {}
+
+    def stub(  # noqa: ARG001
+        *,
+        resume_text,
+        criteria,
+        run_id,
+        use_mocks=False,
+        use_self_rag=True,
+        enable_tracing=False,
+    ):
+        captured["enable_tracing"] = enable_tracing
+        captured["use_mocks"] = use_mocks
+        captured["use_self_rag"] = use_self_rag
+        return _fake_run_hunt(run_id=run_id)
+
+    monkeypatch.setattr(api_mod, "run_hunt", stub)
+    api_mod.app = api_mod.create_app()
+
+    with TestClient(api_mod.app) as client:
+        _post_hunt(client)
+
+    assert captured["enable_tracing"] is True
+    assert captured["use_mocks"] is False
+    assert captured["use_self_rag"] is True
+
+
+def test_production_config_fails_loudly_when_required_env_is_missing(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from job_hunt_agent import api as api_mod
+
+    monkeypatch.setenv("ENVIRONMENT", "production")
+    for name in (
+        "GOOGLE_API_KEY",
+        "SERPAPI_API_KEY",
+        "SERPAPI_KEY",
+        "PHOENIX_API_KEY",
+        "PHOENIX_COLLECTOR_ENDPOINT",
+        "JOB_HUNT_DB_PATH",
+        "ALLOWED_ORIGINS",
+    ):
+        monkeypatch.delenv(name, raising=False)
+
+    with pytest.raises(RuntimeError, match="Invalid production config"):
+        importlib.reload(api_mod)
+
+    monkeypatch.delenv("ENVIRONMENT", raising=False)
+    monkeypatch.setenv("JOB_HUNT_DB_PATH", str(tmp_path / "recovered.db"))
+    importlib.reload(api_mod)
+
+
+def test_production_config_accepts_required_env(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from job_hunt_agent import api as api_mod
+
+    monkeypatch.setenv("ENVIRONMENT", "production")
+    monkeypatch.setenv("ENABLE_TRACING", "1")
+    monkeypatch.setenv("USE_MOCKS", "0")
+    monkeypatch.setenv("GOOGLE_API_KEY", "fake-google")
+    monkeypatch.setenv("SERPAPI_API_KEY", "fake-serpapi")
+    monkeypatch.setenv("PHOENIX_API_KEY", "fake-phoenix")
+    monkeypatch.setenv("PHOENIX_COLLECTOR_ENDPOINT", "https://app.phoenix.arize.com/s/demo")
+    monkeypatch.setenv("JOB_HUNT_DB_PATH", str(tmp_path / "data" / "outcomes.db"))
+    monkeypatch.setenv("ALLOWED_ORIGINS", "https://job-hunt-agent.vercel.app")
+
+    api_mod = importlib.reload(api_mod)
+
+    with TestClient(api_mod.app) as client:
+        response = client.get("/health")
+
+    assert response.status_code == 200
+    assert response.json() == {"ok": True}
+
+    monkeypatch.delenv("ENVIRONMENT", raising=False)
+    importlib.reload(api_mod)
