@@ -20,6 +20,10 @@ services:
         value: rest
       - key: PHOENIX_QUERY_LOOKBACK_HOURS
         value: "720"
+      # Phoenix Cloud regularly exceeds the 1.5s default on long lookbacks,
+      # and one timeout disables self-RAG for the whole run (exemplar cache).
+      - key: PHOENIX_QUERY_TIMEOUT_S
+        value: "8"
       - key: GOOGLE_API_KEY
         sync: false
       - key: SERPAPI_API_KEY

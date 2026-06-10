@@ -45,18 +45,24 @@ ONLY the message text. Return JSON only, matching the schema you are given.
 Score four dimensions, each an integer from 1 (bad) to 5 (excellent):
 
 - personalization: Is the message visibly written for THIS recipient?
-  5 = names the recipient's specific team, product area, or work
-  3 = references their title or company, but nothing about their actual work
+  5 = names the recipient's specific team or product area AND connects it to
+      their actual work
+  4 = references their actual work or team, but the connection is loose
+  3 = references only their title or company; nothing about their work
   1 = interchangeable; could be sent to anyone ("your team", "your company")
 - specificity: Does the sender ground the fit in concrete technical detail?
-  5 = cites a precise protocol, spec, or stack detail (e.g. "SCIM 2.0 RFC
-      7644", "Next.js App Router") connecting their experience to the role
-  3 = mentions real skills but generically ("identity systems", "frontend")
+  5 = cites a precise, verifiable identifier: an RFC number ("SCIM 2.0 RFC
+      7644"), an exact spec section, a named framework feature ("Next.js App
+      Router"), or a concrete scale metric ("40k-seat IdP")
+  4 = names a real technology or protocol, but without identifier-level
+      precision ("SCIM provisioning", "OIDC migration")
+  3 = real skills described generically ("identity systems", "frontend work")
   1 = no concrete detail ("passionate about technology", "strong skills")
 - ask: Is there one specific, low-friction next step?
-  5 = bounded and concrete ("15 minutes Tuesday or Wednesday?", "could you
-      point me to the hiring manager?")
-  3 = an ask exists but is vague ("would love to chat")
+  5 = time-boxed with concrete options ("15 minutes Tuesday or Wednesday?")
+  4 = specific and low-friction but not time-boxed ("could you point me to
+      the hiring manager for this team?")
+  3 = vague willingness ("open to a quick chat?", "would love to connect")
   1 = no real ask, or open-ended ("let me know your thoughts sometime")
 - tone: Does it read like a busy, competent human wrote it?
   5 = warm, direct, 3-4 sentences, no fluff
@@ -64,9 +70,10 @@ Score four dimensions, each an integer from 1 (bad) to 5 (excellent):
   1 = influencer language, hype, emoji, flattery, placeholders like
       [Your Name], or "I hope this finds you well"
 
-Be strict. A 3 means genuinely adequate, not "did not check". Reserve 5 for
-messages that fully earn it. Set rationale to one sentence naming the
-strongest and weakest dimension.
+Be strict. "Competent but generic" is a 3, not a 4. A 5 must be earned by the
+exact behaviors listed above -- when in doubt between two scores, give the
+lower one. Most adequate professional messages should average near 3. Set
+rationale to one sentence naming the strongest and weakest dimension.
 """.strip()
 
 

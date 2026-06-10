@@ -66,7 +66,7 @@ async def query_past_drafts(
     *,
     project: str = DEFAULT_PROJECT_NAME,
     transport: Transport | None = None,
-    timeout_s: float = DEFAULT_QUERY_TIMEOUT_SECONDS,
+    timeout_s: float | None = None,
 ) -> list[PastDraft]:
     """Return matching past drafts from Phoenix, sorted by eval score.
 
@@ -74,8 +74,14 @@ async def query_past_drafts(
     ``job_hunt.role.keywords`` attribute. Up to ``top_k`` drafts are returned,
     sorted by ``eval_score`` descending with ``None`` scores last. Auth errors,
     no traces, malformed payloads, MCP failures, and timeouts return ``[]``.
+
+    ``timeout_s`` defaults to the ``PHOENIX_QUERY_TIMEOUT_S`` env var, falling
+    back to 1.5s. Phoenix Cloud regularly exceeds 1.5s on long lookbacks, and
+    one timeout silences self-RAG for an entire run via the exemplar cache --
+    deployments should size this generously (8s in render.yaml).
     """
     _load_dotenv_if_available()
+    timeout_s = _resolve_timeout(timeout_s)
     keywords = _clean_keywords(role_keywords)
     if top_k <= 0 or not keywords:
         return []
@@ -114,6 +120,22 @@ async def query_past_drafts(
         return []
 
     return _select_top_drafts(spans, keywords, top_k)
+
+
+def _resolve_timeout(timeout_s: float | None) -> float:
+    if timeout_s is not None:
+        return timeout_s
+    raw = os.getenv("PHOENIX_QUERY_TIMEOUT_S", "").strip()
+    if raw:
+        try:
+            return max(0.1, float(raw))
+        except ValueError:
+            LOGGER.warning(
+                "Invalid PHOENIX_QUERY_TIMEOUT_S=%r; using %.1fs default.",
+                raw,
+                DEFAULT_QUERY_TIMEOUT_SECONDS,
+            )
+    return DEFAULT_QUERY_TIMEOUT_SECONDS
 
 
 def _select_top_drafts(

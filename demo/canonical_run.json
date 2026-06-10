@@ -1,0 +1,220 @@
+{
+  "run_id": "b05293ea193646bd8693eea8e6379871",
+  "roles": [
+    {
+      "company": "Komodo Health",
+      "title": "Senior IAM Engineer",
+      "url": "https://in.linkedin.com/jobs/view/senior-iam-engineer-at-komodo-health-4366683928",
+      "location": "Remote-India",
+      "summary": "Strong understanding of identity lifecycle management, directory services, SSO, MFA, SCIM provisioning, and federation (SAML, OIDC, OAuth).",
+      "match_reason": "Snippet matches SCIM, identity, OIDC in context: Strong understanding of identity lifecycle management, directory services, SSO, MFA, SCIM provisioning, and federation (SAML, OIDC, OAuth). Location signal matches Remote-India."
+    },
+    {
+      "company": "NextGen Identity Pty Ltd",
+      "title": "Okta SME",
+      "url": "https://in.linkedin.com/jobs/view/okta-sme-at-nextgen-identity-pty-ltd-4415789288",
+      "location": "Remote-India",
+      "summary": "Posted 11:17:25 AM. Job Title: Okta SME (Subject Matter Expert) Location: Remote (India) ... SCIM, and other protocols.",
+      "match_reason": "Title matches SCIM. Location signal matches Remote-India."
+    },
+    {
+      "company": "AHEAD",
+      "title": "Engineer - Microsoft",
+      "url": "https://in.linkedin.com/jobs/view/engineer-microsoft-at-ahead-4411779131",
+      "location": "Remote-India",
+      "summary": "... SCIM, XACML integration standards; Coordinate with IT security teams to ensure ...",
+      "match_reason": "Search result snippet matches SCIM. Location signal matches Remote-India."
+    }
+  ],
+  "outreach": [
+    {
+      "draft_id": "65b9f919201143a5bc83f961422432dc",
+      "role": {
+        "company": "Komodo Health",
+        "title": "Senior IAM Engineer",
+        "url": "https://in.linkedin.com/jobs/view/senior-iam-engineer-at-komodo-health-4366683928",
+        "location": "Remote-India",
+        "summary": "Strong understanding of identity lifecycle management, directory services, SSO, MFA, SCIM provisioning, and federation (SAML, OIDC, OAuth).",
+        "match_reason": "Snippet matches SCIM, identity, OIDC in context: Strong understanding of identity lifecycle management, directory services, SSO, MFA, SCIM provisioning, and federation (SAML, OIDC, OAuth). Location signal matches Remote-India."
+      },
+      "person": {
+        "name": "Ben Engel-Streich",
+        "title": "Senior IT Engineer with 10+ years building and running enterprise IT for healthcare...",
+        "company": "Komodo Health",
+        "profile_url": "https://www.linkedin.com/in/benjaminesx",
+        "source": "linkedin",
+        "why_relevant": "Their title (Senior IT Engineer with 10+ years building and running enterprise IT for healthcare...) suggests they are near the hiring team for Komodo Health's Senior IAM Engineer role."
+      },
+      "message": "Hi Ben, I saw Komodo Health's Senior IAM Engineer role and your IT Engineer title suggests you're close to the team handling identity lifecycle. My recent work includes building a SCIM 2.0 provisioning server and leading an OIDC provider migration. Would you be open to a quick 15-minute chat on Wednesday or Thursday to see if this is a good fit?\n\nThanks,",
+      "eval_score": 4.25
+    },
+    {
+      "draft_id": "60e3e737555a4bec9203a15843bb724c",
+      "role": {
+        "company": "Komodo Health",
+        "title": "Senior IAM Engineer",
+        "url": "https://in.linkedin.com/jobs/view/senior-iam-engineer-at-komodo-health-4366683928",
+        "location": "Remote-India",
+        "summary": "Strong understanding of identity lifecycle management, directory services, SSO, MFA, SCIM provisioning, and federation (SAML, OIDC, OAuth).",
+        "match_reason": "Snippet matches SCIM, identity, OIDC in context: Strong understanding of identity lifecycle management, directory services, SSO, MFA, SCIM provisioning, and federation (SAML, OIDC, OAuth). Location signal matches Remote-India."
+      },
+      "person": {
+        "name": "Aishwarya Karpurapu",
+        "title": "Senior Security Engineer passionate about helping organizations innovate securely...",
+        "company": "Komodo Health",
+        "profile_url": "https://www.linkedin.com/in/aishwarya-karpurapu",
+        "source": "linkedin",
+        "why_relevant": "Their title (Senior Security Engineer passionate about helping organizations innovate securely...) suggests they are near the hiring team for Komodo Health's Senior IAM Engineer role."
+      },
+      "message": "Hi Aishwarya, I saw Komodo Health's Senior IAM Engineer role and your Senior Security Engineer title suggests you're close to the identity lifecycle work. My recent work included designing and shipping a SCIM 2.0 provisioning server and leading an OIDC provider migration, which lines up with the posting. Would you be open to 15 min Tue or Wed for a quick pointer on whether this is the right team?\nThanks,",
+      "eval_score": 4.75
+    },
+    {
+      "draft_id": "09156c319ea34581ad0121be77d2e2b5",
+      "role": {
+        "company": "Komodo Health",
+        "title": "Senior IAM Engineer",
+        "url": "https://in.linkedin.com/jobs/view/senior-iam-engineer-at-komodo-health-4366683928",
+        "location": "Remote-India",
+        "summary": "Strong understanding of identity lifecycle management, directory services, SSO, MFA, SCIM provisioning, and federation (SAML, OIDC, OAuth).",
+        "match_reason": "Snippet matches SCIM, identity, OIDC in context: Strong understanding of identity lifecycle management, directory services, SSO, MFA, SCIM provisioning, and federation (SAML, OIDC, OAuth). Location signal matches Remote-India."
+      },
+      "person": {
+        "name": "Alex Soong",
+        "title": "Software Engineer",
+        "company": "Komodo Health",
+        "profile_url": "https://www.linkedin.com/in/alexsoong",
+        "source": "linkedin",
+        "why_relevant": "Their title (Software Engineer) suggests they are near the hiring team for Komodo Health's Senior IAM Engineer role."
+      },
+      "message": "Hi Alex, I saw Komodo Health's Senior IAM Engineer role and your Software Engineer title suggests you might be close to the team working on identity lifecycle management. My experience includes shipping a SCIM 2.0 provisioning server and leading an OIDC provider migration, which lines up with the role's requirements. Would you be open to 15 min Tue or Wed for a quick pointer on whether this is the right team?\n\nThanks,",
+      "eval_score": 4.75
+    },
+    {
+      "draft_id": "a283dc3675624a9f9e7a9156ec4a4a82",
+      "role": {
+        "company": "NextGen Identity Pty Ltd",
+        "title": "Okta SME",
+        "url": "https://in.linkedin.com/jobs/view/okta-sme-at-nextgen-identity-pty-ltd-4415789288",
+        "location": "Remote-India",
+        "summary": "Posted 11:17:25 AM. Job Title: Okta SME (Subject Matter Expert) Location: Remote (India) ... SCIM, and other protocols.",
+        "match_reason": "Title matches SCIM. Location signal matches Remote-India."
+      },
+      "person": {
+        "name": "Naseema Mohamed Jamal",
+        "title": "IAM Analyst",
+        "company": "NextGen Identity Pty Ltd",
+        "profile_url": "https://au.linkedin.com/in/naseema-mohamed-jamal-306354112",
+        "source": "linkedin",
+        "why_relevant": "Their title (IAM Analyst) is close to the Okta SME role, and the search result also surfaced the okta signal."
+      },
+      "message": "Hi Naseema, I saw NextGen Identity's Okta SME role and your IAM Analyst title looks close to the SCIM protocol work described. My recent work included designing and shipping a SCIM 2.0 provisioning server from scratch, which lines up with the posting. Could I ask for 15 min Wed or Thu to sanity-check team fit before I apply?\n\nThanks,",
+      "eval_score": 4.75
+    },
+    {
+      "draft_id": "38b52b8d417d4a6c92d51217e4b85d77",
+      "role": {
+        "company": "NextGen Identity Pty Ltd",
+        "title": "Okta SME",
+        "url": "https://in.linkedin.com/jobs/view/okta-sme-at-nextgen-identity-pty-ltd-4415789288",
+        "location": "Remote-India",
+        "summary": "Posted 11:17:25 AM. Job Title: Okta SME (Subject Matter Expert) Location: Remote (India) ... SCIM, and other protocols.",
+        "match_reason": "Title matches SCIM. Location signal matches Remote-India."
+      },
+      "person": {
+        "name": "Keshav Bansal",
+        "title": "Profile result mentioning NextGen Identity Pty Ltd",
+        "company": "NextGen Identity Pty Ltd",
+        "profile_url": "https://in.linkedin.com/in/keshav-bansal-148956209",
+        "source": "other",
+        "why_relevant": "Lower-confidence profile result for NextGen Identity Pty Ltd; verify manually, but the search result connects this person to the Okta SME target."
+      },
+      "message": "Hi Keshav, I saw NextGen Identity's Okta SME role and your work at NextGen seems directly tied to SCIM and other protocols. My recent work included designing and shipping a SCIM 2.0 provisioning server from scratch covering Users, Groups, and custom schema extensions. Would you be open to 15 min Tue or Wed for a quick pointer on whether this is the right team?\n\nThanks,",
+      "eval_score": 4.75
+    },
+    {
+      "draft_id": "87d5c00ef24647ab89fffb3563e83819",
+      "role": {
+        "company": "NextGen Identity Pty Ltd",
+        "title": "Okta SME",
+        "url": "https://in.linkedin.com/jobs/view/okta-sme-at-nextgen-identity-pty-ltd-4415789288",
+        "location": "Remote-India",
+        "summary": "Posted 11:17:25 AM. Job Title: Okta SME (Subject Matter Expert) Location: Remote (India) ... SCIM, and other protocols.",
+        "match_reason": "Title matches SCIM. Location signal matches Remote-India."
+      },
+      "person": {
+        "name": "Akshay Dange",
+        "title": "Profile result mentioning NextGen Identity Pty Ltd",
+        "company": "NextGen Identity Pty Ltd",
+        "profile_url": "https://in.linkedin.com/in/akshay-dange-b59817273",
+        "source": "other",
+        "why_relevant": "Lower-confidence profile result for NextGen Identity Pty Ltd; verify manually, but the search result connects this person to the Okta SME target."
+      },
+      "message": "Hi Akshay, I saw NextGen Identity's Okta SME role and your profile suggests you're with NextGen Identity Pty Ltd. My recent work included designing and shipping a SCIM 2.0 provisioning server from scratch, so the protocol work in the posting stood out. Would you be open to 15 min Tue or Wed for a quick pointer on whether this is the right team?\n\nThanks,",
+      "eval_score": 4.5
+    },
+    {
+      "draft_id": "386b56427ddd4215876de518359fe8bc",
+      "role": {
+        "company": "AHEAD",
+        "title": "Engineer - Microsoft",
+        "url": "https://in.linkedin.com/jobs/view/engineer-microsoft-at-ahead-4411779131",
+        "location": "Remote-India",
+        "summary": "... SCIM, XACML integration standards; Coordinate with IT security teams to ensure ...",
+        "match_reason": "Search result snippet matches SCIM. Location signal matches Remote-India."
+      },
+      "person": {
+        "name": "Grant Sewell",
+        "title": "Chief Security Officer",
+        "company": "AHEAD",
+        "profile_url": "https://www.linkedin.com/in/grantsewell",
+        "source": "linkedin",
+        "why_relevant": "Their title (Chief Security Officer) is close to the Engineer - Microsoft role, and the search result also surfaced the security signal."
+      },
+      "message": "Hi Grant, I saw AHEAD's Engineer - Microsoft role and your Chief Security Officer title looks tied to the security coordination mentioned. My recent work included designing and shipping a SCIM 2.0 provisioning server from scratch, which lines up with the integration standards in the posting. Would you be open to 15 min Tue or Wed for a quick pointer on whether this is the right team?\n\nThanks,",
+      "eval_score": 4.75
+    },
+    {
+      "draft_id": "66ab2f4db41541d59e34c28fc35fe952",
+      "role": {
+        "company": "AHEAD",
+        "title": "Engineer - Microsoft",
+        "url": "https://in.linkedin.com/jobs/view/engineer-microsoft-at-ahead-4411779131",
+        "location": "Remote-India",
+        "summary": "... SCIM, XACML integration standards; Coordinate with IT security teams to ensure ...",
+        "match_reason": "Search result snippet matches SCIM. Location signal matches Remote-India."
+      },
+      "person": {
+        "name": "Brayden Park",
+        "title": "Cloud Security Technical Consultant",
+        "company": "AHEAD",
+        "profile_url": "https://www.linkedin.com/in/braydenpark",
+        "source": "linkedin",
+        "why_relevant": "Their title (Cloud Security Technical Consultant) is close to the Engineer - Microsoft role, and the search result also surfaced the security signal."
+      },
+      "message": "Hi Brayden, I saw AHEAD's Engineer - Microsoft role and your Cloud Security Technical Consultant title looks close to the security coordination mentioned. My recent work included designing and shipping a SCIM 2.0 provisioning server, which lines up with the integration standards in the posting. Could I ask for 15 min Wed or Thu to sanity-check team fit before I apply?\n\nThanks,",
+      "eval_score": 4.75
+    },
+    {
+      "draft_id": "6776e2b99dcd4661b788be0ff162312f",
+      "role": {
+        "company": "AHEAD",
+        "title": "Engineer - Microsoft",
+        "url": "https://in.linkedin.com/jobs/view/engineer-microsoft-at-ahead-4411779131",
+        "location": "Remote-India",
+        "summary": "... SCIM, XACML integration standards; Coordinate with IT security teams to ensure ...",
+        "match_reason": "Search result snippet matches SCIM. Location signal matches Remote-India."
+      },
+      "person": {
+        "name": "Cory Carlson",
+        "title": "VP Security Sales",
+        "company": "AHEAD",
+        "profile_url": "https://www.linkedin.com/in/cory-carlson-5b79753",
+        "source": "linkedin",
+        "why_relevant": "Their title (VP Security Sales) is close to the Engineer - Microsoft role, and the search result also surfaced the security signal."
+      },
+      "message": "Hi Cory, I saw AHEAD's Engineer - Microsoft role and your VP Security Sales title looks relevant to the security coordination mentioned. My recent work included designing and shipping a SCIM 2.0 provisioning server, which lines up with the integration standards in the posting. Would you be open to 15 min Tue or Wed for a quick pointer on whether this is the right team?\n\nThanks,",
+      "eval_score": 4.75
+    }
+  ]
+}
