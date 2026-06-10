@@ -37,9 +37,15 @@ iteration of the corpus.
 
 ## How we built it
 
-- **Agent + pipeline:** Python, Google ADK, Gemini 2.5 Flash for tool calls,
-  drafting, and the LLM judge. A deterministic `run_hunt()` pipeline drives
-  search → referrals → draft → eval.
+- **Agent + pipeline:** Python, Google ADK, Gemini — with the drafting model
+  chosen by measurement, not hype. The drafter is env-swappable
+  (`GEMINI_DRAFT_MODEL`), and we A/B'd **Gemini 3.5 Flash** against 2.5
+  Flash through our verification gates with the judge held constant: 3.5
+  writes better baseline drafts (4.11 vs 3.86 judge avg) but that very
+  quality compresses the measurable self-RAG improvement (+0.42 vs +0.81).
+  We ship 2.5 Flash for drafting because this demo is about the loop, and
+  the trade-off is documented in the repo. A deterministic `run_hunt()`
+  pipeline drives search → referrals → draft → eval.
 - **Tools:** SerpAPI-backed job and people search (`site:linkedin.com`
   queries — no scraping), Gemini extraction into strict Pydantic contracts.
 - **Observability & the loop:** every run is traced to Arize Phoenix Cloud
@@ -77,9 +83,12 @@ iteration of the corpus.
 ## What we learned
 
 Observability isn't just for debugging — treated as a queryable corpus, traces
-become the substrate for self-improvement. And LLM judges are only as good as
+become the substrate for self-improvement. LLM judges are only as good as
 their calibration set: validate the judge before the pipeline, or the metric
-is noise.
+is noise. And stronger base models *shrink* measurable self-improvement —
+our Gemini 3.5 Flash experiment raised baseline quality and halved the
+visible gap, so even the choice of model generation ended up being an
+eval-driven decision.
 
 ## What's next
 
@@ -89,5 +98,5 @@ parsing. The seeded corpus retires as real outcomes accumulate.
 
 ## Built with
 
-`python` `google-adk` `gemini-2.5-flash` `arize-phoenix` `openinference`
+`python` `google-adk` `gemini-3.5-flash` `gemini-2.5-flash` `arize-phoenix` `openinference`
 `opentelemetry` `fastapi` `next.js` `tailwind` `serpapi` `render` `vercel`

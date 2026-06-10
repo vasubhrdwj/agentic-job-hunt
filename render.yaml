@@ -24,6 +24,13 @@ services:
       # and one timeout disables self-RAG for the whole run (exemplar cache).
       - key: PHOENIX_QUERY_TIMEOUT_S
         value: "8"
+      # Drafting model — an eval-driven choice, not a default. Gemini 3.5
+      # Flash drafts better baselines (4.11 vs 3.86 judge avg) but that
+      # compresses the measurable self-RAG gap (+0.42 vs +0.81), so the demo
+      # ships 2.5-flash where the loop's effect is clearest. The V9 judge is
+      # hard-coded to 2.5-flash so scores stay comparable across swaps.
+      - key: GEMINI_DRAFT_MODEL
+        value: "gemini-2.5-flash"
       - key: GOOGLE_API_KEY
         sync: false
       - key: SERPAPI_API_KEY
