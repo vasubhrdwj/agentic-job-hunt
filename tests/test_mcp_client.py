@@ -164,3 +164,17 @@ class LivePhoenixTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def test_resolve_timeout_prefers_explicit_then_env(monkeypatch) -> None:
+    from job_hunt_agent.mcp_client import DEFAULT_QUERY_TIMEOUT_SECONDS, _resolve_timeout
+
+    monkeypatch.setenv("PHOENIX_QUERY_TIMEOUT_S", "8")
+    assert _resolve_timeout(2.0) == 2.0
+    assert _resolve_timeout(None) == 8.0
+
+    monkeypatch.setenv("PHOENIX_QUERY_TIMEOUT_S", "not-a-number")
+    assert _resolve_timeout(None) == DEFAULT_QUERY_TIMEOUT_SECONDS
+
+    monkeypatch.delenv("PHOENIX_QUERY_TIMEOUT_S")
+    assert _resolve_timeout(None) == DEFAULT_QUERY_TIMEOUT_SECONDS

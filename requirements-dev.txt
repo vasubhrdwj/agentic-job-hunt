@@ -1,0 +1,4 @@
+# Local development / demo tooling. Not installed in the deployed image.
+-r requirements.txt
+matplotlib==3.10.9
+pytest==9.0.3
