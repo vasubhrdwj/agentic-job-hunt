@@ -25,6 +25,16 @@ TRACER = trace.get_tracer(__name__)
 
 DEFAULT_MODEL = "gemini-2.5-flash"
 DEFAULT_TEMPERATURE = 0.4
+
+
+def _draft_model() -> str:
+    """Drafting model, overridable per deployment.
+
+    The judge model in evals.py is intentionally NOT configurable here:
+    keeping the measuring stick constant is what makes the V10 round
+    comparison (and any model swap) interpretable.
+    """
+    return os.environ.get("GEMINI_DRAFT_MODEL", "").strip() or DEFAULT_MODEL
 DEFAULT_MAX_OUTPUT_TOKENS = 512
 RESUME_EXCERPT_CHARS = 800
 DEFAULT_EXEMPLAR_TOP_K = 3
@@ -120,7 +130,7 @@ def _generate(
     user_prompt = _build_user_prompt(role, person, resume_text, exemplars=exemplars)
 
     response = client.models.generate_content(
-        model=DEFAULT_MODEL,
+        model=_draft_model(),
         contents=user_prompt,
         config=genai_types.GenerateContentConfig(
             system_instruction=SYSTEM_PROMPT,
