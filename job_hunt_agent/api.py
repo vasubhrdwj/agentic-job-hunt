@@ -160,9 +160,12 @@ def create_app() -> FastAPI:
     use_mocks = _env_bool("USE_MOCKS", default=False)
     enable_tracing = _tracing_enabled()
 
-    @app.get("/health", response_model=HealthResponse)
+    @app.api_route("/health", methods=["GET", "HEAD"], response_model=HealthResponse)
     def health() -> HealthResponse:
-        """Lightweight liveness check for the deployment platform."""
+        """Lightweight liveness check for the deployment platform.
+
+        HEAD is allowed because uptime monitors (UptimeRobot) probe with it.
+        """
         return HealthResponse(ok=True)
 
     @app.post("/api/hunt", response_model=HuntResult)

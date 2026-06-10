@@ -108,6 +108,12 @@ def test_health_endpoint_returns_ok(client: TestClient) -> None:
     assert response.json() == {"ok": True}
 
 
+def test_health_endpoint_allows_head(client: TestClient) -> None:
+    """Uptime monitors (UptimeRobot) probe /health with HEAD requests."""
+    response = client.head("/health")
+    assert response.status_code == 200
+
+
 def test_post_hunt_returns_hunt_result_with_run_id(client: TestClient) -> None:
     body = _post_hunt(client)
     assert body["run_id"]
