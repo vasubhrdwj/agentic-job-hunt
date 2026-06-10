@@ -23,14 +23,18 @@ services:
       # Phoenix Cloud regularly exceeds the 1.5s default on long lookbacks,
       # and one timeout disables self-RAG for the whole run (exemplar cache).
       - key: PHOENIX_QUERY_TIMEOUT_S
-        value: "8"
-      # Drafting model — an eval-driven choice, not a default. Gemini 3.5
-      # Flash drafts better baselines (4.11 vs 3.86 judge avg) but that
-      # compresses the measurable self-RAG gap (+0.42 vs +0.81), so the demo
-      # ships 2.5-flash where the loop's effect is clearest. The V9 judge is
-      # hard-coded to 2.5-flash so scores stay comparable across swaps.
+        value: "15"
+      # Retrieval reads newest spans first; a small window lets fresh runs
+      # bury the curated seed exemplars. 1000 x 3 pages keeps ~3000 spans
+      # (~100 runs) in reach.
+      - key: PHOENIX_QUERY_SPAN_LIMIT
+        value: "1000"
+      # Gemini 3 per the hackathon brief (agent + drafting). The V9 judge is
+      # hard-coded to 2.5-flash so eval scores stay comparable across model
+      # swaps; the loop's lift on 2.5 drafting (+0.81) is documented in
+      # DEVPOST as a finding.
       - key: GEMINI_DRAFT_MODEL
-        value: "gemini-2.5-flash"
+        value: "gemini-3.5-flash"
       - key: GOOGLE_API_KEY
         sync: false
       - key: SERPAPI_API_KEY

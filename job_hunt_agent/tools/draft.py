@@ -23,7 +23,7 @@ from .mocks import draft_message_mock
 LOGGER = logging.getLogger(__name__)
 TRACER = trace.get_tracer(__name__)
 
-DEFAULT_MODEL = "gemini-2.5-flash"
+DEFAULT_MODEL = "gemini-3.5-flash"
 DEFAULT_TEMPERATURE = 0.4
 DEFAULT_MAX_OUTPUT_TOKENS = 512
 RESUME_EXCERPT_CHARS = 800

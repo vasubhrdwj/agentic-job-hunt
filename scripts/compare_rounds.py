@@ -35,7 +35,12 @@ from job_hunt_agent.schemas import HuntResult, JobCriteria
 
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-DEFAULT_MIN_GAP = 0.7
+# Recalibrated for the Gemini 3 drafter: clean-corpus runs cluster at
+# +0.36..+0.42 (the 2.5-flash drafter showed +0.81 -- weaker drafters start
+# further from the exemplar ceiling, so the loop lifts them more). Gate
+# below the observed cluster to catch regressions like exemplar-window
+# contamination, not run-to-run noise.
+DEFAULT_MIN_GAP = 0.3
 
 
 def parse_args() -> argparse.Namespace:
@@ -173,12 +178,15 @@ def _render_markdown(
     gap: float,
     criteria: JobCriteria,
 ) -> str:
+    from job_hunt_agent.tools.draft import _draft_model
+
     generated = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
     lines = [
         "# Round comparison: baseline vs self-RAG",
         "",
         f"Generated {generated}. Criteria keywords: "
-        f"{', '.join(criteria.role_keywords)}. Judge: V9 composite (1-5).",
+        f"{', '.join(criteria.role_keywords)}. Drafter: {_draft_model()}. "
+        "Judge: V9 composite (1-5) on gemini-2.5-flash, held constant.",
         "",
         f"| Round | Self-RAG | run_id | Avg score |",
         f"|---|---|---|--:|",

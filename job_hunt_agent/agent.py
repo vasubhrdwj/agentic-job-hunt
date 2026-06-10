@@ -16,7 +16,7 @@ from .tracing import configure_phoenix_tracing
 
 
 APP_NAME = "job_hunt_app"
-DEFAULT_MODEL = "gemini-2.5-flash"
+DEFAULT_MODEL = "gemini-3.5-flash"
 DEFAULT_USER_ID = "vasu"
 
 SYSTEM_INSTRUCTION = """

@@ -2,12 +2,12 @@
 
 An agent that runs a focused, evidence-based job hunt — and **learns to write better outreach by reading its own traces**. Paste a resume and criteria: it finds 3 matching roles, surfaces 3 plausible referral targets per role, drafts a concise personalized message for each, and scores every draft with an LLM judge. Before drafting, it retrieves its highest-scoring past messages from Arize Phoenix and imitates what already worked. No fabricated profile URLs, no LinkedIn-influencer copy.
 
-> Submission for the Arize × Google hackathon (Gemini + Phoenix).
+> Submission for the Arize × Google hackathon (Gemini 3 + Agent Builder + Phoenix).
 > **Live app:** https://agentic-job-hunt.vercel.app · **Demo video:** _[add link after upload]_ · **Writeup:** [demo/DEVPOST.md](demo/DEVPOST.md)
 
 ![Round comparison: judge scores climb when self-RAG is on](demo/round_comparison.png)
 
-*Same resume, same criteria, judge held constant — round 2 retrieves the agent's three best past drafts from Phoenix as exemplars. Regenerate with `python scripts/compare_rounds.py`.*
+*Same resume, same criteria, judge held constant — round 2 retrieves the agent's best past drafts from Phoenix as exemplars. Drafter: Gemini 3.5 Flash (production config), gap +0.39. The same loop lifts the weaker Gemini 2.5 Flash drafter by [+0.81](demo/round_comparison_gemini25.md) — the agent's own memory helps weaker writers most. Regenerate with `python scripts/compare_rounds.py`.*
 
 ## Install
 
@@ -49,7 +49,8 @@ Three pieces close the loop; each has a verification command:
    them into the prompt as exemplars. A/B it:
    `PHOENIX_QUERY_LOOKBACK_HOURS=720 python scripts/compare_rounds.py --trace`
    writes `demo/round_comparison.md` + `.png` and fails if the self-RAG
-   round doesn't beat baseline by +0.7.
+   round doesn't beat baseline by +0.3 (gate calibrated for the Gemini 3.5
+   Flash drafter; both model's charts live in `demo/`).
 
 Dev extras (matplotlib, pytest): `pip install -r requirements-dev.txt`.
 

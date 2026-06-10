@@ -178,3 +178,29 @@ def test_resolve_timeout_prefers_explicit_then_env(monkeypatch) -> None:
 
     monkeypatch.delenv("PHOENIX_QUERY_TIMEOUT_S")
     assert _resolve_timeout(None) == DEFAULT_QUERY_TIMEOUT_SECONDS
+
+
+def test_select_top_drafts_dedupes_identical_messages() -> None:
+    from job_hunt_agent.mcp_client import _select_top_drafts
+
+    def span(span_id: str, message: str, score: float) -> dict:
+        return {
+            "context": {"span_id": span_id, "trace_id": "t1"},
+            "attributes": {
+                "job_hunt.draft.output_text": message,
+                "job_hunt.role.keywords": "SCIM, identity",
+                "job_hunt.role.title": "Engineer",
+                "job_hunt.role.company": "Okta",
+                "job_hunt.eval.composite_score": score,
+            },
+        }
+
+    spans = [
+        span("a", "Hi Anika, SCIM 2.0 work.", 4.9),
+        span("b", "Hi  Anika,  SCIM 2.0 work.", 4.9),  # same text, re-uploaded
+        span("c", "Hi Rahul, different message.", 4.7),
+        span("d", "Hi Meera, third message.", 4.6),
+    ]
+    drafts = _select_top_drafts(spans, ["SCIM"], top_k=3)
+    assert len(drafts) == 3
+    assert {d.span_id for d in drafts} == {"a", "c", "d"}

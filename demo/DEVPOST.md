@@ -37,24 +37,28 @@ iteration of the corpus.
 
 ## How we built it
 
-- **Agent + pipeline:** Python, Google ADK, Gemini — with the drafting model
-  chosen by measurement, not hype. The drafter is env-swappable
-  (`GEMINI_DRAFT_MODEL`), and we A/B'd **Gemini 3.5 Flash** against 2.5
-  Flash through our verification gates with the judge held constant. Across
-  three paired runs, 3.5 consistently wrote better *baseline* drafts (~4.2
-  vs ~3.9 judge avg) — and precisely because it starts closer to the
-  exemplar ceiling, its measurable self-RAG lift shrank to between +0.03
-  and +0.42, versus +0.81 in our recorded 2.5 comparison. We ship 2.5
-  Flash for drafting because this demo is about the loop; every run is
-  traced in Phoenix if you want to check our math. A deterministic
-  `run_hunt()` pipeline drives search → referrals → draft → eval.
+- **Agent + pipeline:** Python on Google ADK — the open-source agent
+  framework in Google Cloud's Agent Builder suite — with **Gemini 3.5
+  Flash** powering the agent and all outreach drafting. The LLM judge runs
+  on Gemini 2.5 Flash and is deliberately held constant so eval scores stay
+  comparable across drafter changes. A deterministic `run_hunt()` pipeline
+  drives search → referrals → draft → eval.
+- **Cross-model finding:** the drafter is env-swappable
+  (`GEMINI_DRAFT_MODEL`), so we measured the loop on both generations with
+  the judge fixed. Gemini 3.5 Flash gains +0.39 from self-retrieval
+  (clean-corpus runs cluster +0.36–0.42); the weaker 2.5 Flash gains
+  **+0.81** from the very same loop. Stronger drafters start closer to the
+  exemplar ceiling — the agent's own memory helps weaker writers most.
+  Both charts ship in `demo/`, and every run is traced in Phoenix.
 - **Tools:** SerpAPI-backed job and people search (`site:linkedin.com`
   queries — no scraping), Gemini extraction into strict Pydantic contracts.
 - **Observability & the loop:** every run is traced to Arize Phoenix Cloud
-  via OpenInference/OTLP. Self-RAG retrieval reads past `draft_message`
-  spans (REST, with MCP transport supported), filters by eval score ≥ 4,
-  and threads exemplars into the drafting prompt. Judge sub-scores are
-  written back onto the same spans — the traces *are* the training data.
+  via OpenInference/OTLP. Self-RAG retrieval integrates the **Arize Phoenix
+  MCP server** (`@arizeai/phoenix-mcp`), with a REST fallback that the slim
+  hosted container uses; both transports read past `draft_message` spans,
+  filter by eval score ≥ 4, dedupe, and thread exemplars into the drafting
+  prompt. Judge sub-scores are written back onto the same spans — the
+  traces *are* the training data.
 - **App:** FastAPI backend on Render, Next.js + Tailwind frontend on Vercel,
   SQLite outcome log, seeded 18-message outreach corpus with a documented
   quality rubric.
@@ -70,6 +74,12 @@ iteration of the corpus.
 - **One silent timeout disabled the whole loop.** Phoenix queries are cached
   per run, so a single 1.5s timeout meant zero exemplars for all nine
   drafts. Found it in the traces — fixed with a configurable timeout.
+- **The corpus buried its own best examples.** Retrieval reads newest spans
+  first, so a night of experiment traces pushed the curated seed corpus out
+  of the fetch window — exemplar quality silently degraded to
+  photocopies-of-photocopies and one run's improvement gap collapsed to
+  +0.03. We diagnosed it by querying Phoenix the same way the agent does,
+  widened the span window 10×, and added message-level dedup.
 - **Free-tier hosting honesty.** Render's free tier has no persistent disk
   and sleeps after 15 idle minutes. We kept SQLite ephemeral, documented the
   trade-off, and added a keep-alive monitor instead of pretending it's prod.
@@ -88,9 +98,9 @@ Observability isn't just for debugging — treated as a queryable corpus, traces
 become the substrate for self-improvement. LLM judges are only as good as
 their calibration set: validate the judge before the pipeline, or the metric
 is noise. And stronger base models *shrink* measurable self-improvement —
-our Gemini 3.5 Flash experiments raised baseline quality and collapsed the
-visible gap to a fraction of 2.5's, so even the choice of model generation
-ended up being an eval-driven decision.
+Gemini 3.5 Flash starts close enough to the exemplar ceiling that its lift
+is half of 2.5 Flash's from the identical loop, a trade-off we only saw
+because the drafter was swappable and the judge wasn't.
 
 ## What's next
 
@@ -100,5 +110,6 @@ parsing. The seeded corpus retires as real outcomes accumulate.
 
 ## Built with
 
-`python` `google-adk` `gemini-3.5-flash` `gemini-2.5-flash` `arize-phoenix` `openinference`
-`opentelemetry` `fastapi` `next.js` `tailwind` `serpapi` `render` `vercel`
+`python` `gemini-3.5-flash` `google-adk` `google-agent-builder` `gemini-2.5-flash`
+`arize-phoenix` `phoenix-mcp` `openinference` `opentelemetry` `fastapi` `next.js`
+`tailwind` `serpapi` `render` `vercel`
