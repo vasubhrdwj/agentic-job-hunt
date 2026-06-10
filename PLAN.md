@@ -521,14 +521,14 @@ Three screens, no auth, no fancy state management. Optimize for: judge can use i
 
 The outcomes flow needs to actually persist across the demo. Also: the backend needs to be reachable from the Vercel frontend.
 
-**Deliverable:** Fly.io backend + Vercel frontend wired to `POST /api/runs/{run_id}/outcomes`, with SQLite persisted on a Fly volume and Phoenix tracing enabled for hosted `/api/hunt` runs.
+**Deliverable:** Render (free tier) backend + Vercel frontend wired to `POST /api/runs/{run_id}/outcomes`, with SQLite on the instance's ephemeral filesystem (kept alive via uptime pings) and Phoenix tracing enabled for hosted `/api/hunt` runs.
 
 **Success checklist:**
 - [ ] Backend deployed to public URL; `/health` and `/api/hunt` reachable from Vercel
-- [ ] Fly volume mounted at `/data`; `JOB_HUNT_DB_PATH=/data/outcomes.db`
+- [ ] `JOB_HUNT_DB_PATH=/tmp/outcomes.db` (Render free has no disks — ephemeral by design); `/health` keep-alive ping every 5 min prevents idle spin-down wipes
 - [ ] Production env has `GOOGLE_API_KEY`, `SERPAPI_API_KEY`, `PHOENIX_API_KEY`, `PHOENIX_COLLECTOR_ENDPOINT`, `ALLOWED_ORIGINS`, and `ENABLE_TRACING=1`
 - [ ] Outcomes page POSTs to `/api/runs/{run_id}/outcomes` successfully
-- [ ] Logged outcomes show up on the `/runs/{run_id}` page and survive a redeploy
+- [ ] Logged outcomes show up on the `/runs/{run_id}` page and persist across requests (redeploys wipe the free-tier filesystem — freeze deploys after the demo recording)
 - [ ] Browser CORS allowlist is restricted to the production Vercel URL
 - [ ] The `run_id` returned by hosted `/api/hunt` appears in Phoenix traces
 
@@ -574,7 +574,7 @@ Mostly the same rules as week 1; one new file-ownership column:
 |---|---|
 | File ownership | Vasu: `mcp_client.py`, `evals.py`, `scripts/seed_phoenix.py`, `scripts/compare_rounds.py`, `tools/draft.py` (RAG edits only). Arpita: `api.py`, `frontend/`, deployment configs, `demo/`, `README.md`. **Shared:** `schemas.py` (Arpita adds `OutcomeLog`, then locked). |
 | Schema changes | After Day 8 noon, any `schemas.py` edit = 5-min sync. |
-| Deploy secrets | Vasu owns Phoenix Cloud account + MCP keys. Arpita owns Vercel + backend host (Fly/Render). Both `.env.example` updated whenever a new key lands. |
+| Deploy secrets | Vasu owns Phoenix Cloud account + MCP keys. Arpita owns Vercel + backend host (Render). Both `.env.example` updated whenever a new key lands. |
 | Phoenix projects | Production demo runs go to `job-hunt-agent`. Noisy iteration goes to `job-hunt-agent-dev`. The comparison chart MUST read from `job-hunt-agent` (clean traces). |
 | Branches | One PR per task: `track-v/V6-mcp`, `track-a/A7-frontend-input`, etc. |
 | Daily sync | 15 min, same time as week 1. Topics: blockers, schema deltas, what the other person needs to unblock by tomorrow. |
@@ -633,7 +633,7 @@ Days 15–21 are buffer + polish + actual submission (Jun 11).
 | **Frontend timeline slips** (5 days for React + deploy is tight for one person). | Strict scope: 3 pages, no auth, no design system. If A7 isn't deployable by Day 11, fall back to a single-page React app served from FastAPI's static dir. |
 | **Eval judge gives noisy scores** that don't correlate with human judgement. | Hand-write 6 reference messages (3 "obviously good", 3 "obviously bad") and validate the judge against them BEFORE wiring it into the pipeline. If the judge can't tell them apart, fix the judge prompt — don't proceed with eval until it works. |
 | **Demo video is rushed and weak.** | Write the script Day 8, not Day 13. Record rough cuts continuously. Day 13 is for final edit only. |
-| **Hosting outage on submission day** (Vercel/Fly free tier hiccups). | Have a recorded video + GitHub repo + the JSON output of one canonical `run_hunt()` saved as `demo/canonical_run.json`. Judges can verify even if the URL is briefly down. |
+| **Hosting outage on submission day** (Vercel/Render free tier hiccups). | Have a recorded video + GitHub repo + the JSON output of one canonical `run_hunt()` saved as `demo/canonical_run.json`. Judges can verify even if the URL is briefly down. |
 | **Gemini 3 Pro swap.** Original PLAN had this for end of week 2 as a "cost vs. quality" call. | Test Pro on 5 sample (role, person, resume) tuples Day 12. If subjectively better, swap for the demo. If marginal, stay on 2.5 Flash — cheaper, faster, currently shipping good output. |
 
 ---

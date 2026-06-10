@@ -1,0 +1,34 @@
+services:
+  - type: web
+    name: job-hunt-agent
+    runtime: docker
+    plan: free
+    region: singapore
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: ENVIRONMENT
+        value: production
+      - key: ENABLE_TRACING
+        value: "1"
+      # Render free tier has no persistent disk: this file is wiped on every
+      # redeploy, restart, or idle spin-down. The /health keep-alive ping
+      # prevents the spin-down case; freeze deploys after the demo recording.
+      - key: JOB_HUNT_DB_PATH
+        value: /tmp/outcomes.db
+      - key: PHOENIX_QUERY_TRANSPORT
+        value: rest
+      - key: PHOENIX_QUERY_LOOKBACK_HOURS
+        value: "720"
+      - key: GOOGLE_API_KEY
+        sync: false
+      - key: SERPAPI_API_KEY
+        sync: false
+      - key: PHOENIX_API_KEY
+        sync: false
+      - key: PHOENIX_COLLECTOR_ENDPOINT
+        sync: false
+      # Must be the exact production Vercel URL; startup rejects '*' and
+      # localhost when ENVIRONMENT=production.
+      - key: ALLOWED_ORIGINS
+        sync: false

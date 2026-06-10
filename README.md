@@ -52,26 +52,35 @@ Configure persistence and CORS via env:
 
 ## Deploy
 
-A8 deploys the FastAPI backend to Fly.io and the Next.js frontend to Vercel.
-The backend stores SQLite state on a Fly volume mounted at `/data`.
+A8 deploys the FastAPI backend to Render (free tier) and the Next.js frontend
+to Vercel. Render's free tier has no persistent disk, so SQLite lives on the
+ephemeral filesystem at `/tmp/outcomes.db`: outcomes persist across requests,
+but a redeploy, restart, or idle spin-down wipes them. Two operational rules
+follow from that:
 
-One-time Fly setup:
+- A keep-alive ping on `/health` every 5 minutes prevents the 15-minute idle
+  spin-down (which would both wipe state and add a ~1-minute cold start for
+  the next visitor).
+- Freeze deploys once the demo is recorded — every push redeploys and resets
+  the DB. Phoenix traces are the durable record either way.
 
-```bash
-fly launch --no-deploy --config fly.toml
-fly volumes create data --size 1 --region bom --config fly.toml
-fly secrets set \
-  GOOGLE_API_KEY=... \
-  SERPAPI_API_KEY=... \
-  PHOENIX_API_KEY=... \
-  PHOENIX_COLLECTOR_ENDPOINT=https://app.phoenix.arize.com/s/... \
-  ALLOWED_ORIGINS=https://<your-vercel-app>.vercel.app \
-  --config fly.toml
-./scripts/deploy.sh
-```
+One-time Render setup:
 
-The Fly config sets `ENVIRONMENT=production`, `ENABLE_TRACING=1`,
-`JOB_HUNT_DB_PATH=/data/outcomes.db`, `PHOENIX_QUERY_TRANSPORT=rest`, and a
+1. Push the branch containing `render.yaml` to GitHub.
+2. Render dashboard → **New → Blueprint** → pick this repo. Render reads
+   `render.yaml` and creates the `job-hunt-agent` web service (Docker runtime,
+   free plan, Singapore region, health check on `/health`).
+3. Fill the five secret env vars when prompted: `GOOGLE_API_KEY`,
+   `SERPAPI_API_KEY`, `PHOENIX_API_KEY`, `PHOENIX_COLLECTOR_ENDPOINT`, and
+   `ALLOWED_ORIGINS`. For `ALLOWED_ORIGINS` use the production Vercel URL once
+   it exists (production startup rejects `*` and localhost — use a placeholder
+   like `https://pending.invalid` until the Vercel URL is known, then update).
+4. Deploys are automatic on every push to the connected branch.
+5. Add a free UptimeRobot (or cron-job.org) monitor on
+   `https://<service>.onrender.com/health` at a 5-minute interval.
+
+The blueprint sets `ENVIRONMENT=production`, `ENABLE_TRACING=1`,
+`JOB_HUNT_DB_PATH=/tmp/outcomes.db`, `PHOENIX_QUERY_TRANSPORT=rest`, and a
 720-hour Phoenix lookback for seeded demo traces. Startup fails loudly in
 production if required secrets are missing, localhost CORS is configured, mocks
 are enabled, or the DB path is not absolute.
@@ -86,30 +95,35 @@ vercel env add NEXT_PUBLIC_API_BASE_URL production
 vercel --prod
 ```
 
-Set `NEXT_PUBLIC_API_BASE_URL` to `https://job-hunt-agent.fly.dev` (or the Fly
-URL printed by `fly status`). After Vercel prints the production URL, update
-Fly's `ALLOWED_ORIGINS` secret to that exact URL and redeploy.
+Set `NEXT_PUBLIC_API_BASE_URL` to `https://<service>.onrender.com` (shown at
+the top of the Render service page). After Vercel prints the production URL,
+update Render's `ALLOWED_ORIGINS` env var to that exact URL — Render restarts
+the service automatically when env vars change.
 
 Production smoke test:
 
 ```bash
-curl https://job-hunt-agent.fly.dev/health
-curl -X POST https://job-hunt-agent.fly.dev/api/hunt \
+API=https://<service>.onrender.com
+curl $API/health
+curl -X POST $API/api/hunt \
   -H "Content-Type: application/json" \
   -d @fixtures/sample_hunt_request.json
 
 RUN_ID=<run_id from the hunt response>
 DRAFT_ID=<draft_id from the hunt response>
-curl -X POST https://job-hunt-agent.fly.dev/api/runs/$RUN_ID/outcomes \
+curl -X POST $API/api/runs/$RUN_ID/outcomes \
   -H "Content-Type: application/json" \
   -d "{\"outcomes\":[{\"draft_id\":\"$DRAFT_ID\",\"outcome\":\"replied\",\"notes\":\"deploy smoke\"}]}"
-fly deploy --config fly.toml
-curl https://job-hunt-agent.fly.dev/api/runs/$RUN_ID
+curl $API/api/runs/$RUN_ID
 ```
 
-The final response should still include the logged outcome after redeploy; that
-proves the Fly volume is mounted correctly. Also verify the same `run_id` is
-visible in Phoenix before recording the demo.
+The `/api/hunt` call blocks for the full pipeline (~90s) — if it dies with a
+gateway error instead of returning JSON, Render's proxy killed the long
+request and the fallback is to run the pipeline in a background task with the
+frontend polling `GET /api/runs/{run_id}`. The final `curl` should include the
+logged outcome. Also verify the same `run_id` is visible in Phoenix before
+recording the demo. Do not expect outcomes to survive a redeploy — that is
+the documented free-tier trade-off.
 
 ## Example output
 
