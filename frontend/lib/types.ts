@@ -41,6 +41,8 @@ export type OutreachDraft = {
   role: Role;
   person: Person;
   message: string;
+  /** Composite 1-5 LLM-judge score (V9). Null when the judge was unavailable. */
+  eval_score?: number | null;
 };
 
 export type HuntResult = {

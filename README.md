@@ -1,8 +1,13 @@
 # Job Hunt Signal
 
-An agent that runs a focused, evidence-based job hunt: find 3 matching roles, surface 3 plausible referral targets per role, and draft a concise outreach message for each. Every tool call is traced to Phoenix. No fabricated profile URLs, no LinkedIn-influencer copy.
+An agent that runs a focused, evidence-based job hunt — and **learns to write better outreach by reading its own traces**. Paste a resume and criteria: it finds 3 matching roles, surfaces 3 plausible referral targets per role, drafts a concise personalized message for each, and scores every draft with an LLM judge. Before drafting, it retrieves its highest-scoring past messages from Arize Phoenix and imitates what already worked. No fabricated profile URLs, no LinkedIn-influencer copy.
 
-> Submission draft for the Arize × Google hackathon (Gemini 3 + Agent Builder + Phoenix). Week 1 ships a deterministic pipeline + ADK agent; week 2 wires Phoenix MCP self-RAG, LLM-as-judge eval, and a frontend.
+> Submission for the Arize × Google hackathon (Gemini + Phoenix).
+> **Live app:** https://agentic-job-hunt.vercel.app · **Demo video:** _[add link after upload]_ · **Writeup:** [demo/DEVPOST.md](demo/DEVPOST.md)
+
+![Round comparison: judge scores climb when self-RAG is on](demo/round_comparison.png)
+
+*Same resume, same criteria, judge held constant — round 2 retrieves the agent's three best past drafts from Phoenix as exemplars. Regenerate with `python scripts/compare_rounds.py`.*
 
 ## Install
 
@@ -26,6 +31,27 @@ python -m job_hunt_agent.run \
 Output is structured JSON: `{ roles: [...], outreach: [{ role, person, message }, ...] }`.
 
 Add `--trace` to emit OpenTelemetry spans to your Phoenix project, or `--use-mocks` for the no-network smoke loop. The CLI also prints the generated `run_id` so you can correlate the output with a Phoenix trace or the persisted SQLite row.
+
+## The self-improvement loop
+
+Three pieces close the loop; each has a verification command:
+
+1. **Seeded corpus** — 18 synthetic past drafts with a documented quality
+   rubric ([fixtures/SEED_NOTES.md](fixtures/SEED_NOTES.md)). Upload:
+   `python scripts/seed_phoenix.py --project job-hunt-agent --allow-duplicates --verify`
+2. **LLM-as-judge eval** — every draft gets four 1–5 sub-scores
+   (personalization, specificity, ask, tone); the composite is written onto
+   the draft's Phoenix span. Calibrate the judge against handwritten
+   good/bad references before trusting it:
+   `python scripts/validate_judge.py`
+3. **Self-RAG drafting** — `draft_message` queries Phoenix for the
+   top-scoring past drafts on the run's keywords (score ≥ 4) and threads
+   them into the prompt as exemplars. A/B it:
+   `PHOENIX_QUERY_LOOKBACK_HOURS=720 python scripts/compare_rounds.py --trace`
+   writes `demo/round_comparison.md` + `.png` and fails if the self-RAG
+   round doesn't beat baseline by +0.7.
+
+Dev extras (matplotlib, pytest): `pip install -r requirements-dev.txt`.
 
 ## Run the API
 
@@ -161,14 +187,19 @@ the documented free-tier trade-off.
 ```
 job_hunt_agent/        ADK agent, schemas, pipeline runner, tracing
   api.py               FastAPI surface (POST /api/hunt, outcomes, GET run)
+  evals.py             LLM-as-judge draft scoring (V9)
+  mcp_client.py        Phoenix past-draft retrieval (self-RAG)
   persistence.py       SQLite layer for runs + outcomes
   tools/               search_jobs, find_referrals, draft_message (+ mocks)
-fixtures/              sample resume, JobCriteria fixtures, seed outreach corpus
-scripts/               preview_drafts.py, seed_phoenix.py
-tests/                 pytest suite — 96 passed, 3 live tests skipped
-PLAN.md                Full 2-week plan
+frontend/              Next.js app (input → review → outcomes)
+fixtures/              sample resume, criteria, seed corpus, judge references
+scripts/               seed_phoenix.py, validate_judge.py, compare_rounds.py
+demo/                  round comparison chart, demo script, Devpost writeup,
+                       canonical_run.json (offline backup of one real run)
+tests/                 pytest suite (offline; live tests skip without keys)
+PLAN.md                Full plan and task history
 ```
 
 ## License
 
-MIT.
+MIT — see [LICENSE](LICENSE).
