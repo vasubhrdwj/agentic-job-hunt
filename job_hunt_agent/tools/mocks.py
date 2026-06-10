@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from ..schemas import JobCriteria, Person, Role
@@ -259,4 +260,50 @@ def draft_message_mock(
         f"My background lines up through {resume_signal}. "
         "Would you be open to a quick pointer on whether this team is the right "
         "place to apply?"
+    )
+
+
+def score_draft_mock(
+    role: Role,
+    person: Person,
+    message: str,
+    **_kwargs: object,
+) -> "EvalResult":
+    """Deterministic offline judge mirroring the SEED_NOTES rubric.
+
+    Detects the same three signals the seeded corpus rewards (concrete
+    technical detail, named team, specific next step) so mock pipelines
+    produce plausible, varied scores without a network call.
+    """
+    from ..evals import EvalResult
+
+    _validate_role(role)
+    _validate_person(person)
+    text = message or ""
+
+    tech_signal = bool(
+        re.search(
+            r"\b(?:RFC ?\d+|SCIM|OIDC|OAuth|SAML|Next\.js|RAG|Kubernetes|gRPC)\b",
+            text,
+            re.IGNORECASE,
+        )
+    )
+    team_signal = bool(re.search(r"\b[A-Z][\w-]*(?: [A-Z][\w-]*)* team\b", text))
+    ask_signal = "?" in text and bool(
+        re.search(r"\b(?:\d+ ?min(?:ute)?s?|tue|wed|thu|next week|pointer)\b", text, re.IGNORECASE)
+    )
+    hype_signal = bool(re.search(r"!!|🚀|game.changer|crushing it|\[[^\]]+\]", text))
+
+    personalization = 5 if team_signal else 2
+    specificity = 5 if tech_signal else 2
+    ask = 5 if ask_signal else 2
+    tone = 2 if hype_signal else 4
+    composite = round((personalization + specificity + ask + tone) / 4, 2)
+    return EvalResult(
+        personalization=personalization,
+        specificity=specificity,
+        ask=ask,
+        tone=tone,
+        composite=composite,
+        rationale="Mock judge: deterministic rubric over seed-pattern signals.",
     )
