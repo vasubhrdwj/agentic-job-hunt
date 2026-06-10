@@ -40,9 +40,25 @@ export function DraftCard({ draft }: { draft: OutreachDraft }) {
             {draft.person.source} profile ↗
           </a>
         </div>
-        <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-[10px] uppercase tracking-wide text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300">
-          {draft.person.source}
-        </span>
+        <div className="flex items-center gap-1.5">
+          {typeof draft.eval_score === "number" && (
+            <span
+              title="LLM-judge composite (personalization, specificity, ask, tone)"
+              className={`rounded-full px-2 py-0.5 text-[10px] font-semibold tracking-wide ${
+                draft.eval_score >= 4
+                  ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300"
+                  : draft.eval_score >= 3
+                    ? "bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300"
+                    : "bg-rose-100 text-rose-700 dark:bg-rose-950 dark:text-rose-300"
+              }`}
+            >
+              {draft.eval_score.toFixed(1)} / 5
+            </span>
+          )}
+          <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-[10px] uppercase tracking-wide text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300">
+            {draft.person.source}
+          </span>
+        </div>
       </div>
 
       <p className="mb-3 text-xs text-zinc-600 dark:text-zinc-400">
