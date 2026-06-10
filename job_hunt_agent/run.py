@@ -101,11 +101,27 @@ def run_hunt(
                         "job_hunt.draft.output_text",
                         _trim_attribute(str(message).strip()),
                     )
+                    evaluation = (
+                        tools.score_draft(role, person, str(message).strip())
+                        if tools.score_draft is not None
+                        else None
+                    )
+                    if evaluation is not None:
+                        # The composite must live on this draft_message span,
+                        # not only the child eval span: query_past_drafts()
+                        # reads it from here (fixtures/SEED_NOTES.md).
+                        draft_span.set_attribute(
+                            "job_hunt.eval.composite_score",
+                            float(evaluation.composite),
+                        )
                 outreach.append(
                     OutreachDraft(
                         role=role,
                         person=person,
                         message=str(message).strip(),
+                        eval_score=(
+                            evaluation.composite if evaluation is not None else None
+                        ),
                     )
                 )
 

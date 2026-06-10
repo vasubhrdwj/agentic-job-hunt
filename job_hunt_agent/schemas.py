@@ -127,6 +127,15 @@ class OutreachDraft(BaseModel):
             "placeholder fields."
         ),
     )
+    eval_score: float | None = Field(
+        default=None,
+        ge=1,
+        le=5,
+        description=(
+            "Composite 1-5 LLM-judge score written by run_hunt() (V9). None "
+            "when the judge was unavailable; never blocks the pipeline."
+        ),
+    )
 
 
 class PastDraft(BaseModel):
