@@ -145,7 +145,20 @@ def _select_top_drafts(
 ) -> list[PastDraft]:
     drafts = _parse_past_drafts(spans, keywords)
     drafts.sort(key=lambda draft: (draft.eval_score is None, -(draft.eval_score or 0.0)))
-    return drafts[:top_k]
+    # Dedupe by message text: re-uploaded seeds and re-traced runs produce
+    # identical drafts under distinct span_ids, and duplicate exemplars
+    # waste few-shot slots.
+    selected: list[PastDraft] = []
+    seen_messages: set[str] = set()
+    for draft in drafts:
+        normalized = " ".join(draft.message.split()).casefold()
+        if normalized in seen_messages:
+            continue
+        seen_messages.add(normalized)
+        selected.append(draft)
+        if len(selected) == top_k:
+            break
+    return selected
 
 
 def _parse_past_drafts(spans: list[dict[str, Any]], keywords: list[str]) -> list[PastDraft]:

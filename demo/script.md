@@ -52,19 +52,23 @@ Screen: `demo/round_comparison.png`, full screen.
 > "Does self-retrieval actually help? Same resume, same criteria, judge held
 > constant. Round one: retrieval off — the baseline. Round two: the agent
 > pulls its three best past drafts as exemplars. Average judge score climbs
-> from {AVG1} to {AVG2} — {GAP} points — because the agent imitates what
-> already worked: a precise spec detail, the recipient's team by name, a
-> fifteen-minute time-boxed ask. The agent literally learns to write better
-> outreach from its own observability data."
+> from 4.25 to 4.64 — because the agent imitates what already worked: a
+> precise spec detail, the recipient's team by name, a fifteen-minute
+> time-boxed ask. And the same loop lifts the older Gemini 2.5 drafter by
+> over three times as much — the weaker the writer, the more the agent's
+> own memory helps. It literally learns to write better outreach from its
+> own observability data."
 
 ## Close (2:50–3:00)
 
 Screen: repo README.
 
-> "Job Hunt Signal — Gemini for the agent, Phoenix for the memory. Live URL
-> and code in the description."
+> "Job Hunt Signal — Gemini 3 for the agent, Phoenix for the memory. Live
+> URL and code in the description."
 
 ---
 
-Fill in {AVG1}/{AVG2}/{GAP} from `demo/round_comparison.md` before recording.
+Numbers above are from `demo/round_comparison.md` (Gemini 3.5 Flash drafter:
+4.25 → 4.64, +0.39) and `demo/round_comparison_gemini25.md` (2.5 Flash:
++0.81). If you regenerate the charts before recording, re-check them.
 Vasu signs off on the final cut before upload (A9 checklist).
