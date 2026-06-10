@@ -40,12 +40,14 @@ iteration of the corpus.
 - **Agent + pipeline:** Python, Google ADK, Gemini — with the drafting model
   chosen by measurement, not hype. The drafter is env-swappable
   (`GEMINI_DRAFT_MODEL`), and we A/B'd **Gemini 3.5 Flash** against 2.5
-  Flash through our verification gates with the judge held constant: 3.5
-  writes better baseline drafts (4.11 vs 3.86 judge avg) but that very
-  quality compresses the measurable self-RAG improvement (+0.42 vs +0.81).
-  We ship 2.5 Flash for drafting because this demo is about the loop, and
-  the trade-off is documented in the repo. A deterministic `run_hunt()`
-  pipeline drives search → referrals → draft → eval.
+  Flash through our verification gates with the judge held constant. Across
+  three paired runs, 3.5 consistently wrote better *baseline* drafts (~4.2
+  vs ~3.9 judge avg) — and precisely because it starts closer to the
+  exemplar ceiling, its measurable self-RAG lift shrank to between +0.03
+  and +0.42, versus +0.81 in our recorded 2.5 comparison. We ship 2.5
+  Flash for drafting because this demo is about the loop; every run is
+  traced in Phoenix if you want to check our math. A deterministic
+  `run_hunt()` pipeline drives search → referrals → draft → eval.
 - **Tools:** SerpAPI-backed job and people search (`site:linkedin.com`
   queries — no scraping), Gemini extraction into strict Pydantic contracts.
 - **Observability & the loop:** every run is traced to Arize Phoenix Cloud
@@ -86,9 +88,9 @@ Observability isn't just for debugging — treated as a queryable corpus, traces
 become the substrate for self-improvement. LLM judges are only as good as
 their calibration set: validate the judge before the pipeline, or the metric
 is noise. And stronger base models *shrink* measurable self-improvement —
-our Gemini 3.5 Flash experiment raised baseline quality and halved the
-visible gap, so even the choice of model generation ended up being an
-eval-driven decision.
+our Gemini 3.5 Flash experiments raised baseline quality and collapsed the
+visible gap to a fraction of 2.5's, so even the choice of model generation
+ended up being an eval-driven decision.
 
 ## What's next
 
