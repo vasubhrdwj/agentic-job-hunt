@@ -25,6 +25,12 @@ TRACER = trace.get_tracer(__name__)
 
 DEFAULT_MODEL = "gemini-2.5-flash"
 DEFAULT_TEMPERATURE = 0.4
+DEFAULT_MAX_OUTPUT_TOKENS = 512
+RESUME_EXCERPT_CHARS = 800
+DEFAULT_EXEMPLAR_TOP_K = 3
+EXEMPLAR_SCORE_THRESHOLD = 4.0
+EXEMPLAR_CHAR_CAP = 600
+EXEMPLAR_BLOCK_CHAR_CAP = 2_000
 
 
 def _draft_model() -> str:
@@ -35,12 +41,6 @@ def _draft_model() -> str:
     comparison (and any model swap) interpretable.
     """
     return os.environ.get("GEMINI_DRAFT_MODEL", "").strip() or DEFAULT_MODEL
-DEFAULT_MAX_OUTPUT_TOKENS = 512
-RESUME_EXCERPT_CHARS = 800
-DEFAULT_EXEMPLAR_TOP_K = 3
-EXEMPLAR_SCORE_THRESHOLD = 4.0
-EXEMPLAR_CHAR_CAP = 600
-EXEMPLAR_BLOCK_CHAR_CAP = 2_000
 
 SYSTEM_PROMPT = """
 You write short, human-sounding referral request messages for a job hunt.
