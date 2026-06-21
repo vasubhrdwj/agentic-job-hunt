@@ -6,7 +6,7 @@ import logging
 import re
 from dataclasses import dataclass
 from typing import Any, Literal
-from urllib.parse import urlparse
+from urllib.parse import urlsplit
 
 from ..schemas import Person, Role
 from .job_search import (
@@ -149,7 +149,6 @@ def find_referrals(role: Role) -> list[Person]:
         return []
 
     candidates: list[ReferralCandidate] = []
-    padding_candidates: list[ReferralCandidate] = []
     seen_urls: set[str] = set()
 
     for query in _build_queries(role)[:DEFAULT_MAX_QUERIES]:
@@ -171,17 +170,19 @@ def find_referrals(role: Role) -> list[Person]:
                 continue
             seen_urls.add(url_key)
 
-            if parsed.low_confidence:
-                padding_candidates.append(parsed)
-            else:
-                candidates.append(parsed)
+            candidates.append(parsed)
 
         if _has_enough_high_confidence_candidates(candidates):
             break
 
-    people = _choose_people(candidates, padding_candidates)
+    people = _choose_people(candidates)
     if not people:
-        LOGGER.warning("No referral targets found for %s - %s.", role.company, role.title)
+        LOGGER.warning(
+            "No verified current employees found for %s - %s. "
+            "Try the company team page or a direct LinkedIn company-employee search.",
+            role.company,
+            role.title,
+        )
     return people
 
 
@@ -273,19 +274,16 @@ def _candidate_from_result(
         company=role.company,
     )
 
-    low_confidence = False
     if not title:
-        title = f"Profile result mentioning {role.company}"
-        low_confidence = True
+        return None
     title_points_elsewhere = _title_points_to_other_company(title, role.company)
     display_title = _display_title(title)
-    if title_points_elsewhere:
-        low_confidence = True
-    if not current_company_signal:
-        low_confidence = True
+    if title_points_elsewhere or not current_company_signal or not display_title:
+        return None
 
     person_source: Literal["linkedin", "github", "company_page", "other"]
-    person_source = source if not low_confidence else "other"
+    person_source = source
+    confidence = 0.9 if source == "linkedin" else 0.75
     person = Person(
         name=name,
         title=display_title,
@@ -297,8 +295,10 @@ def _candidate_from_result(
             title=display_title,
             role_signal=role_signal,
             company_visible=current_company_signal,
-            low_confidence=low_confidence,
+            low_confidence=False,
         ),
+        verified_current_employer=True,
+        confidence=confidence,
     )
 
     return ReferralCandidate(
@@ -309,17 +309,31 @@ def _candidate_from_result(
             role=role,
             evidence_text=evidence_text,
             company_visible=current_company_signal,
-            low_confidence=low_confidence,
+            low_confidence=False,
         ),
         query=query,
         company_visible=current_company_signal,
-        low_confidence=low_confidence,
+        low_confidence=False,
     )
 
 
 def _source_from_url(url: str) -> Literal["linkedin", "github"] | None:
-    parsed = urlparse(url)
-    hostname = parsed.netloc.lower()
+    if "\\" in url or any(character.isspace() for character in url):
+        return None
+    try:
+        parsed = urlsplit(url)
+        port = parsed.port
+    except ValueError:
+        return None
+    if (
+        parsed.scheme != "https"
+        or not parsed.hostname
+        or parsed.username is not None
+        or parsed.password is not None
+        or port not in (None, 443)
+    ):
+        return None
+    hostname = parsed.hostname.casefold()
     if hostname == "linkedin.com" or hostname.endswith(".linkedin.com"):
         return "linkedin"
     if hostname == "github.com" or hostname.endswith(".github.com"):
@@ -328,8 +342,8 @@ def _source_from_url(url: str) -> Literal["linkedin", "github"] | None:
 
 
 def _normalize_profile_url(url: str, source: Literal["linkedin", "github"]) -> str | None:
-    parsed = urlparse(url)
-    hostname = parsed.netloc.lower()
+    parsed = urlsplit(url)
+    hostname = (parsed.hostname or "").casefold()
     path = parsed.path.rstrip("/")
 
     if source == "linkedin":
@@ -551,7 +565,6 @@ def _build_why_relevant(
 
 def _choose_people(
     candidates: list[ReferralCandidate],
-    padding_candidates: list[ReferralCandidate],
 ) -> list[Person]:
     ranked = sorted(
         candidates,
@@ -562,23 +575,21 @@ def _choose_people(
         ),
         reverse=True,
     )
-    if len(ranked) < DEFAULT_TARGET_COUNT:
-        ranked.extend(
-            sorted(
-                padding_candidates,
-                key=lambda candidate: candidate.score,
-                reverse=True,
-            )
-        )
-
     return [candidate.person for candidate in ranked[:DEFAULT_TARGET_COUNT]]
 
 
 def _current_company_signal(*, raw_title: str, snippet: str, company: str) -> bool:
+    normalized_snippet = _normalize_match_text(snippet)
+    for alias in _company_aliases(company):
+        if re.search(
+            rf"\b(?:former|formerly|previously|ex)\b.{{0,30}}\b{re.escape(alias)}\b",
+            normalized_snippet,
+        ):
+            return False
     if _company_matches(company, raw_title):
         return True
 
-    haystack = _normalize_match_text(snippet)
+    haystack = normalized_snippet
     for alias in _company_aliases(company):
         if f" at {alias}" in haystack:
             return True
@@ -598,11 +609,7 @@ def _has_enough_high_confidence_candidates(candidates: list[ReferralCandidate]) 
 def _company_matches(company: str, text: str) -> bool:
     haystack = _normalize_match_text(text)
     for alias in _company_aliases(company):
-        if len(alias) <= 2:
-            if re.search(rf"\b{re.escape(alias)}\b", haystack):
-                return True
-            continue
-        if alias in haystack:
+        if re.search(rf"\b{re.escape(alias)}\b", haystack):
             return True
     return False
 

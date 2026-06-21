@@ -72,6 +72,9 @@ class ReferralsTest(unittest.TestCase):
         self.assertTrue(all(isinstance(person, Person) for person in people))
         self.assertEqual([person.source for person in people], ["linkedin", "linkedin", "linkedin"])
         self.assertTrue(all(person.company == "Twilio" for person in people))
+        self.assertTrue(all(person.verified_current_employer for person in people))
+        self.assertTrue(all(person.confidence >= 0.5 for person in people))
+        self.assertTrue(all("Profile result mentioning" not in person.title for person in people))
         self.assertTrue(all("Twilio" in person.why_relevant or "role" in person.why_relevant for person in people))
         for person in people:
             _assert_profile_url(self, person.profile_url)
@@ -118,7 +121,7 @@ class ReferralsTest(unittest.TestCase):
         self.assertEqual(people[0].title, "Senior Software Engineer")
         _assert_profile_url(self, people[0].profile_url)
 
-    def test_find_referrals_uses_low_confidence_padding_without_fabricating_urls(self) -> None:
+    def test_find_referrals_omits_unverified_padding(self) -> None:
         payload = {
             "organic_results": [
                 {
@@ -140,11 +143,11 @@ class ReferralsTest(unittest.TestCase):
         ):
             people = find_referrals(self.role)
 
-        self.assertEqual(len(people), 2)
-        self.assertEqual(people[1].source, "other")
-        self.assertEqual(people[1].profile_url, "https://www.linkedin.com/in/aman-shah")
+        self.assertEqual(len(people), 1)
+        self.assertEqual(people[0].name, "Priya Rao")
+        self.assertTrue(people[0].verified_current_employer)
 
-    def test_find_referrals_marks_other_current_company_as_low_confidence(self) -> None:
+    def test_find_referrals_omits_other_current_company(self) -> None:
         payload = {
             "organic_results": [
                 {
@@ -161,9 +164,7 @@ class ReferralsTest(unittest.TestCase):
         ):
             people = find_referrals(self.role)
 
-        self.assertEqual(len(people), 1)
-        self.assertEqual(people[0].source, "other")
-        self.assertEqual(people[0].title, "AI Engineer")
+        self.assertEqual(people, [])
 
     def test_find_referrals_does_not_treat_domain_keyword_as_title(self) -> None:
         payload = {
@@ -182,9 +183,7 @@ class ReferralsTest(unittest.TestCase):
         ):
             people = find_referrals(self.role)
 
-        self.assertEqual(len(people), 1)
-        self.assertEqual(people[0].source, "other")
-        self.assertEqual(people[0].title, "Profile result mentioning Twilio")
+        self.assertEqual(people, [])
 
     def test_find_referrals_compacts_snippet_sentence_titles(self) -> None:
         payload = {
@@ -282,6 +281,40 @@ class ReferralsTest(unittest.TestCase):
         ):
             self.assertEqual(find_referrals(self.role), [])
 
+    def test_find_referrals_omits_former_employee(self) -> None:
+        payload = {
+            "organic_results": [
+                {
+                    "title": "Priya Rao - Staff Software Engineer | LinkedIn",
+                    "link": "https://www.linkedin.com/in/priya-rao-identity/",
+                    "snippet": "Staff Software Engineer, formerly at Twilio.",
+                }
+            ]
+        }
+
+        with (
+            patch.dict(os.environ, {"SERPAPI_API_KEY": "fake-key"}, clear=True),
+            patch.object(referrals, "_fetch_serpapi_search", return_value=payload),
+        ):
+            self.assertEqual(find_referrals(self.role), [])
+
+    def test_find_referrals_rejects_deceptive_profile_url(self) -> None:
+        payload = {
+            "organic_results": [
+                {
+                    "title": "Priya Rao - Staff Software Engineer - Twilio | LinkedIn",
+                    "link": "https://evil.example\\@linkedin.com/in/priya-rao/",
+                    "snippet": "Staff Software Engineer at Twilio.",
+                }
+            ]
+        }
+
+        with (
+            patch.dict(os.environ, {"SERPAPI_API_KEY": "fake-key"}, clear=True),
+            patch.object(referrals, "_fetch_serpapi_search", return_value=payload),
+        ):
+            self.assertEqual(find_referrals(self.role), [])
+
     def test_build_queries_targets_linkedin_and_github_profiles(self) -> None:
         queries = referrals._build_queries(self.role)
 
@@ -313,6 +346,8 @@ class ReferralsTest(unittest.TestCase):
             self.assertTrue(person.name)
             self.assertTrue(person.title)
             self.assertEqual(person.company, self.role.company)
+            self.assertTrue(person.verified_current_employer)
+            self.assertGreaterEqual(person.confidence, 0.5)
             _assert_profile_url(self, person.profile_url)
 
 
