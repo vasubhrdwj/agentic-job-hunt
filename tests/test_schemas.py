@@ -10,6 +10,9 @@ import pytest
 from pydantic import ValidationError
 
 from job_hunt_agent.schemas import (
+    Company,
+    CompanySource,
+    EmploymentType,
     HuntResult,
     JobCriteria,
     OutcomeLog,
@@ -18,12 +21,23 @@ from job_hunt_agent.schemas import (
     Person,
     Role,
 )
+from job_hunt_agent.sources.base import SourceAdapter
+
+
+LEGACY_ROLE_DATA = {
+    "company": "Okta",
+    "title": "Senior Engineer, Identity",
+    "url": "https://okta.com/careers/role/123",
+    "location": "Bangalore",
+    "summary": "Build SCIM 2.0 provisioning for enterprise customers.",
+    "match_reason": "Listing explicitly mentions SCIM 2.0 + Okta lifecycle hooks.",
+}
 
 
 # --- JobCriteria ---------------------------------------------------------
 
 def test_jobcriteria_round_trip_minimal():
-    """Minimal payload: optional comp fields default to None and survive a round trip."""
+    """A legacy minimal payload remains valid and receives only V2 defaults."""
     data = {
         "role_keywords": ["SCIM", "IAM"],
         "seniority": "mid",
@@ -32,6 +46,9 @@ def test_jobcriteria_round_trip_minimal():
     model = JobCriteria(**data)
     assert model.comp_min_lpa is None
     assert model.comp_max_lpa is None
+    assert model.employment_types == [EmploymentType.full_time]
+    assert model.max_age_days == 45
+    assert model.country == "in"
     # JSON round trip preserves equality.
     assert JobCriteria.model_validate_json(model.model_dump_json()) == model
 
@@ -46,7 +63,7 @@ def test_jobcriteria_round_trip_full():
         "comp_max_lpa": 80,
     }
     model = JobCriteria(**data)
-    assert model.model_dump() == data
+    assert model.model_dump(exclude_defaults=True) == data
     assert JobCriteria(**model.model_dump()) == model
 
 
@@ -60,24 +77,98 @@ def test_jobcriteria_rejects_bad_seniority():
         )
 
 
+# --- Company -------------------------------------------------------------
+
+def test_company_round_trip_and_safe_defaults():
+    company = Company(
+        name="Razorpay",
+        slug="razorpay",
+        source=CompanySource.greenhouse,
+        source_token="razorpay",
+    )
+
+    assert company.careers_domains == []
+    assert company.hire_locations == []
+    assert company.tags == []
+    assert company.active is True
+    assert Company.model_validate_json(company.model_dump_json()) == company
+
+    other = Company(
+        name="Example",
+        slug="example",
+        source=CompanySource.google_jobs,
+        source_token=None,
+    )
+    company.tags.append("fintech")
+    assert other.tags == []
+
+
+def test_company_requires_source_token_even_when_nullable():
+    with pytest.raises(ValidationError):
+        Company(
+            name="Razorpay",
+            slug="razorpay",
+            source=CompanySource.greenhouse,
+        )
+
+
 # --- Role ----------------------------------------------------------------
 
 def test_role_round_trip():
-    data = {
-        "company": "Okta",
-        "title": "Senior Engineer, Identity",
-        "url": "https://okta.com/careers/role/123",
-        "location": "Bangalore",
-        "summary": "Build SCIM 2.0 provisioning for enterprise customers.",
-        "match_reason": "Listing explicitly mentions SCIM 2.0 + Okta lifecycle hooks.",
-    }
-    model = Role(**data)
-    assert model.model_dump() == data
+    model = Role(**LEGACY_ROLE_DATA)
+    assert model.model_dump(exclude_defaults=True) == LEGACY_ROLE_DATA
     assert Role.model_validate_json(model.model_dump_json()) == model
 
 
+def test_legacy_role_construction_gets_backward_compatible_defaults():
+    model = Role(**LEGACY_ROLE_DATA)
+
+    assert model.source is CompanySource.google_jobs
+    assert model.apply_urls == []
+    assert model.posted_at is None
+    assert model.employment_type is EmploymentType.unknown
+    assert model.raw_description is None
+    assert model.fit_score is None
+    assert model.confidence == 1.0
+
+
+def test_role_v2_fields_round_trip():
+    model = Role(
+        **LEGACY_ROLE_DATA,
+        source=CompanySource.greenhouse,
+        apply_urls=[
+            "https://okta.com/careers/role/123",
+            "https://boards.greenhouse.io/okta/jobs/123",
+        ],
+        posted_at="2026-06-20T10:30:00Z",
+        employment_type=EmploymentType.full_time,
+        raw_description="Full job description.",
+        fit_score=0.87,
+        confidence=0.95,
+    )
+
+    assert Role.model_validate_json(model.model_dump_json()) == model
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [("fit_score", -0.01), ("fit_score", 1.01), ("confidence", -0.01), ("confidence", 1.01)],
+)
+def test_role_rejects_scores_outside_unit_interval(field, value):
+    with pytest.raises(ValidationError):
+        Role(**LEGACY_ROLE_DATA, **{field: value})
+
+
+def test_role_apply_urls_default_is_not_shared():
+    first = Role(**LEGACY_ROLE_DATA)
+    second = Role(**LEGACY_ROLE_DATA)
+
+    first.apply_urls.append("https://example.com/apply")
+    assert second.apply_urls == []
+
+
 def test_role_requires_all_fields():
-    """Every Role field is required — there are no optional fallbacks here."""
+    """All legacy Role fields remain required."""
     with pytest.raises(ValidationError):
         Role(company="Okta", title="Engineer")  # missing url, location, summary, match_reason
 
@@ -96,8 +187,39 @@ def test_person_round_trip():
         ),
     }
     model = Person(**data)
-    assert model.model_dump() == data
+    assert model.model_dump(exclude_defaults=True) == data
+    assert model.verified_current_employer is False
+    assert model.confidence == 0.0
     assert Person.model_validate_json(model.model_dump_json()) == model
+
+
+def test_person_honesty_fields_round_trip():
+    person = Person(
+        name="Priya Sharma",
+        title="Staff Engineer, Identity Platform",
+        company="Okta",
+        profile_url="https://linkedin.com/in/priya-sharma-example",
+        source="linkedin",
+        why_relevant="Current identity-platform engineer at the hiring company.",
+        verified_current_employer=True,
+        confidence=0.9,
+    )
+
+    assert Person.model_validate_json(person.model_dump_json()) == person
+
+
+@pytest.mark.parametrize("confidence", [-0.01, 1.01])
+def test_person_rejects_confidence_outside_unit_interval(confidence):
+    with pytest.raises(ValidationError):
+        Person(
+            name="X",
+            title="Y",
+            company="Z",
+            profile_url="https://example.com",
+            source="other",
+            why_relevant="Evidence-backed referral target.",
+            confidence=confidence,
+        )
 
 
 def test_person_rejects_bad_source():
@@ -111,6 +233,25 @@ def test_person_rejects_bad_source():
             source="twitter",  # not in the Literal
             why_relevant="...",
         )
+
+
+# --- SourceAdapter -------------------------------------------------------
+
+def test_source_adapter_is_runtime_importable_and_structural():
+    class Adapter:
+        name = "test"
+
+        def supports(self, company: Company) -> bool:
+            return company.active
+
+        def fetch_open_roles(
+            self,
+            company: Company,
+            criteria: JobCriteria,
+        ) -> list[Role]:
+            return []
+
+    assert isinstance(Adapter(), SourceAdapter)
 
 
 # --- HuntResult ----------------------------------------------------------

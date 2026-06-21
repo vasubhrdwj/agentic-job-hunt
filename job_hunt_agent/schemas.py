@@ -13,10 +13,64 @@ and field descriptions become part of that prompt).
 """
 
 from datetime import datetime
+from enum import Enum
 from typing import Literal
 from uuid import uuid4
 
 from pydantic import BaseModel, Field
+
+
+class CompanySource(str, Enum):
+    """Supported strategies for discovering a company's open roles."""
+
+    greenhouse = "greenhouse"
+    lever = "lever"
+    ashby = "ashby"
+    workday = "workday"
+    smartrecruiters = "smartrecruiters"
+    workable = "workable"
+    bespoke = "bespoke"
+    google_jobs = "google_jobs"
+    scrape = "scrape"
+
+
+class Company(BaseModel):
+    """Registry entry describing how to discover one company's open roles."""
+
+    name: str = Field(description="Display name of the company.")
+    slug: str = Field(description="Stable company identifier, for example 'razorpay'.")
+    source: CompanySource = Field(description="Strategy used to reach the careers board.")
+    source_token: str | None = Field(
+        description=(
+            "Platform-specific board token, site name, tenant, or equivalent. "
+            "None when the selected source does not need one."
+        ),
+    )
+    careers_domains: list[str] = Field(
+        default_factory=list,
+        description="Domains accepted as first-party apply URLs for this company.",
+    )
+    hire_locations: list[str] = Field(
+        default_factory=list,
+        description="Locations where this company is known to hire.",
+    )
+    tags: list[str] = Field(
+        default_factory=list,
+        description="Registry-pack tags such as 'backend' or 'fintech'.",
+    )
+    active: bool = Field(
+        default=True,
+        description="Whether this registry entry should participate in searches.",
+    )
+
+
+class EmploymentType(str, Enum):
+    """Normalized employment types exposed by source adapters."""
+
+    full_time = "full_time"
+    contract = "contract"
+    intern = "intern"
+    unknown = "unknown"
 
 
 class JobCriteria(BaseModel):
@@ -44,6 +98,18 @@ class JobCriteria(BaseModel):
     comp_max_lpa: int | None = Field(
         default=None,
         description="Upper bound for comp in lakhs per annum (INR). Optional.",
+    )
+    employment_types: list[EmploymentType] = Field(
+        default_factory=lambda: [EmploymentType.full_time],
+        description="Employment types accepted by the search.",
+    )
+    max_age_days: int | None = Field(
+        default=45,
+        description="Maximum listing age in days, or None to disable age filtering.",
+    )
+    country: str = Field(
+        default="in",
+        description="Lowercase country code used to scope source queries.",
     )
 
 
@@ -76,6 +142,38 @@ class Role(BaseModel):
             "echo the keywords back."
         ),
     )
+    source: CompanySource = Field(
+        default=CompanySource.google_jobs,
+        description="Source strategy that produced this role.",
+    )
+    apply_urls: list[str] = Field(
+        default_factory=list,
+        description="All known apply links, with first-party links first.",
+    )
+    posted_at: str | None = Field(
+        default=None,
+        description="Source-provided posting timestamp or date.",
+    )
+    employment_type: EmploymentType = Field(
+        default=EmploymentType.unknown,
+        description="Normalized employment type reported by the source.",
+    )
+    raw_description: str | None = Field(
+        default=None,
+        description="Full job-description text used by downstream fit scoring.",
+    )
+    fit_score: float | None = Field(
+        default=None,
+        ge=0,
+        le=1,
+        description="Resume-fit score from 0 to 1, when available.",
+    )
+    confidence: float = Field(
+        default=1.0,
+        ge=0,
+        le=1,
+        description="Source-quality confidence from 0 to 1.",
+    )
 
 
 class Person(BaseModel):
@@ -106,6 +204,16 @@ class Person(BaseModel):
             "specific role. Should reference something concrete about the role "
             "or the person's title — not generic praise."
         ),
+    )
+    verified_current_employer: bool = Field(
+        default=False,
+        description="True only when evidence confirms the person's current employer.",
+    )
+    confidence: float = Field(
+        default=0.0,
+        ge=0,
+        le=1,
+        description="Confidence in the referral evidence, from 0 to 1.",
     )
 
 

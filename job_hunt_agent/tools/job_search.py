@@ -21,12 +21,21 @@ DEFAULT_NUM_RESULTS_PER_QUERY = 10
 DEFAULT_MAX_RESULTS = 5
 DEFAULT_MAX_QUERIES = 9
 
+# google_jobs (structured engine) config — replaces the Google-dork job search.
+GOOGLE_JOBS_ENGINE = "google_jobs"
+DEFAULT_COUNTRY = "in"
+DEFAULT_LANGUAGE = "en"
+DEFAULT_MAX_JOB_QUERIES = 4
+
 
 def search_jobs(criteria: JobCriteria | dict[str, Any]) -> list[Role]:
-    """Return LinkedIn job postings that match the supplied criteria.
+    """Return currently-open job postings that match the supplied criteria.
 
-    Internals normalize SerpAPI's result shape, but the public contract stays
-    fixed for the agent: JobCriteria -> list[Role].
+    Uses SerpAPI's structured ``google_jobs`` engine (an aggregator across
+    LinkedIn, Indeed, Greenhouse, Lever, and company boards) instead of
+    scraping Google result snippets. The public contract stays fixed for the
+    agent: JobCriteria -> list[Role]. Returns [] honestly when nothing matches,
+    with no fallback that would reintroduce low-quality scraped data.
     """
     _load_dotenv_if_available()
     criteria = JobCriteria.model_validate(criteria)
@@ -37,32 +46,264 @@ def search_jobs(criteria: JobCriteria | dict[str, Any]) -> list[Role]:
         return []
 
     roles: list[Role] = []
-    seen: set[str] = set()
+    seen_job_ids: set[str] = set()
+    seen_keys: set[str] = set()
 
-    for query in _build_queries(criteria)[:DEFAULT_MAX_QUERIES]:
-        payload = _fetch_serpapi_search(
-            query=query,
-            api_key=api_key,
-            num_results=DEFAULT_NUM_RESULTS_PER_QUERY,
-        )
+    for query, location in _build_google_jobs_requests(criteria)[:DEFAULT_MAX_JOB_QUERIES]:
+        payload = _fetch_google_jobs(query=query, location=location, api_key=api_key)
         if not payload:
             continue
 
-        for item in _iter_serpapi_results(payload):
-            role = _role_from_result(item, criteria=criteria, query=query)
+        for item in payload.get("jobs_results", []):
+            if not isinstance(item, dict):
+                continue
+            role, job_id = _role_from_google_job(item, criteria=criteria)
             if role is None:
                 continue
-
+            if job_id and job_id in seen_job_ids:
+                continue
             key = _dedupe_key(role)
-            if key in seen:
+            if key in seen_keys:
                 continue
 
-            seen.add(key)
+            seen_job_ids.add(job_id or key)
+            seen_keys.add(key)
             roles.append(role)
             if len(roles) >= DEFAULT_MAX_RESULTS:
                 return roles
 
     return roles
+
+
+def _build_google_jobs_requests(criteria: JobCriteria) -> list[tuple[str, str]]:
+    """Build (query, location) pairs to send to the google_jobs engine."""
+    keywords = [_normalize_space(keyword) for keyword in criteria.role_keywords if keyword.strip()]
+    locations = [_normalize_space(location) for location in criteria.location if location.strip()]
+    if not keywords:
+        keywords = ["backend engineer"]
+    if not locations:
+        locations = ["India"]
+
+    requests: list[tuple[str, str]] = []
+    for keyword in keywords[:3]:
+        for location in locations[:3]:
+            requests.append(_google_jobs_query_for(keyword, location))
+    return _dedupe_request_pairs(requests)
+
+
+def _google_jobs_query_for(keyword: str, location: str) -> tuple[str, str]:
+    """Map a (keyword, location) into a google_jobs (q, location) pair.
+
+    google_jobs treats ``location`` as a physical search origin, so remote
+    requests become a 'remote' query anchored to the country instead.
+    """
+    lowered = location.lower()
+    if "remote" in lowered:
+        return f"{keyword} remote", "India"
+    if "india" not in lowered:
+        return keyword, f"{location}, India"
+    return keyword, location
+
+
+def _dedupe_request_pairs(pairs: list[tuple[str, str]]) -> list[tuple[str, str]]:
+    seen: set[tuple[str, str]] = set()
+    deduped: list[tuple[str, str]] = []
+    for pair in pairs:
+        key = (pair[0].lower(), pair[1].lower())
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(pair)
+    return deduped
+
+
+def _fetch_google_jobs(*, query: str, location: str, api_key: str) -> dict[str, Any] | None:
+    params = {
+        "engine": GOOGLE_JOBS_ENGINE,
+        "q": query,
+        "api_key": api_key,
+        "hl": DEFAULT_LANGUAGE,
+        "gl": DEFAULT_COUNTRY,
+    }
+    if location:
+        params["location"] = location
+    url = f"{SERPAPI_SEARCH_ENDPOINT}?{urlencode(params)}"
+    request = Request(url, headers={"Accept": "application/json"})
+
+    try:
+        with urlopen(request, timeout=20) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+    except HTTPError as exc:
+        LOGGER.warning("google_jobs request failed with HTTP %s: %s", exc.code, _read_error_body(exc))
+        return None
+    except (URLError, TimeoutError) as exc:
+        LOGGER.warning("google_jobs request failed: %s", exc)
+        return None
+    except json.JSONDecodeError as exc:
+        LOGGER.warning("google_jobs returned malformed JSON: %s", exc)
+        return None
+
+    error = payload.get("error")
+    if error:
+        # google_jobs returns an error string when a query simply has no matches.
+        LOGGER.info("google_jobs returned no results for %r: %s", query, error)
+        return None
+    return payload
+
+
+def _role_from_google_job(
+    item: dict[str, Any],
+    *,
+    criteria: JobCriteria,
+) -> tuple[Role | None, str | None]:
+    title = _normalize_space(str(item.get("title") or ""))
+    company = _normalize_space(str(item.get("company_name") or ""))
+    if not title or not company:
+        return None, None
+    if not _title_looks_like_engineering(title):
+        return None, None
+    if _seniority_mismatches(criteria.seniority, title):
+        return None, None
+
+    apply_url = _best_apply_link(item)
+    if not apply_url:
+        return None, None
+
+    raw_detected = item.get("detected_extensions")
+    detected = raw_detected if isinstance(raw_detected, dict) else {}
+    description = _normalize_space(str(item.get("description") or ""))
+    location = _google_job_location(item, detected, criteria)
+    summary = _summary_from_google_job(item, description, title=title, company=company)
+    match_reason = _match_reason_from_google_job(
+        criteria=criteria,
+        title=title,
+        description=description,
+        detected=detected,
+        location=location,
+    )
+    job_id = str(item.get("job_id") or "").strip() or None
+
+    role = Role(
+        company=company,
+        title=title,
+        url=apply_url,
+        location=location,
+        summary=summary,
+        match_reason=match_reason,
+    )
+    return role, job_id
+
+
+def _title_looks_like_engineering(title: str) -> bool:
+    tokens = set(_normalize_match_text(title).split())
+    role_terms = {"engineer", "developer", "sde", "programmer", "architect"}
+    return bool(role_terms & tokens)
+
+
+def _best_apply_link(item: dict[str, Any]) -> str:
+    options = item.get("apply_options")
+    if isinstance(options, list):
+        for option in options:
+            if isinstance(option, dict) and option.get("link"):
+                return str(option["link"]).strip()
+    share_link = item.get("share_link")
+    return str(share_link).strip() if share_link else ""
+
+
+def _google_job_location(
+    item: dict[str, Any],
+    detected: dict[str, Any],
+    criteria: JobCriteria,
+) -> str:
+    if detected.get("work_from_home"):
+        return "Remote"
+    location = _normalize_space(str(item.get("location") or ""))
+    if location:
+        return location
+    return criteria.location[0] if criteria.location else "Location not specified"
+
+
+def _summary_from_google_job(
+    item: dict[str, Any],
+    description: str,
+    *,
+    title: str,
+    company: str,
+) -> str:
+    highlights = item.get("job_highlights")
+    if isinstance(highlights, list):
+        for section in highlights:
+            if not isinstance(section, dict):
+                continue
+            section_title = str(section.get("title") or "").lower()
+            entries = section.get("items") or []
+            if section_title in {"responsibilities", "qualifications"} and entries:
+                joined = " ".join(
+                    _normalize_space(str(entry)) for entry in entries[:2] if str(entry).strip()
+                )
+                if joined:
+                    return _truncate(joined, 320)
+
+    if description:
+        sentences = re.split(r"(?<=[.!?])\s+", description)
+        summary = " ".join(sentences[:2]).strip()
+        if summary:
+            return _truncate(summary, 320)
+
+    return f"Open {title} role at {company}."
+
+
+def _match_reason_from_google_job(
+    *,
+    criteria: JobCriteria,
+    title: str,
+    description: str,
+    detected: dict[str, Any],
+    location: str,
+) -> str:
+    reasons: list[str] = []
+
+    matched = _first_keyword_sentence(description, criteria.role_keywords)
+    if matched is not None:
+        keyword, sentence = matched
+        reasons.append(f'Job description mentions "{keyword}": {_truncate(sentence, 160)}')
+    else:
+        reasons.append(f"'{title}' matches your backend search.")
+
+    posted_at = detected.get("posted_at")
+    if posted_at:
+        reasons.append(f"Posted {posted_at}.")
+    if location:
+        reasons.append(f"Location: {location}.")
+
+    return " ".join(reasons)
+
+
+def _first_keyword_sentence(
+    description: str,
+    keywords: list[str],
+) -> tuple[str, str] | None:
+    if not description:
+        return None
+    for keyword in keywords:
+        token = keyword.strip()
+        if not token:
+            continue
+        match = re.search(
+            r"[^.!?]*\b" + re.escape(token) + r"\b[^.!?]*[.!?]",
+            description,
+            flags=re.IGNORECASE,
+        )
+        if match:
+            return keyword, _normalize_space(match.group(0))
+    return None
+
+
+def _truncate(value: str, limit: int) -> str:
+    value = value.strip()
+    if len(value) <= limit:
+        return value
+    return value[:limit].rstrip() + "…"
 
 
 def _load_dotenv_if_available() -> None:
