@@ -1,0 +1,107 @@
+{
+  "_fixture_metadata": {
+    "captured_at": "2026-06-21",
+    "source": "Live SerpAPI google_jobs responses",
+    "queries": [
+      {
+        "q": "backend engineer remote",
+        "location": "India"
+      },
+      {
+        "q": "backend engineer",
+        "location": "Bengaluru, Karnataka, India"
+      }
+    ],
+    "notes": "Compact realistic excerpts. Long descriptions, apply-option lists, and opaque job IDs were trimmed after capture."
+  },
+  "search_parameters": {
+    "q": "backend engineer",
+    "engine": "google_jobs",
+    "location_requested": "Bengaluru, Karnataka, India",
+    "location_used": "Bengaluru,Karnataka,India",
+    "google_domain": "google.com",
+    "hl": "en",
+    "gl": "in"
+  },
+  "jobs_results": [
+    {
+      "title": "REMOTE (INDIA): Backend Engineer - SaaS platform",
+      "company_name": "MongoDB",
+      "location": "Anywhere",
+      "via": "HivLance",
+      "description": "Responsibilities:Maintain and enhance the backend services powering the SaaS platform (Node.js/Express/NestJS with TypeScript). Ensure uptime, scalability, and performance of APIs handling campaign generation, template storage, and credit-based billing. Optimize MongoDB queries, indexes, and caching strategies for high-performance APIs.",
+      "apply_options": [
+        {
+          "title": "HivLance",
+          "link": "https://hivlance.liveblog365.com/remote-jobs/remote-india-backend-engineer-saas-platform?utm_campaign=google_jobs_apply&utm_source=google_jobs_apply&utm_medium=organic"
+        },
+        {
+          "title": "Remote Jobs | CareerMint",
+          "link": "https://careermint.infinityfreeapp.com/remote-jobs/remote-india-backend-engineer-saas-platform?utm_campaign=google_jobs_apply&utm_source=google_jobs_apply&utm_medium=organic"
+        }
+      ],
+      "detected_extensions": {
+        "posted_at": "1 day ago",
+        "salary": "$25–$31 an hour",
+        "work_from_home": true,
+        "schedule_type": "Full–time"
+      },
+      "job_id": "eyJqb2JfdGl0bGUiOiJSRU1PVEUgKElORElBKTogQmFja2VuZCBFbmdpbmVlciAtIFNhYVMgcGxhdGZvcm0iLCJjb21wYW55X25hbWUiOiJNb25nb0RCIiwiaHRpZG9jaWQiOiJqUlo1Mk5jS01Bajk0c2VSQUFBQUFBPT0ifQ=="
+    },
+    {
+      "title": "Backend Engineer - AI Coding Agent",
+      "company_name": "Mercor",
+      "location": "Anywhere",
+      "via": "LinkedIn",
+      "description": "Position: Backend Engineer (Coding Agent Experience). Type: Contract. Compensation: $85/hour. Location: Remote. Use frontier AI coding agents to complete and evaluate complex engineering tasks.",
+      "apply_options": [
+        {
+          "title": "LinkedIn",
+          "link": "https://in.linkedin.com/jobs/view/backend-engineer-ai-coding-agent-at-mercor-4429656922?utm_campaign=google_jobs_apply&utm_source=google_jobs_apply&utm_medium=organic"
+        }
+      ],
+      "detected_extensions": {
+        "posted_at": "2 days ago",
+        "work_from_home": true,
+        "schedule_type": "Full–time"
+      },
+      "job_id": "eyJqb2JfdGl0bGUiOiJCYWNrZW5kIEVuZ2luZWVyIC0gQUkgQ29kaW5nIEFnZW50IiwiY29tcGFueV9uYW1lIjoiTWVyY29yIiwiaHRpZG9jaWQiOiIyY3J1eXE1UkRWN1p1U2VJQUFBQUFBPT0ifQ=="
+    },
+    {
+      "title": "Backend Engineer 4+Years | Microservices| Python| NoSQL | Django",
+      "company_name": "YMinds.AI",
+      "location": "Bengaluru, Karnataka",
+      "via": "LinkedIn",
+      "description": "Backend Engineer to join their engineering team and help build scalable, reliable, and high-performance backend systems that power a rapidly growing commerce platform. The ideal candidate will work closely with cross-functional teams to develop APIs, optimize data processing systems, build cloud-native microservices, and contribute to solutions that empower local businesses and communities.",
+      "apply_options": [
+        {
+          "title": "LinkedIn",
+          "link": "https://in.linkedin.com/jobs/view/backend-engineer-4%2Byears-microservices-python-nosql-django-at-yminds-ai-4430922897?utm_campaign=google_jobs_apply&utm_source=google_jobs_apply&utm_medium=organic"
+        }
+      ],
+      "detected_extensions": {
+        "posted_at": "2 days ago",
+        "schedule_type": "Full–time"
+      },
+      "job_id": "eyJqb2JfdGl0bGUiOiJCYWNrZW5kIEVuZ2luZWVyIDQrWWVhcnMgfCBNaWNyb3NlcnZpY2VzfCBQeXRob258IE5vU1FMIHwgRGphbmdvIiwiY29tcGFueV9uYW1lIjoiWU1pbmRzLkFJIiwiaHRpZG9jaWQiOiJPMzA0b2VSQ0h2Q1JOWGxMQUFBQUFBPT0ifQ=="
+    },
+    {
+      "title": "Staff Backend Engineer",
+      "company_name": "eBrevia",
+      "location": "Anywhere",
+      "via": "Instahyre",
+      "description": "Design, develop, and maintain scalable, secure, and high-availability backend services. Lead backend architecture decisions and drive system design discussions. Build and optimize APIs, microservices, and data pipelines.",
+      "apply_options": [
+        {
+          "title": "Instahyre",
+          "link": "https://www.instahyre.com/job-411543-staff-backend-engineer-at-ebrevia-work-from-home/?utm_campaign=google_jobs_apply&utm_source=google_jobs_apply&utm_medium=organic"
+        }
+      ],
+      "detected_extensions": {
+        "work_from_home": true,
+        "schedule_type": "Full–time"
+      },
+      "job_id": "eyJqb2JfdGl0bGUiOiJTdGFmZiBCYWNrZW5kIEVuZ2luZWVyIiwiY29tcGFueV9uYW1lIjoiZUJyZXZpYSIsImh0aWRvY2lkIjoiazZ5WExWMXZSaUxJZUx2YUFBQUFBQT09In0="
+    }
+  ]
+}

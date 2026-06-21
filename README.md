@@ -54,6 +54,19 @@ Three pieces close the loop; each has a verification command:
 
 Dev extras (matplotlib, pytest): `pip install -r requirements-dev.txt`.
 
+## Verify the company registry
+
+The REG Definition of Done is deliberately live and strict: every active company
+must return at least one posting with a matching company identity, where the ATS
+provides one, and an apply URL on a configured careers domain.
+
+```bash
+.venv/bin/python scripts/verify_registry.py --pack backend_india --live --strict-live
+```
+
+This command performs network requests and fails on dead or unverified sources.
+`pytest tests/test_registry.py` remains hermetic and never performs live checks.
+
 ## Run the API
 
 A6 wraps `run_hunt` in a small FastAPI service so the future frontend can drive it over HTTP.

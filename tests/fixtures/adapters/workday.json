@@ -1,0 +1,46 @@
+{
+  "list": {
+    "jobPostings": [
+      {
+        "title": "Account Manager - Strategic Sales",
+        "externalPath": "/job/Mumbai-Remote/Account-Manager---Strategic-Sales_JR103397",
+        "locationsText": "Mumbai Remote",
+        "postedOn": "Posted Yesterday",
+        "bulletFields": [
+          "JR103397"
+        ]
+      }
+    ],
+    "total": 1,
+    "userAuthenticated": false
+  },
+  "details": {
+    "/job/Mumbai-Remote/Account-Manager---Strategic-Sales_JR103397": {
+      "jobPostingInfo": {
+        "id": "27281b8cae5f1001919573cce1e00000",
+        "title": "Account Manager - Strategic Sales",
+        "jobDescription": "<p><b>Who are we and what do we do?</b></p><p>BrowserStack is the world’s leading cloud-based software testing platform, empowering over 50,000 customers to deliver high-quality software at speed.</p><p><b>Location:</b> This is a remote position; however, the role requires the candidate to be based in Mumbai.</p><p>The Strategic Account Manager role is focused on owning, retaining, and expanding a defined book of strategic customers through structured farming and deep customer engagement.</p>",
+        "location": "Mumbai Remote",
+        "postedOn": "Posted Yesterday",
+        "startDate": "2026-06-20",
+        "timeType": "Full time",
+        "jobReqId": "JR103397",
+        "jobPostingId": "Account-Manager---Strategic-Sales_JR103397",
+        "jobPostingSiteId": "External",
+        "country": {
+          "descriptor": "India",
+          "id": "c4f78be1a8f14da0ab49ce1162348a5e"
+        },
+        "canApply": true,
+        "posted": true,
+        "externalUrl": "https://browserstack.wd3.myworkdayjobs.com/External/job/Mumbai-Remote/Account-Manager---Strategic-Sales_JR103397"
+      },
+      "hiringOrganization": {
+        "name": "BrowserStack Software Private Limited",
+        "url": ""
+      },
+      "similarJobs": [],
+      "userAuthenticated": false
+    }
+  }
+}

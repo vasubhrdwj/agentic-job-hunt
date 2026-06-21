@@ -1,0 +1,75 @@
+{
+  "list": {
+    "content": [
+      {
+        "id": "744000132768109",
+        "name": "Senior Software Engineer - Site Reliability",
+        "uuid": "f1b2862e-33e2-4608-8547-d382fb59e760",
+        "releasedDate": "2026-06-18T02:37:14.914Z",
+        "location": {
+          "city": "Chennai",
+          "country": "in",
+          "remote": false,
+          "hybrid": false,
+          "fullLocation": "Chennai, , India"
+        },
+        "typeOfEmployment": {
+          "id": "permanent",
+          "label": "Full-time"
+        },
+        "experienceLevel": {
+          "id": "associate",
+          "label": "Associate"
+        },
+        "visibility": "PUBLIC"
+      }
+    ],
+    "limit": 100,
+    "offset": 0,
+    "totalFound": 1
+  },
+  "details": {
+    "744000132768109": {
+      "id": "744000132768109",
+      "name": "Senior Software Engineer - Site Reliability",
+      "uuid": "f1b2862e-33e2-4608-8547-d382fb59e760",
+      "jobId": "a737f8a4-9a32-48fe-802c-c76cf3dc2148",
+      "company": {
+        "name": "Freshworks",
+        "identifier": "Freshworks"
+      },
+      "location": {
+        "city": "Chennai",
+        "country": "in",
+        "remote": false,
+        "hybrid": false,
+        "fullLocation": "Chennai, , India"
+      },
+      "releasedDate": "2026-06-18T02:37:14.914Z",
+      "postingUrl": "https://jobs.smartrecruiters.com/Freshworks/744000132768109-senior-software-engineer-site-reliability",
+      "applyUrl": "https://jobs.smartrecruiters.com/Freshworks/744000132768109-senior-software-engineer-site-reliability?oga=true",
+      "jobAd": {
+        "sections": {
+          "companyDescription": {
+            "title": "Company Description",
+            "text": "<p>At Freshworks, we build uncomplicated service software that delivers exceptional customer and employee experiences.</p>"
+          },
+          "jobDescription": {
+            "title": "Job Description",
+            "text": "<p><strong>Impact You Can Create</strong></p><ul><li>Design and scale robust, automated CI/CD pipelines.</li><li>Architect and manage enterprise-grade Kubernetes clusters and cloud-native environments.</li><li>Write scripts using Python, Ruby, or Go.</li></ul>"
+          },
+          "qualifications": {
+            "title": "Qualifications",
+            "text": "<p>Deep understanding of Kubernetes architecture, Linux administration, cloud infrastructure, and modern Git workflows.</p>"
+          }
+        }
+      },
+      "active": true,
+      "visibility": "PUBLIC",
+      "typeOfEmployment": {
+        "id": "permanent",
+        "label": "Full-time"
+      }
+    }
+  }
+}

@@ -1,0 +1,47 @@
+{
+  "apiVersion": "1",
+  "jobs": [
+    {
+      "id": "188cc71b-a625-4022-94dc-7c43fa1a8b06",
+      "title": "Design Engineer, EU",
+      "department": "Engineering",
+      "team": "EMEA Engineering",
+      "employmentType": "FullTime",
+      "location": "Portugal",
+      "secondaryLocations": [
+        {
+          "location": "Spain",
+          "address": {
+            "postalAddress": {
+              "addressRegion": "Spain",
+              "addressCountry": "Spain",
+              "addressLocality": "Spain"
+            }
+          }
+        },
+        {
+          "location": "Berlin",
+          "address": {
+            "postalAddress": {
+              "addressCountry": "Germany",
+              "addressLocality": "Berlin"
+            }
+          }
+        }
+      ],
+      "publishedAt": "2026-06-12T20:19:00.233+00:00",
+      "isListed": true,
+      "isRemote": true,
+      "workplaceType": "Remote",
+      "address": {
+        "postalAddress": {
+          "addressCountry": "Portugal"
+        }
+      },
+      "jobUrl": "https://jobs.ashbyhq.com/Ashby/188cc71b-a625-4022-94dc-7c43fa1a8b06",
+      "applyUrl": "https://jobs.ashbyhq.com/Ashby/188cc71b-a625-4022-94dc-7c43fa1a8b06/application",
+      "descriptionHtml": "<p>Hi, I’m Abhik, Ashby's Co-Founder and VP of Engineering.</p><p>This role truly expects you to design and code.</p>",
+      "descriptionPlain": "Hi, I’m Abhik, Ashby's Co-Founder and VP of Engineering. This role truly expects you to design and code. Design Engineer at Ashby isn’t just a Frontend Engineer with new branding. You’ll work on our most challenging design problems, expand our in-house design system, and consult on bespoke design work needed by Product Engineers."
+    }
+  ]
+}

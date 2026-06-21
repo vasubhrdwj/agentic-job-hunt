@@ -1,0 +1,74 @@
+{
+  "list": {
+    "total": 1,
+    "results": [
+      {
+        "id": 5528937,
+        "shortcode": "AD5788CFCA",
+        "title": "HTML CSS Developer",
+        "remote": false,
+        "location": {
+          "country": "Greece",
+          "countryCode": "GR",
+          "city": "Athens",
+          "region": "Attica"
+        },
+        "locations": [
+          {
+            "country": "Greece",
+            "countryCode": "GR",
+            "city": "Athens",
+            "region": "Attica",
+            "hidden": false
+          }
+        ],
+        "state": "published",
+        "isInternal": false,
+        "published": "2026-06-18T00:00:00.000Z",
+        "type": "full",
+        "department": [
+          "Growth"
+        ],
+        "workplace": "on_site"
+      }
+    ]
+  },
+  "details": {
+    "AD5788CFCA": {
+      "id": 5528937,
+      "shortcode": "AD5788CFCA",
+      "title": "HTML CSS Developer",
+      "remote": false,
+      "location": {
+        "country": "Greece",
+        "countryCode": "GR",
+        "city": "Athens",
+        "region": "Attica"
+      },
+      "locations": [
+        {
+          "country": "Greece",
+          "countryCode": "GR",
+          "city": "Athens",
+          "region": "Attica",
+          "hidden": false
+        }
+      ],
+      "state": "published",
+      "isInternal": false,
+      "code": "HCD10022026",
+      "published": "2026-06-18T00:00:00.000Z",
+      "type": "full",
+      "language": "en",
+      "department": [
+        "Growth"
+      ],
+      "accountUid": "5409d59c-be64-4f77-ad6a-cef603da34f8",
+      "approvalStatus": "approved",
+      "workplace": "on_site",
+      "description": "<p>PeopleCert is seeking a UX-focused HTML/CSS Developer with a strong foundation in HTML, CSS, and JavaScript.</p><p>You will work closely with designers, CMS engineers, and product stakeholders to build robust, scalable, and performant front-end components.</p>",
+      "requirements": "<ul><li>Translate Figma designs into responsive and accessible UI components.</li><li>Write clean HTML, CSS, and JavaScript.</li></ul>",
+      "benefits": ""
+    }
+  }
+}

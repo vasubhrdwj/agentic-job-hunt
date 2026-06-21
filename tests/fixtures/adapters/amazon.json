@@ -1,0 +1,35 @@
+{
+  "hits": 336,
+  "jobs": [
+    {
+      "basic_qualifications": "- Bachelor's degree or equivalent<br/>- 3+ years of full stack development experience<br/>- 2+ years of non-internship design or architecture (design patterns, reliability and scaling) of new and existing systems experience",
+      "business_category": "selling-partner-services",
+      "city": "Bengaluru",
+      "company_name": "ADCI - Karnataka",
+      "country_code": "IND",
+      "description": "READY TO DO SOMETHING BIG?<br/><br/>How would you build the next generation of mission critical systems and services that power the ability to send, store and manage billions of products across the globe on behalf of our selling partners?<br/><br/>Fulfillment by Amazon (FBA) is the Amazon service for world-wide sellers that offers access to Amazon’s vast distribution network as a service. Similar to how AWS provides infrastructure as a service, FBA allows sellers to only pay for what they use, creating a seamless experience to leverage our world-class infrastructure. Sellers, from Fortune 50 companies to hundreds of thousands of small businesses and entrepreneurs, in 135 countries worldwide, rely upon our world-leading technology to grow and thrive on Amazon’s Marketplaces.<br/><br/>As a leader within FBA, you will provide both strategic and tactical oversight to build the features and functionality required to have the best in class offering for sellers. This leader will create mechanisms to drive optimal seller behavior for FBA inventory management, reducing total supply chain costs and making it easier for sellers to get their inventory close to customers, delivering more items with a Prime delivery promise. This leader will invent new ways to deliver value for sellers and their products, while leveraging the scale and innovation of technology from across the Amazon family, including AWS.<br/><br/>We operate as a startup within Amazon, providing our team great flexibility in product and technology direction. Come, join us and build the future!<br/><br/>Key job responsibilities<br/>• Collaborate with experienced cross-disciplinary Amazonians to conceive, design, and bring innovative products and services to market.<br/>• Design and build innovative technologies in a large distributed computing environment and help lead fundamental changes in the industry.<br/>• Create solutions to run predictions on distributed systems with exposure to innovative technologies at incredible scale and speed.<br/>• Build distributed storage, index, and query systems that are scalable, fault-tolerant, low cost, and easy to manage/use.<br/>• Design and code the right solutions starting with broadly defined problems.<br/>• Work in an agile environment to deliver high-quality software.",
+      "description_short": "READY TO DO SOMETHING BIG? How would you build the next generation of mission critical systems and services that power the ability to send, store and manage billions of products across the globe on behalf of our selling partners?",
+      "id": "c05fca25-eca4-49d0-abb8-ff687d9a44d4",
+      "id_icims": "10454374",
+      "is_intern": null,
+      "is_manager": null,
+      "job_category": "Software Development",
+      "job_family": "Software Development",
+      "job_path": "/en/jobs/10454374/software-development-engineer",
+      "job_schedule_type": "full-time",
+      "location": "IN, KA, Bengaluru",
+      "locations": [
+        "{\"normalizedStateName\":\"Karnataka\",\"normalizedCountryCode\":\"IND\",\"city\":\"Bengaluru\",\"countryIso3a\":\"IND\",\"countryIso2a\":\"IN\",\"locationNonStemming\":\"India, KA, Bengaluru\",\"coordinates\":\"12.96617,77.58692\",\"normalizedCountyName\":\"Bengaluru\",\"type\":\"ONSITE\",\"normalizedCountryName\":\"India\",\"normalizedLocation\":\"Bengaluru, Karnataka, IND\",\"location\":\"IN, KA, Bengaluru\",\"region\":\"KA\",\"buildingCodeList\":[\"BLR22\"],\"normalizedCityName\":\"Bengaluru\"}"
+      ],
+      "normalized_location": "Bengaluru, Karnataka, IND",
+      "posted_date": "June 19, 2026",
+      "preferred_qualifications": "- Bachelor's degree in computer science or equivalent<br/>- 3+ years of full software development life cycle, including coding standards, code reviews, source control management, build processes, testing, and operations experience<br/><br/>Our inclusive culture empowers Amazonians to deliver the best results for our customers.",
+      "source_system": "JobCreator",
+      "state": "KA",
+      "title": "Software Development Engineer",
+      "updated_time": "1 day",
+      "url_next_step": "https://account.amazon.jobs/jobs/10454374/apply"
+    }
+  ],
+  "error": null
+}

@@ -319,9 +319,10 @@ Tasks with no shared files run in parallel. `★` = on the critical path.
   each must be confirmed. Candidate companies to *verify* (not assume): Razorpay, Postman,
   Hasura, Zerodha, CRED, Atlassian, MongoDB, Twilio, HashiCorp, Confluent, Vercel, Sentry,
   GitLab, Grafana Labs, Browserstack, Freshworks, Groww, Swiggy, Meesho, PhonePe.
-  - **DoD:** `scripts/verify_registry.py --pack backend_india` reports **0 dead sources**;
-    output (company → source → #open roles) captured as evidence. Any company that won't
-    verify is dropped or marked `google_jobs`, never left broken.
+  - **DoD:** `.venv/bin/python scripts/verify_registry.py --pack backend_india --live
+    --strict-live` reports **0 dead or unverified sources**; output (company → source →
+    #open roles) captured as evidence. Any company that won't verify is dropped or marked
+    `google_jobs`, never left broken.
 - **RES ★ — SourceResolver.** Given `Company`, pick adapter (explicit `source` → platform
   → bespoke → google_jobs fallback). Aggregate across a pack, dedupe by (company,title) +
   apply-URL, drop postings older than `max_age_days`, filter `employment_types`.

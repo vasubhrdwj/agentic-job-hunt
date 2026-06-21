@@ -1,0 +1,108 @@
+{
+  "jobs": [
+    {
+      "absolute_url": "https://www.mongodb.com/careers/job/?gh_jid=7704173",
+      "data_compliance": [
+        {
+          "type": "gdpr",
+          "requires_consent": false,
+          "requires_processing_consent": false,
+          "requires_retention_consent": false,
+          "retention_period": null,
+          "demographic_data_consent_applies": true
+        }
+      ],
+      "internal_job_id": 3354568,
+      "location": {
+        "name": "Bengaluru"
+      },
+      "metadata": [
+        {
+          "id": 22194060,
+          "name": "Position ID",
+          "value": "10014262",
+          "value_type": "short_text"
+        },
+        {
+          "id": 24918,
+          "name": "Department ID",
+          "value": "D23140-Magenta",
+          "value_type": "single_select"
+        },
+        {
+          "id": 22194061,
+          "name": "Team",
+          "value": "T10512-Magenta",
+          "value_type": "single_select"
+        },
+        {
+          "id": 4914027,
+          "name": "Region",
+          "value": "APAC",
+          "value_type": "single_select"
+        },
+        {
+          "id": 4137836,
+          "name": "Working Model Eligibility",
+          "value": [
+            "2-Flexible"
+          ],
+          "value_type": "multi_select"
+        },
+        {
+          "id": 4914029,
+          "name": "Job Level",
+          "value": "Professional - IC",
+          "value_type": "single_select"
+        },
+        {
+          "id": 24109,
+          "name": "Employment Type",
+          "value": "Full-time",
+          "value_type": "single_select"
+        },
+        {
+          "id": 1073551,
+          "name": "Job Type",
+          "value": "Standard",
+          "value_type": "single_select"
+        },
+        {
+          "id": 988684,
+          "name": "JD Link",
+          "value": "https://docs.google.com/document/d/1cHgsB3wq6KBu8sgb3j54LEtYugcJzweXD5-W-0XrMH0/edit?tab=t.0",
+          "value_type": "url"
+        }
+      ],
+      "id": 7704173,
+      "updated_at": "2026-06-18T15:34:16-04:00",
+      "requisition_id": "1273354568",
+      "title": "Senior Staff Engineer",
+      "company_name": "MongoDB",
+      "first_published": "2026-03-11T07:17:17-04:00",
+      "language": "en",
+      "application_deadline": null,
+      "content": "&lt;p&gt;MongoDB is growing and gaining adoption rapidly across the globe with the most demanding and innovative companies and development teams in enterprise software.&lt;/p&gt;\n&lt;p&gt;We are seeking a Senior Staff Engineer to join our growing Gurugram Products &amp;amp; Technology team to provide technical direction, direct architecture, and implement core parts of a new platform we are building to make it easier for customers to build AI applications using MongoDB.&amp;nbsp;&lt;/p&gt;\n&lt;p&gt;As a Senior Staff Engineer on this new team, you will be responsible for providing technical leadership to teams developing cutting edge technologies related to enabling deployment at scale of AI applications. You will take on challenging, high-visibility projects that improve and enhance the performance, scalability, and reliability of the distributed systems infrastructure for this new product. MongoDB engineering teams pride themselves on building high-quality software and living MongoDB cultural values every day – we value intellectual curiosity and honesty, and building together in an environment that prioritizes collaboration over competition.&amp;nbsp;&lt;/p&gt;\n&lt;p&gt;We are looking to speak to candidates who are based in Bengaluru for our hybrid working model. We are open to considering candidates in other cities, including in Gurugram&lt;/p&gt;\n&lt;h3&gt;Position Expectations&lt;/h3&gt;\n&lt;ul&gt;\n&lt;li&gt;Work closely with research, product management, product engineering, product design, peers as well as other teams within the company to define the first version and future evolution of the service&amp;nbsp;&lt;/li&gt;\n&lt;li&gt;Design, build and deliver well-tested core pieces of the platform in collaboration with other vested parties&lt;/li&gt;\n&lt;li&gt;Contribute to shaping architecture, code reviews and development practices, developer experience as the teams and product grow&amp;nbsp;&lt;/li&gt;\n&lt;li&gt;Mentor fellow engineers and assume ownership and accountability of projects&lt;/li&gt;\n&lt;/ul&gt;\n&lt;h3&gt;Qualifications&lt;/h3&gt;\n&lt;ul&gt;\n&lt;li&gt;Strong background in building core components for high scale compute and data distributed systems&lt;/li&gt;\n&lt;li&gt;15+ years experience of building distributed systems, and/or foundational cloud services at scale and an interest in working with Python, Go and Java&lt;/li&gt;\n&lt;li&gt;Proven success in designing, writing, testing, debugging, performance tuning, possessing a strong grip on the foundational materials of computer science and maintaining distributed and/or highly concurrent software systems in large, long-lived code bases&lt;/li&gt;\n&lt;li&gt;Track record of identifying problems, implementing solutions and delivering complex projects in distributed systems or databases&lt;/li&gt;\n&lt;li&gt;Experience leading 15-20 people projects involving distributed systems infrastructure from conception to successful delivery&lt;/li&gt;\n&lt;li&gt;Good verbal and written technical communication skills, desire to collaborate with colleagues&lt;/li&gt;\n&lt;li&gt;Bonus points for experience with containerization and orchestration platforms (eg. Kubernetes) and AI frameworks and tools&lt;/li&gt;\n&lt;li&gt;Be a force multiplier in our software development process. Enable teams to deliver great products through leadership and technical contributions&lt;/li&gt;\n&lt;li&gt;Eager to learn, with a strong technical background&lt;/li&gt;\n&lt;/ul&gt;\n&lt;h3&gt;About MongoDB&lt;/h3&gt;\n&lt;p&gt;MongoDB is built for change, empowering our customers and our people to innovate at the speed of the market. We have redefined the data platform for the AI era, enabling builders to create, transform, and disrupt industries with software. MongoDB’s unified data platform, the most widely available, globally distributed data platform on the market, helps organizations modernize legacy workloads, embrace innovation, and unleash AI. Our cloud-native platform, MongoDB Atlas, is the only globally distributed, multi-cloud data platform and is available across AWS, Google Cloud, and Microsoft Azure.&lt;/p&gt;\n&lt;p&gt;With offices worldwide and over 67,000 customers, including 75% of the Fortune 100 and AI-native startups, relying on MongoDB for their most important applications, we’re powering the next era of software.&lt;/p&gt;\n&lt;p&gt;Our compass at MongoDB is our &lt;a href=&quot;https://www.mongodb.com/company&quot;&gt;Leadership Commitment,&lt;/a&gt; guiding how and why we make decisions, show up for each other, and win. It’s what makes us MongoDB.&amp;nbsp;&lt;/p&gt;\n&lt;p&gt;To drive the personal growth and business impact of our employees, we’re committed to developing a supportive and enriching culture for everyone. &lt;a href=&quot;https://www.mongodb.com/company/blog/culture/employee-benefits-that-make-a-difference-at-mongodb&quot;&gt;From employee affinity groups, to fertility assistance and a generous parental leave policy&lt;/a&gt;, we value our employees’ wellbeing and want to support them along every step of their professional and personal journeys.&lt;a href=&quot;https://www.mongodb.com/blog/channel/culture&quot;&gt; Learn more about what it’s like to work at MongoDB&lt;/a&gt;, and help us make an impact on the world!&lt;/p&gt;\n&lt;p&gt;MongoDB is committed to providing any necessary accommodations for individuals with disabilities within our application and interview process. To request an accommodation due to a disability, please inform your recruiter.&lt;/p&gt;\n&lt;p&gt;MongoDB is an equal opportunities employer.&lt;/p&gt;\n&lt;p&gt;&lt;em&gt;Req ID - 1273354568&lt;/em&gt;&lt;/p&gt;",
+      "departments": [
+        {
+          "id": 345527,
+          "name": "Magenta",
+          "child_ids": [],
+          "parent_id": 370707
+        }
+      ],
+      "offices": [
+        {
+          "id": 26756,
+          "name": "Bengaluru",
+          "location": "Bengaluru, Karnataka, India",
+          "child_ids": [],
+          "parent_id": 23659
+        }
+      ]
+    }
+  ],
+  "meta": {
+    "total": 424
+  }
+}

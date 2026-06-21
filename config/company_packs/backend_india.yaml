@@ -1,0 +1,162 @@
+name: backend_india
+description: Curated companies with backend opportunities in India or location-compatible remote roles.
+companies:
+  - name: Razorpay
+    slug: razorpay
+    source: greenhouse
+    source_token: razorpaysoftwareprivatelimited
+    careers_domains: [razorpay.com, job-boards.greenhouse.io]
+    hire_locations: [India, Bengaluru, Gurugram, Mumbai]
+    tags: [backend, fintech, payments]
+
+  - name: Postman
+    slug: postman
+    source: greenhouse
+    source_token: postman
+    careers_domains: [postman.com, job-boards.greenhouse.io]
+    hire_locations: [India, Bengaluru, Remote]
+    tags: [backend, developer-tools, api]
+
+  - name: CRED
+    slug: cred
+    source: lever
+    source_token: cred
+    careers_domains: [cred.club, jobs.lever.co]
+    hire_locations: [India, Bengaluru]
+    tags: [backend, fintech, payments]
+
+  - name: MongoDB
+    slug: mongodb
+    source: greenhouse
+    source_token: mongodb
+    careers_domains: [mongodb.com, job-boards.greenhouse.io]
+    hire_locations: [India, Bengaluru, Gurugram]
+    tags: [backend, database, cloud]
+
+  - name: Twilio
+    slug: twilio
+    source: greenhouse
+    source_token: twilio
+    careers_domains: [twilio.com, job-boards.greenhouse.io]
+    hire_locations: [India, Bengaluru, Remote]
+    tags: [backend, communications, cloud]
+
+  - name: GitLab
+    slug: gitlab
+    source: greenhouse
+    source_token: gitlab
+    careers_domains: [about.gitlab.com, job-boards.greenhouse.io]
+    hire_locations: [India, Remote]
+    tags: [backend, developer-tools, remote]
+
+  - name: Grafana Labs
+    slug: grafana-labs
+    source: greenhouse
+    source_token: grafanalabs
+    careers_domains: [grafana.com, job-boards.greenhouse.io]
+    hire_locations: [Remote]
+    tags: [backend, observability, remote]
+
+  - name: Freshworks
+    slug: freshworks
+    source: smartrecruiters
+    source_token: Freshworks
+    careers_domains: [freshworks.com, jobs.smartrecruiters.com]
+    hire_locations: [India, Bengaluru, Chennai, Hyderabad, Remote]
+    tags: [backend, saas, cloud]
+
+  - name: Groww
+    slug: groww
+    source: greenhouse
+    source_token: groww
+    careers_domains: [groww.in, job-boards.eu.greenhouse.io]
+    hire_locations: [India, Bengaluru]
+    tags: [backend, fintech, investing]
+
+  - name: Meesho
+    slug: meesho
+    source: lever
+    source_token: meesho
+    careers_domains: [meesho.io, jobs.lever.co]
+    hire_locations: [India, Bengaluru]
+    tags: [backend, ecommerce, marketplace]
+
+  - name: PhonePe
+    slug: phonepe
+    source: greenhouse
+    source_token: phonepe
+    careers_domains: [phonepe.com, job-boards.greenhouse.io]
+    hire_locations: [India, Bengaluru]
+    tags: [backend, fintech, payments]
+
+  - name: BrowserStack
+    slug: browserstack
+    source: workday
+    source_token: browserstack:External
+    careers_domains: [browserstack.com, browserstack.wd3.myworkdayjobs.com]
+    hire_locations: [India, Mumbai, Remote]
+    tags: [backend, developer-tools, testing]
+
+  - name: Stripe
+    slug: stripe
+    source: greenhouse
+    source_token: stripe
+    careers_domains: [stripe.com, job-boards.greenhouse.io]
+    hire_locations: [India, Bengaluru, Remote]
+    tags: [backend, fintech, payments]
+
+  - name: Datadog
+    slug: datadog
+    source: greenhouse
+    source_token: datadog
+    careers_domains: [datadoghq.com, job-boards.greenhouse.io]
+    hire_locations: [India, Bengaluru, Remote]
+    tags: [backend, observability, cloud]
+
+  - name: Cockroach Labs
+    slug: cockroach-labs
+    source: greenhouse
+    source_token: cockroachlabs
+    careers_domains: [cockroachlabs.com, job-boards.greenhouse.io]
+    hire_locations: [India, Bengaluru, Remote]
+    tags: [backend, database, cloud]
+
+  - name: Elastic
+    slug: elastic
+    source: greenhouse
+    source_token: elastic
+    careers_domains: [elastic.co, job-boards.greenhouse.io]
+    hire_locations: [India, Bengaluru]
+    tags: [backend, search, observability]
+
+  - name: Zeta
+    slug: zeta
+    source: lever
+    source_token: zeta
+    careers_domains: [zeta.tech, jobs.lever.co]
+    hire_locations: [India, Bengaluru, Hyderabad, Mumbai]
+    tags: [backend, fintech, banking]
+
+  - name: Databricks
+    slug: databricks
+    source: greenhouse
+    source_token: databricks
+    careers_domains: [databricks.com, job-boards.greenhouse.io]
+    hire_locations: [India, Bengaluru, Remote]
+    tags: [backend, data, cloud]
+
+  - name: Rubrik
+    slug: rubrik
+    source: greenhouse
+    source_token: rubrik
+    careers_domains: [rubrik.com, job-boards.greenhouse.io]
+    hire_locations: [India, Bengaluru, Mumbai, Remote]
+    tags: [backend, data, security]
+
+  - name: Amazon
+    slug: amazon
+    source: bespoke
+    source_token: amazon
+    careers_domains: [amazon.jobs, account.amazon.jobs]
+    hire_locations: [India, Bengaluru, Hyderabad, Chennai, Gurugram]
+    tags: [backend, ecommerce, cloud]
