@@ -195,7 +195,11 @@ def _format_exemplar_block(exemplars: list[PastDraft]) -> str:
     for index, exemplar in enumerate(exemplars, start=1):
         message = _truncate(exemplar.message.strip(), EXEMPLAR_CHAR_CAP)
         score = f"{exemplar.eval_score:.1f}" if exemplar.eval_score is not None else "n/a"
-        header = f"--- Past example {index} (score {score}) ---"
+        outcome = exemplar.outcome or "not logged"
+        header = (
+            f"--- Past example {index} "
+            f"(outcome {outcome}, score {score}) ---"
+        )
         candidate = [header, message, ""]
         candidate_len = sum(len(line) for line in candidate)
         if running_chars + candidate_len > EXEMPLAR_BLOCK_CHAR_CAP:
@@ -335,7 +339,11 @@ def _annotate_and_filter(rag_span: Any, drafts: list[PastDraft]) -> list[PastDra
     filtered = [
         draft
         for draft in drafts
-        if draft.eval_score is not None and draft.eval_score >= EXEMPLAR_SCORE_THRESHOLD
+        if draft.outcome in {"replied", "introduced"}
+        or (
+            draft.eval_score is not None
+            and draft.eval_score >= EXEMPLAR_SCORE_THRESHOLD
+        )
     ]
     rag_span.set_attribute("job_hunt.rag.exemplars_used", len(filtered))
     if not filtered:

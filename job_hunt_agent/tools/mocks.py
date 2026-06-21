@@ -252,6 +252,16 @@ def draft_message_mock(
     resume_signal = "my backend and identity systems experience"
     if "SCIM" in resume_text.upper():
         resume_signal = "my recent SCIM and identity automation work"
+    use_self_rag = bool(_kwargs.get("use_self_rag", True))
+    if use_self_rag:
+        team_name = role.title.split(",")[0].strip()
+        return (
+            f"Hi {person.name.split()[0]}, I saw the {team_name} team is hiring "
+            f"for {role.title} at {role.company}. My SCIM 2.0 RFC 7644 and "
+            f"backend automation work maps directly to the role's scope. "
+            "Would you be open to a 15 min pointer on Tuesday or Wednesday?\n"
+            "Thanks,"
+        )
 
     return (
         f"Hi {person.name.split()[0]}, I saw {role.company}'s {role.title} role and "

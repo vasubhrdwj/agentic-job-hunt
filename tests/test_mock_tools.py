@@ -7,6 +7,7 @@ from job_hunt_agent.schemas import JobCriteria, Person, Role
 from job_hunt_agent.tools.mocks import (
     draft_message_mock,
     find_referrals_mock,
+    score_draft_mock,
     search_jobs_mock,
 )
 
@@ -79,6 +80,7 @@ class MockToolsTest(unittest.TestCase):
             role,
             person,
             resume_text="Built SCIM provisioning and identity automation services.",
+            use_self_rag=False,
         )
 
         self.assertIn(person.name.split()[0], message)
@@ -89,6 +91,28 @@ class MockToolsTest(unittest.TestCase):
         self.assertNotIn("especially the parts of the role around", message.lower())
         self.assertNotIn("[", message)
         self.assertNotIn("]", message)
+
+    def test_self_rag_mock_models_a_stronger_exemplar_pattern(self) -> None:
+        role = Role.model_validate(search_jobs_mock(self.criteria)[0])
+        person = Person.model_validate(find_referrals_mock(role)[0])
+
+        baseline = draft_message_mock(
+            role,
+            person,
+            "Built SCIM services.",
+            use_self_rag=False,
+        )
+        improved = draft_message_mock(
+            role,
+            person,
+            "Built SCIM services.",
+            use_self_rag=True,
+        )
+
+        self.assertGreaterEqual(
+            score_draft_mock(role, person, improved).composite,
+            score_draft_mock(role, person, baseline).composite + 0.3,
+        )
 
     def test_build_agent_can_attach_mock_tools(self) -> None:
         agent = build_agent(use_mocks=True)

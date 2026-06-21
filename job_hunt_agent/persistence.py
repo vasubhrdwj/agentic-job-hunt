@@ -19,6 +19,13 @@ from .schemas import HuntResult, OutcomeLog
 
 
 DEFAULT_DB_PATH = "outcomes.db"
+OUTCOME_PRIORITY = {
+    "introduced": 3,
+    "replied": 2,
+    "pending": 1,
+    "rejected": -1,
+    "no_reply": -2,
+}
 
 
 def _resolve_db_path(path: str | os.PathLike[str] | None) -> str:
@@ -150,3 +157,55 @@ def load_outcomes(
         )
         rows = cursor.fetchall()
     return [OutcomeLog.model_validate_json(row[0]) for row in rows]
+
+
+def load_draft_outcomes(
+    *,
+    path: str | os.PathLike[str] | None = None,
+) -> dict[str, str]:
+    """Return the best logged outcome keyed by normalized draft message."""
+
+    resolved = _resolve_db_path(path)
+    if resolved != ":memory:" and not Path(resolved).exists():
+        return {}
+    try:
+        with _connect(path) as conn:
+            run_rows = conn.execute("SELECT run_id, payload FROM runs").fetchall()
+            outcome_rows = conn.execute(
+                "SELECT run_id, draft_id, payload FROM outcomes "
+                "ORDER BY logged_at DESC, id DESC"
+            ).fetchall()
+    except sqlite3.OperationalError:
+        return {}
+
+    messages: dict[tuple[str, str], str] = {}
+    for run_id, payload in run_rows:
+        try:
+            result = HuntResult.model_validate_json(payload)
+        except ValueError:
+            continue
+        for draft in result.outreach:
+            messages[(run_id, draft.draft_id)] = normalize_draft_message(draft.message)
+
+    best: dict[str, str] = {}
+    seen_entries: set[tuple[str, str]] = set()
+    for run_id, draft_id, payload in outcome_rows:
+        key = (run_id, draft_id)
+        if key in seen_entries:
+            continue
+        seen_entries.add(key)
+        message = messages.get(key)
+        if not message:
+            continue
+        try:
+            outcome = OutcomeLog.model_validate_json(payload).outcome
+        except ValueError:
+            continue
+        current = best.get(message)
+        if current is None or OUTCOME_PRIORITY[outcome] > OUTCOME_PRIORITY[current]:
+            best[message] = outcome
+    return best
+
+
+def normalize_draft_message(message: str) -> str:
+    return " ".join(message.split()).casefold()

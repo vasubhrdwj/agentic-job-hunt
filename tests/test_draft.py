@@ -7,12 +7,19 @@ from job_hunt_agent.tools import draft
 from job_hunt_agent.tools.draft import draft_message
 
 
-def _past_draft(message: str, score: float, span_id: str = "span-x") -> PastDraft:
+def _past_draft(
+    message: str,
+    score: float,
+    span_id: str = "span-x",
+    *,
+    outcome: str | None = None,
+) -> PastDraft:
     return PastDraft(
         message=message,
         role_title="Senior Engineer, Identity",
         company="Northstar Identity",
         eval_score=score,
+        outcome=outcome,
         matched_keywords=["SCIM"],
         span_id=span_id,
         trace_id="trace-x",
@@ -166,7 +173,7 @@ class SelfRagDraftMessageTest(unittest.TestCase):
 
         fetch.assert_called_once_with(["SCIM", "identity"], 3)
         prompt = self.captured_prompts[0]
-        self.assertIn("Past example 1 (score 4.9)", prompt)
+        self.assertIn("Past example 1 (outcome not logged, score 4.9)", prompt)
         self.assertIn("EXEMPLAR ONE", prompt)
         self.assertIn("EXEMPLAR TWO", prompt)
         self.assertIn("EXEMPLAR THREE", prompt)
@@ -225,6 +232,32 @@ class SelfRagDraftMessageTest(unittest.TestCase):
             )
 
         self.assertNotIn("Past example", self.captured_prompts[0])
+
+    def test_replied_exemplar_is_kept_even_with_lower_judge_score(self) -> None:
+        replied = [
+            _past_draft(
+                "REAL REPLY EXAMPLE",
+                3.0,
+                "span-reply",
+                outcome="replied",
+            )
+        ]
+
+        with (
+            patch.object(draft, "_get_google_api_key", return_value="fake-key"),
+            patch.object(draft, "_run_query_past_drafts", return_value=replied),
+            patch.object(draft, "_generate", side_effect=self._capture_generate),
+        ):
+            draft_message(
+                self.role,
+                self.person,
+                self.resume_text,
+                keywords=("SCIM",),
+                use_self_rag=True,
+            )
+
+        self.assertIn("outcome replied, score 3.0", self.captured_prompts[0])
+        self.assertIn("REAL REPLY EXAMPLE", self.captured_prompts[0])
 
     def test_exemplar_cache_avoids_repeat_queries(self) -> None:
         exemplars = [_past_draft("ONLY EXAMPLE", 4.8, "span-1")]

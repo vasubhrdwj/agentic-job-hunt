@@ -204,3 +204,32 @@ def test_select_top_drafts_dedupes_identical_messages() -> None:
     drafts = _select_top_drafts(spans, ["SCIM"], top_k=3)
     assert len(drafts) == 3
     assert {d.span_id for d in drafts} == {"a", "c", "d"}
+
+
+def test_select_top_drafts_ranks_reply_outcome_before_judge_score() -> None:
+    from job_hunt_agent.mcp_client import _select_top_drafts
+
+    spans = [
+        _span(message="High judge but ignored", score=4.9, span_id="judge"),
+        _span(message="Lower judge with reply", score=3.2, span_id="reply"),
+        _span(message="Introduced", score=2.8, span_id="intro"),
+    ]
+    outcomes = {
+        "high judge but ignored": "no_reply",
+        "lower judge with reply": "replied",
+        "introduced": "introduced",
+    }
+
+    drafts = _select_top_drafts(
+        spans,
+        ["SCIM"],
+        top_k=3,
+        outcome_by_message=outcomes,
+    )
+
+    assert [draft.span_id for draft in drafts] == ["intro", "reply", "judge"]
+    assert [draft.outcome for draft in drafts] == [
+        "introduced",
+        "replied",
+        "no_reply",
+    ]

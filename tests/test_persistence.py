@@ -151,3 +151,27 @@ def test_env_var_is_used_when_path_arg_missing(
     persistence.save_run(_make_hunt_result("env-run"))
     assert db.exists()
     assert persistence.load_run("env-run") == _make_hunt_result("env-run")
+
+
+def test_load_draft_outcomes_prefers_real_success_over_no_reply(db_path: Path) -> None:
+    result = _make_hunt_result()
+    persistence.save_run(result, path=db_path)
+    persistence.save_outcomes(
+        result.run_id,
+        [
+            OutcomeLog(draft_id="draft-0", outcome="no_reply"),
+            OutcomeLog(draft_id="draft-1", outcome="replied"),
+            OutcomeLog(draft_id="draft-2", outcome="introduced"),
+        ],
+        path=db_path,
+    )
+
+    outcomes = persistence.load_draft_outcomes(path=db_path)
+
+    assert outcomes[persistence.normalize_draft_message("hi 0")] == "no_reply"
+    assert outcomes[persistence.normalize_draft_message("hi 1")] == "replied"
+    assert outcomes[persistence.normalize_draft_message("hi 2")] == "introduced"
+
+
+def test_load_draft_outcomes_returns_empty_for_missing_database(tmp_path: Path) -> None:
+    assert persistence.load_draft_outcomes(path=tmp_path / "missing.db") == {}

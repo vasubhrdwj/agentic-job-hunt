@@ -29,23 +29,25 @@ GOOD_MIN = 4.0
 BAD_MAX = 2.0
 
 ROLE = Role(
-    company="Okta",
-    title="Senior Software Engineer, Lifecycle Management",
-    url="https://www.linkedin.com/jobs/view/okta-lifecycle-mgmt-senior-swe",
-    location="Remote-India",
+    company="Postman",
+    title="Software Engineer, Authorization",
+    url="https://job-boards.greenhouse.io/postman/jobs/7776298003",
+    location="Bengaluru",
     summary=(
-        "Build SCIM provisioning, group push, and lifecycle automation for "
-        "enterprise identity customers."
+        "Build reliable backend authorization services and APIs for a "
+        "developer platform."
     ),
-    match_reason="Listing names SCIM 2.0 provisioning and lifecycle workflows.",
+    match_reason="Listing names backend authorization, APIs, and platform reliability.",
 )
 PERSON = Person(
     name="Anika Rao",
-    title="Staff Engineer, Lifecycle Management",
-    company="Okta",
-    profile_url="https://www.linkedin.com/in/anika-rao-lifecycle",
+    title="Staff Software Engineer, Platform",
+    company="Postman",
+    profile_url="https://example.invalid/calibration/anika-rao",
     source="linkedin",
-    why_relevant="Owns the Lifecycle Management provisioning service the role feeds into.",
+    why_relevant="Calibration contact adjacent to the backend platform role.",
+    verified_current_employer=True,
+    confidence=1.0,
 )
 
 

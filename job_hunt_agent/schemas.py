@@ -258,6 +258,10 @@ class PastDraft(BaseModel):
         le=5,
         description="Composite 1-5 evaluation score, if one has been written.",
     )
+    outcome: Literal["replied", "no_reply", "introduced", "rejected", "pending"] | None = Field(
+        default=None,
+        description="Best logged real-world outcome for this exact draft text.",
+    )
     matched_keywords: list[str] = Field(
         description="Query keywords that matched this draft's traced role keywords.",
     )

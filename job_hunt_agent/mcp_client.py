@@ -107,7 +107,12 @@ async def query_past_drafts(
                 exc,
             )
         else:
-            return _select_top_drafts(spans, keywords, top_k)
+            return _select_top_drafts(
+                spans,
+                keywords,
+                top_k,
+                outcome_by_message=_load_draft_outcomes(),
+            )
 
     try:
         spans = await asyncio.wait_for(_fetch_spans_rest(config), timeout=timeout_s)
@@ -119,7 +124,12 @@ async def query_past_drafts(
         )
         return []
 
-    return _select_top_drafts(spans, keywords, top_k)
+    return _select_top_drafts(
+        spans,
+        keywords,
+        top_k,
+        outcome_by_message=_load_draft_outcomes(),
+    )
 
 
 def _resolve_timeout(timeout_s: float | None) -> float:
@@ -142,16 +152,28 @@ def _select_top_drafts(
     spans: list[dict[str, Any]],
     keywords: list[str],
     top_k: int,
+    *,
+    outcome_by_message: dict[str, str] | None = None,
 ) -> list[PastDraft]:
-    drafts = _parse_past_drafts(spans, keywords)
-    drafts.sort(key=lambda draft: (draft.eval_score is None, -(draft.eval_score or 0.0)))
+    drafts = _parse_past_drafts(
+        spans,
+        keywords,
+        outcome_by_message=outcome_by_message or {},
+    )
+    drafts.sort(
+        key=lambda draft: (
+            -_outcome_priority(draft.outcome),
+            draft.eval_score is None,
+            -(draft.eval_score or 0.0),
+        )
+    )
     # Dedupe by message text: re-uploaded seeds and re-traced runs produce
     # identical drafts under distinct span_ids, and duplicate exemplars
     # waste few-shot slots.
     selected: list[PastDraft] = []
     seen_messages: set[str] = set()
     for draft in drafts:
-        normalized = " ".join(draft.message.split()).casefold()
+        normalized = _normalize_draft_message(draft.message)
         if normalized in seen_messages:
             continue
         seen_messages.add(normalized)
@@ -161,7 +183,12 @@ def _select_top_drafts(
     return selected
 
 
-def _parse_past_drafts(spans: list[dict[str, Any]], keywords: list[str]) -> list[PastDraft]:
+def _parse_past_drafts(
+    spans: list[dict[str, Any]],
+    keywords: list[str],
+    *,
+    outcome_by_message: dict[str, str],
+) -> list[PastDraft]:
     drafts: list[PastDraft] = []
     for span in spans:
         attributes = _span_attributes(span)
@@ -179,12 +206,42 @@ def _parse_past_drafts(spans: list[dict[str, Any]], keywords: list[str]) -> list
                 role_title=_string_attribute(attributes, ROLE_TITLE_ATTRIBUTE),
                 company=_string_attribute(attributes, ROLE_COMPANY_ATTRIBUTE),
                 eval_score=_coerce_score(attributes.get(EVAL_SCORE_ATTRIBUTE)),
+                outcome=outcome_by_message.get(_normalize_draft_message(message)),
                 matched_keywords=matched_keywords,
                 span_id=_span_id(span),
                 trace_id=_trace_id(span),
             )
         )
     return drafts
+
+
+def _load_draft_outcomes() -> dict[str, str]:
+    try:
+        from .persistence import load_draft_outcomes
+
+        return load_draft_outcomes()
+    except Exception as exc:
+        _warn_failure_once(
+            "outcomes:sqlite",
+            "Outcome lookup failed; ranking past drafts by judge score only",
+            exc,
+        )
+        return {}
+
+
+def _normalize_draft_message(message: str) -> str:
+    return " ".join(message.split()).casefold()
+
+
+def _outcome_priority(outcome: str | None) -> int:
+    return {
+        "introduced": 3,
+        "replied": 2,
+        "pending": 1,
+        None: 0,
+        "rejected": -1,
+        "no_reply": -2,
+    }.get(outcome, 0)
 
 
 async def _fetch_spans_rest(config: _PhoenixConfig) -> list[dict[str, Any]]:
