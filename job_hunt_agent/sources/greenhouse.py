@@ -24,6 +24,7 @@ from job_hunt_agent.schemas import (
     JobCriteria,
     Role,
 )
+from job_hunt_agent.sources.base import safe_url_path_parts
 
 
 LOGGER = logging.getLogger(__name__)
@@ -245,8 +246,9 @@ def _role_from_job(
         return None
     if not _matches_location(criteria.location, item, location):
         return None
+    location = _best_display_location(criteria.location, item, location)
 
-    employment_type = _employment_type(item, title)
+    employment_type = _employment_type(item, title, raw_description)
     if (
         criteria.employment_types
         and employment_type is not EmploymentType.unknown
@@ -254,7 +256,8 @@ def _role_from_job(
     ):
         return None
 
-    posted_at = _clean_text(item.get("updated_at")) or None
+    posted_at = _clean_text(item.get("first_published")) or None
+    source_updated_at = _clean_text(item.get("updated_at")) or None
     if not _within_max_age(
         posted_at,
         criteria.max_age_days,
@@ -277,6 +280,7 @@ def _role_from_job(
         source=CompanySource.greenhouse,
         apply_urls=[apply_url],
         posted_at=posted_at,
+        source_updated_at=source_updated_at,
         employment_type=employment_type,
         raw_description=raw_description or None,
         confidence=1.0,
@@ -455,6 +459,42 @@ def _matches_location(
     )
 
 
+def _best_display_location(
+    requested_locations: list[str],
+    item: dict[str, Any],
+    location: str,
+) -> str:
+    if location and _normalize_match_text(location) not in {
+        "n a",
+        "na",
+        "not specified",
+    }:
+        return location
+    requested = [
+        _location_tokens(value)
+        for value in requested_locations
+        if value.strip()
+    ]
+    offices = item.get("offices")
+    if not isinstance(offices, list):
+        return location
+    for office in offices:
+        if not isinstance(office, dict):
+            continue
+        candidates = (
+            _clean_text(office.get("location")),
+            _clean_text(office.get("name")),
+        )
+        for candidate in candidates:
+            available = _location_tokens(candidate)
+            if candidate and any(
+                wanted and wanted <= available
+                for wanted in requested
+            ):
+                return candidate
+    return location
+
+
 def _location_tokens(value: str) -> set[str]:
     aliases = {"bangalore": "bengaluru"}
     return {
@@ -464,7 +504,7 @@ def _location_tokens(value: str) -> set[str]:
 
 
 def _within_max_age(
-    updated_at: str | None,
+    posted_at: str | None,
     max_age_days: int | None,
     *,
     company_slug: str,
@@ -472,9 +512,9 @@ def _within_max_age(
 ) -> bool:
     if max_age_days is None:
         return True
-    if not updated_at:
+    if not posted_at:
         LOGGER.warning(
-            "Skipping Greenhouse job %s for %s: missing updated_at prevents "
+            "Skipping Greenhouse job %s for %s: missing first_published prevents "
             "max-age validation.",
             job_id,
             company_slug,
@@ -482,24 +522,24 @@ def _within_max_age(
         return False
 
     try:
-        updated = _parse_greenhouse_datetime(updated_at)
+        published = _parse_greenhouse_datetime(posted_at)
     except ValueError:
         LOGGER.warning(
-            "Skipping Greenhouse job %s for %s: invalid updated_at %r.",
+            "Skipping Greenhouse job %s for %s: invalid first_published %r.",
             job_id,
             company_slug,
-            updated_at,
+            posted_at,
         )
         return False
 
     cutoff = _utc_now() - timedelta(days=max_age_days)
-    if updated < cutoff:
+    if published < cutoff:
         LOGGER.info(
-            "Skipping stale Greenhouse job %s for %s: updated_at %s is older "
+            "Skipping stale Greenhouse job %s for %s: first_published %s is older "
             "than %s days.",
             job_id,
             company_slug,
-            updated_at,
+            posted_at,
             max_age_days,
         )
         return False
@@ -520,7 +560,12 @@ def _utc_now() -> datetime:
     return datetime.now(timezone.utc)
 
 
-def _employment_type(item: dict[str, Any], title: str) -> EmploymentType:
+def _employment_type(
+    item: dict[str, Any],
+    title: str,
+    raw_description: str,
+) -> EmploymentType:
+    evidence = [title]
     metadata = item.get("metadata")
     if isinstance(metadata, list):
         for field in metadata:
@@ -529,17 +574,29 @@ def _employment_type(item: dict[str, Any], title: str) -> EmploymentType:
             name = _normalize_match_text(_clean_text(field.get("name")))
             if name not in {"employment type", "job type", "commitment"}:
                 continue
-            inferred = _employment_type_from_text(_clean_text(field.get("value")))
-            if inferred is not EmploymentType.unknown:
-                return inferred
-    return _employment_type_from_text(title)
+            evidence.append(_clean_text(field.get("value")))
+
+    explicit_description = re.search(
+        r"\b(?:employment|job)\s+type\s*[:\-]\s*"
+        r"([^.\n]{1,80})"
+        r"|\b(?:full[- ]time|part[- ]time|fixed[- ]term|contract)"
+        r"\s+(?:position|role|employment)\b",
+        raw_description,
+        flags=re.IGNORECASE,
+    )
+    if explicit_description:
+        evidence.append(explicit_description.group(0))
+    return _employment_type_from_text(" ".join(evidence))
 
 
 def _employment_type_from_text(value: str) -> EmploymentType:
     normalized = _normalize_match_text(value)
     if "intern" in normalized:
         return EmploymentType.intern
-    if any(term in normalized for term in ("contract", "temporary", "freelance")):
+    if any(
+        term in normalized
+        for term in ("contract", "temporary", "freelance", "fixed term", "ftc")
+    ):
         return EmploymentType.contract
     if any(term in normalized for term in ("full time", "fulltime", "permanent")):
         return EmploymentType.full_time
@@ -564,15 +621,36 @@ def _match_reason(
 
 
 def _is_trusted_apply_url(url: str, company: Company) -> bool:
-    parsed = urlsplit(url)
+    if "\\" in url or any(character.isspace() for character in url):
+        return False
+    try:
+        parsed = urlsplit(url)
+        port = parsed.port
+    except ValueError:
+        return False
     host = (parsed.hostname or "").casefold().rstrip(".")
-    if parsed.scheme != "https" or not host:
+    if (
+        parsed.scheme != "https"
+        or not host
+        or parsed.username is not None
+        or parsed.password is not None
+        or port not in (None, 443)
+    ):
         return False
     if host == _GREENHOUSE_DOMAIN or host.endswith(f".{_GREENHOUSE_DOMAIN}"):
-        return True
+        token = (company.source_token or "").strip().casefold()
+        safe_parts = safe_url_path_parts(parsed.path)
+        if safe_parts is None:
+            return False
+        path_parts = [part.casefold() for part in safe_parts]
+        return bool(token and path_parts and path_parts[0] == token)
 
     for domain in company.careers_domains:
         trusted = _domain_from_registry_value(domain)
+        if trusted == _GREENHOUSE_DOMAIN or trusted.endswith(
+            f".{_GREENHOUSE_DOMAIN}"
+        ):
+            continue
         if trusted and (host == trusted or host.endswith(f".{trusted}")):
             return True
     return False

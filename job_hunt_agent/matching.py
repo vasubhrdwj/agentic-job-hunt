@@ -73,6 +73,7 @@ class ResumeFitScorer:
         return sorted(
             scored,
             key=lambda role: (
+                role.confidence >= 0.5,
                 role.fit_score is not None,
                 role.fit_score or 0.0,
                 role.confidence,

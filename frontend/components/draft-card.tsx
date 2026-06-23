@@ -39,6 +39,17 @@ export function DraftCard({ draft }: { draft: OutreachDraft }) {
           >
             {draft.person.source} profile ↗
           </a>
+          {draft.person.verified_current_employer &&
+          draft.person.confidence >= 0.5 ? (
+            <p className="mt-1 text-[10px] font-medium text-emerald-700 dark:text-emerald-300">
+              Verified current employer ·{" "}
+              {Math.round(draft.person.confidence * 100)}% confidence
+            </p>
+          ) : (
+            <p className="mt-1 text-[10px] font-medium text-amber-700 dark:text-amber-300">
+              Unverified legacy contact
+            </p>
+          )}
         </div>
         <div className="flex items-center gap-1.5">
           {typeof draft.eval_score === "number" && (

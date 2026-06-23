@@ -177,6 +177,23 @@ def test_rejects_untrusted_detail_urls(
     assert "missing trusted" in caplog.text
 
 
+def test_rejects_company_path_traversal(
+    monkeypatch: pytest.MonkeyPatch,
+    fixture: dict[str, object],
+    company: Company,
+    criteria: JobCriteria,
+) -> None:
+    fixture["details"]["744000132768109"]["postingUrl"] = (
+        "https://jobs.smartrecruiters.com/Freshworks/%2e%2e/AnotherCompany/job"
+    )
+    fixture["details"]["744000132768109"]["applyUrl"] = (
+        "https://jobs.smartrecruiters.com/Freshworks/%2e%2e/AnotherCompany/apply"
+    )
+    _install_router(monkeypatch, fixture)
+
+    assert SmartRecruitersAdapter().fetch_open_roles(company, criteria) == []
+
+
 def test_malformed_list_returns_empty_and_logs(
     monkeypatch: pytest.MonkeyPatch,
     company: Company,

@@ -8,8 +8,8 @@ export default function HomePage() {
           Job Hunt Signal
         </h1>
         <p className="mt-2 text-sm text-zinc-600 dark:text-zinc-400">
-          Paste a resume, set the criteria, and the agent will find 3 roles, 9
-          referral targets, and draft a personalized message for each.
+          Find fresh first-party roles, rank them against your resume, and draft
+          outreach only when a current employee can be verified.
         </p>
       </header>
       <InputForm />

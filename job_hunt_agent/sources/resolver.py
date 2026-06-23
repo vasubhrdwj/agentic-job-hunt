@@ -13,7 +13,7 @@ from opentelemetry import trace
 from job_hunt_agent.schemas import Company, CompanySource, EmploymentType, JobCriteria, Role
 from job_hunt_agent.sources.amazon import AmazonAdapter
 from job_hunt_agent.sources.ashby import AshbyAdapter
-from job_hunt_agent.sources.base import SourceAdapter
+from job_hunt_agent.sources.base import SourceAdapter, safe_url_path_parts
 from job_hunt_agent.sources.google_jobs import GoogleJobsAdapter
 from job_hunt_agent.sources.greenhouse import GreenhouseAdapter
 from job_hunt_agent.sources.lever import LeverAdapter
@@ -104,6 +104,7 @@ class SourceResolver:
         max_total: int | None = None,
         use_cache: bool = True,
         allow_fallback: bool = True,
+        require_first_party: bool = False,
     ) -> list[Role]:
         """Aggregate roles from every active company in a registry."""
 
@@ -115,6 +116,12 @@ class SourceResolver:
                 use_cache=use_cache,
                 allow_fallback=allow_fallback,
             )
+            if require_first_party:
+                company_roles = [
+                    role
+                    for role in company_roles
+                    if is_first_party_role(role, company)
+                ]
             if max_per_company is not None:
                 company_roles = company_roles[: max(0, max_per_company)]
             roles.extend(company_roles)
@@ -172,16 +179,49 @@ def is_first_party_role(role: Role, company: Company) -> bool:
         or parsed.username is not None
         or parsed.password is not None
         or port not in (None, 443)
+        or safe_url_path_parts(parsed.path) is None
         or "\\" in role.url
         or any(character.isspace() for character in role.url)
     ):
         return False
     hostname = parsed.hostname.casefold().rstrip(".")
+    path_parts = safe_url_path_parts(parsed.path)
+    if path_parts is None or not _matches_shared_ats_tenant(
+        hostname,
+        path_parts,
+        company,
+    ):
+        return False
     return any(
         hostname == domain.casefold()
         or hostname.endswith(f".{domain.casefold()}")
         for domain in company.careers_domains
     )
+
+
+def _matches_shared_ats_tenant(
+    hostname: str,
+    path_parts: tuple[str, ...],
+    company: Company,
+) -> bool:
+    token = (company.source_token or "").strip().casefold()
+    expected: str | None = None
+    if hostname == "greenhouse.io" or hostname.endswith(".greenhouse.io"):
+        expected = token
+    elif hostname in {"jobs.lever.co", "jobs.eu.lever.co"}:
+        expected = token
+    elif hostname == "jobs.ashbyhq.com":
+        expected = token
+    elif hostname == "jobs.smartrecruiters.com":
+        expected = token
+    elif hostname == "apply.workable.com":
+        expected = token
+    elif hostname.endswith(".myworkdayjobs.com"):
+        expected = token.split(":", 1)[1] if ":" in token else ""
+
+    if expected is None:
+        return True
+    return bool(path_parts and expected and path_parts[0].casefold() == expected)
 
 
 def _default_adapters() -> tuple[SourceAdapter, ...]:
@@ -200,17 +240,19 @@ def _default_adapters() -> tuple[SourceAdapter, ...]:
 def _filter_and_dedupe(roles: Iterable[Role], criteria: JobCriteria) -> list[Role]:
     filtered: list[Role] = []
     for role in roles:
+        if not _matches_role_intent(role, criteria):
+            continue
+        if not _matches_seniority_evidence(role, criteria):
+            continue
         if (
             criteria.employment_types
-            and role.employment_type is not EmploymentType.unknown
             and role.employment_type not in criteria.employment_types
         ):
             continue
         age = _age_days(role.posted_at)
         if (
-            age is not None
-            and criteria.max_age_days is not None
-            and age > criteria.max_age_days
+            criteria.max_age_days is not None
+            and (age is None or age > criteria.max_age_days)
         ):
             continue
         filtered.append(role)
@@ -271,6 +313,45 @@ def _age_days(posted_at: str | None) -> int | None:
 
 def _normalized(value: str) -> str:
     return " ".join(re.findall(r"[a-z0-9]+", value.casefold()))
+
+
+def _matches_role_intent(role: Role, criteria: JobCriteria) -> bool:
+    requested = {
+        token
+        for keyword in criteria.role_keywords
+        for token in _normalized(keyword).split()
+    }
+    title = set(_normalized(role.title).split())
+    if "backend" in requested and title.intersection(
+        {"frontend", "android", "ios", "mobile"}
+    ):
+        return False
+    return True
+
+
+def _matches_seniority_evidence(role: Role, criteria: JobCriteria) -> bool:
+    if criteria.seniority != "junior":
+        return True
+    evidence = " ".join(
+        [
+            role.title,
+            role.raw_description or "",
+        ]
+    ).casefold()
+    if re.search(
+        r"\b(?:senior|staff|principal|lead|manager|intermediate|mid-level)\b.{0,30}"
+        r"\b(?:engineer|developer)\b",
+        evidence,
+    ):
+        return False
+    years = [
+        int(value)
+        for value in re.findall(
+            r"\b(?:at least\s+|minimum\s+)?(\d{1,2})\+?\s+years?\b",
+            evidence,
+        )
+    ]
+    return not years or min(years) <= 2
 
 
 __all__ = ["SourceResolver", "is_first_party_role"]

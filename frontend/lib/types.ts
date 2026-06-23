@@ -9,6 +9,17 @@ export type OutcomeKind =
   | "rejected"
   | "pending";
 export type PersonSource = "linkedin" | "github" | "company_page" | "other";
+export type EmploymentType = "full_time" | "contract" | "intern" | "unknown";
+export type CompanySource =
+  | "greenhouse"
+  | "lever"
+  | "ashby"
+  | "workday"
+  | "smartrecruiters"
+  | "workable"
+  | "bespoke"
+  | "google_jobs"
+  | "scrape";
 
 export type JobCriteria = {
   role_keywords: string[];
@@ -16,6 +27,9 @@ export type JobCriteria = {
   location: string[];
   comp_min_lpa?: number | null;
   comp_max_lpa?: number | null;
+  employment_types: EmploymentType[];
+  max_age_days?: number | null;
+  country: string;
 };
 
 export type Role = {
@@ -25,6 +39,14 @@ export type Role = {
   location: string;
   summary: string;
   match_reason: string;
+  source: CompanySource;
+  apply_urls: string[];
+  posted_at?: string | null;
+  source_updated_at?: string | null;
+  employment_type: EmploymentType;
+  raw_description?: string | null;
+  fit_score?: number | null;
+  confidence: number;
 };
 
 export type Person = {
@@ -34,6 +56,8 @@ export type Person = {
   profile_url: string;
   source: PersonSource;
   why_relevant: string;
+  verified_current_employer: boolean;
+  confidence: number;
 };
 
 export type OutreachDraft = {

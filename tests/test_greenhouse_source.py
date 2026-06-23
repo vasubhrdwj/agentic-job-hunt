@@ -55,6 +55,7 @@ def criteria() -> JobCriteria:
         role_keywords=["distributed systems"],
         seniority="staff",
         location=["Bengaluru"],
+        max_age_days=None,
     )
 
 
@@ -108,7 +109,8 @@ def test_maps_real_fixture_to_exact_role_contract(
     assert role.apply_urls == [role.url]
     assert role.location == "Bengaluru"
     assert role.source is CompanySource.greenhouse
-    assert role.posted_at == "2026-06-18T15:34:16-04:00"
+    assert role.posted_at == "2026-03-11T07:17:17-04:00"
+    assert role.source_updated_at == "2026-06-18T15:34:16-04:00"
     assert role.employment_type is EmploymentType.full_time
     assert role.confidence == 1.0
     assert role.raw_description
@@ -152,17 +154,21 @@ def test_filters_only_on_source_evidence(
     assert roles == []
 
 
-def test_filters_roles_older_than_max_age_using_timezone_aware_updated_at(
+def test_filters_roles_older_than_max_age_using_first_published(
     monkeypatch: pytest.MonkeyPatch,
     company: Company,
     criteria: JobCriteria,
 ) -> None:
     payload = json.loads(_fixture_bytes())
     # 2026-05-06 19:59:59 -04:00 is one second older than the 45-day UTC cutoff.
-    payload["jobs"][0]["updated_at"] = "2026-05-06T19:59:59-04:00"
+    payload["jobs"][0]["first_published"] = "2026-05-06T19:59:59-04:00"
+    payload["jobs"][0]["updated_at"] = "2026-06-20T00:00:00Z"
     _install_response(monkeypatch, json.dumps(payload).encode())
 
-    roles = GreenhouseAdapter().fetch_open_roles(company, criteria)
+    roles = GreenhouseAdapter().fetch_open_roles(
+        company,
+        criteria.model_copy(update={"max_age_days": 45}),
+    )
 
     assert roles == []
 
@@ -174,10 +180,13 @@ def test_accepts_role_exactly_on_max_age_boundary_across_timezones(
 ) -> None:
     payload = json.loads(_fixture_bytes())
     # This is exactly 2026-05-07 00:00:00 UTC, 45 days before FIXED_NOW.
-    payload["jobs"][0]["updated_at"] = "2026-05-06T20:00:00-04:00"
+    payload["jobs"][0]["first_published"] = "2026-05-06T20:00:00-04:00"
     _install_response(monkeypatch, json.dumps(payload).encode())
 
-    roles = GreenhouseAdapter().fetch_open_roles(company, criteria)
+    roles = GreenhouseAdapter().fetch_open_roles(
+        company,
+        criteria.model_copy(update={"max_age_days": 45}),
+    )
 
     assert len(roles) == 1
 
@@ -188,7 +197,7 @@ def test_max_age_none_disables_freshness_filter(
     criteria: JobCriteria,
 ) -> None:
     payload = json.loads(_fixture_bytes())
-    payload["jobs"][0]["updated_at"] = "2020-01-01T00:00:00Z"
+    payload["jobs"][0]["first_published"] = "2020-01-01T00:00:00Z"
     _install_response(monkeypatch, json.dumps(payload).encode())
 
     roles = GreenhouseAdapter().fetch_open_roles(
@@ -199,21 +208,24 @@ def test_max_age_none_disables_freshness_filter(
     assert len(roles) == 1
 
 
-def test_invalid_updated_at_cannot_bypass_max_age_filter(
+def test_invalid_first_published_cannot_bypass_max_age_filter(
     monkeypatch: pytest.MonkeyPatch,
     caplog: pytest.LogCaptureFixture,
     company: Company,
     criteria: JobCriteria,
 ) -> None:
     payload = json.loads(_fixture_bytes())
-    payload["jobs"][0]["updated_at"] = "not-a-timestamp"
+    payload["jobs"][0]["first_published"] = "not-a-timestamp"
     _install_response(monkeypatch, json.dumps(payload).encode())
 
     with caplog.at_level(logging.WARNING, logger=greenhouse.__name__):
-        roles = GreenhouseAdapter().fetch_open_roles(company, criteria)
+        roles = GreenhouseAdapter().fetch_open_roles(
+            company,
+            criteria.model_copy(update={"max_age_days": 45}),
+        )
 
     assert roles == []
-    assert "invalid updated_at" in caplog.text
+    assert "invalid first_published" in caplog.text
 
 
 def test_keyword_matching_requires_token_or_phrase_boundaries(
@@ -371,6 +383,84 @@ def test_rejects_untrusted_apply_url_with_log(
 
     assert roles == []
     assert "not a trusted first-party URL" in caplog.text
+
+
+def test_rejects_cross_tenant_greenhouse_url(
+    monkeypatch: pytest.MonkeyPatch,
+    company: Company,
+    criteria: JobCriteria,
+) -> None:
+    payload = json.loads(_fixture_bytes())
+    payload["jobs"][0]["absolute_url"] = (
+        "https://job-boards.greenhouse.io/other-company/jobs/7704173"
+    )
+    _install_response(monkeypatch, json.dumps(payload).encode())
+
+    assert GreenhouseAdapter().fetch_open_roles(
+        company.model_copy(
+            update={"careers_domains": ["job-boards.greenhouse.io"]},
+        ),
+        criteria,
+    ) == []
+
+
+@pytest.mark.parametrize("segment", ["..", "%2e%2e", "%252e%252e"])
+def test_rejects_greenhouse_path_traversal(
+    monkeypatch: pytest.MonkeyPatch,
+    company: Company,
+    criteria: JobCriteria,
+    segment: str,
+) -> None:
+    payload = json.loads(_fixture_bytes())
+    payload["jobs"][0]["absolute_url"] = (
+        f"https://job-boards.greenhouse.io/mongodb/{segment}/other/jobs/7704173"
+    )
+    _install_response(monkeypatch, json.dumps(payload).encode())
+
+    assert GreenhouseAdapter().fetch_open_roles(company, criteria) == []
+
+
+def test_na_location_uses_matching_office_for_display(
+    monkeypatch: pytest.MonkeyPatch,
+    company: Company,
+    criteria: JobCriteria,
+) -> None:
+    payload = json.loads(_fixture_bytes())
+    payload["jobs"][0]["location"] = {"name": "N/A"}
+    payload["jobs"][0]["offices"] = [
+        {
+            "name": "Bengaluru",
+            "location": "Bengaluru, Karnataka, India",
+        }
+    ]
+    _install_response(monkeypatch, json.dumps(payload).encode())
+
+    roles = GreenhouseAdapter().fetch_open_roles(
+        company,
+        criteria.model_copy(update={"location": ["Bengaluru"]}),
+    )
+
+    assert roles[0].location == "Bengaluru, Karnataka, India"
+
+
+def test_missing_employment_evidence_remains_unknown(
+    monkeypatch: pytest.MonkeyPatch,
+    company: Company,
+    criteria: JobCriteria,
+) -> None:
+    payload = json.loads(_fixture_bytes())
+    payload["jobs"][0]["metadata"] = []
+    payload["jobs"][0]["title"] = "Software Engineer"
+    payload["jobs"][0]["content"] = "<p>Build distributed systems.</p>"
+    _install_response(monkeypatch, json.dumps(payload).encode())
+
+    roles = GreenhouseAdapter().fetch_open_roles(
+        company,
+        criteria.model_copy(update={"seniority": "mid"}),
+    )
+
+    assert len(roles) == 1
+    assert roles[0].employment_type is EmploymentType.unknown
 
 
 def test_empty_payload_returns_empty_and_logs(

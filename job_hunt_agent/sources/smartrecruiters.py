@@ -16,6 +16,7 @@ from job_hunt_agent.schemas import (
     Role,
 )
 from job_hunt_agent.sources import ashby as _common
+from job_hunt_agent.sources.base import safe_url_path_parts
 
 
 LOGGER = logging.getLogger(__name__)
@@ -281,10 +282,24 @@ def _location_label(location: dict[str, Any]) -> str:
 
 def _trusted_url(value: Any, token: str) -> str:
     url = _common._clean_text(value)
-    parsed = urlsplit(url)
-    if parsed.scheme != "https" or parsed.hostname != "jobs.smartrecruiters.com":
+    if not url or "\\" in url or any(character.isspace() for character in url):
         return ""
-    parts = [part for part in parsed.path.split("/") if part]
+    try:
+        parsed = urlsplit(url)
+        port = parsed.port
+    except ValueError:
+        return ""
+    if (
+        parsed.scheme != "https"
+        or parsed.hostname != "jobs.smartrecruiters.com"
+        or parsed.username is not None
+        or parsed.password is not None
+        or port not in (None, 443)
+    ):
+        return ""
+    parts = safe_url_path_parts(parsed.path)
+    if parts is None:
+        return ""
     if not parts or parts[0].casefold() != token.casefold():
         return ""
     return url

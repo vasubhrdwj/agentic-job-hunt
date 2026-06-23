@@ -188,7 +188,15 @@ def find_referrals_mock(role: Role) -> list[dict[str, Any]]:
     }
 
     people = people_by_company.get(role.company, _fallback_people_for_role(role))
-    return [person.model_dump() for person in people[:3]]
+    return [
+        person.model_copy(
+            update={
+                "verified_current_employer": True,
+                "confidence": 1.0,
+            },
+        ).model_dump()
+        for person in people[:3]
+    ]
 
 
 def _fallback_people_for_role(role: Role) -> list[Person]:

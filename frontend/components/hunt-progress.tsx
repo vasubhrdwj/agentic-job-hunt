@@ -3,8 +3,9 @@
 import { useEffect, useState } from "react";
 
 const STAGES = [
-  { label: "Searching for matching roles", until: 30 },
-  { label: "Finding referral targets", until: 60 },
+  { label: "Checking first-party company boards", until: 30 },
+  { label: "Ranking roles against your resume", until: 50 },
+  { label: "Verifying current employees", until: 75 },
   { label: "Drafting outreach", until: Infinity },
 ];
 
@@ -82,7 +83,8 @@ export function HuntProgress() {
       </div>
 
       <p className="mt-4 text-xs text-zinc-500">
-        This usually takes 60–90 seconds.
+        This usually takes 60–120 seconds. Empty results are kept honest rather
+        than padded.
       </p>
 
       <style>{`

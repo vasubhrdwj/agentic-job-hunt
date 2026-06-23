@@ -141,7 +141,7 @@ def test_fallback_can_be_disabled_for_first_party_supply_checks():
     assert fallback.calls == 0
 
 
-def test_filters_stale_and_wrong_employment_type_but_keeps_unknown_dates():
+def test_filters_stale_wrong_type_and_unverifiable_dates():
     primary = FakeAdapter(
         name="greenhouse",
         supported_source=CompanySource.greenhouse,
@@ -164,7 +164,69 @@ def test_filters_stale_and_wrong_employment_type_but_keeps_unknown_dates():
         use_cache=False,
     )
 
-    assert [role.title for role in roles] == ["Fresh", "Undated"]
+    assert [role.title for role in roles] == ["Fresh"]
+
+
+def test_full_time_filter_rejects_unknown_employment_type():
+    primary = FakeAdapter(
+        name="greenhouse",
+        supported_source=CompanySource.greenhouse,
+        roles=[
+            _role(
+                title="Unknown type",
+                employment_type=EmploymentType.unknown,
+            )
+        ],
+    )
+    resolver = SourceResolver([primary], fallback=FakeAdapter(name="google_jobs"))
+
+    assert resolver.fetch_company_roles(
+        _company(),
+        _criteria(),
+        use_cache=False,
+    ) == []
+
+
+def test_junior_backend_intent_rejects_frontend_mobile_and_high_experience():
+    primary = FakeAdapter(
+        name="greenhouse",
+        supported_source=CompanySource.greenhouse,
+        roles=[
+            _role(title="Frontend Software Engineer"),
+            _role(
+                title="Software Engineer",
+                url="https://acme.example/jobs/senior-hidden",
+            ).model_copy(
+                update={
+                    "raw_description": (
+                        "A long introduction. " * 500
+                        + "Requires 5+ years of backend experience."
+                    )
+                }
+            ),
+            _role(
+                title="Backend Engineer",
+                url="https://acme.example/jobs/intermediate",
+            ).model_copy(
+                update={"raw_description": "An Intermediate Backend Engineer role."}
+            ),
+            _role(
+                title="Backend Engineer",
+                url="https://acme.example/jobs/junior",
+            ).model_copy(
+                update={"raw_description": "Requires 1 year of Python experience."}
+            ),
+        ],
+    )
+    resolver = SourceResolver([primary], fallback=FakeAdapter(name="google_jobs"))
+
+    roles = resolver.fetch_company_roles(
+        _company(),
+        _criteria(),
+        use_cache=False,
+    )
+
+    assert [role.title for role in roles] == ["Backend Engineer"]
 
 
 def test_registry_aggregation_dedupes_by_company_title_and_apply_url():
@@ -203,6 +265,31 @@ def test_registry_aggregation_dedupes_by_company_title_and_apply_url():
     }
 
 
+def test_registry_can_require_company_careers_domain():
+    acme = _company()
+    primary = FakeAdapter(
+        name="greenhouse",
+        supported_source=CompanySource.greenhouse,
+        roles=[
+            _role(title="Trusted"),
+            _role(
+                title="Aggregator",
+                url="https://jobs.example.net/acme/aggregator",
+            ),
+        ],
+    )
+    resolver = SourceResolver([primary], fallback=FakeAdapter(name="google_jobs"))
+
+    roles = resolver.fetch_registry_roles(
+        CompanyRegistry([acme]),
+        _criteria(),
+        use_cache=False,
+        require_first_party=True,
+    )
+
+    assert [role.title for role in roles] == ["Trusted"]
+
+
 def test_first_party_url_requires_safe_https_domain():
     company = _company()
 
@@ -215,3 +302,62 @@ def test_first_party_url_requires_safe_https_domain():
         _role(url="https://user@acme.example/jobs/1"),
         company,
     )
+    assert not is_first_party_role(
+        _role(url="https://acme.example/jobs/../other/1"),
+        company,
+    )
+    assert not is_first_party_role(
+        _role(url="https://acme.example/jobs/%2e%2e/other/1"),
+        company,
+    )
+
+
+def test_first_party_url_requires_shared_ats_tenant_match():
+    cases = [
+        (
+            _company(
+                name="MongoDB",
+                slug="mongodb",
+                source=CompanySource.greenhouse,
+            ).model_copy(
+                update={"careers_domains": ["job-boards.greenhouse.io"]},
+            ),
+            "https://job-boards.greenhouse.io/other/jobs/123",
+        ),
+        (
+            _company(
+                name="Palantir",
+                slug="palantir",
+                source=CompanySource.lever,
+            ).model_copy(update={"careers_domains": ["jobs.lever.co"]}),
+            "https://jobs.lever.co/other/123/apply",
+        ),
+        (
+            _company(
+                name="Ashby",
+                slug="ashby",
+                source=CompanySource.ashby,
+            ).model_copy(update={"careers_domains": ["jobs.ashbyhq.com"]}),
+            "https://jobs.ashbyhq.com/other/123",
+        ),
+        (
+            _company(
+                name="Freshworks",
+                slug="freshworks",
+                source=CompanySource.smartrecruiters,
+            ).model_copy(
+                update={"careers_domains": ["jobs.smartrecruiters.com"]},
+            ),
+            "https://jobs.smartrecruiters.com/other/123",
+        ),
+    ]
+
+    for company, url in cases:
+        assert not is_first_party_role(
+            _role(
+                company=company.name,
+                url=url,
+                source=company.source,
+            ),
+            company,
+        )

@@ -23,6 +23,7 @@ from job_hunt_agent.schemas import (
     JobCriteria,
     Role,
 )
+from job_hunt_agent.sources.base import safe_url_path_parts
 
 
 LOGGER = logging.getLogger(__name__)
@@ -247,12 +248,24 @@ def _request_json(
 
 def _trusted_ashby_url(value: Any, board: str) -> str:
     url = _clean_text(value)
-    if not url:
+    if not url or "\\" in url or any(character.isspace() for character in url):
         return ""
-    parsed = urlsplit(url)
-    if parsed.scheme != "https" or parsed.hostname != "jobs.ashbyhq.com":
+    try:
+        parsed = urlsplit(url)
+        port = parsed.port
+    except ValueError:
         return ""
-    path_parts = [part for part in parsed.path.split("/") if part]
+    if (
+        parsed.scheme != "https"
+        or parsed.hostname != "jobs.ashbyhq.com"
+        or parsed.username is not None
+        or parsed.password is not None
+        or port not in (None, 443)
+    ):
+        return ""
+    path_parts = safe_url_path_parts(parsed.path)
+    if path_parts is None:
+        return ""
     if not path_parts or path_parts[0].casefold() != board.casefold():
         return ""
     return url

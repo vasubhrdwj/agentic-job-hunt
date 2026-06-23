@@ -22,6 +22,7 @@ from job_hunt_agent.schemas import (
     JobCriteria,
     Role,
 )
+from job_hunt_agent.sources.base import safe_url_path_parts
 
 
 LOGGER = logging.getLogger(__name__)
@@ -330,10 +331,21 @@ def _country_iso3(country: str) -> str:
 
 def _trusted_amazon_url(value: Any) -> str:
     url = _clean_text(value)
-    if not url:
+    if not url or "\\" in url or any(character.isspace() for character in url):
         return ""
-    parsed = urlsplit(url)
-    if parsed.scheme != "https" or parsed.hostname not in AMAZON_TRUSTED_HOSTS:
+    try:
+        parsed = urlsplit(url)
+        port = parsed.port
+    except ValueError:
+        return ""
+    if (
+        parsed.scheme != "https"
+        or parsed.hostname not in AMAZON_TRUSTED_HOSTS
+        or parsed.username is not None
+        or parsed.password is not None
+        or port not in (None, 443)
+        or safe_url_path_parts(parsed.path) is None
+    ):
         return ""
     return url
 
@@ -392,17 +404,19 @@ def _match_reason(
 
 def _employment_type(item: dict[str, Any]) -> EmploymentType:
     schedule = _normalize_match_text(item.get("job_schedule_type"))
+    title = _normalize_match_text(item.get("title"))
+    evidence = f"{title} {schedule}".strip()
     if item.get("is_intern") is True or re.search(
         r"\b(?:intern|internship|apprentice)\b",
-        schedule,
+        evidence,
     ):
         return EmploymentType.intern
     if re.search(
-        r"\b(?:contract|contractor|temporary|seasonal|fixed term)\b",
-        schedule,
+        r"\b(?:contract|contractor|temporary|seasonal|fixed term|ftc)\b",
+        evidence,
     ):
         return EmploymentType.contract
-    if re.search(r"\b(?:full time|fulltime|regular)\b", schedule):
+    if re.search(r"\b(?:full time|fulltime|regular)\b", evidence):
         return EmploymentType.full_time
     return EmploymentType.unknown
 

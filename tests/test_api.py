@@ -72,6 +72,7 @@ def api_module(
         use_mocks=False,
         use_self_rag=True,
         enable_tracing=False,
+        pack=None,
     ):
         return _fake_run_hunt(run_id=run_id)
 
@@ -96,6 +97,7 @@ def _post_hunt(client: TestClient) -> dict:
                 "seniority": "senior",
                 "location": ["Remote-India"],
             },
+            "pack": "backend_india",
         },
     )
     assert response.status_code == 200, response.text
@@ -246,6 +248,7 @@ def test_db_path_env_var_is_honored(tmp_path: Path, monkeypatch: pytest.MonkeyPa
         use_mocks=False,
         use_self_rag=True,
         enable_tracing=False,
+        pack=None,
     ):
         return _fake_run_hunt(run_id=run_id)
 
@@ -282,10 +285,12 @@ def test_post_hunt_passes_tracing_flag_from_env(
         use_mocks=False,
         use_self_rag=True,
         enable_tracing=False,
+        pack=None,
     ):
         captured["enable_tracing"] = enable_tracing
         captured["use_mocks"] = use_mocks
         captured["use_self_rag"] = use_self_rag
+        captured["pack"] = pack
         return _fake_run_hunt(run_id=run_id)
 
     monkeypatch.setattr(api_mod, "run_hunt", stub)
@@ -297,6 +302,24 @@ def test_post_hunt_passes_tracing_flag_from_env(
     assert captured["enable_tracing"] is True
     assert captured["use_mocks"] is False
     assert captured["use_self_rag"] is True
+    assert captured["pack"] == "backend_india"
+
+
+def test_post_hunt_rejects_invalid_pack_name(client: TestClient) -> None:
+    response = client.post(
+        "/api/hunt",
+        json={
+            "resume_text": "Built backend systems.",
+            "criteria": {
+                "role_keywords": ["backend"],
+                "seniority": "junior",
+                "location": ["India"],
+            },
+            "pack": "../secret",
+        },
+    )
+
+    assert response.status_code == 422
 
 
 def test_production_config_fails_loudly_when_required_env_is_missing(

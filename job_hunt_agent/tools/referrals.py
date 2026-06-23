@@ -579,11 +579,18 @@ def _choose_people(
 
 
 def _current_company_signal(*, raw_title: str, snippet: str, company: str) -> bool:
+    normalized_title = _normalize_match_text(raw_title)
     normalized_snippet = _normalize_match_text(snippet)
+    combined = f"{normalized_title} {normalized_snippet}"
     for alias in _company_aliases(company):
         if re.search(
-            rf"\b(?:former|formerly|previously|ex)\b.{{0,30}}\b{re.escape(alias)}\b",
-            normalized_snippet,
+            rf"\b(?:former|formerly|previously|ex|alum|alumnus|alumni)\b"
+            rf".{{0,30}}\b{re.escape(alias)}\b",
+            combined,
+        ) or re.search(
+            rf"\b{re.escape(alias)}\b.{{0,30}}"
+            rf"\b(?:former|formerly|previously|ex|alum|alumnus|alumni)\b",
+            combined,
         ):
             return False
     if _company_matches(company, raw_title):

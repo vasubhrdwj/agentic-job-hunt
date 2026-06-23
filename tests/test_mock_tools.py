@@ -45,6 +45,8 @@ class MockToolsTest(unittest.TestCase):
         validated_people = [Person.model_validate(person) for person in people]
         self.assertTrue(all(person.company == role.company for person in validated_people))
         self.assertTrue(all(person.profile_url for person in validated_people))
+        self.assertTrue(all(person.verified_current_employer for person in validated_people))
+        self.assertTrue(all(person.confidence == 1.0 for person in validated_people))
 
     def test_find_referrals_mock_accepts_adk_style_dict_input(self) -> None:
         role = search_jobs_mock(self.criteria)[1]

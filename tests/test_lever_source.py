@@ -154,12 +154,21 @@ def test_fetch_records_token_safe_source_span(
 ) -> None:
     tracer = _FakeTracer()
     secret_token = "sensitive-board-token"
+    payload = copy.deepcopy(fixture_payload)
+    payload[0]["applyUrl"] = str(payload[0]["applyUrl"]).replace(
+        "/palantir/",
+        f"/{secret_token}/",
+    )
+    payload[0]["hostedUrl"] = str(payload[0]["hostedUrl"]).replace(
+        "/palantir/",
+        f"/{secret_token}/",
+    )
     monkeypatch.setattr(lever, "TRACER", tracer)
     monkeypatch.setattr(
         lever,
         "urlopen",
         Mock(
-            return_value=_Response(json.dumps(fixture_payload).encode("utf-8")),
+            return_value=_Response(json.dumps(payload).encode("utf-8")),
         ),
     )
 
@@ -222,6 +231,48 @@ def test_rejects_non_lever_urls_in_postings(
 
     assert roles == []
     assert "missing trusted applyUrl or hostedUrl" in caplog.text
+
+
+def test_rejects_cross_tenant_lever_urls(
+    monkeypatch: pytest.MonkeyPatch,
+    fixture_payload: list[dict[str, object]],
+    company: Company,
+    criteria: JobCriteria,
+) -> None:
+    payload = copy.deepcopy(fixture_payload)
+    payload[0]["applyUrl"] = "https://jobs.lever.co/other-company/123/apply"
+    payload[0]["hostedUrl"] = "https://jobs.lever.co/other-company/123"
+    monkeypatch.setattr(
+        lever,
+        "urlopen",
+        Mock(return_value=_Response(json.dumps(payload).encode("utf-8"))),
+    )
+
+    assert LeverAdapter().fetch_open_roles(company, criteria) == []
+
+
+@pytest.mark.parametrize("segment", ["..", "%2e%2e", "%252e%252e"])
+def test_rejects_lever_path_traversal(
+    monkeypatch: pytest.MonkeyPatch,
+    fixture_payload: list[dict[str, object]],
+    company: Company,
+    criteria: JobCriteria,
+    segment: str,
+) -> None:
+    payload = copy.deepcopy(fixture_payload)
+    payload[0]["applyUrl"] = (
+        f"https://jobs.lever.co/palantir/{segment}/other/123/apply"
+    )
+    payload[0]["hostedUrl"] = (
+        f"https://jobs.lever.co/palantir/{segment}/other/123"
+    )
+    monkeypatch.setattr(
+        lever,
+        "urlopen",
+        Mock(return_value=_Response(json.dumps(payload).encode("utf-8"))),
+    )
+
+    assert LeverAdapter().fetch_open_roles(company, criteria) == []
 
 
 @pytest.mark.parametrize(

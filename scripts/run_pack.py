@@ -43,8 +43,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--sources",
-        default="greenhouse,lever",
-        help="Comma-separated source types included in this supply gate.",
+        default="",
+        help=(
+            "Optional comma-separated source types included in this supply gate. "
+            "The default checks every configured first-party adapter."
+        ),
     )
     parser.add_argument("--min-roles", type=int, default=10)
     parser.add_argument("--min-companies", type=int, default=5)
@@ -84,6 +87,7 @@ def main(argv: list[str] | None = None) -> int:
         max_per_company=args.max_per_company,
         use_cache=False,
         allow_fallback=False,
+        require_first_party=True,
     )
     companies = {company.slug: company for company in registry.active_companies}
     first_party = [

@@ -10,6 +10,7 @@ class ConfigurePhoenixTracingTest(unittest.TestCase):
 
     def test_configure_loads_dotenv_before_registering_phoenix(self) -> None:
         calls: list[str] = []
+        register_kwargs: dict[str, object] = {}
         fake_provider = object()
 
         def fake_load_dotenv() -> None:
@@ -17,6 +18,7 @@ class ConfigurePhoenixTracingTest(unittest.TestCase):
 
         def fake_register(**kwargs: object) -> object:
             calls.append("register")
+            register_kwargs.update(kwargs)
             return fake_provider
 
         with (
@@ -32,8 +34,19 @@ class ConfigurePhoenixTracingTest(unittest.TestCase):
 
         self.assertIs(provider, fake_provider)
         self.assertEqual(calls, ["dotenv", "register"])
+        self.assertTrue(register_kwargs["batch"])
         instrumentor.return_value.instrument.assert_called_once_with(tracer_provider=fake_provider)
         genai_instrumentor.assert_called_once_with(fake_provider)
+
+    def test_flush_forces_batch_export(self) -> None:
+        provider = Mock()
+        provider.force_flush.return_value = True
+
+        with patch.object(tracing, "_tracer_provider", provider):
+            flushed = tracing.flush_phoenix_tracing(timeout_millis=321)
+
+        self.assertTrue(flushed)
+        provider.force_flush.assert_called_once_with(timeout_millis=321)
 
 
 if __name__ == "__main__":

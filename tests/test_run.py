@@ -5,6 +5,7 @@ from unittest.mock import patch
 
 from job_hunt_agent.run import _maybe_span, criteria_from_args, run_hunt
 from job_hunt_agent.schemas import HuntResult, JobCriteria, OutreachDraft, Person, Role
+from job_hunt_agent.sources.registry import CompanyRegistry
 from job_hunt_agent.tools.registry import PipelineTools
 
 
@@ -30,6 +31,8 @@ class RunHuntTest(unittest.TestCase):
             profile_url="https://www.linkedin.com/in/priya-rao-identity",
             source="linkedin",
             why_relevant="Works near the identity systems described in the role.",
+            verified_current_employer=True,
+            confidence=0.9,
         )
 
     def test_run_hunt_returns_structured_result(self) -> None:
@@ -96,6 +99,72 @@ class RunHuntTest(unittest.TestCase):
 
         self.assertEqual(len(result.roles), 2)
         self.assertEqual(len(result.outreach), 4)
+
+    def test_run_hunt_omits_unverified_referrals_before_drafting(self) -> None:
+        unverified = self.person.model_copy(
+            update={
+                "verified_current_employer": False,
+                "confidence": 0.0,
+            },
+        )
+        draft_calls: list[str] = []
+        tools = PipelineTools(
+            search_jobs=lambda criteria: [self.role],
+            find_referrals=lambda role: [unverified],
+            draft_message=lambda role, person, resume_text, **_kw: (
+                draft_calls.append(person.name) or "must not draft"
+            ),
+        )
+
+        with patch("job_hunt_agent.run.build_pipeline_tools", return_value=tools):
+            result = run_hunt(
+                resume_text="Built identity systems.",
+                criteria=self.criteria,
+            )
+
+        self.assertEqual(result.outreach, [])
+        self.assertEqual(draft_calls, [])
+
+    def test_run_hunt_uses_pack_resolver_and_ranks_by_resume_fit(self) -> None:
+        relevant = self.role.model_copy(
+            update={
+                "company": "Relevant Co",
+                "raw_description": "Build SCIM provisioning APIs in Python and Go.",
+            }
+        )
+        irrelevant = self.role.model_copy(
+            update={
+                "company": "Irrelevant Co",
+                "raw_description": "Coordinate executive calendars and travel.",
+            }
+        )
+        tools = PipelineTools(
+            search_jobs=lambda criteria: [],
+            find_referrals=lambda role: [],
+            draft_message=lambda role, person, resume_text, **_kw: "unused",
+        )
+        fake_registry = CompanyRegistry([], name="test")
+
+        with (
+            patch("job_hunt_agent.run.build_pipeline_tools", return_value=tools),
+            patch("job_hunt_agent.run.load_company_pack", return_value=fake_registry),
+            patch(
+                "job_hunt_agent.run.SourceResolver.fetch_registry_roles",
+                return_value=[irrelevant, relevant],
+            ) as fetch,
+        ):
+            result = run_hunt(
+                resume_text="Built SCIM APIs in Python and Go.",
+                criteria=self.criteria,
+                pack="backend_india",
+            )
+
+        fetch.assert_called_once()
+        self.assertFalse(fetch.call_args.kwargs["allow_fallback"])
+        self.assertTrue(fetch.call_args.kwargs["require_first_party"])
+        self.assertEqual(result.roles[0].company, "Relevant Co")
+        self.assertGreater(result.roles[0].fit_score, result.roles[1].fit_score)
+        self.assertEqual(result.outreach, [])
 
     def test_run_hunt_with_mocks_produces_three_by_three_outreach(self) -> None:
         result = run_hunt(
@@ -184,6 +253,8 @@ class RunHuntTest(unittest.TestCase):
             location="Remote-India, Hyderabad",
             comp_min_lpa=30,
             comp_max_lpa=60,
+            employment_types="full_time,contract",
+            max_age_days=30,
         )
 
         criteria = criteria_from_args(args)
@@ -192,6 +263,11 @@ class RunHuntTest(unittest.TestCase):
         self.assertEqual(criteria.location, ["Remote-India", "Hyderabad"])
         self.assertEqual(criteria.seniority, "staff")
         self.assertEqual(criteria.comp_min_lpa, 30)
+        self.assertEqual(
+            [value.value for value in criteria.employment_types],
+            ["full_time", "contract"],
+        )
+        self.assertEqual(criteria.max_age_days, 30)
 
     def test_run_hunt_threads_use_self_rag_to_draft_message(self) -> None:
         captured: list[dict[str, object]] = []

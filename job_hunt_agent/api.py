@@ -23,6 +23,7 @@ from pydantic import BaseModel, Field
 from . import persistence
 from .run import run_hunt
 from .schemas import HuntResult, JobCriteria, OutcomeLog
+from .sources.registry import RegistryError
 
 
 TRUTHY_ENV_VALUES = {"1", "true", "yes", "on"}
@@ -44,6 +45,11 @@ class HuntRequest(BaseModel):
             "Toggle V8 self-RAG. Set False for the V10 round-1 baseline so the "
             "demo can compare drafts with and without past-trace exemplars."
         ),
+    )
+    pack: str = Field(
+        default="backend_india",
+        pattern=r"^[A-Za-z0-9][A-Za-z0-9_-]*$",
+        description="Curated company pack used for first-party job discovery.",
     )
 
 
@@ -172,14 +178,18 @@ def create_app() -> FastAPI:
     def post_hunt(request: HuntRequest) -> HuntResult:
         """Run the pipeline once and persist the HuntResult."""
         new_run_id = uuid4().hex
-        result = run_hunt(
-            resume_text=request.resume_text,
-            criteria=request.criteria,
-            run_id=new_run_id,
-            use_mocks=use_mocks,
-            use_self_rag=request.use_self_rag,
-            enable_tracing=enable_tracing,
-        )
+        try:
+            result = run_hunt(
+                resume_text=request.resume_text,
+                criteria=request.criteria,
+                run_id=new_run_id,
+                use_mocks=use_mocks,
+                use_self_rag=request.use_self_rag,
+                enable_tracing=enable_tracing,
+                pack=request.pack,
+            )
+        except RegistryError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
         persistence.save_run(result)
         return result
 

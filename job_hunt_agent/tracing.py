@@ -26,12 +26,20 @@ def configure_phoenix_tracing(
     _load_dotenv_if_available()
     _tracer_provider = register(
         project_name=project_name,
+        batch=True,
         auto_instrument=False,
         protocol=protocol,
     )
     GoogleADKInstrumentor().instrument(tracer_provider=_tracer_provider)
     _instrument_google_genai_if_available(_tracer_provider)
     return _tracer_provider
+
+
+def flush_phoenix_tracing(timeout_millis: int = 15_000) -> bool:
+    """Flush queued spans when a short-lived CLI process is about to exit."""
+    if _tracer_provider is None:
+        return True
+    return bool(_tracer_provider.force_flush(timeout_millis=timeout_millis))
 
 
 def _instrument_google_genai_if_available(tracer_provider: Any) -> None:

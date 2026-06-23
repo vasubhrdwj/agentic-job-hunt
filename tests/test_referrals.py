@@ -298,6 +298,74 @@ class ReferralsTest(unittest.TestCase):
         ):
             self.assertEqual(find_referrals(self.role), [])
 
+    def test_find_referrals_omits_former_employee_marker_in_title(self) -> None:
+        payload = {
+            "organic_results": [
+                {
+                    "title": (
+                        "Priya Rao - Former Staff Software Engineer - "
+                        "Twilio | LinkedIn"
+                    ),
+                    "link": "https://www.linkedin.com/in/priya-rao-identity/",
+                    "snippet": "Software engineer and platform builder.",
+                }
+            ]
+        }
+
+        with (
+            patch.dict(os.environ, {"SERPAPI_API_KEY": "fake-key"}, clear=True),
+            patch.object(referrals, "_fetch_serpapi_search", return_value=payload),
+        ):
+            self.assertEqual(find_referrals(self.role), [])
+
+    def test_find_referrals_omits_company_alum_marker(self) -> None:
+        payload = {
+            "organic_results": [
+                {
+                    "title": "Priya Rao - Twilio alum | LinkedIn",
+                    "link": "https://www.linkedin.com/in/priya-rao-identity/",
+                    "snippet": "Software engineer and platform builder.",
+                }
+            ]
+        }
+
+        with (
+            patch.dict(os.environ, {"SERPAPI_API_KEY": "fake-key"}, clear=True),
+            patch.object(referrals, "_fetch_serpapi_search", return_value=payload),
+        ):
+            self.assertEqual(find_referrals(self.role), [])
+
+    def test_find_referrals_omits_reverse_order_former_markers(self) -> None:
+        titles = [
+            "Priya Rao - Twilio ex-employee | LinkedIn",
+            "Priya Rao - Twilio formerly employed | LinkedIn",
+            "Priya Rao - Twilio previously employed | LinkedIn",
+        ]
+        for title in titles:
+            payload = {
+                "organic_results": [
+                    {
+                        "title": title,
+                        "link": "https://www.linkedin.com/in/priya-rao-identity/",
+                        "snippet": "Software engineer and platform builder.",
+                    }
+                ]
+            }
+            with (
+                self.subTest(title=title),
+                patch.dict(
+                    os.environ,
+                    {"SERPAPI_API_KEY": "fake-key"},
+                    clear=True,
+                ),
+                patch.object(
+                    referrals,
+                    "_fetch_serpapi_search",
+                    return_value=payload,
+                ),
+            ):
+                self.assertEqual(find_referrals(self.role), [])
+
     def test_find_referrals_rejects_deceptive_profile_url(self) -> None:
         payload = {
             "organic_results": [

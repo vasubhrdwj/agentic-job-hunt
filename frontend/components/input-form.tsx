@@ -3,10 +3,22 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { postHunt, ApiError } from "@/lib/api";
-import type { JobCriteria, Seniority } from "@/lib/types";
+import type {
+  EmploymentType,
+  JobCriteria,
+  Seniority,
+} from "@/lib/types";
 import { HuntProgress } from "./hunt-progress";
 
 const SENIORITY_OPTIONS: Seniority[] = ["junior", "mid", "senior", "staff"];
+const EMPLOYMENT_OPTIONS: {
+  value: EmploymentType;
+  label: string;
+}[] = [
+  { value: "full_time", label: "Full-time" },
+  { value: "contract", label: "Contract" },
+  { value: "intern", label: "Internship" },
+];
 
 function splitCsv(value: string): string[] {
   return value
@@ -18,9 +30,17 @@ function splitCsv(value: string): string[] {
 export function InputForm() {
   const router = useRouter();
   const [resume, setResume] = useState("");
-  const [keywords, setKeywords] = useState("SCIM, identity, IAM, OIDC");
-  const [locations, setLocations] = useState("Remote-India, Bengaluru");
-  const [seniority, setSeniority] = useState<Seniority>("senior");
+  const [keywords, setKeywords] = useState(
+    "backend engineer, software engineer, backend developer",
+  );
+  const [locations, setLocations] = useState(
+    "India, Remote-India, Bengaluru, Hyderabad",
+  );
+  const [seniority, setSeniority] = useState<Seniority>("junior");
+  const [pack, setPack] = useState("backend_india");
+  const [employmentTypes, setEmploymentTypes] = useState<EmploymentType[]>([
+    "full_time",
+  ]);
   const [compMin, setCompMin] = useState("");
   const [compMax, setCompMax] = useState("");
 
@@ -46,6 +66,10 @@ export function InputForm() {
       setError("Add at least one location.");
       return;
     }
+    if (employmentTypes.length === 0) {
+      setError("Select at least one employment type.");
+      return;
+    }
 
     const criteria: JobCriteria = {
       role_keywords: keywordList,
@@ -53,16 +77,19 @@ export function InputForm() {
       location: locationList,
       comp_min_lpa: compMin ? Number(compMin) : null,
       comp_max_lpa: compMax ? Number(compMax) : null,
+      employment_types: employmentTypes,
+      max_age_days: 45,
+      country: "in",
     };
 
     setPending(true);
     try {
-      const result = await postHunt(resume, criteria);
+      const result = await postHunt(resume, criteria, pack);
       router.push(`/runs/${result.run_id}`);
     } catch (err) {
       const message =
         err instanceof ApiError
-          ? `Backend returned ${err.status}. Check that the FastAPI server is running.`
+          ? err.message
           : err instanceof Error
             ? err.message
             : "Unknown error.";
@@ -88,7 +115,7 @@ export function InputForm() {
 
       <Field
         label="Resume"
-        hint="Paste plain text. No PDF magic in v1."
+        hint="Paste plain text. It is sent to the backend and, when drafting, the configured model provider."
         htmlFor="resume"
       >
         <textarea
@@ -97,13 +124,13 @@ export function InputForm() {
           onChange={(e) => setResume(e.target.value)}
           rows={12}
           className={textareaClasses}
-          placeholder="Built SCIM provisioning systems at..."
+          placeholder="Built Python and Go backend services at..."
         />
       </Field>
 
       <Field
         label="Role keywords"
-        hint="Comma-separated. e.g. SCIM, identity, IAM"
+        hint="Comma-separated. Keep these broad enough to discover adjacent backend roles."
         htmlFor="keywords"
       >
         <input
@@ -116,6 +143,19 @@ export function InputForm() {
       </Field>
 
       <div className="grid gap-6 sm:grid-cols-2">
+        <Field label="Company pack" htmlFor="pack">
+          <select
+            id="pack"
+            value={pack}
+            onChange={(e) => setPack(e.target.value)}
+            className={inputClasses}
+          >
+            <option value="backend_india">
+              Backend · India + remote
+            </option>
+          </select>
+        </Field>
+
         <Field label="Seniority" htmlFor="seniority">
           <select
             id="seniority"
@@ -145,6 +185,41 @@ export function InputForm() {
           />
         </Field>
       </div>
+
+      <fieldset className="space-y-2">
+        <legend className="text-sm font-medium text-zinc-900 dark:text-zinc-100">
+          Employment types
+        </legend>
+        <div className="flex flex-wrap gap-3">
+          {EMPLOYMENT_OPTIONS.map((option) => {
+            const checked = employmentTypes.includes(option.value);
+            return (
+              <label
+                key={option.value}
+                className={`inline-flex cursor-pointer items-center gap-2 rounded-full border px-3 py-2 text-xs ${
+                  checked
+                    ? "border-indigo-500 bg-indigo-50 text-indigo-900 dark:bg-indigo-950 dark:text-indigo-100"
+                    : "border-zinc-300 dark:border-zinc-700"
+                }`}
+              >
+                <input
+                  type="checkbox"
+                  checked={checked}
+                  onChange={() =>
+                    setEmploymentTypes((current) =>
+                      checked
+                        ? current.filter((value) => value !== option.value)
+                        : [...current, option.value],
+                    )
+                  }
+                  className="sr-only"
+                />
+                {option.label}
+              </label>
+            );
+          })}
+        </div>
+      </fieldset>
 
       <div className="grid gap-6 sm:grid-cols-2">
         <Field

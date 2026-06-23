@@ -19,6 +19,7 @@ ENV PATH=/root/.local/bin:$PATH \
 
 COPY --from=builder /root/.local /root/.local
 COPY job_hunt_agent/ ./job_hunt_agent/
+COPY config/ ./config/
 
 EXPOSE 8000
 

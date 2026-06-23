@@ -1,6 +1,6 @@
 # Job Hunt Signal
 
-An agent that runs a focused, evidence-based job hunt — and **learns to write better outreach by reading its own traces**. Paste a resume and criteria: it finds 3 matching roles, surfaces 3 plausible referral targets per role, drafts a concise personalized message for each, and scores every draft with an LLM judge. Before drafting, it retrieves its highest-scoring past messages from Arize Phoenix and imitates what already worked. No fabricated profile URLs, no LinkedIn-influencer copy.
+An agent that runs a focused, evidence-based job hunt — and **learns to write better outreach from real outcomes in its own traces**. Paste a resume and criteria: it searches verified first-party company boards, filters for freshness and employment type, ranks roles against the resume, and drafts outreach only for contacts whose current employer can be verified. If the evidence is weak, it returns fewer results instead of inventing them.
 
 > Submission for the Arize × Google hackathon (Gemini 3 + Agent Builder + Phoenix).
 > **Live app:** https://agentic-job-hunt.vercel.app · **Demo video:** _[add link after upload]_ · **Writeup:** [demo/DEVPOST.md](demo/DEVPOST.md)
@@ -23,14 +23,26 @@ cp .env.example .env  # fill in GOOGLE_API_KEY, SERPAPI_API_KEY, PHOENIX_*
 ```bash
 python -m job_hunt_agent.run \
   --resume fixtures/sample_resume.txt \
-  --keywords SCIM,identity,IAM,OIDC \
-  --location Remote-India,Bengaluru,Hyderabad \
-  --seniority senior
+  --keywords "backend engineer,software engineer,backend developer" \
+  --location "India,Remote-India,Bengaluru,Hyderabad" \
+  --seniority junior \
+  --employment-types full_time \
+  --max-age-days 45 \
+  --pack backend_india \
+  --trace
 ```
 
-Output is structured JSON: `{ roles: [...], outreach: [{ role, person, message }, ...] }`.
+Output is structured JSON: `{ run_id, roles: [...], outreach: [{ role, person, message }, ...] }`. Roles include source, employment type, posting date, source confidence, resume-fit score, and a match reason quoting real job-description evidence.
 
 Add `--trace` to emit OpenTelemetry spans to your Phoenix project, or `--use-mocks` for the no-network smoke loop. The CLI also prints the generated `run_id` so you can correlate the output with a Phoenix trace or the persisted SQLite row.
+
+## V2 evidence rules
+
+- `backend_india` contains 20 curated companies with live-verified ATS or first-party career sources.
+- Curated hunts do not fall back to paid aggregators. A failed company board degrades to an empty result and a warning.
+- Requested employment types are strict. A posting with no explicit employment evidence remains `unknown` and is omitted from a full-time-only hunt.
+- Referral candidates require current-employer evidence and confidence of at least 0.5. No verified candidate means no draft, plus honest guidance in the UI.
+- Past drafts are retrieved by logged outcome first (`introduced`/`replied` before neutral or `no_reply`), with judge score used only as a tiebreaker.
 
 ## The self-improvement loop
 
@@ -69,7 +81,7 @@ This command performs network requests and fails on dead or unverified sources.
 
 ## Run the API
 
-A6 wraps `run_hunt` in a small FastAPI service so the future frontend can drive it over HTTP.
+FastAPI wraps `run_hunt` for the Next.js frontend.
 
 ```bash
 uvicorn job_hunt_agent.api:app --reload
@@ -78,7 +90,7 @@ uvicorn job_hunt_agent.api:app --reload
 Endpoints:
 
 ```
-POST /api/hunt                       { resume_text, criteria }       → HuntResult (with run_id)
+POST /api/hunt                       { resume_text, criteria, pack } → HuntResult (with run_id)
 POST /api/runs/{run_id}/outcomes      { outcomes: [OutcomeLog] }      → { ok, inserted, outcomes }
 GET  /api/runs/{run_id}                                                → { hunt_result, outcomes }
 GET  /health                                                           → { ok: true }
@@ -90,6 +102,9 @@ Configure persistence and CORS via env:
 - `ALLOWED_ORIGINS` — comma-separated CORS allowlist (default dev origins for localhost 3000/5173).
 - `ENABLE_TRACING` — set to `1` so API-triggered hunts emit Phoenix spans.
 
+`criteria` accepts `employment_types` and `max_age_days`; `pack` defaults to
+`backend_india`.
+
 ## Deploy
 
 A8 deploys the FastAPI backend to Render (free tier) and the Next.js frontend
@@ -97,6 +112,10 @@ to Vercel. Render's free tier has no persistent disk, so SQLite lives on the
 ephemeral filesystem at `/tmp/outcomes.db`: outcomes persist across requests,
 but a redeploy, restart, or idle spin-down wipes them. Two operational rules
 follow from that:
+
+> The included free-tier blueprint is for demos and controlled personal use,
+> not a public production service. A production deployment still needs durable
+> storage, authentication/rate limits, and a queued worker for long hunts.
 
 - A keep-alive ping on `/health` every 5 minutes prevents the 15-minute idle
   spin-down (which would both wipe state and add a ~1-minute cold start for
@@ -157,44 +176,42 @@ curl -X POST $API/api/runs/$RUN_ID/outcomes \
 curl $API/api/runs/$RUN_ID
 ```
 
-The `/api/hunt` call blocks for the full pipeline (~90s) — if it dies with a
-gateway error instead of returning JSON, Render's proxy killed the long
-request and the fallback is to run the pipeline in a background task with the
-frontend polling `GET /api/runs/{run_id}`. The final `curl` should include the
+The `/api/hunt` call blocks for the full pipeline (~90s). This branch does not
+yet include a durable background queue, so verify the deployed request path
+before inviting users. A production version should enqueue the hunt and have
+the frontend poll `GET /api/runs/{run_id}`. The final `curl` should include the
 logged outcome. Also verify the same `run_id` is visible in Phoenix before
-recording the demo. Do not expect outcomes to survive a redeploy — that is
-the documented free-tier trade-off.
+recording the demo. Do not expect outcomes to survive a redeploy — that is the
+documented free-tier trade-off.
 
-## Example output
+## Abridged response shape
 
 ```json
 {
+  "run_id": "<trace-correlated id>",
   "roles": [
     {
-      "company": "Okta",
-      "title": "Senior Software Engineer, Lifecycle Management",
-      "url": "https://www.linkedin.com/jobs/view/...",
-      "location": "Remote-India",
-      "summary": "Build provisioning and lifecycle workflows for enterprise identity customers.",
-      "match_reason": "Snippet matches SCIM, identity in context: ..."
+      "company": "<verified company>",
+      "title": "<title from posting>",
+      "url": "<first-party apply URL>",
+      "location": "<location from posting>",
+      "summary": "<posting-derived summary>",
+      "match_reason": "<resume overlap plus quoted JD evidence>",
+      "source": "greenhouse",
+      "apply_urls": ["<first-party apply URL>"],
+      "posted_at": "<source-provided date>",
+      "source_updated_at": "<source-provided last update>",
+      "employment_type": "full_time",
+      "fit_score": 0.42,
+      "confidence": 1.0
     }
   ],
-  "outreach": [
-    {
-      "role": { "...": "..." },
-      "person": {
-        "name": "Anika Rao",
-        "title": "Staff Engineer, Lifecycle Management",
-        "company": "Okta",
-        "profile_url": "https://www.linkedin.com/in/...",
-        "source": "linkedin",
-        "why_relevant": "Owns the lifecycle management team that ships SCIM provisioning features."
-      },
-      "message": "Hi Anika — I noticed Okta is hiring on the Lifecycle Management team..."
-    }
-  ]
+  "outreach": []
 }
 ```
+
+An empty `outreach` array means no current employee met the verification bar;
+the UI explains how to continue the search manually.
 
 ## Layout
 

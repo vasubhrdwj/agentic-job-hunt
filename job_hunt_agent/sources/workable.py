@@ -11,6 +11,7 @@ from opentelemetry import trace
 
 from job_hunt_agent.schemas import Company, CompanySource, JobCriteria, Role
 from job_hunt_agent.sources import ashby as _common
+from job_hunt_agent.sources.base import safe_url_path_parts
 
 
 LOGGER = logging.getLogger(__name__)
@@ -256,11 +257,21 @@ def _all_locations(detail: dict[str, Any], primary: str) -> list[str]:
 
 
 def _trusted_url(value: str, account: str, shortcode: str) -> bool:
-    parsed = urlsplit(value)
-    parts = [part for part in parsed.path.split("/") if part]
+    if not value or "\\" in value or any(character.isspace() for character in value):
+        return False
+    try:
+        parsed = urlsplit(value)
+        port = parsed.port
+    except ValueError:
+        return False
+    parts = safe_url_path_parts(parsed.path)
     return (
         parsed.scheme == "https"
         and parsed.hostname == "apply.workable.com"
+        and parsed.username is None
+        and parsed.password is None
+        and port in (None, 443)
+        and parts is not None
         and len(parts) >= 3
         and parts[0].casefold() == account.casefold()
         and parts[1] == "j"

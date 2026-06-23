@@ -3,18 +3,23 @@
 from __future__ import annotations
 
 import argparse
+import logging
 from contextlib import nullcontext
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
+from .matching import ResumeFitScorer
 from .schemas import HuntResult, JobCriteria, OutreachDraft, PastDraft, Person, Role
+from .sources.registry import load_company_pack
+from .sources.resolver import SourceResolver
 from .tools.registry import build_pipeline_tools
 
 
 DEFAULT_MAX_ROLES = 3
 DEFAULT_MAX_REFERRALS_PER_ROLE = 3
 DRAFT_OUTPUT_ATTRIBUTE_LIMIT = 2_000
+LOGGER = logging.getLogger(__name__)
 
 
 def run_hunt(
@@ -27,6 +32,7 @@ def run_hunt(
     use_mocks: bool = False,
     use_self_rag: bool = True,
     enable_tracing: bool = False,
+    pack: str | None = None,
 ) -> HuntResult:
     """Run job search, referral discovery, and message drafting.
 
@@ -52,13 +58,29 @@ def run_hunt(
             "job_hunt.max_referrals_per_role": max_referrals_per_role,
             "job_hunt.use_mocks": use_mocks,
             "job_hunt.use_self_rag": use_self_rag,
+            "job_hunt.pack": pack or "",
         },
     ) as run_span:
         with _maybe_span(tracer, "search_jobs"):
-            roles = [
-                Role.model_validate(role)
-                for role in tools.search_jobs(criteria)
-            ][:max_roles]
+            if pack and not use_mocks:
+                registry = load_company_pack(pack)
+                discovered = SourceResolver().fetch_registry_roles(
+                    registry,
+                    criteria,
+                    max_per_company=max_roles,
+                    max_total=max(max_roles * 5, max_roles),
+                    allow_fallback=False,
+                    require_first_party=True,
+                )
+            else:
+                discovered = [
+                    Role.model_validate(role)
+                    for role in tools.search_jobs(criteria)
+                ]
+            roles = ResumeFitScorer().rank_roles(
+                resume_text,
+                discovered,
+            )[:max_roles]
 
         outreach: list[OutreachDraft] = []
         for role in roles:
@@ -71,10 +93,22 @@ def run_hunt(
                     "job_hunt.role.url": role.url,
                 },
             ):
-                people = [
-                    Person.model_validate(person)
-                    for person in tools.find_referrals(role)
-                ][:max_referrals_per_role]
+                people: list[Person] = []
+                for candidate in tools.find_referrals(role):
+                    person = Person.model_validate(candidate)
+                    if (
+                        not person.verified_current_employer
+                        or person.confidence < 0.5
+                    ):
+                        LOGGER.warning(
+                            "Omitting unverified referral candidate %r for %s.",
+                            person.name,
+                            role.company,
+                        )
+                        continue
+                    people.append(person)
+                    if len(people) >= max_referrals_per_role:
+                        break
 
             for person in people:
                 with _maybe_span(
@@ -126,6 +160,10 @@ def run_hunt(
                 )
 
         run_span.set_attribute("job_hunt.roles.count", len(roles))
+        run_span.set_attribute(
+            "job_hunt.roles.fit_scores",
+            tuple(float(role.fit_score or 0.0) for role in roles),
+        )
         run_span.set_attribute("job_hunt.outreach.count", len(outreach))
         return HuntResult(run_id=run_id, roles=roles, outreach=outreach)
 
@@ -153,6 +191,17 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--comp-max-lpa", type=int, help="Optional maximum comp in LPA.")
     parser.add_argument("--max-roles", type=int, default=DEFAULT_MAX_ROLES)
     parser.add_argument("--max-referrals", type=int, default=DEFAULT_MAX_REFERRALS_PER_ROLE)
+    parser.add_argument(
+        "--pack",
+        default="backend_india",
+        help="Company pack used for first-party discovery. Pass an empty value for legacy search.",
+    )
+    parser.add_argument(
+        "--employment-types",
+        default="full_time",
+        help="Comma-separated: full_time,contract,intern,unknown.",
+    )
+    parser.add_argument("--max-age-days", type=int, default=45)
     parser.add_argument(
         "--use-mocks",
         action="store_true",
@@ -185,6 +234,8 @@ def criteria_from_args(args: argparse.Namespace) -> JobCriteria:
         location=_split_csv(args.location),
         comp_min_lpa=args.comp_min_lpa,
         comp_max_lpa=args.comp_max_lpa,
+        employment_types=_split_csv(getattr(args, "employment_types", "full_time")),
+        max_age_days=getattr(args, "max_age_days", 45),
     )
 
 
@@ -211,7 +262,12 @@ def main() -> None:
         use_mocks=args.use_mocks,
         use_self_rag=args.use_self_rag,
         enable_tracing=args.trace,
+        pack=args.pack or None,
     )
+    if args.trace:
+        from .tracing import flush_phoenix_tracing
+
+        flush_phoenix_tracing()
     print(f"run_id: {result.run_id}")
     print(result.model_dump_json(indent=2))
 

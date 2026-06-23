@@ -54,13 +54,21 @@ export default async function ReviewPage(props: ReviewPageProps) {
       </header>
 
       <div className="space-y-6">
-        {hunt_result.roles.map((role) => (
-          <RoleCard
-            key={role.url}
-            role={role}
-            drafts={draftsByRoleUrl.get(role.url) ?? []}
-          />
-        ))}
+        {hunt_result.roles.length === 0 ? (
+          <section className="rounded-lg border border-amber-200 bg-amber-50 p-6 text-sm text-amber-950 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-100">
+            No roles met every evidence filter. Try a wider location, another
+            seniority band, or additional employment types. The agent does not
+            pad an empty result with aggregators or stale postings.
+          </section>
+        ) : (
+          hunt_result.roles.map((role) => (
+            <RoleCard
+              key={role.url}
+              role={role}
+              drafts={draftsByRoleUrl.get(role.url) ?? []}
+            />
+          ))
+        )}
       </div>
     </main>
   );

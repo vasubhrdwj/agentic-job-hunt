@@ -37,11 +37,12 @@ async function readError(res: Response): Promise<ApiError> {
 export async function postHunt(
   resumeText: string,
   criteria: JobCriteria,
+  pack: string,
 ): Promise<HuntResult> {
   const res = await fetch(`${API_BASE}/api/hunt`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ resume_text: resumeText, criteria }),
+    body: JSON.stringify({ resume_text: resumeText, criteria, pack }),
   });
   if (!res.ok) throw await readError(res);
   return (await res.json()) as HuntResult;

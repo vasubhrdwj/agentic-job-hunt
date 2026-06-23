@@ -30,6 +30,8 @@ PERSON = Person(
     profile_url="https://www.linkedin.com/in/anika-rao",
     source="linkedin",
     why_relevant="Owns the provisioning service this role feeds into.",
+    verified_current_employer=True,
+    confidence=0.9,
 )
 GOOD_MESSAGE = (
     "Hi Anika — I noticed the Lifecycle Management team owns the SCIM 2.0 "

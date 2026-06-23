@@ -16,6 +16,7 @@ from job_hunt_agent.schemas import (
     JobCriteria,
     Role,
 )
+from job_hunt_agent.sources.base import safe_url_path_parts
 from job_hunt_agent.tools import job_search
 
 
@@ -262,6 +263,7 @@ def _valid_https_url(value: Any) -> str:
         or parsed.username is not None
         or parsed.password is not None
         or port not in (None, 443)
+        or safe_url_path_parts(parsed.path) is None
     ):
         return ""
     return url

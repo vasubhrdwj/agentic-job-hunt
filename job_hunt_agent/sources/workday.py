@@ -12,6 +12,7 @@ from opentelemetry import trace
 
 from job_hunt_agent.schemas import Company, CompanySource, JobCriteria, Role
 from job_hunt_agent.sources import ashby as _common
+from job_hunt_agent.sources.base import safe_url_path_parts
 
 
 LOGGER = logging.getLogger(__name__)
@@ -260,11 +261,21 @@ def _safe_external_path(value: Any) -> str:
 
 def _trusted_url(value: Any, expected_host: str, site: str) -> str:
     url = _common._clean_text(value)
-    parsed = urlsplit(url)
-    path_parts = [part for part in parsed.path.split("/") if part]
+    if not url or "\\" in url or any(character.isspace() for character in url):
+        return ""
+    try:
+        parsed = urlsplit(url)
+        port = parsed.port
+    except ValueError:
+        return ""
+    path_parts = safe_url_path_parts(parsed.path)
     if (
         parsed.scheme != "https"
         or parsed.hostname != expected_host
+        or parsed.username is not None
+        or parsed.password is not None
+        or port not in (None, 443)
+        or path_parts is None
         or len(path_parts) < 3
         or path_parts[0].casefold() != site.casefold()
         or path_parts[1] != "job"

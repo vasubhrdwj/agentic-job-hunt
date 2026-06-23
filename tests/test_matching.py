@@ -84,3 +84,16 @@ def test_missing_description_degrades_to_summary_and_empty_resume_scores_zero():
 
     assert scorer.evaluate("", summary_only).score == 0
     assert scorer.evaluate("Python backend services", summary_only).score > 0
+
+
+def test_trusted_source_ranks_above_low_confidence_aggregator():
+    backend, irrelevant = _calibration_roles()
+    trusted = irrelevant.model_copy(update={"confidence": 1.0})
+    aggregator = backend.model_copy(update={"confidence": 0.35})
+
+    ranked = ResumeFitScorer().rank_roles(
+        "Python backend APIs and Go services",
+        [aggregator, trusted],
+    )
+
+    assert ranked[0].confidence == 1.0

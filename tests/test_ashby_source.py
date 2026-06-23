@@ -234,6 +234,23 @@ def test_rejects_wrong_board_url(
     assert "missing trusted" in caplog.text
 
 
+def test_rejects_board_path_traversal(
+    monkeypatch: pytest.MonkeyPatch,
+    company: Company,
+    criteria: JobCriteria,
+) -> None:
+    payload = _payload()
+    payload["jobs"][0]["applyUrl"] = (
+        "https://jobs.ashbyhq.com/Ashby/%2e%2e/Other/id/application"
+    )
+    payload["jobs"][0]["jobUrl"] = (
+        "https://jobs.ashbyhq.com/Ashby/%2e%2e/Other/id"
+    )
+    _install(monkeypatch, payload)
+
+    assert AshbyAdapter().fetch_open_roles(company, criteria) == []
+
+
 @pytest.mark.parametrize(
     ("body", "message"),
     [

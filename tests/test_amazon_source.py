@@ -359,6 +359,18 @@ def test_normalizes_employment_type(
     )
 
 
+def test_fixed_term_title_overrides_full_time_schedule() -> None:
+    assert (
+        amazon._employment_type(
+            {
+                "title": "Software Development Engineer - FTC",
+                "job_schedule_type": "full-time",
+            },
+        )
+        is EmploymentType.contract
+    )
+
+
 def test_falls_back_to_public_job_page_when_apply_url_is_untrusted(
     monkeypatch: pytest.MonkeyPatch,
     fixture_payload: dict[str, object],

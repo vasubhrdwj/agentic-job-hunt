@@ -154,6 +154,13 @@ class Role(BaseModel):
         default=None,
         description="Source-provided posting timestamp or date.",
     )
+    source_updated_at: str | None = Field(
+        default=None,
+        description=(
+            "Source-provided last-updated timestamp. This is not presented as "
+            "the original posting date."
+        ),
+    )
     employment_type: EmploymentType = Field(
         default=EmploymentType.unknown,
         description="Normalized employment type reported by the source.",

@@ -20,6 +20,7 @@ from job_hunt_agent.schemas import (
     JobCriteria,
     Role,
 )
+from job_hunt_agent.sources.base import safe_url_path_parts
 
 
 LOGGER = logging.getLogger(__name__)
@@ -180,8 +181,8 @@ def _role_from_posting(
     if not title:
         raise ValueError("missing text")
 
-    apply_url = _valid_lever_url(posting.get("applyUrl"))
-    hosted_url = _valid_lever_url(posting.get("hostedUrl"))
+    apply_url = _valid_lever_url(posting.get("applyUrl"), company)
+    hosted_url = _valid_lever_url(posting.get("hostedUrl"), company)
     url = apply_url or hosted_url
     if not url:
         raise ValueError("missing trusted applyUrl or hostedUrl")
@@ -314,12 +315,29 @@ def _match_reason(
     return " ".join(details)
 
 
-def _valid_lever_url(value: Any) -> str:
+def _valid_lever_url(value: Any, company: Company) -> str:
     url = str(value or "").strip()
-    if not url:
+    if not url or "\\" in url or any(character.isspace() for character in url):
         return ""
-    parsed = urlparse(url)
-    if parsed.scheme != "https" or parsed.hostname not in LEVER_JOB_HOSTS:
+    try:
+        parsed = urlparse(url)
+        port = parsed.port
+    except ValueError:
+        return ""
+    if (
+        parsed.scheme != "https"
+        or parsed.hostname not in LEVER_JOB_HOSTS
+        or parsed.username is not None
+        or parsed.password is not None
+        or port not in (None, 443)
+    ):
+        return ""
+    token = (company.source_token or "").strip().casefold()
+    safe_parts = safe_url_path_parts(parsed.path)
+    if safe_parts is None:
+        return ""
+    path_parts = [part.casefold() for part in safe_parts]
+    if not token or not path_parts or path_parts[0] != token:
         return ""
     return url
 
