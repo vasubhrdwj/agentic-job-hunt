@@ -5,3 +5,6 @@ __pycache__/
 *.pyc
 *.db
 .pytest_cache/
+.gstack/*
+!.gstack/qa-reports/
+!.gstack/qa-reports/*.md
