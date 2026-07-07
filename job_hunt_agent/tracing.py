@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from typing import Any
 
-from openinference.instrumentation.google_adk import GoogleADKInstrumentor
 from phoenix.otel import register
 
 DEFAULT_PROJECT_NAME = "job-hunt-agent"
@@ -30,8 +29,10 @@ def configure_phoenix_tracing(
         auto_instrument=False,
         protocol=protocol,
     )
-    GoogleADKInstrumentor().instrument(tracer_provider=_tracer_provider)
-    _instrument_google_genai_if_available(_tracer_provider)
+    # Do not auto-instrument Google ADK or google-genai for user traffic.
+    # Their spans can contain tool parameters, exception text, or other fields
+    # outside normal input/output masking. The pipeline emits deliberately
+    # small custom spans instead.
     return _tracer_provider
 
 
@@ -40,15 +41,6 @@ def flush_phoenix_tracing(timeout_millis: int = 15_000) -> bool:
     if _tracer_provider is None:
         return True
     return bool(_tracer_provider.force_flush(timeout_millis=timeout_millis))
-
-
-def _instrument_google_genai_if_available(tracer_provider: Any) -> None:
-    """Add direct google-genai spans when the optional package is installed."""
-    try:
-        from openinference.instrumentation.google_genai import GoogleGenAIInstrumentor
-    except ImportError:
-        return
-    GoogleGenAIInstrumentor().instrument(tracer_provider=tracer_provider)
 
 
 def _load_dotenv_if_available() -> None:

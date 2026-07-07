@@ -132,13 +132,13 @@ def _fetch_google_jobs(*, query: str, location: str, api_key: str) -> dict[str, 
         with urlopen(request, timeout=20) as response:
             payload = json.loads(response.read().decode("utf-8"))
     except HTTPError as exc:
-        LOGGER.warning("google_jobs request failed with HTTP %s: %s", exc.code, _read_error_body(exc))
+        LOGGER.warning("google_jobs request failed with HTTP %s.", exc.code)
         return None
     except (URLError, TimeoutError) as exc:
-        LOGGER.warning("google_jobs request failed: %s", exc)
+        LOGGER.warning("google_jobs request failed (%s).", type(exc).__name__)
         return None
     except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-        LOGGER.warning("google_jobs returned malformed JSON: %s", exc)
+        LOGGER.warning("google_jobs returned malformed JSON (%s).", type(exc).__name__)
         return None
 
     if not isinstance(payload, dict):
@@ -437,16 +437,15 @@ def _fetch_serpapi_search(
         with urlopen(request, timeout=15) as response:
             payload = json.loads(response.read().decode("utf-8"))
     except HTTPError as exc:
-        body = _read_error_body(exc)
-        LOGGER.warning("SerpAPI request failed with HTTP %s: %s", exc.code, body)
+        LOGGER.warning("SerpAPI request failed with HTTP %s.", exc.code)
     except (URLError, TimeoutError) as exc:
-        LOGGER.warning("SerpAPI request failed: %s", exc)
+        LOGGER.warning("SerpAPI request failed (%s).", type(exc).__name__)
     except json.JSONDecodeError as exc:
-        LOGGER.warning("SerpAPI returned malformed JSON: %s", exc)
+        LOGGER.warning("SerpAPI returned malformed JSON (%s).", type(exc).__name__)
     else:
         error = payload.get("error")
         if error:
-            LOGGER.warning("SerpAPI returned an error: %s", error)
+            LOGGER.warning("SerpAPI returned an error response.")
             return None
         return payload
 

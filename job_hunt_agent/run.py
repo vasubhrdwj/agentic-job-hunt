@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import logging
+import os
 from contextlib import nullcontext
 from pathlib import Path
 from typing import Any
@@ -131,10 +132,11 @@ def run_hunt(
                         use_self_rag=use_self_rag,
                         exemplar_cache=exemplar_cache,
                     )
-                    draft_span.set_attribute(
-                        "job_hunt.draft.output_text",
-                        _trim_attribute(str(message).strip()),
-                    )
+                    if _trace_draft_content_enabled():
+                        draft_span.set_attribute(
+                            "job_hunt.draft.output_text",
+                            _trim_attribute(str(message).strip()),
+                        )
                     evaluation = (
                         tools.score_draft(role, person, str(message).strip())
                         if tools.score_draft is not None
@@ -250,6 +252,17 @@ def _trim_attribute(value: str, limit: int = DRAFT_OUTPUT_ATTRIBUTE_LIMIT) -> st
     return value[:limit].rstrip()
 
 
+def _trace_draft_content_enabled() -> bool:
+    """Draft text is private by default; curated demo seeding can opt in."""
+
+    return os.getenv("ENABLE_TRACE_DRAFT_CONTENT", "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+
+
 def main() -> None:
     args = parse_args()
     resume_text = Path(args.resume).read_text(encoding="utf-8")
@@ -293,7 +306,11 @@ def _maybe_span(tracer: Any | None, name: str, attributes: dict[str, Any] | None
     if tracer is None:
         return nullcontext(_NoopSpan())
 
-    span = tracer.start_as_current_span(name)
+    span = tracer.start_as_current_span(
+        name,
+        record_exception=False,
+        set_status_on_exception=False,
+    )
     manager = span.__enter__()
     if attributes:
         for key, value in attributes.items():

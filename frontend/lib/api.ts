@@ -4,7 +4,7 @@
 // it explicitly so the intent survives future framework defaults.
 
 import type {
-  HuntResult,
+  HuntCreatedResponse,
   JobCriteria,
   OutcomeLog,
   OutcomesResponse,
@@ -38,21 +38,28 @@ export async function postHunt(
   resumeText: string,
   criteria: JobCriteria,
   pack: string,
-): Promise<HuntResult> {
+): Promise<HuntCreatedResponse> {
   const res = await fetch(`${API_BASE}/api/hunt`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ resume_text: resumeText, criteria, pack }),
+    body: JSON.stringify({
+      resume_text: resumeText,
+      criteria,
+      pack,
+      provider_consent: true,
+    }),
   });
   if (!res.ok) throw await readError(res);
-  return (await res.json()) as HuntResult;
+  return (await res.json()) as HuntCreatedResponse;
 }
 
 export async function getRun(
   runId: string,
+  accessToken: string,
 ): Promise<RunDetailResponse | null> {
   const res = await fetch(`${API_BASE}/api/runs/${encodeURIComponent(runId)}`, {
     cache: "no-store",
+    headers: { Authorization: `Bearer ${accessToken}` },
   });
   if (res.status === 404) return null;
   if (!res.ok) throw await readError(res);
@@ -61,16 +68,31 @@ export async function getRun(
 
 export async function postOutcomes(
   runId: string,
+  accessToken: string,
   outcomes: OutcomeLog[],
 ): Promise<OutcomesResponse> {
   const res = await fetch(
     `${API_BASE}/api/runs/${encodeURIComponent(runId)}/outcomes`,
     {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
+      },
       body: JSON.stringify({ outcomes }),
     },
   );
   if (!res.ok) throw await readError(res);
   return (await res.json()) as OutcomesResponse;
+}
+
+export async function deleteRun(
+  runId: string,
+  accessToken: string,
+): Promise<void> {
+  const res = await fetch(`${API_BASE}/api/runs/${encodeURIComponent(runId)}`, {
+    method: "DELETE",
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  if (!res.ok) throw await readError(res);
 }

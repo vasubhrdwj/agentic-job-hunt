@@ -106,9 +106,16 @@ Browser checklist:
 
 ## Phase 1 — Privacy and data-ownership foundation
 
-Status: in progress
+Status: QA executed; acceptance completes when this phase commit is pushed
 
 Goal: make resume handling safe before any queue or durable database stores it.
+
+Evidence:
+
+- `389 passed, 2 skipped, 16 subtests passed`
+- Frontend lint, TypeScript, and exact Next/Turbopack production build pass.
+- Browser QA passes on production-built frontend for validation, consent, private token storage, run review, outcome save, delete, fresh-session denial, mobile layout, and console errors.
+- Independent review found four blockers; fixes landed and fresh review returned PASS.
 
 Planned deliverables:
 
@@ -134,6 +141,9 @@ Planned deliverables:
   result, and outcome data.
 - Redact request bodies and sensitive fields from application logs and error
   responses.
+- Keep new user draft content out of the shared Phoenix corpus. Until
+  authenticated owner-scoped retrieval exists, production self-RAG may use
+  only the curated seed corpus.
 
 Manual acceptance:
 
@@ -236,6 +246,8 @@ Planned deliverables:
 
 - Add an authenticated user/session ownership boundary for every run and
   outcome.
+- Add owner-scoped outcome learning so one user's drafts never become another
+  user's retrieval context.
 - Add rate limits, per-user concurrency limits, and global queue backpressure.
 - Prevent one user from reading or mutating another user's runs.
 - Add secure defaults and startup validation for production.

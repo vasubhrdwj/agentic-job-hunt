@@ -86,11 +86,14 @@ def test_score_draft_returns_none_without_api_key(
 
 
 def test_score_draft_returns_none_when_judge_raises(
-    monkeypatch: pytest.MonkeyPatch, no_dotenv
+    monkeypatch: pytest.MonkeyPatch, no_dotenv, caplog: pytest.LogCaptureFixture
 ) -> None:
     monkeypatch.setenv("GOOGLE_API_KEY", "test-key")
-    with patch.object(evals, "_judge", side_effect=RuntimeError("boom")):
+    marker = "PRIVATE-DRAFT-IN-JUDGE-EXCEPTION-4f2a"
+    with patch.object(evals, "_judge", side_effect=RuntimeError(marker)):
         assert score_draft(ROLE, PERSON, GOOD_MESSAGE) is None
+    assert marker not in caplog.text
+    assert "RuntimeError" in caplog.text
 
 
 def test_score_draft_computes_composite_locally(

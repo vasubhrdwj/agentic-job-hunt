@@ -17,6 +17,7 @@ def _span(
     trace_id: str = "trace-1",
     title: str = "Senior Engineer, Identity",
     company: str = "Okta",
+    seed: bool = True,
 ) -> dict[str, object]:
     attributes: dict[str, object] = {
         "job_hunt.role.company": company,
@@ -24,6 +25,8 @@ def _span(
         "job_hunt.role.keywords": keywords,
         "job_hunt.draft.output_text": message,
     }
+    if seed:
+        attributes["job_hunt.seed.tag"] = "seed"
     if score is not None:
         attributes["job_hunt.eval.composite_score"] = score
 
@@ -99,6 +102,20 @@ class QueryPastDraftsTest(unittest.IsolatedAsyncioTestCase):
             drafts = await query_past_drafts(["nonexistent"], transport="rest")
 
         self.assertEqual(drafts, [])
+
+    async def test_non_seed_user_spans_are_ignored(self) -> None:
+        spans = [
+            _span(message="user draft", score=5.0, seed=False),
+            _span(message="curated seed", score=4.6, seed=True),
+        ]
+        with patch.object(
+            mcp_client,
+            "_fetch_spans_rest",
+            new=AsyncMock(return_value=spans),
+        ):
+            drafts = await query_past_drafts(["SCIM"], transport="rest")
+
+        self.assertEqual([draft.message for draft in drafts], ["curated seed"])
 
     async def test_rest_project_lookup_retries_with_resolved_identifier(self) -> None:
         mcp_client._project_identifier_cache.clear()
@@ -192,6 +209,7 @@ def test_select_top_drafts_dedupes_identical_messages() -> None:
                 "job_hunt.role.title": "Engineer",
                 "job_hunt.role.company": "Okta",
                 "job_hunt.eval.composite_score": score,
+                "job_hunt.seed.tag": "seed",
             },
         }
 

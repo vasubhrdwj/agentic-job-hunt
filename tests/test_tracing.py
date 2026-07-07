@@ -25,18 +25,12 @@ class ConfigurePhoenixTracingTest(unittest.TestCase):
             patch.object(tracing, "_tracer_provider", None),
             patch.object(tracing, "_load_dotenv_if_available", side_effect=fake_load_dotenv),
             patch.object(tracing, "register", side_effect=fake_register),
-            patch.object(tracing, "GoogleADKInstrumentor") as instrumentor,
-            patch.object(tracing, "_instrument_google_genai_if_available") as genai_instrumentor,
         ):
-            instrumentor.return_value.instrument = Mock()
-
             provider = tracing.configure_phoenix_tracing()
 
         self.assertIs(provider, fake_provider)
         self.assertEqual(calls, ["dotenv", "register"])
         self.assertTrue(register_kwargs["batch"])
-        instrumentor.return_value.instrument.assert_called_once_with(tracer_provider=fake_provider)
-        genai_instrumentor.assert_called_once_with(fake_provider)
 
     def test_flush_forces_batch_export(self) -> None:
         provider = Mock()

@@ -4,8 +4,10 @@ Trace contract owned by this app:
 - ``job_hunt.role.keywords``: sequence of role keywords used for retrieval.
 - ``job_hunt.draft.output_text``: trimmed draft text returned by ``draft_message``.
 - ``job_hunt.eval.composite_score``: optional 1-5 score written by V9 evals.
+- ``job_hunt.seed.tag=seed``: required marker for curated seed exemplars.
 
 The public wrapper returns domain objects, not raw Phoenix/MCP payloads.
+User-traffic spans are intentionally ignored until owner-scoped retrieval exists.
 """
 
 from __future__ import annotations
@@ -34,6 +36,8 @@ EVAL_SCORE_ATTRIBUTE = "job_hunt.eval.composite_score"
 ROLE_KEYWORDS_ATTRIBUTE = "job_hunt.role.keywords"
 ROLE_TITLE_ATTRIBUTE = "job_hunt.role.title"
 ROLE_COMPANY_ATTRIBUTE = "job_hunt.role.company"
+SEED_TAG_ATTRIBUTE = "job_hunt.seed.tag"
+SEED_TAG_VALUE = "seed"
 
 DEFAULT_QUERY_TIMEOUT_SECONDS = 1.5
 DEFAULT_MCP_COLD_TIMEOUT_SECONDS = 4.0
@@ -192,6 +196,9 @@ def _parse_past_drafts(
     drafts: list[PastDraft] = []
     for span in spans:
         attributes = _span_attributes(span)
+        if _string_attribute(attributes, SEED_TAG_ATTRIBUTE).casefold() != SEED_TAG_VALUE:
+            continue
+
         message = _string_attribute(attributes, DRAFT_TEXT_ATTRIBUTE).strip()
         if not message:
             continue
@@ -361,9 +368,6 @@ async def _fetch_spans_mcp(config: _PhoenixConfig) -> list[dict[str, Any]]:
         "--baseUrl",
         config.base_url,
     ]
-    if config.api_key:
-        args.extend(["--apiKey", config.api_key])
-
     server_params = StdioServerParameters(
         command=os.getenv("PHOENIX_MCP_COMMAND", "npx"),
         args=args,
@@ -610,9 +614,6 @@ def _warn_failure_once(cache_key: str, message: str, exc: Exception) -> None:
 
 
 def _exception_summary(exc: Exception) -> str:
-    text = str(exc)
-    if text:
-        return text
     return type(exc).__name__
 
 

@@ -90,20 +90,47 @@ uvicorn job_hunt_agent.api:app --reload
 Endpoints:
 
 ```
-POST /api/hunt                       { resume_text, criteria, pack } → HuntResult (with run_id)
-POST /api/runs/{run_id}/outcomes      { outcomes: [OutcomeLog] }      → { ok, inserted, outcomes }
-GET  /api/runs/{run_id}                                                → { hunt_result, outcomes }
-GET  /health                                                           → { ok: true }
+POST   /api/hunt                  { resume_text, criteria, pack, provider_consent: true }
+                                  → HuntResult + { status, access_token }
+POST   /api/runs/{run_id}/outcomes  Authorization: Bearer <access_token>
+GET    /api/runs/{run_id}           Authorization: Bearer <access_token>
+DELETE /api/runs/{run_id}           Authorization: Bearer <access_token>
+GET    /health                    → { ok: true }
 ```
+
+The access token is returned once, stored by the frontend in browser
+`sessionStorage`, and sent only in the `Authorization` header. It is never
+placed in a run URL. A run opened in another browser session is intentionally
+inaccessible.
 
 Configure persistence and CORS via env:
 
 - `JOB_HUNT_DB_PATH` — SQLite file for runs + outcomes (default `outcomes.db`).
+- `JOB_HUNT_DATA_KEYS` — comma-separated `key-id:Fernet-key` values. The first
+  key encrypts new resume-bearing requests; retain older keys during rotation.
 - `ALLOWED_ORIGINS` — comma-separated CORS allowlist (default dev origins for localhost 3000/5173).
 - `ENABLE_TRACING` — set to `1` so API-triggered hunts emit Phoenix spans.
+- `ENABLE_TRACE_DRAFT_CONTENT` — keep `0` for user traffic. Prompts, model
+  outputs, and draft text are private by default.
+- `GEMINI_PAID_SERVICE_ACK` — production must set `1` manually after
+  confirming the Google API key uses paid Gemini quota.
+- `RETENTION_CLEANUP_INTERVAL_SECONDS` — API-triggered expired-data cleanup
+  interval. Set `3600` in production so health checks enforce retention.
 
 `criteria` accepts `employment_types` and `max_age_days`; `pack` defaults to
 `backend_india`.
+
+Resume-bearing request payloads are encrypted before SQLite writes and erased
+when the synchronous hunt finishes. Results and outcomes expire after 30 days
+via startup cleanup, hourly API-triggered cleanup, or
+`python -m job_hunt_agent.cleanup`. Users can delete a run immediately from
+the review page. See the frontend `/privacy` page for the
+provider disclosure and retention limits.
+
+Privacy mode intentionally prevents new user draft text from entering the
+shared Phoenix corpus. Self-RAG continues to use the curated seed corpus; an
+owner-scoped learning store is required before production can learn from
+individual users' drafts safely.
 
 ## Deploy
 
@@ -129,20 +156,24 @@ One-time Render setup:
 2. Render dashboard → **New → Blueprint** → pick this repo. Render reads
    `render.yaml` and creates the `job-hunt-agent` web service (Docker runtime,
    free plan, Singapore region, health check on `/health`).
-3. Fill the five secret env vars when prompted: `GOOGLE_API_KEY`,
-   `SERPAPI_API_KEY`, `PHOENIX_API_KEY`, `PHOENIX_COLLECTOR_ENDPOINT`, and
-   `ALLOWED_ORIGINS`. For `ALLOWED_ORIGINS` use the production Vercel URL once
-   it exists (production startup rejects `*` and localhost — use a placeholder
-   like `https://pending.invalid` until the Vercel URL is known, then update).
+3. Fill the required env vars when prompted: `GOOGLE_API_KEY`,
+   `SERPAPI_API_KEY`, `PHOENIX_API_KEY`, `PHOENIX_COLLECTOR_ENDPOINT`,
+   `JOB_HUNT_DATA_KEYS`, `GEMINI_PAID_SERVICE_ACK`, plus `ALLOWED_ORIGINS`. Generate
+   `JOB_HUNT_DATA_KEYS` as described above. For `ALLOWED_ORIGINS` use the
+   production Vercel URL once it exists (production startup rejects `*` and
+   localhost — use a placeholder like `https://pending.invalid` until the
+   Vercel URL is known, then update).
 4. Deploys are automatic on every push to the connected branch.
 5. Add a free UptimeRobot (or cron-job.org) monitor on
    `https://<service>.onrender.com/health` at a 5-minute interval.
 
 The blueprint sets `ENVIRONMENT=production`, `ENABLE_TRACING=1`,
+`ENABLE_TRACE_DRAFT_CONTENT=0`, `RETENTION_CLEANUP_INTERVAL_SECONDS=3600`,
 `JOB_HUNT_DB_PATH=/tmp/outcomes.db`, `PHOENIX_QUERY_TRANSPORT=rest`, and a
 720-hour Phoenix lookback for seeded demo traces. Startup fails loudly in
-production if required secrets are missing, localhost CORS is configured, mocks
-are enabled, or the DB path is not absolute.
+production if required secrets are missing, localhost CORS is configured,
+mocks are enabled, draft content tracing is enabled, or the DB path is not
+absolute.
 
 One-time Vercel setup:
 
@@ -169,11 +200,13 @@ curl -X POST $API/api/hunt \
   -d @fixtures/sample_hunt_request.json
 
 RUN_ID=<run_id from the hunt response>
+ACCESS_TOKEN=<access_token from the hunt response>
 DRAFT_ID=<draft_id from the hunt response>
 curl -X POST $API/api/runs/$RUN_ID/outcomes \
+  -H "Authorization: Bearer $ACCESS_TOKEN" \
   -H "Content-Type: application/json" \
   -d "{\"outcomes\":[{\"draft_id\":\"$DRAFT_ID\",\"outcome\":\"replied\",\"notes\":\"deploy smoke\"}]}"
-curl $API/api/runs/$RUN_ID
+curl -H "Authorization: Bearer $ACCESS_TOKEN" $API/api/runs/$RUN_ID
 ```
 
 The `/api/hunt` call blocks for the full pipeline (~90s). This branch does not
@@ -189,6 +222,8 @@ documented free-tier trade-off.
 ```json
 {
   "run_id": "<trace-correlated id>",
+  "status": "succeeded",
+  "access_token": "<returned once; send only as a bearer token>",
   "roles": [
     {
       "company": "<verified company>",

@@ -31,6 +31,19 @@ DEFAULT_EXEMPLAR_TOP_K = 3
 EXEMPLAR_SCORE_THRESHOLD = 4.0
 EXEMPLAR_CHAR_CAP = 600
 EXEMPLAR_BLOCK_CHAR_CAP = 2_000
+ROLE_KEYWORD_STOPWORDS = {
+    "and",
+    "for",
+    "the",
+    "this",
+    "that",
+    "with",
+    "from",
+    "role",
+    "roles",
+    "build",
+    "customers",
+}
 
 
 def _draft_model() -> str:
@@ -104,7 +117,10 @@ def draft_message(
     try:
         raw = _generate(role, person, resume_text, exemplars=exemplars, api_key=api_key)
     except Exception as exc:  # network / SDK / model failure
-        LOGGER.warning("Gemini draft failed (%s); falling back to mock.", exc)
+        LOGGER.warning(
+            "Gemini draft failed (%s); falling back to mock.",
+            type(exc).__name__,
+        )
         return draft_message_mock(role, person, resume_text)
 
     cleaned = _clean(raw)
@@ -218,25 +234,42 @@ def _truncate(text: str, limit: int) -> str:
 
 
 def _resume_excerpt(resume_text: str, *, role: Role) -> str:
-    """Pick a slice of resume that overlaps with the role's keywords."""
+    """Pick bounded resume lines/sentences that overlap with role evidence."""
     text = (resume_text or "").strip()
     if not text:
         return "(no resume provided)"
 
-    if len(text) <= RESUME_EXCERPT_CHARS:
-        return text
-
     keywords = _role_keywords(role)
-    lowered = text.lower()
-    for keyword in keywords:
-        index = lowered.find(keyword.lower())
-        if index == -1:
-            continue
-        start = max(0, index - RESUME_EXCERPT_CHARS // 3)
-        end = min(len(text), start + RESUME_EXCERPT_CHARS)
-        return text[start:end].strip()
+    keyword_set = {keyword.casefold() for keyword in keywords}
+    segments = [
+        segment.strip()
+        for segment in re.split(r"(?<=[.!?])\s+|\n+", text)
+        if segment.strip()
+    ]
+    if not keyword_set:
+        return "(no role-relevant resume excerpt found)"
 
-    return text[:RESUME_EXCERPT_CHARS].strip()
+    ranked: list[tuple[int, int, str]] = []
+    for index, segment in enumerate(segments):
+        lowered = segment.casefold()
+        overlap = sum(1 for keyword in keyword_set if keyword in lowered)
+        if overlap:
+            ranked.append((-overlap, index, segment))
+    if not ranked:
+        return "(no role-relevant resume excerpt found)"
+
+    selected: list[tuple[int, str]] = []
+    running = 0
+    for _score, index, segment in sorted(ranked):
+        candidate_len = len(segment) + (1 if selected else 0)
+        if selected and running + candidate_len > RESUME_EXCERPT_CHARS:
+            continue
+        if not selected and len(segment) > RESUME_EXCERPT_CHARS:
+            selected.append((index, segment[:RESUME_EXCERPT_CHARS].rstrip()))
+            break
+        selected.append((index, segment))
+        running += candidate_len
+    return " ".join(segment for _index, segment in sorted(selected)).strip()
 
 
 def _role_keywords(role: Role) -> list[str]:
@@ -251,6 +284,8 @@ def _role_keywords(role: Role) -> list[str]:
         if len(normalized) < 3:
             continue
         lower = normalized.lower()
+        if lower in ROLE_KEYWORD_STOPWORDS:
+            continue
         if lower in seen:
             continue
         seen.add(lower)
@@ -311,7 +346,10 @@ def _fetch_exemplars(
         try:
             drafts = _run_query_past_drafts(list(keywords), top_k)
         except Exception as exc:  # mcp/rest/timeout
-            LOGGER.warning("Self-RAG retrieval failed (%s); falling back to baseline.", exc)
+            LOGGER.warning(
+                "Self-RAG retrieval failed (%s); falling back to baseline.",
+                type(exc).__name__,
+            )
             rag_span.set_attribute("job_hunt.rag.fallback_reason", "error")
             rag_span.set_attribute("job_hunt.rag.returned_count", 0)
             return []

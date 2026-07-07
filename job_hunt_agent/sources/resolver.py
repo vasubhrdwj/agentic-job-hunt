@@ -157,10 +157,10 @@ class SourceResolver:
             ]
         except Exception as exc:
             LOGGER.warning(
-                "Source adapter %s failed for %s: %s",
+                "Source adapter %s failed for %s (%s)",
                 adapter.name,
                 company.slug,
-                exc,
+                type(exc).__name__,
             )
             return []
 

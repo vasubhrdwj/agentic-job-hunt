@@ -22,9 +22,14 @@ Open <http://localhost:3000>.
 
 ## Pages
 
-- `/` — resume + criteria input, "Run hunt" button.
-- `/runs/[runId]` — review 3 roles x 3 referral drafts, edit + copy.
+- `/` — resume + criteria input, provider disclosure, "Run hunt" button.
+- `/privacy` — resume, provider-retention, tracing, and deletion disclosure.
+- `/runs/[runId]` — private review page, edit/copy drafts, delete run.
 - `/runs/[runId]/outcomes` — log per-draft outcomes (replied / no_reply / introduced / rejected).
+
+The backend returns a one-time run capability after submission. The frontend
+keeps it in `sessionStorage` and sends it only in the `Authorization` header;
+private run pages intentionally cannot be opened from another browser session.
 
 ## Scripts
 

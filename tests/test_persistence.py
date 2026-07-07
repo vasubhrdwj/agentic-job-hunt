@@ -4,11 +4,13 @@ from __future__ import annotations
 
 import sqlite3
 import time
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
 
 from job_hunt_agent import persistence
+from job_hunt_agent.security import DataKeyring, hash_access_token
 from job_hunt_agent.schemas import (
     HuntResult,
     OutcomeLog,
@@ -175,3 +177,133 @@ def test_load_draft_outcomes_prefers_real_success_over_no_reply(db_path: Path) -
 
 def test_load_draft_outcomes_returns_empty_for_missing_database(tmp_path: Path) -> None:
     assert persistence.load_draft_outcomes(path=tmp_path / "missing.db") == {}
+
+
+def test_private_request_is_encrypted_authorized_and_cleared(db_path: Path) -> None:
+    from cryptography.fernet import Fernet
+
+    marker = "PRIVATE-RESUME-MARKER-91ac"
+    keyring = DataKeyring([("v1", Fernet.generate_key().decode("ascii"))])
+    envelope = keyring.encrypt(marker)
+    token_hash = hash_access_token("secret-capability")
+    now = datetime.now(timezone.utc)
+
+    persistence.create_run_security(
+        "private-run",
+        access_hash=token_hash,
+        encrypted_request=envelope.ciphertext,
+        encryption_key_id=envelope.key_id,
+        request_expires_at=now + timedelta(hours=1),
+        access_expires_at=now + timedelta(days=1),
+        path=db_path,
+    )
+
+    assert marker.encode() not in db_path.read_bytes()
+    assert persistence.authorize_run(
+        "private-run",
+        token_hash,
+        now=now,
+        path=db_path,
+    )
+    assert not persistence.authorize_run(
+        "private-run",
+        hash_access_token("wrong"),
+        now=now,
+        path=db_path,
+    )
+    stored = persistence.load_encrypted_request("private-run", path=db_path)
+    assert stored == (envelope.key_id, envelope.ciphertext)
+
+    persistence.complete_run_security("private-run", path=db_path)
+
+    assert persistence.load_encrypted_request("private-run", path=db_path) is None
+
+
+def test_access_capability_expires(db_path: Path) -> None:
+    now = datetime.now(timezone.utc)
+    token_hash = hash_access_token("expired")
+    persistence.create_run_security(
+        "expired-run",
+        access_hash=token_hash,
+        encrypted_request="ciphertext",
+        encryption_key_id="v1",
+        request_expires_at=now - timedelta(hours=2),
+        access_expires_at=now - timedelta(seconds=1),
+        path=db_path,
+    )
+
+    assert not persistence.authorize_run(
+        "expired-run",
+        token_hash,
+        now=now,
+        path=db_path,
+    )
+
+
+def test_delete_run_removes_security_result_and_outcomes(db_path: Path) -> None:
+    now = datetime.now(timezone.utc)
+    result = _make_hunt_result("delete-me")
+    persistence.create_run_security(
+        result.run_id,
+        access_hash=hash_access_token("delete-token"),
+        encrypted_request="ciphertext",
+        encryption_key_id="v1",
+        request_expires_at=now + timedelta(hours=1),
+        access_expires_at=now + timedelta(days=1),
+        path=db_path,
+    )
+    persistence.save_run(result, path=db_path)
+    persistence.save_outcomes(
+        result.run_id,
+        [OutcomeLog(draft_id="draft-0", outcome="replied")],
+        path=db_path,
+    )
+
+    assert persistence.delete_run(result.run_id, path=db_path)
+    assert persistence.load_run(result.run_id, path=db_path) is None
+    assert persistence.load_outcomes(result.run_id, path=db_path) == []
+    assert not persistence.authorize_run(
+        result.run_id,
+        hash_access_token("delete-token"),
+        path=db_path,
+    )
+
+
+def test_purge_clears_expired_requests_and_deletes_expired_runs(
+    db_path: Path,
+) -> None:
+    now = datetime.now(timezone.utc)
+    for run_id, request_expiry, access_expiry in (
+        (
+            "clear-request",
+            now - timedelta(seconds=1),
+            now + timedelta(days=1),
+        ),
+        (
+            "delete-run",
+            now - timedelta(seconds=1),
+            now - timedelta(seconds=1),
+        ),
+        (
+            "keep-run",
+            now + timedelta(hours=1),
+            now + timedelta(days=1),
+        ),
+    ):
+        persistence.create_run_security(
+            run_id,
+            access_hash=hash_access_token(run_id),
+            encrypted_request=f"ciphertext-{run_id}",
+            encryption_key_id="v1",
+            request_expires_at=request_expiry,
+            access_expires_at=access_expiry,
+            path=db_path,
+        )
+
+    cleared, deleted = persistence.purge_expired_data(now=now, path=db_path)
+
+    assert cleared == 2
+    assert deleted == 1
+    assert persistence.load_encrypted_request("clear-request", path=db_path) is None
+    assert persistence.load_encrypted_request("delete-run", path=db_path) is None
+    assert persistence.load_encrypted_request("keep-run", path=db_path) is not None

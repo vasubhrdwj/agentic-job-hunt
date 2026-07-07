@@ -11,11 +11,26 @@ services:
         value: production
       - key: ENABLE_TRACING
         value: "1"
+      - key: ENABLE_TRACE_DRAFT_CONTENT
+        value: "0"
+      # Production resume processing must use paid Gemini API quota. Set this
+      # manually to 1 only after confirming the configured Google API key is
+      # on paid Gemini quota; abuse-monitoring retention still applies.
+      - key: GEMINI_PAID_SERVICE_ACK
+        sync: false
+      # Health checks and normal traffic trigger expired-data cleanup at this
+      # interval so long-lived services do not retain runs indefinitely.
+      - key: RETENTION_CLEANUP_INTERVAL_SECONDS
+        value: "3600"
       # Render free tier has no persistent disk: this file is wiped on every
       # redeploy, restart, or idle spin-down. The /health keep-alive ping
       # prevents the spin-down case; freeze deploys after the demo recording.
       - key: JOB_HUNT_DB_PATH
         value: /tmp/outcomes.db
+      # Comma-separated key-id:Fernet-key entries. The first key encrypts new
+      # requests; keep older keys during rotation until queued data is drained.
+      - key: JOB_HUNT_DATA_KEYS
+        sync: false
       - key: PHOENIX_QUERY_TRANSPORT
         value: rest
       - key: PHOENIX_QUERY_LOOKBACK_HOURS

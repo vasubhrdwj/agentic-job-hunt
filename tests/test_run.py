@@ -199,7 +199,11 @@ class RunHuntTest(unittest.TestCase):
                 spans.append((self.span.name, self.span.attributes))
 
         class FakeTracer:
-            def start_as_current_span(self, name: str) -> FakeSpanContext:
+            def start_as_current_span(
+                self,
+                name: str,
+                **_kwargs,
+            ) -> FakeSpanContext:
                 return FakeSpanContext(name)
 
         tools = PipelineTools(
@@ -237,14 +241,65 @@ class RunHuntTest(unittest.TestCase):
         self.assertEqual(run_span_attrs["job_hunt.run_id"], "trace-run-id")
         draft_attributes = next(attributes for name, attributes in spans if name == "draft_message")
         self.assertEqual(draft_attributes["job_hunt.role.keywords"], ("SCIM", "identity"))
-        self.assertEqual(
-            draft_attributes["job_hunt.draft.output_text"],
-            "Hi Priya, your Staff Engineer, Identity work at Okta lines up with SCIM.",
-        )
+        self.assertNotIn("job_hunt.draft.output_text", draft_attributes)
 
     def test_noop_span_accepts_trace_attributes(self) -> None:
         with _maybe_span(None, "draft_message") as span:
             span.set_attribute("job_hunt.draft.output_text", "message")
+
+    def test_trace_exception_does_not_export_sensitive_exception_text(self) -> None:
+        from opentelemetry.sdk.trace import TracerProvider
+        from opentelemetry.sdk.trace.export import SimpleSpanProcessor
+        from opentelemetry.sdk.trace.export.in_memory_span_exporter import (
+            InMemorySpanExporter,
+        )
+
+        marker = "PRIVATE-RESUME-EXCEPTION-MARKER-5c81"
+        exporter = InMemorySpanExporter()
+        provider = TracerProvider()
+        provider.add_span_processor(SimpleSpanProcessor(exporter))
+        tracer = provider.get_tracer("privacy-test")
+
+        def fail_draft(*_args, **_kwargs):
+            raise RuntimeError(marker)
+
+        tools = PipelineTools(
+            search_jobs=lambda criteria: [self.role],
+            find_referrals=lambda role: [self.person],
+            draft_message=fail_draft,
+        )
+
+        with (
+            patch("job_hunt_agent.run.build_pipeline_tools", return_value=tools),
+            patch("job_hunt_agent.run._build_tracer", return_value=tracer),
+            self.assertRaises(RuntimeError),
+        ):
+            run_hunt(
+                resume_text=marker,
+                criteria=self.criteria,
+                run_id="private-error-run",
+                enable_tracing=True,
+            )
+
+        serialized = json.dumps(
+            [
+                {
+                    "name": span.name,
+                    "attributes": dict(span.attributes or {}),
+                    "status": str(span.status),
+                    "events": [
+                        {
+                            "name": event.name,
+                            "attributes": dict(event.attributes or {}),
+                        }
+                        for event in span.events
+                    ],
+                }
+                for span in exporter.get_finished_spans()
+            ],
+            default=str,
+        )
+        self.assertNotIn(marker, serialized)
 
     def test_criteria_from_args_parses_cli_values(self) -> None:
         args = argparse.Namespace(

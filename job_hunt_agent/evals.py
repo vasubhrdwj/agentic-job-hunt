@@ -135,7 +135,10 @@ def score_draft(
         try:
             verdict = _judge(role, person, message, api_key=api_key, model=model)
         except Exception as exc:  # network / SDK / parse failure
-            LOGGER.warning("Draft eval failed (%s); continuing without score.", exc)
+            LOGGER.warning(
+                "Draft eval failed (%s); continuing without score.",
+                type(exc).__name__,
+            )
             span.set_attribute("job_hunt.eval.skip_reason", "error")
             return None
 
@@ -150,7 +153,6 @@ def score_draft(
         for name in SUB_SCORE_NAMES:
             span.set_attribute(f"job_hunt.eval.{name}", getattr(result, name))
         span.set_attribute("job_hunt.eval.composite_score", result.composite)
-        span.set_attribute("job_hunt.eval.rationale", result.rationale)
         return result
 
 

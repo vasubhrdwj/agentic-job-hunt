@@ -75,6 +75,11 @@ export type HuntResult = {
   outreach: OutreachDraft[];
 };
 
+export type HuntCreatedResponse = HuntResult & {
+  status: "succeeded";
+  access_token: string;
+};
+
 export type OutcomeLog = {
   draft_id: string;
   outcome: OutcomeKind;

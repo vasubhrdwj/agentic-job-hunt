@@ -86,6 +86,19 @@ class DraftMessageTest(unittest.TestCase):
         self.assertIn("Hi Anika", message)
         self.assertNotIn("[Name]", message)
 
+    def test_provider_exception_text_is_not_logged(self) -> None:
+        marker = "PRIVATE-RESUME-IN-EXCEPTION-91f4"
+        with (
+            patch.object(draft, "_get_google_api_key", return_value="fake-key"),
+            patch.object(draft, "_generate", side_effect=RuntimeError(marker)),
+            self.assertLogs(draft.LOGGER, level="WARNING") as captured,
+        ):
+            message = draft_message(self.role, self.person, self.resume_text)
+
+        self.assertIn("Hi Anika", message)
+        self.assertNotIn(marker, "\n".join(captured.output))
+        self.assertIn("RuntimeError", "\n".join(captured.output))
+
     def test_clean_removes_subject_and_markdown_fences(self) -> None:
         raw = "```text\nSubject: Referral request\n\nHi Anika, this is a useful draft.\n\nThanks,\n```"
 
@@ -101,6 +114,33 @@ class DraftMessageTest(unittest.TestCase):
         self.assertIn("Okta", prompt)
         self.assertIn("Anika Rao", prompt)
         self.assertIn("SCIM 2.0 provisioning", prompt)
+
+    def test_provider_prompt_uses_bounded_role_relevant_excerpt(self) -> None:
+        private_tail = "PRIVATE-TAIL-MARKER-DO-NOT-SEND"
+        long_resume = (
+            "Built SCIM provisioning services in Go. "
+            + ("backend systems experience " * 100)
+            + private_tail
+        )
+
+        prompt = draft._build_user_prompt(self.role, self.person, long_resume)
+
+        self.assertIn("SCIM provisioning", prompt)
+        self.assertNotIn(private_tail, prompt)
+        excerpt = prompt.split(
+            "Sender resume excerpt (use to ground one concrete fit signal):\n",
+            maxsplit=1,
+        )[1].split("\n\nNow write the message.", maxsplit=1)[0]
+        self.assertLessEqual(len(excerpt), draft.RESUME_EXCERPT_CHARS)
+
+    def test_provider_prompt_does_not_fall_back_to_unrelated_resume_start(self) -> None:
+        marker = "PRIVATE-UNRELATED-RESUME-MARKER"
+        resume = f"{marker} Managed retail inventory and event logistics."
+
+        prompt = draft._build_user_prompt(self.role, self.person, resume)
+
+        self.assertNotIn(marker, prompt)
+        self.assertIn("(no role-relevant resume excerpt found)", prompt)
 
 
 class SelfRagDraftMessageTest(unittest.TestCase):

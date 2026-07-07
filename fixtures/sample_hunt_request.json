@@ -6,5 +6,7 @@
     "location": ["Remote-India", "Bengaluru", "Hyderabad"],
     "comp_min_lpa": null,
     "comp_max_lpa": null
-  }
+  },
+  "pack": "backend_india",
+  "provider_consent": true
 }

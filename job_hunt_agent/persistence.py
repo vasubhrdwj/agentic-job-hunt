@@ -1,7 +1,8 @@
-"""SQLite persistence for hunt results and user-logged outcomes.
+"""SQLite persistence for hunt results, private requests, and outcomes.
 
-Storage is intentionally minimal: two tables, JSON blobs as payloads,
-no migration framework. v1 demo scope.
+Completed hunt results remain JSON blobs. Resume-bearing request payloads live
+in a separate security table and must be encrypted before they reach this
+module. Access capabilities are stored only as SHA-256 hashes.
 
 The DB path resolves from the ``JOB_HUNT_DB_PATH`` env var (default
 ``outcomes.db`` in the working directory) so tests can point at a
@@ -11,6 +12,7 @@ The DB path resolves from the ``JOB_HUNT_DB_PATH`` env var (default
 from __future__ import annotations
 
 import os
+import hmac
 import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
@@ -68,8 +70,192 @@ def init_db(path: str | os.PathLike[str] | None = None) -> None:
                 ON outcomes(run_id);
             CREATE INDEX IF NOT EXISTS idx_outcomes_draft
                 ON outcomes(draft_id);
+
+            CREATE TABLE IF NOT EXISTS run_security (
+                run_id              TEXT PRIMARY KEY,
+                access_hash         TEXT NOT NULL,
+                status              TEXT NOT NULL,
+                encrypted_request   TEXT,
+                encryption_key_id   TEXT,
+                request_expires_at  TEXT NOT NULL,
+                access_expires_at   TEXT NOT NULL,
+                created_at          TEXT NOT NULL,
+                completed_at        TEXT
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_run_security_request_expiry
+                ON run_security(request_expires_at);
+            CREATE INDEX IF NOT EXISTS idx_run_security_access_expiry
+                ON run_security(access_expires_at);
             """
         )
+
+
+def create_run_security(
+    run_id: str,
+    *,
+    access_hash: str,
+    encrypted_request: str,
+    encryption_key_id: str,
+    request_expires_at: datetime,
+    access_expires_at: datetime,
+    path: str | os.PathLike[str] | None = None,
+) -> None:
+    """Store encrypted request state before provider-backed work starts."""
+
+    created_at = datetime.now(timezone.utc).isoformat()
+    with _connect(path) as conn:
+        conn.execute(
+            """
+            INSERT INTO run_security (
+                run_id,
+                access_hash,
+                status,
+                encrypted_request,
+                encryption_key_id,
+                request_expires_at,
+                access_expires_at,
+                created_at
+            ) VALUES (?, ?, 'running', ?, ?, ?, ?, ?)
+            """,
+            (
+                run_id,
+                access_hash,
+                encrypted_request,
+                encryption_key_id,
+                request_expires_at.isoformat(),
+                access_expires_at.isoformat(),
+                created_at,
+            ),
+        )
+
+
+def complete_run_security(
+    run_id: str,
+    *,
+    path: str | os.PathLike[str] | None = None,
+) -> None:
+    """Mark a run complete and erase its resume-bearing request payload."""
+
+    completed_at = datetime.now(timezone.utc).isoformat()
+    with _connect(path) as conn:
+        conn.execute(
+            """
+            UPDATE run_security
+            SET status = 'succeeded',
+                encrypted_request = NULL,
+                encryption_key_id = NULL,
+                completed_at = ?
+            WHERE run_id = ?
+            """,
+            (completed_at, run_id),
+        )
+
+
+def authorize_run(
+    run_id: str,
+    access_hash: str,
+    *,
+    now: datetime | None = None,
+    path: str | os.PathLike[str] | None = None,
+) -> bool:
+    """Return whether a non-expired capability hash owns ``run_id``."""
+
+    current = now or datetime.now(timezone.utc)
+    with _connect(path) as conn:
+        row = conn.execute(
+            "SELECT access_hash, access_expires_at FROM run_security WHERE run_id = ?",
+            (run_id,),
+        ).fetchone()
+    if row is None:
+        return False
+    stored_hash, access_expires_at = row
+    if datetime.fromisoformat(access_expires_at) <= current:
+        return False
+    return hmac.compare_digest(stored_hash, access_hash)
+
+
+def load_encrypted_request(
+    run_id: str,
+    *,
+    path: str | os.PathLike[str] | None = None,
+) -> tuple[str, str] | None:
+    """Return ``(key_id, ciphertext)`` for worker/tests, never plaintext."""
+
+    with _connect(path) as conn:
+        row = conn.execute(
+            """
+            SELECT encryption_key_id, encrypted_request
+            FROM run_security
+            WHERE run_id = ? AND encrypted_request IS NOT NULL
+            """,
+            (run_id,),
+        ).fetchone()
+    if row is None:
+        return None
+    return str(row[0]), str(row[1])
+
+
+def delete_run(
+    run_id: str,
+    *,
+    path: str | os.PathLike[str] | None = None,
+) -> bool:
+    """Delete private request metadata, result, and outcomes atomically."""
+
+    with _connect(path) as conn:
+        existed = conn.execute(
+            "SELECT 1 FROM run_security WHERE run_id = ?",
+            (run_id,),
+        ).fetchone()
+        conn.execute("DELETE FROM outcomes WHERE run_id = ?", (run_id,))
+        conn.execute("DELETE FROM runs WHERE run_id = ?", (run_id,))
+        conn.execute("DELETE FROM run_security WHERE run_id = ?", (run_id,))
+    return existed is not None
+
+
+def purge_expired_data(
+    *,
+    now: datetime | None = None,
+    path: str | os.PathLike[str] | None = None,
+) -> tuple[int, int]:
+    """Clear expired requests and delete expired run records.
+
+    Returns ``(request_payloads_cleared, runs_deleted)``.
+    """
+
+    current = (now or datetime.now(timezone.utc)).isoformat()
+    with _connect(path) as conn:
+        cleared = conn.execute(
+            """
+            UPDATE run_security
+            SET encrypted_request = NULL, encryption_key_id = NULL
+            WHERE encrypted_request IS NOT NULL AND request_expires_at <= ?
+            """,
+            (current,),
+        ).rowcount
+        expired_run_ids = [
+            row[0]
+            for row in conn.execute(
+                "SELECT run_id FROM run_security WHERE access_expires_at <= ?",
+                (current,),
+            ).fetchall()
+        ]
+        if expired_run_ids:
+            placeholders = ",".join("?" for _ in expired_run_ids)
+            conn.execute(
+                f"DELETE FROM outcomes WHERE run_id IN ({placeholders})",
+                expired_run_ids,
+            )
+            conn.execute(
+                f"DELETE FROM runs WHERE run_id IN ({placeholders})",
+                expired_run_ids,
+            )
+            conn.execute(
+                f"DELETE FROM run_security WHERE run_id IN ({placeholders})",
+                expired_run_ids,
+            )
+    return cleared, len(expired_run_ids)
 
 
 def save_run(

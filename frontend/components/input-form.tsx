@@ -1,8 +1,10 @@
 "use client";
 
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { useState } from "react";
 import { postHunt, ApiError } from "@/lib/api";
+import { saveRunAccess } from "@/lib/run-access";
 import type {
   EmploymentType,
   JobCriteria,
@@ -43,6 +45,7 @@ export function InputForm() {
   ]);
   const [compMin, setCompMin] = useState("");
   const [compMax, setCompMax] = useState("");
+  const [providerConsent, setProviderConsent] = useState(false);
 
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -70,6 +73,10 @@ export function InputForm() {
       setError("Select at least one employment type.");
       return;
     }
+    if (!providerConsent) {
+      setError("Review and accept the resume-processing disclosure.");
+      return;
+    }
 
     const criteria: JobCriteria = {
       role_keywords: keywordList,
@@ -85,6 +92,7 @@ export function InputForm() {
     setPending(true);
     try {
       const result = await postHunt(resume, criteria, pack);
+      saveRunAccess(result.run_id, result.access_token);
       router.push(`/runs/${result.run_id}`);
     } catch (err) {
       const message =
@@ -115,7 +123,7 @@ export function InputForm() {
 
       <Field
         label="Resume"
-        hint="Paste plain text. It is sent to the backend and, when drafting, the configured model provider."
+        hint="Paste plain text. The backend uses the full resume for local scoring; drafting sends only a bounded role-relevant excerpt to the configured model provider."
         htmlFor="resume"
       >
         <textarea
@@ -251,6 +259,26 @@ export function InputForm() {
           />
         </Field>
       </div>
+
+      <label className="flex items-start gap-3 rounded-lg border border-zinc-200 bg-white p-4 text-sm dark:border-zinc-800 dark:bg-zinc-900">
+        <input
+          type="checkbox"
+          checked={providerConsent}
+          onChange={(event) => setProviderConsent(event.target.checked)}
+          className="mt-1 h-4 w-4 rounded border-zinc-300 text-indigo-600 focus:ring-indigo-500"
+        />
+        <span>
+          I agree that role-relevant resume excerpts may be sent to the
+          configured paid Gemini API. Google retains prompts and responses for
+          55 days for abuse monitoring.{" "}
+          <Link
+            href="/privacy"
+            className="font-medium text-indigo-600 underline underline-offset-2 dark:text-indigo-400"
+          >
+            Read the privacy details.
+          </Link>
+        </span>
+      </label>
 
       <button
         type="submit"
