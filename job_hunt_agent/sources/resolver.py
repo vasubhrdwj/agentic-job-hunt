@@ -6,14 +6,20 @@ import logging
 import re
 from datetime import date, datetime, timezone
 from typing import Iterable
-from urllib.parse import urlsplit
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from opentelemetry import trace
 
 from job_hunt_agent.schemas import Company, CompanySource, EmploymentType, JobCriteria, Role
 from job_hunt_agent.sources.amazon import AmazonAdapter
 from job_hunt_agent.sources.ashby import AshbyAdapter
-from job_hunt_agent.sources.base import SourceAdapter, safe_url_path_parts
+from job_hunt_agent.sources.base import (
+    FetchCompleteness,
+    FetchScope,
+    SourceAdapter,
+    SourceFetchResult,
+    safe_url_path_parts,
+)
 from job_hunt_agent.sources.google_jobs import GoogleJobsAdapter
 from job_hunt_agent.sources.greenhouse import GreenhouseAdapter
 from job_hunt_agent.sources.lever import LeverAdapter
@@ -45,7 +51,7 @@ class SourceResolver:
             CompanySource.google_jobs.value,
             GoogleJobsAdapter(),
         )
-        self._cache: dict[tuple[str, str, str], tuple[Role, ...]] = {}
+        self._cache: dict[tuple[str, str, str, bool], SourceFetchResult] = {}
 
     def fetch_company_roles(
         self,
@@ -57,20 +63,53 @@ class SourceResolver:
     ) -> list[Role]:
         """Fetch one company's roles through its configured source and fallback."""
 
+        return self.fetch_company_roles_result(
+            company,
+            criteria,
+            use_cache=use_cache,
+            allow_fallback=allow_fallback,
+        ).roles
+
+    def fetch_company_roles_result(
+        self,
+        company: Company,
+        criteria: JobCriteria,
+        *,
+        use_cache: bool = True,
+        allow_fallback: bool = True,
+    ) -> SourceFetchResult:
+        """Fetch roles with explicit scope and completeness metadata.
+
+        The list-returning method remains the compatibility projection. Current
+        adapters all apply criteria internally and do not distinguish a source
+        outage from an empty response, so this path is deliberately marked
+        non-authoritative for posting closure.
+        """
+
         criteria = JobCriteria.model_validate(criteria)
         cache_key = (
             company.model_dump_json(),
             criteria.model_dump_json(),
             date.today().isoformat(),
+            allow_fallback,
         )
         if use_cache and cache_key in self._cache:
-            return [role.model_copy(deep=True) for role in self._cache[cache_key]]
+            cached = self._cache[cache_key]
+            return cached.model_copy(
+                update={
+                    "roles": [role.model_copy(deep=True) for role in cached.roles],
+                    "cache_hit": True,
+                },
+                deep=True,
+            )
 
+        started_at = datetime.now(timezone.utc)
         with TRACER.start_as_current_span("job_source.resolve_company") as span:
             span.set_attribute("job_source.company_slug", company.slug)
             span.set_attribute("job_source.configured_source", company.source.value)
             adapter = self._adapter_for(company)
-            roles = self._fetch(adapter, company, criteria)
+            roles, source_failed = self._fetch(adapter, company, criteria)
+            warning_codes = ["source_fetch_failed"] if source_failed else []
             used_fallback = False
             if (
                 not roles
@@ -79,21 +118,42 @@ class SourceResolver:
                 and self._fallback.supports(company)
             ):
                 used_fallback = True
-                roles = self._fetch(self._fallback, company, criteria)
+                roles, fallback_failed = self._fetch(
+                    self._fallback,
+                    company,
+                    criteria,
+                )
+                if fallback_failed:
+                    warning_codes.append("fallback_source_fetch_failed")
 
             normalized = _filter_and_dedupe(roles, criteria)
+            selected_adapter = self._fallback if used_fallback else adapter
             span.set_attribute(
                 "job_source.selected_source",
-                adapter.name if not used_fallback else self._fallback.name,
+                selected_adapter.name,
             )
             span.set_attribute("job_source.used_fallback", used_fallback)
+            span.set_attribute("job_source.fetch_failed", source_failed)
             span.set_attribute("job_source.role_count", len(normalized))
 
+        result = SourceFetchResult(
+            company_slug=company.slug,
+            source=_adapter_source(selected_adapter, fallback=company.source),
+            started_at=started_at,
+            completed_at=datetime.now(timezone.utc),
+            scope=FetchScope.criteria_filtered,
+            completeness=FetchCompleteness.partial,
+            roles=[role.model_copy(deep=True) for role in normalized],
+            observed_count=len(roles),
+            returned_count=len(normalized),
+            cache_hit=False,
+            used_fallback=used_fallback,
+            warning_codes=warning_codes,
+        )
+
         if use_cache:
-            self._cache[cache_key] = tuple(
-                role.model_copy(deep=True) for role in normalized
-            )
-        return normalized
+            self._cache[cache_key] = result.model_copy(deep=True)
+        return result
 
     def fetch_registry_roles(
         self,
@@ -149,12 +209,15 @@ class SourceResolver:
         adapter: SourceAdapter,
         company: Company,
         criteria: JobCriteria,
-    ) -> list[Role]:
+    ) -> tuple[list[Role], bool]:
         try:
-            return [
-                Role.model_validate(role)
-                for role in adapter.fetch_open_roles(company, criteria)
-            ]
+            return (
+                [
+                    Role.model_validate(role)
+                    for role in adapter.fetch_open_roles(company, criteria)
+                ],
+                False,
+            )
         except Exception as exc:
             LOGGER.warning(
                 "Source adapter %s failed for %s (%s)",
@@ -162,7 +225,7 @@ class SourceResolver:
                 company.slug,
                 type(exc).__name__,
             )
-            return []
+            return [], True
 
 
 def is_first_party_role(role: Role, company: Company) -> bool:
@@ -261,24 +324,72 @@ def _filter_and_dedupe(roles: Iterable[Role], criteria: JobCriteria) -> list[Rol
 
 def _dedupe_roles(roles: Iterable[Role]) -> list[Role]:
     selected: list[Role] = []
-    seen_company_titles: set[tuple[str, str]] = set()
+    seen_native_ids: set[tuple[str, str, str]] = set()
     seen_urls: set[str] = set()
     for role in roles:
-        company_title = (
-            _normalized(role.company),
-            _normalized(role.title),
-        )
+        native_id = _native_identity(role)
         urls = {
-            url.strip().casefold().rstrip("/")
+            _normalized_url_identity(url)
             for url in [role.url, *role.apply_urls]
             if url.strip()
         }
-        if company_title in seen_company_titles or seen_urls.intersection(urls):
+        if (
+            native_id is not None
+            and native_id in seen_native_ids
+        ) or seen_urls.intersection(urls):
             continue
-        seen_company_titles.add(company_title)
+        if native_id is not None:
+            seen_native_ids.add(native_id)
         seen_urls.update(urls)
         selected.append(role)
     return selected
+
+
+def _native_identity(role: Role) -> tuple[str, str, str] | None:
+    if role.company_slug is None or role.source_job_id is None:
+        return None
+    return (
+        role.source.value,
+        role.company_slug.casefold(),
+        role.source_job_id,
+    )
+
+
+def _adapter_source(
+    adapter: SourceAdapter,
+    *,
+    fallback: CompanySource,
+) -> CompanySource:
+    try:
+        return CompanySource(adapter.name)
+    except ValueError:
+        return fallback
+
+
+def _normalized_url_identity(value: str) -> str:
+    """Normalize a trusted HTTPS posting URL without changing path semantics."""
+
+    cleaned = value.strip()
+    try:
+        parsed = urlsplit(cleaned)
+        port = parsed.port
+    except ValueError:
+        return cleaned.rstrip("/")
+    if parsed.scheme.casefold() != "https" or not parsed.hostname:
+        return cleaned.rstrip("/")
+
+    hostname = parsed.hostname.casefold().rstrip(".")
+    netloc = hostname if port in (None, 443) else f"{hostname}:{port}"
+    path = parsed.path.rstrip("/") or "/"
+    query = urlencode(
+        sorted(
+            (key, value)
+            for key, value in parse_qsl(parsed.query, keep_blank_values=True)
+            if not key.casefold().startswith("utm_")
+        ),
+        doseq=True,
+    )
+    return urlunsplit(("https", netloc, path, query, ""))
 
 
 def _age_days(posted_at: str | None) -> int | None:

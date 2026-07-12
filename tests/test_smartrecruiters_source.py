@@ -117,6 +117,8 @@ def test_maps_real_list_and_detail_fixture(
     assert role.posted_at == "2026-06-18T02:37:14.914Z"
     assert role.employment_type is EmploymentType.full_time
     assert role.source is CompanySource.smartrecruiters
+    assert role.company_slug == "freshworks"
+    assert role.source_job_id == "744000132768109"
     assert role.raw_description and "Kubernetes" in role.raw_description
     list_request, timeout = calls[0]
     assert "limit=100" in list_request.full_url

@@ -17,7 +17,7 @@ from enum import Enum
 from typing import Literal
 from uuid import uuid4
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 class CompanySource(str, Enum):
@@ -146,6 +146,24 @@ class Role(BaseModel):
         default=CompanySource.google_jobs,
         description="Source strategy that produced this role.",
     )
+    company_slug: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=120,
+        description=(
+            "Stable company-registry slug used with source_job_id to identify "
+            "the native posting. None for legacy or unregistered results."
+        ),
+    )
+    source_job_id: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=512,
+        description=(
+            "Source-native posting identifier. Stable identity is the tuple "
+            "(source, company_slug, source_job_id); None for legacy results."
+        ),
+    )
     apply_urls: list[str] = Field(
         default_factory=list,
         description="All known apply links, with first-party links first.",
@@ -181,6 +199,20 @@ class Role(BaseModel):
         le=1,
         description="Source-quality confidence from 0 to 1.",
     )
+
+    @model_validator(mode="after")
+    def native_identity_is_complete(self) -> "Role":
+        """Reject ambiguous half-identities while accepting every legacy role."""
+
+        if (self.company_slug is None) != (self.source_job_id is None):
+            raise ValueError(
+                "company_slug and source_job_id must either both be set or both be null"
+            )
+        if self.company_slug is not None and self.company_slug != self.company_slug.strip():
+            raise ValueError("company_slug must not have surrounding whitespace")
+        if self.source_job_id is not None and self.source_job_id != self.source_job_id.strip():
+            raise ValueError("source_job_id must not have surrounding whitespace")
+        return self
 
 
 class Person(BaseModel):

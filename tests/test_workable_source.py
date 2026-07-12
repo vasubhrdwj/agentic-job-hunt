@@ -113,6 +113,8 @@ def test_maps_real_fixture_and_uses_post(
     assert role.posted_at == "2026-06-18T00:00:00.000Z"
     assert role.employment_type is EmploymentType.full_time
     assert role.source is CompanySource.workable
+    assert role.company_slug == "peoplecert"
+    assert role.source_job_id == "AD5788CFCA"
     assert role.raw_description and "Figma" in role.raw_description
     list_request, timeout = calls[0]
     assert list_request.get_method() == "POST"

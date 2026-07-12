@@ -211,6 +211,7 @@ def _role_from_detail(
     )
     employment_type = _common._normalize_employment_type(employment_label)
     posted_at = _common._clean_text(detail.get("releasedDate")) or None
+    source_job_id = _common._clean_text(detail.get("id")) or None
     matched = _common._filter_match(
         criteria,
         title=title,
@@ -220,7 +221,7 @@ def _role_from_detail(
         posted_at=posted_at,
         source_name="SmartRecruiters",
         company_slug=company.slug,
-        job_id=_common._clean_text(detail.get("id")) or "unknown",
+        job_id=source_job_id or "unknown",
         logger=LOGGER,
     )
     if matched is None:
@@ -239,6 +240,8 @@ def _role_from_detail(
             location=location,
         ),
         source=CompanySource.smartrecruiters,
+        company_slug=company.slug if source_job_id is not None else None,
+        source_job_id=source_job_id,
         apply_urls=_common._dedupe([posting_url, apply_url]),
         posted_at=posted_at,
         employment_type=employment_type,

@@ -258,11 +258,12 @@ def _role_from_job(
 
     posted_at = _clean_text(item.get("first_published")) or None
     source_updated_at = _clean_text(item.get("updated_at")) or None
+    source_job_id = _clean_text(item.get("id")) or None
     if not _within_max_age(
         posted_at,
         criteria.max_age_days,
         company_slug=company.slug,
-        job_id=_clean_text(item.get("id")) or "unknown",
+        job_id=source_job_id or "unknown",
     ):
         return None
     summary = _summary_from_description(raw_description, title=title, location=location)
@@ -278,6 +279,8 @@ def _role_from_job(
             matched_keywords=matched_keywords,
         ),
         source=CompanySource.greenhouse,
+        company_slug=company.slug if source_job_id is not None else None,
+        source_job_id=source_job_id,
         apply_urls=[apply_url],
         posted_at=posted_at,
         source_updated_at=source_updated_at,

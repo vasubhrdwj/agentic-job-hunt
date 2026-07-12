@@ -41,6 +41,8 @@ def search_jobs_mock(criteria: JobCriteria) -> list[dict[str, Any]]:
                 f"Matches {keywords} because the role centers on identity lifecycle "
                 f"automation and accepts locations compatible with {locations}."
             ),
+            company_slug="okta",
+            source_job_id="mock-okta-lifecycle-management",
         ),
         Role(
             company="Saviynt",
@@ -56,6 +58,8 @@ def search_jobs_mock(criteria: JobCriteria) -> list[dict[str, Any]]:
                 f"Matches {keywords} through IAM-adjacent backend work and a Hyderabad "
                 "location fit."
             ),
+            company_slug="saviynt",
+            source_job_id="mock-saviynt-identity-governance",
         ),
         Role(
             company="JumpCloud",
@@ -71,6 +75,8 @@ def search_jobs_mock(criteria: JobCriteria) -> list[dict[str, Any]]:
                 f"Matches {keywords} because the work is centered on directory and "
                 "identity platform services."
             ),
+            company_slug="jumpcloud",
+            source_job_id="mock-jumpcloud-directory-platform",
         ),
     ]
     return [role.model_dump() for role in roles]

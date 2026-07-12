@@ -9,6 +9,7 @@ from job_hunt_agent.schemas import (
     JobCriteria,
     Role,
 )
+from job_hunt_agent.sources.base import FetchCompleteness, FetchScope
 from job_hunt_agent.sources.registry import CompanyRegistry
 from job_hunt_agent.sources.resolver import SourceResolver, is_first_party_role
 
@@ -46,6 +47,8 @@ def _role(
     posted_at: str | None = "1 day ago",
     employment_type: EmploymentType = EmploymentType.full_time,
     source: CompanySource = CompanySource.greenhouse,
+    company_slug: str | None = None,
+    source_job_id: str | None = None,
 ) -> Role:
     return Role(
         company=company,
@@ -55,6 +58,8 @@ def _role(
         summary="Build backend services.",
         match_reason="The posting asks for backend services.",
         source=source,
+        company_slug=company_slug,
+        source_job_id=source_job_id,
         apply_urls=[url],
         posted_at=posted_at,
         employment_type=employment_type,
@@ -101,6 +106,34 @@ def test_uses_explicit_adapter_and_daily_cache_returns_copies():
     assert second[0].title == "Backend Engineer"
 
 
+def test_result_api_reports_filtered_partial_fetch_and_preserves_cache_metadata():
+    primary = FakeAdapter(
+        name="greenhouse",
+        roles=[
+            _role(
+                company_slug="acme",
+                source_job_id="job-1",
+            )
+        ],
+        supported_source=CompanySource.greenhouse,
+    )
+    resolver = SourceResolver([primary], fallback=FakeAdapter(name="google_jobs"))
+
+    first = resolver.fetch_company_roles_result(_company(), _criteria())
+    first.roles[0].title = "Caller mutation"
+    second = resolver.fetch_company_roles_result(_company(), _criteria())
+
+    assert first.scope is FetchScope.criteria_filtered
+    assert first.completeness is FetchCompleteness.partial
+    assert not first.authoritative_for_closure
+    assert first.observed_count == first.returned_count == 1
+    assert not first.cache_hit
+    assert second.cache_hit
+    assert second.fetch_id == first.fetch_id
+    assert second.roles[0].title == "Backend Engineer"
+    assert primary.calls == 1
+
+
 def test_empty_or_failed_primary_uses_google_jobs_fallback():
     primary = FakeAdapter(
         name="greenhouse",
@@ -111,11 +144,43 @@ def test_empty_or_failed_primary_uses_google_jobs_fallback():
     fallback = FakeAdapter(name="google_jobs", roles=[fallback_role])
     resolver = SourceResolver([primary, fallback], fallback=fallback)
 
-    roles = resolver.fetch_company_roles(_company(), _criteria(), use_cache=False)
+    result = resolver.fetch_company_roles_result(
+        _company(),
+        _criteria(),
+        use_cache=False,
+    )
 
-    assert roles == [fallback_role]
+    assert result.roles == [fallback_role]
+    assert result.used_fallback
+    assert result.source is CompanySource.google_jobs
+    assert result.warning_codes == ["source_fetch_failed"]
+    assert "board down" not in result.model_dump_json()
     assert primary.calls == 1
     assert fallback.calls == 1
+
+
+def test_fallback_failure_adds_only_safe_stable_warning_codes():
+    primary = FakeAdapter(
+        name="greenhouse",
+        raises=RuntimeError("PRIVATE PRIMARY FAILURE"),
+        supported_source=CompanySource.greenhouse,
+    )
+    fallback = FakeAdapter(
+        name="google_jobs",
+        raises=RuntimeError("PRIVATE FALLBACK FAILURE"),
+    )
+    result = SourceResolver([primary, fallback], fallback=fallback).fetch_company_roles_result(
+        _company(),
+        _criteria(),
+        use_cache=False,
+    )
+
+    assert result.roles == []
+    assert result.warning_codes == [
+        "source_fetch_failed",
+        "fallback_source_fetch_failed",
+    ]
+    assert "PRIVATE" not in result.model_dump_json()
 
 
 def test_fallback_can_be_disabled_for_first_party_supply_checks():
@@ -139,6 +204,34 @@ def test_fallback_can_be_disabled_for_first_party_supply_checks():
     assert roles == []
     assert primary.calls == 1
     assert fallback.calls == 0
+
+
+def test_cache_separates_fallback_enabled_and_disabled_results():
+    primary = FakeAdapter(
+        name="greenhouse",
+        supported_source=CompanySource.greenhouse,
+    )
+    fallback_role = _role(source=CompanySource.google_jobs)
+    fallback = FakeAdapter(name="google_jobs", roles=[fallback_role])
+    resolver = SourceResolver([primary, fallback], fallback=fallback)
+
+    without_fallback = resolver.fetch_company_roles_result(
+        _company(),
+        _criteria(),
+        allow_fallback=False,
+    )
+    with_fallback = resolver.fetch_company_roles_result(
+        _company(),
+        _criteria(),
+        allow_fallback=True,
+    )
+
+    assert without_fallback.roles == []
+    assert not without_fallback.used_fallback
+    assert with_fallback.roles == [fallback_role]
+    assert with_fallback.used_fallback
+    assert primary.calls == 2
+    assert fallback.calls == 1
 
 
 def test_filters_stale_wrong_type_and_unverifiable_dates():
@@ -229,7 +322,7 @@ def test_junior_backend_intent_rejects_frontend_mobile_and_high_experience():
     assert [role.title for role in roles] == ["Backend Engineer"]
 
 
-def test_registry_aggregation_dedupes_by_company_title_and_apply_url():
+def test_registry_aggregation_preserves_distinct_requisitions_and_dedupes_urls():
     acme = _company()
     beta = _company(name="Beta", slug="beta")
     duplicate_title = _role(url="https://acme.example/jobs/2")
@@ -258,11 +351,61 @@ def test_registry_aggregation_dedupes_by_company_title_and_apply_url():
         use_cache=False,
     )
 
-    assert len(roles) == 2
-    assert {(role.company, role.title) for role in roles} == {
-        ("Acme", "Backend Engineer"),
-        ("Beta", "Backend Engineer"),
-    }
+    assert len(roles) == 3
+    assert [role.url for role in roles] == [
+        "https://acme.example/jobs/1",
+        "https://acme.example/jobs/2",
+        "https://beta.example/jobs/1",
+    ]
+
+
+def test_dedupes_same_native_posting_even_when_url_and_title_change():
+    original = _role(
+        company_slug="acme",
+        source_job_id="native-1",
+    )
+    changed = _role(
+        title="Backend Engineer II",
+        url="https://acme.example/jobs/native-1-new-url",
+        company_slug="acme",
+        source_job_id="native-1",
+    )
+    primary = FakeAdapter(
+        name="greenhouse",
+        roles=[original, changed],
+        supported_source=CompanySource.greenhouse,
+    )
+    resolver = SourceResolver([primary], fallback=FakeAdapter(name="google_jobs"))
+
+    roles = resolver.fetch_company_roles(
+        _company(),
+        _criteria(),
+        use_cache=False,
+    )
+
+    assert roles == [original]
+
+
+def test_url_fallback_dedupes_host_case_trailing_slash_and_tracking_query():
+    tracked = _role(
+        url=(
+            "https://ACME.example/jobs/1/"
+            "?utm_source=google&utm_medium=organic"
+        ),
+    )
+    canonical = _role(url="https://acme.example/jobs/1")
+    primary = FakeAdapter(
+        name="greenhouse",
+        roles=[tracked, canonical],
+        supported_source=CompanySource.greenhouse,
+    )
+
+    roles = SourceResolver(
+        [primary],
+        fallback=FakeAdapter(name="google_jobs"),
+    ).fetch_company_roles(_company(), _criteria(), use_cache=False)
+
+    assert roles == [tracked]
 
 
 def test_registry_can_require_company_careers_domain():

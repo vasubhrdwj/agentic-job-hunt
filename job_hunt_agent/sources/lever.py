@@ -213,6 +213,7 @@ def _role_from_posting(
     ):
         return None
 
+    source_job_id = _normalize_space(posting.get("id")) or None
     return Role(
         company=company.name,
         title=title,
@@ -226,6 +227,8 @@ def _role_from_posting(
             location=location,
         ),
         source=CompanySource.lever,
+        company_slug=company.slug if source_job_id is not None else None,
+        source_job_id=source_job_id,
         apply_urls=apply_urls,
         posted_at=None,
         employment_type=employment_type,

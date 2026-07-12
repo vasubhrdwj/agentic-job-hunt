@@ -29,6 +29,8 @@ class MockToolsTest(unittest.TestCase):
         validated_roles = [Role.model_validate(role) for role in roles]
         self.assertEqual(validated_roles[0].company, "Okta")
         self.assertTrue(all(role.url for role in validated_roles))
+        self.assertTrue(all(role.company_slug for role in validated_roles))
+        self.assertTrue(all(role.source_job_id for role in validated_roles))
         self.assertTrue(all("identity" in role.match_reason.lower() for role in validated_roles))
 
     def test_search_jobs_mock_accepts_adk_style_dict_input(self) -> None:

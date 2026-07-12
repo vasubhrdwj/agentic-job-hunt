@@ -137,6 +137,8 @@ def test_maps_real_fixture_and_request_shape(
     assert role.posted_at == "2026-06-12T20:19:00.233+00:00"
     assert role.employment_type is EmploymentType.full_time
     assert role.source is CompanySource.ashby
+    assert role.company_slug == "ashby"
+    assert role.source_job_id == "188cc71b-a625-4022-94dc-7c43fa1a8b06"
     assert role.raw_description and "design system" in role.raw_description
     request, timeout = calls[0]
     assert request.full_url == (

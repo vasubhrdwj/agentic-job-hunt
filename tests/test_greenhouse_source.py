@@ -109,6 +109,8 @@ def test_maps_real_fixture_to_exact_role_contract(
     assert role.apply_urls == [role.url]
     assert role.location == "Bengaluru"
     assert role.source is CompanySource.greenhouse
+    assert role.company_slug == "mongodb"
+    assert role.source_job_id == "7704173"
     assert role.posted_at == "2026-03-11T07:17:17-04:00"
     assert role.source_updated_at == "2026-06-18T15:34:16-04:00"
     assert role.employment_type is EmploymentType.full_time

@@ -287,10 +287,11 @@ def _role_from_job(
         return None
 
     posted_at = _normalized_posted_date(item.get("posted_date"))
+    source_job_id = _clean_text(item.get("id_icims") or item.get("id")) or None
     if not _within_max_age(
         posted_at,
         criteria.max_age_days,
-        job_id=_clean_text(item.get("id_icims") or item.get("id")) or "unknown",
+        job_id=source_job_id or "unknown",
     ):
         return None
 
@@ -314,6 +315,8 @@ def _role_from_job(
             posted_at=posted_at,
         ),
         source=CompanySource.bespoke,
+        company_slug=company.slug if source_job_id is not None else None,
+        source_job_id=source_job_id,
         apply_urls=_dedupe_urls([apply_url, public_url]),
         posted_at=posted_at,
         employment_type=employment_type,

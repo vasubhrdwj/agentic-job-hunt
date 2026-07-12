@@ -226,6 +226,8 @@ def _role_from_detail(
             location=location,
         ),
         source=CompanySource.workable,
+        company_slug=company.slug,
+        source_job_id=shortcode,
         apply_urls=[url],
         posted_at=posted_at,
         employment_type=employment_type,

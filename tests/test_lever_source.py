@@ -136,6 +136,8 @@ def test_maps_recorded_lever_posting_without_network(
     assert "Palantir builds the world’s leading software" in role.raw_description
     assert role.employment_type is EmploymentType.full_time
     assert role.source is CompanySource.lever
+    assert role.company_slug == "palantir"
+    assert role.source_job_id == "0bbfd4f4-41ff-4ec6-b73f-5200efd5d4d3"
     assert role.confidence == 1.0
     assert role.posted_at is None
     assert 'requested keyword "automation"' in role.match_reason

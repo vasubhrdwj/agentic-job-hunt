@@ -165,6 +165,8 @@ class GoogleJobsAdapter:
                         "company": company.name,
                         "url": apply_urls[0],
                         "source": CompanySource.google_jobs,
+                        "company_slug": company.slug if job_id else None,
+                        "source_job_id": job_id,
                         "apply_urls": apply_urls,
                         "posted_at": _posted_at(item),
                         "raw_description": _raw_description(item),

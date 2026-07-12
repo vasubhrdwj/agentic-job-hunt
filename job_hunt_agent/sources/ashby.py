@@ -167,6 +167,7 @@ def _role_from_job(
     locations = _ashby_locations(job, location)
     posted_at = _clean_text(job.get("publishedAt")) or None
     employment_type = _normalize_employment_type(job.get("employmentType"))
+    source_job_id = _clean_text(job.get("id")) or None
     matched_keywords = _filter_match(
         criteria,
         title=title,
@@ -176,7 +177,7 @@ def _role_from_job(
         posted_at=posted_at,
         source_name="Ashby",
         company_slug=company.slug,
-        job_id=_clean_text(job.get("id")) or "unknown",
+        job_id=source_job_id or "unknown",
         logger=LOGGER,
     )
     if matched_keywords is None:
@@ -195,6 +196,8 @@ def _role_from_job(
             location=location,
         ),
         source=CompanySource.ashby,
+        company_slug=company.slug if source_job_id is not None else None,
+        source_job_id=source_job_id,
         apply_urls=_dedupe([apply_url, job_url]),
         posted_at=posted_at,
         employment_type=employment_type,

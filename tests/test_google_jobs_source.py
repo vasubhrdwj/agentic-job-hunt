@@ -128,6 +128,8 @@ def test_prefers_first_party_apply_url_and_maps_complete_contract(
         item["apply_options"][1]["link"],
     ]
     assert role.source is CompanySource.google_jobs
+    assert role.company_slug == "mongodb"
+    assert role.source_job_id == item["job_id"]
     assert role.posted_at == "1 day ago"
     assert role.employment_type is EmploymentType.full_time
     assert role.raw_description == item["description"]

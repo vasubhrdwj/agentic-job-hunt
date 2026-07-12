@@ -124,6 +124,8 @@ def test_legacy_role_construction_gets_backward_compatible_defaults():
     model = Role(**LEGACY_ROLE_DATA)
 
     assert model.source is CompanySource.google_jobs
+    assert model.company_slug is None
+    assert model.source_job_id is None
     assert model.apply_urls == []
     assert model.posted_at is None
     assert model.employment_type is EmploymentType.unknown
@@ -136,6 +138,8 @@ def test_role_v2_fields_round_trip():
     model = Role(
         **LEGACY_ROLE_DATA,
         source=CompanySource.greenhouse,
+        company_slug="okta",
+        source_job_id="123",
         apply_urls=[
             "https://okta.com/careers/role/123",
             "https://boards.greenhouse.io/okta/jobs/123",
@@ -148,6 +152,14 @@ def test_role_v2_fields_round_trip():
     )
 
     assert Role.model_validate_json(model.model_dump_json()) == model
+
+
+def test_role_native_identity_is_optional_but_never_half_populated():
+    assert Role(**LEGACY_ROLE_DATA).company_slug is None
+
+    for update in ({"company_slug": "okta"}, {"source_job_id": "123"}):
+        with pytest.raises(ValidationError, match="must either both be set"):
+            Role(**LEGACY_ROLE_DATA, **update)
 
 
 @pytest.mark.parametrize(

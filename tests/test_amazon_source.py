@@ -135,6 +135,8 @@ def test_maps_recorded_fixture_to_exact_role_contract(
     ]
     assert role.location == "Bengaluru, Karnataka, IND"
     assert role.source is CompanySource.bespoke
+    assert role.company_slug == "amazon"
+    assert role.source_job_id == "10454374"
     assert role.posted_at == "2026-06-19"
     assert role.employment_type is EmploymentType.full_time
     assert role.confidence == 1.0

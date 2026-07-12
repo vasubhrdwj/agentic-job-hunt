@@ -1757,6 +1757,20 @@
             "title": "Company",
             "type": "string"
           },
+          "company_slug": {
+            "anyOf": [
+              {
+                "maxLength": 120,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Stable company-registry slug used with source_job_id to identify the native posting. None for legacy or unregistered results.",
+            "title": "Company Slug"
+          },
           "confidence": {
             "default": 1.0,
             "description": "Source-quality confidence from 0 to 1.",
@@ -1822,6 +1836,20 @@
             "$ref": "#/components/schemas/CompanySource",
             "default": "google_jobs",
             "description": "Source strategy that produced this role."
+          },
+          "source_job_id": {
+            "anyOf": [
+              {
+                "maxLength": 512,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Source-native posting identifier. Stable identity is the tuple (source, company_slug, source_job_id); None for legacy results.",
+            "title": "Source Job Id"
           },
           "source_updated_at": {
             "anyOf": [

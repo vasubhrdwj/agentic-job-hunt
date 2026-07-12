@@ -1033,6 +1033,11 @@ export interface components {
              */
             company: string;
             /**
+             * Company Slug
+             * @description Stable company-registry slug used with source_job_id to identify the native posting. None for legacy or unregistered results.
+             */
+            company_slug?: string | null;
+            /**
              * Confidence
              * @description Source-quality confidence from 0 to 1.
              * @default 1
@@ -1073,6 +1078,11 @@ export interface components {
              * @default google_jobs
              */
             source: components["schemas"]["CompanySource"];
+            /**
+             * Source Job Id
+             * @description Source-native posting identifier. Stable identity is the tuple (source, company_slug, source_job_id); None for legacy results.
+             */
+            source_job_id?: string | null;
             /**
              * Source Updated At
              * @description Source-provided last-updated timestamp. This is not presented as the original posting date.
