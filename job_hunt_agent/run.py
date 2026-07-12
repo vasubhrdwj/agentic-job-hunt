@@ -18,7 +18,7 @@ from .tools.registry import build_pipeline_tools
 
 
 DEFAULT_MAX_ROLES = 3
-DEFAULT_MAX_REFERRALS_PER_ROLE = 3
+DEFAULT_MAX_REFERRALS_PER_ROLE = 5
 DRAFT_OUTPUT_ATTRIBUTE_LIMIT = 2_000
 LOGGER = logging.getLogger(__name__)
 

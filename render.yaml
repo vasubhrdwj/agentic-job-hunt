@@ -4,11 +4,25 @@ services:
     runtime: docker
     plan: free
     region: singapore
-    healthCheckPath: /health
+    # Fail deployment health until Postgres is migrated and a compatible
+    # worker is fresh. This web-only blueprint is intentionally not a complete
+    # practical deployment; add a paid background worker before using it.
+    healthCheckPath: /ready
     autoDeploy: true
     envVars:
       - key: ENVIRONMENT
         value: production
+      # Production defaults to the authenticated private workspace. This
+      # blueprint intentionally will not start without managed Postgres and an
+      # owner-token hash; the old public paid-provider endpoint is unsafe.
+      - key: ENABLE_PRACTICAL_MODE
+        value: "1"
+      - key: DATABASE_URL
+        sync: false
+      - key: JOB_HUNT_OWNER_ID
+        value: owner
+      - key: JOB_HUNT_OWNER_TOKEN_HASH
+        sync: false
       - key: ENABLE_TRACING
         value: "1"
       - key: ENABLE_TRACE_DRAFT_CONTENT
@@ -22,13 +36,8 @@ services:
       # interval so long-lived services do not retain runs indefinitely.
       - key: RETENTION_CLEANUP_INTERVAL_SECONDS
         value: "3600"
-      # Render free tier has no persistent disk: this file is wiped on every
-      # redeploy, restart, or idle spin-down. The /health keep-alive ping
-      # prevents the spin-down case; freeze deploys after the demo recording.
-      - key: JOB_HUNT_DB_PATH
-        value: /tmp/outcomes.db
       # Comma-separated key-id:Fernet-key entries. The first key encrypts new
-      # requests; keep older keys during rotation until queued data is drained.
+      # requests, results, and outcomes; keep older keys during rotation.
       - key: JOB_HUNT_DATA_KEYS
         sync: false
       - key: PHOENIX_QUERY_TRANSPORT

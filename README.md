@@ -18,6 +18,35 @@ pip install -r requirements.txt
 cp .env.example .env  # fill in GOOGLE_API_KEY, SERPAPI_API_KEY, PHOENIX_*
 ```
 
+## Practical product rebuild
+
+The repository is being upgraded from a one-run hackathon demo into a private
+job-search workspace. The implementable product plan is in
+[`PRACTICAL_JOB_SEARCH_PLAN.md`](PRACTICAL_JOB_SEARCH_PLAN.md); current Phase 0
+delivery and its honest compatibility boundary are in
+[`docs/PHASE_0_FOUNDATION.md`](docs/PHASE_0_FOUNDATION.md).
+
+The delivered foundation includes migrated Postgres models, private owner
+sessions, owner-scoped generic jobs, lease/cancellation safety, capability-aware
+readiness, a bounded same-origin proxy, generated API contracts, and mandatory
+Postgres CI gates. Practical hunt requests, results, outcomes, and generic
+worker dispatch now use encrypted, owner-scoped Postgres state. SQLite remains
+only behind the explicit `ENABLE_PRACTICAL_MODE=0` development compatibility
+path.
+
+For the private local workspace:
+
+```bash
+.venv/bin/python scripts/generate_owner_token.py  # save token; copy printed env values
+docker compose build migrate web worker
+docker compose up -d postgres
+docker compose run --rm migrate
+docker compose up web worker frontend
+```
+
+Open <http://localhost:3000>, enter the one-time owner token, and keep
+`ENABLE_PRACTICAL_MODE=1` whenever real provider calls are possible.
+
 ## Run
 
 ```bash
@@ -34,7 +63,7 @@ python -m job_hunt_agent.run \
 
 Output is structured JSON: `{ run_id, roles: [...], outreach: [{ role, person, message }, ...] }`. Roles include source, employment type, posting date, source confidence, resume-fit score, and a match reason quoting real job-description evidence.
 
-Add `--trace` to emit OpenTelemetry spans to your Phoenix project, or `--use-mocks` for the no-network smoke loop. The CLI also prints the generated `run_id` so you can correlate the output with a Phoenix trace or the persisted SQLite row.
+Add `--trace` to emit OpenTelemetry spans to your Phoenix project, or `--use-mocks` for the no-network smoke loop. The CLI also prints the generated `run_id` so you can correlate the output with a Phoenix trace.
 
 ## V2 evidence rules
 
@@ -79,35 +108,46 @@ provides one, and an apply URL on a configured careers domain.
 This command performs network requests and fails on dead or unverified sources.
 `pytest tests/test_registry.py` remains hermetic and never performs live checks.
 
-## Run the API
+## Run the API and worker
 
-FastAPI wraps `run_hunt` for the Next.js frontend.
+FastAPI now enqueues encrypted hunt requests for a separate worker process. The
+HTTP submit path returns immediately; the worker claims the job, runs
+`run_hunt`, and atomically saves the final result.
 
 ```bash
 uvicorn job_hunt_agent.api:app --reload
+python -m job_hunt_agent.worker          # second terminal, long-running loop
+python -m job_hunt_agent.worker --once   # process one queued run and exit
 ```
 
 Endpoints:
 
 ```
-POST   /api/hunt                  { resume_text, criteria, pack, provider_consent: true }
-                                  → HuntResult + { status, access_token }
-POST   /api/runs/{run_id}/outcomes  Authorization: Bearer <access_token>
-GET    /api/runs/{run_id}           Authorization: Bearer <access_token>
-DELETE /api/runs/{run_id}           Authorization: Bearer <access_token>
-GET    /health                    → { ok: true }
+POST   /api/session                 { owner_token } → HttpOnly owner session
+POST   /api/hunt                    { resume_text, criteria, pack, provider_consent: true }
+                                    → 202 { run_id, status: queued, access_token }
+GET    /api/runs/{run_id}           owner session cookie
+                                    → queue state, plus result/outcomes after success
+POST   /api/runs/{run_id}/cancel    owner session + allowed Origin
+POST   /api/runs/{run_id}/outcomes  owner session + allowed Origin (succeeded only)
+DELETE /api/runs/{run_id}           owner session + allowed Origin
+POST   /api/runs/{run_id}/requeue   owner session + allowed Origin (dead-letter only)
+GET    /health                      → { ok: true }
+GET    /ready                       → DB migration + compatible worker readiness
 ```
 
-The access token is returned once, stored by the frontend in browser
-`sessionStorage`, and sent only in the `Authorization` header. It is never
-placed in a run URL. A run opened in another browser session is intentionally
-inaccessible.
+The practical frontend does not store or require the returned access token.
+Owner-scoped run links work in a new tab or after a reload through the opaque
+HttpOnly session cookie. The response field remains temporarily for the
+development-only legacy API compatibility path.
 
 Configure persistence and CORS via env:
 
-- `JOB_HUNT_DB_PATH` — SQLite file for runs + outcomes (default `outcomes.db`).
+- `DATABASE_URL` — Postgres shared by the practical web and worker processes.
+- `JOB_HUNT_OWNER_TOKEN_HASH` — SHA-256 of the private owner-login token.
 - `JOB_HUNT_DATA_KEYS` — comma-separated `key-id:Fernet-key` values. The first
-  key encrypts new resume-bearing requests; retain older keys during rotation.
+  key encrypts new requests, results, and outcome notes; retain older keys
+  during rotation.
 - `ALLOWED_ORIGINS` — comma-separated CORS allowlist (default dev origins for localhost 3000/5173).
 - `ENABLE_TRACING` — set to `1` so API-triggered hunts emit Phoenix spans.
 - `ENABLE_TRACE_DRAFT_CONTENT` — keep `0` for user traffic. Prompts, model
@@ -115,24 +155,38 @@ Configure persistence and CORS via env:
 - `GEMINI_PAID_SERVICE_ACK` — production must set `1` manually after
   confirming the Google API key uses paid Gemini quota.
 - `RETENTION_CLEANUP_INTERVAL_SECONDS` — API-triggered expired-data cleanup
-  interval. Set `3600` in production so health checks enforce retention.
+  interval. Set `3600` in production. `/health` remains a lightweight liveness
+  check during a database outage.
+- `JOB_HUNT_DB_PATH` — legacy-only SQLite path when practical mode is explicitly
+  disabled; practical production does not require or read it.
 
 `criteria` accepts `employment_types` and `max_age_days`; `pack` defaults to
 `backend_india`.
 
-Resume-bearing request payloads are encrypted before SQLite writes and erased
-when the synchronous hunt finishes. Results and outcomes expire after 30 days
-via startup cleanup, hourly API-triggered cleanup, or
-`python -m job_hunt_agent.cleanup`. Users can delete a run immediately from
-the review page. See the frontend `/privacy` page for the
-provider disclosure and retention limits.
+Resume-bearing requests are encrypted before Postgres writes, stay available
+only while queued/running/retryable, and are erased when the worker succeeds,
+the user cancels, the request expires, or the run is deleted. Results and
+outcome notes are encrypted too, and the entire run expires after 30 days via
+API-triggered cleanup or `python -m job_hunt_agent.cleanup`. Users can cancel
+active runs or delete a run immediately from the review page. See the frontend
+`/privacy` page for provider disclosure and retention limits.
 
 Privacy mode intentionally prevents new user draft text from entering the
 shared Phoenix corpus. Self-RAG continues to use the curated seed corpus; an
 owner-scoped learning store is required before production can learn from
 individual users' drafts safely.
 
-## Deploy
+## Hosted deployment status
+
+`render.yaml` is now fail-closed: its health check uses `/ready`, while the
+web-only free blueprint still lacks a migration predeploy step and a background
+worker service. The application code now has a shared Postgres run repository,
+but the blueprint must not report a healthy practical deployment until that
+worker topology is added. [Render background workers do not have a free
+plan](https://render.com/docs/blueprint-spec), so adding one is an explicit
+hosting-cost decision rather than a silent default.
+The notes below document the earlier demo deployment only; they are not current
+production instructions.
 
 A8 deploys the FastAPI backend to Render (free tier) and the Next.js frontend
 to Vercel. Render's free tier has no persistent disk, so SQLite lives on the
@@ -141,8 +195,9 @@ but a redeploy, restart, or idle spin-down wipes them. Two operational rules
 follow from that:
 
 > The included free-tier blueprint is for demos and controlled personal use,
-> not a public production service. A production deployment still needs durable
-> storage, authentication/rate limits, and a queued worker for long hunts.
+> not a practical production service. This branch has a durable Postgres queue
+> and worker for local use, but a hosted deployment still needs a deployed
+> worker and migration step sharing the same managed Postgres.
 
 - A keep-alive ping on `/health` every 5 minutes prevents the 15-minute idle
   spin-down (which would both wipe state and add a ~1-minute cold start for
@@ -158,7 +213,8 @@ One-time Render setup:
    free plan, Singapore region, health check on `/health`).
 3. Fill the required env vars when prompted: `GOOGLE_API_KEY`,
    `SERPAPI_API_KEY`, `PHOENIX_API_KEY`, `PHOENIX_COLLECTOR_ENDPOINT`,
-   `JOB_HUNT_DATA_KEYS`, `GEMINI_PAID_SERVICE_ACK`, plus `ALLOWED_ORIGINS`. Generate
+   `DATABASE_URL`, `JOB_HUNT_OWNER_TOKEN_HASH`, `JOB_HUNT_DATA_KEYS`,
+   `GEMINI_PAID_SERVICE_ACK`, plus `ALLOWED_ORIGINS`. Generate
    `JOB_HUNT_DATA_KEYS` as described above. For `ALLOWED_ORIGINS` use the
    production Vercel URL once it exists (production startup rejects `*` and
    localhost — use a placeholder like `https://pending.invalid` until the
@@ -167,13 +223,13 @@ One-time Render setup:
 5. Add a free UptimeRobot (or cron-job.org) monitor on
    `https://<service>.onrender.com/health` at a 5-minute interval.
 
-The blueprint sets `ENVIRONMENT=production`, `ENABLE_TRACING=1`,
+The blueprint sets `ENVIRONMENT=production`, `ENABLE_PRACTICAL_MODE=1`,
+`ENABLE_TRACING=1`,
 `ENABLE_TRACE_DRAFT_CONTENT=0`, `RETENTION_CLEANUP_INTERVAL_SECONDS=3600`,
-`JOB_HUNT_DB_PATH=/tmp/outcomes.db`, `PHOENIX_QUERY_TRANSPORT=rest`, and a
-720-hour Phoenix lookback for seeded demo traces. Startup fails loudly in
-production if required secrets are missing, localhost CORS is configured,
-mocks are enabled, draft content tracing is enabled, or the DB path is not
-absolute.
+`PHOENIX_QUERY_TRANSPORT=rest`, and a 720-hour Phoenix lookback for seeded demo
+traces. Startup fails loudly in production if required secrets are missing,
+localhost CORS is configured, mocks are enabled, draft content tracing is
+enabled, or the database is not Postgres.
 
 One-time Vercel setup:
 
@@ -181,67 +237,95 @@ One-time Vercel setup:
 cd frontend
 cp .env.example .env.local
 vercel link
-vercel env add NEXT_PUBLIC_API_BASE_URL production
+vercel env add API_BASE_URL production
 vercel --prod
 ```
 
-Set `NEXT_PUBLIC_API_BASE_URL` to `https://<service>.onrender.com` (shown at
+Set the server-only `API_BASE_URL` to `https://<service>.onrender.com` (shown at
 the top of the Render service page). After Vercel prints the production URL,
 update Render's `ALLOWED_ORIGINS` env var to that exact URL — Render restarts
 the service automatically when env vars change.
 
-Production smoke test:
+Queued smoke test:
 
 ```bash
-API=https://<service>.onrender.com
+API=http://localhost:8000  # web and worker must share DATABASE_URL
+ORIGIN=http://localhost:3000
+OWNER_TOKEN=<the one-time token saved in your password manager>
 curl $API/health
-curl -X POST $API/api/hunt \
+curl -c /tmp/job-hunt-owner.cookies -X POST $API/api/session \
+  -H "Origin: $ORIGIN" \
   -H "Content-Type: application/json" \
+  -d "{\"owner_token\":\"$OWNER_TOKEN\"}"
+curl -b /tmp/job-hunt-owner.cookies -X POST $API/api/hunt \
+  -H "Origin: $ORIGIN" \
+  -H "Content-Type: application/json" \
+  -H "Idempotency-Key: smoke-$(date +%s)" \
   -d @fixtures/sample_hunt_request.json
 
 RUN_ID=<run_id from the hunt response>
-ACCESS_TOKEN=<access_token from the hunt response>
-DRAFT_ID=<draft_id from the hunt response>
+
+python -m job_hunt_agent.worker --once
+
+curl -b /tmp/job-hunt-owner.cookies $API/api/runs/$RUN_ID
+DRAFT_ID=<draft_id from the successful GET response>
 curl -X POST $API/api/runs/$RUN_ID/outcomes \
-  -H "Authorization: Bearer $ACCESS_TOKEN" \
+  -b /tmp/job-hunt-owner.cookies \
+  -H "Origin: $ORIGIN" \
   -H "Content-Type: application/json" \
   -d "{\"outcomes\":[{\"draft_id\":\"$DRAFT_ID\",\"outcome\":\"replied\",\"notes\":\"deploy smoke\"}]}"
-curl -H "Authorization: Bearer $ACCESS_TOKEN" $API/api/runs/$RUN_ID
 ```
 
-The `/api/hunt` call blocks for the full pipeline (~90s). This branch does not
-yet include a durable background queue, so verify the deployed request path
-before inviting users. A production version should enqueue the hunt and have
-the frontend poll `GET /api/runs/{run_id}`. The final `curl` should include the
-logged outcome. Also verify the same `run_id` is visible in Phoenix before
-recording the demo. Do not expect outcomes to survive a redeploy — that is the
-documented free-tier trade-off.
+`/api/hunt` should return queued state promptly. The final `GET` should move
+from `queued`/`running` to `succeeded` after a worker processes the run, and the
+outcome POST should work only after success. The current free-tier Render
+blueprint runs only the web service, so an end-to-end hosted smoke requires a
+separate background worker and migration step.
 
 ## Abridged response shape
+
+`POST /api/hunt` returns queue state, not the completed hunt:
+
+```json
+{
+  "run_id": "<trace-correlated id>",
+  "status": "queued",
+  "stage": "queued",
+  "attempt_count": 0,
+  "max_attempts": 3,
+  "access_token": "<returned once; send only as a bearer token>",
+  "reused": false
+}
+```
+
+After the worker succeeds, `GET /api/runs/{run_id}` returns:
 
 ```json
 {
   "run_id": "<trace-correlated id>",
   "status": "succeeded",
-  "access_token": "<returned once; send only as a bearer token>",
-  "roles": [
-    {
-      "company": "<verified company>",
-      "title": "<title from posting>",
-      "url": "<first-party apply URL>",
-      "location": "<location from posting>",
-      "summary": "<posting-derived summary>",
-      "match_reason": "<resume overlap plus quoted JD evidence>",
-      "source": "greenhouse",
-      "apply_urls": ["<first-party apply URL>"],
-      "posted_at": "<source-provided date>",
-      "source_updated_at": "<source-provided last update>",
-      "employment_type": "full_time",
-      "fit_score": 0.42,
-      "confidence": 1.0
-    }
-  ],
-  "outreach": []
+  "hunt_result": {
+    "run_id": "<trace-correlated id>",
+    "roles": [
+      {
+        "company": "<verified company>",
+        "title": "<title from posting>",
+        "url": "<first-party apply URL>",
+        "location": "<location from posting>",
+        "summary": "<posting-derived summary>",
+        "match_reason": "<resume overlap plus quoted JD evidence>",
+        "source": "greenhouse",
+        "apply_urls": ["<first-party apply URL>"],
+        "posted_at": "<source-provided date>",
+        "source_updated_at": "<source-provided last update>",
+        "employment_type": "full_time",
+        "fit_score": 0.42,
+        "confidence": 1.0
+      }
+    ],
+    "outreach": []
+  },
+  "outcomes": []
 }
 ```
 
@@ -252,10 +336,15 @@ the UI explains how to continue the search manually.
 
 ```
 job_hunt_agent/        ADK agent, schemas, pipeline runner, tracing
-  api.py               FastAPI surface (POST /api/hunt, outcomes, GET run)
+  api.py               FastAPI surface (enqueue, status, cancel, outcomes)
+  database.py          SQLAlchemy engine/session lifecycle and migration head
+  hunt_repository.py   Encrypted owner-scoped Postgres hunt aggregate
+  job_queue.py         Generic Postgres jobs, leases, events, and heartbeats
+  models/              Owner, session, job, hunt, and outcome tables
   evals.py             LLM-as-judge draft scoring (V9)
   mcp_client.py        Phoenix past-draft retrieval (self-RAG)
-  persistence.py       SQLite layer for runs + outcomes
+  persistence.py       Explicit practical-mode-off SQLite compatibility path
+  worker.py            Postgres practical worker + isolated legacy dispatcher
   tools/               search_jobs, find_referrals, draft_message (+ mocks)
 frontend/              Next.js app (input → review → outcomes)
 fixtures/              sample resume, criteria, seed corpus, judge references

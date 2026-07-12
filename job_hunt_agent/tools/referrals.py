@@ -21,7 +21,7 @@ LOGGER = logging.getLogger(__name__)
 
 DEFAULT_NUM_RESULTS_PER_QUERY = 10
 DEFAULT_MAX_QUERIES = 8
-DEFAULT_TARGET_COUNT = 3
+DEFAULT_TARGET_COUNT = 5
 
 ENGINEERING_TERMS = {
     "architect",
@@ -190,11 +190,15 @@ def _build_queries(role: Role) -> list[str]:
     keywords = _keywords_from_role(role)
     queries: list[str] = []
 
-    for keyword in keywords[:4]:
+    # Preserve room in the bounded search budget for different helper types;
+    # five near-identical peer searches do not create a useful contact bench.
+    for keyword in keywords[:2]:
         queries.append(f'site:linkedin.com/in "{role.company}" "{keyword}"')
         queries.append(f'site:linkedin.com/in "{role.company}" "{keyword}" "engineer"')
 
     queries.append(f'site:linkedin.com/in "{role.company}" "engineering manager"')
+    queries.append(f'site:linkedin.com/in "{role.company}" "technical recruiter"')
+    queries.append(f'site:linkedin.com/in "{role.company}" "talent sourcer"')
     queries.append(f'site:github.com "{role.company}" "{keywords[0]}" "engineer"')
 
     return _dedupe_strings(queries)
@@ -575,7 +579,35 @@ def _choose_people(
         ),
         reverse=True,
     )
-    return [candidate.person for candidate in ranked[:DEFAULT_TARGET_COUNT]]
+    selected: list[ReferralCandidate] = []
+
+    def take(category: str) -> None:
+        for candidate in ranked:
+            if candidate in selected:
+                continue
+            if _contact_category(candidate.person.title) == category:
+                selected.append(candidate)
+                return
+
+    # Prefer a useful mix when the evidence pool supports it: two technical
+    # peers, a leader, and a recruiter/sourcer, then fill by global score.
+    for category in ("peer", "leader", "peer", "recruiter"):
+        take(category)
+    for candidate in ranked:
+        if candidate not in selected:
+            selected.append(candidate)
+        if len(selected) >= DEFAULT_TARGET_COUNT:
+            break
+    return [candidate.person for candidate in selected[:DEFAULT_TARGET_COUNT]]
+
+
+def _contact_category(title: str) -> str:
+    terms = set(_normalize_match_text(title).split())
+    if terms & {"recruiter", "sourcer", "talent"}:
+        return "recruiter"
+    if terms & {"director", "head", "lead", "manager"}:
+        return "leader"
+    return "peer"
 
 
 def _current_company_signal(*, raw_title: str, snippet: str, company: str) -> bool:

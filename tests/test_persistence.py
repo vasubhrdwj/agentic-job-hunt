@@ -307,3 +307,343 @@ def test_purge_clears_expired_requests_and_deletes_expired_runs(
     assert persistence.load_encrypted_request("clear-request", path=db_path) is None
     assert persistence.load_encrypted_request("delete-run", path=db_path) is None
     assert persistence.load_encrypted_request("keep-run", path=db_path) is not None
+
+
+
+def test_new_run_security_starts_queued(db_path: Path) -> None:
+    now = datetime.now(timezone.utc)
+    state = persistence.create_run_security(
+        "queued-run",
+        access_hash=hash_access_token("token"),
+        encrypted_request="ciphertext",
+        encryption_key_id="v1",
+        request_expires_at=now + timedelta(hours=1),
+        access_expires_at=now + timedelta(days=1),
+        path=db_path,
+    )
+
+    assert state.status == "queued"
+    assert state.attempt_count == 0
+    assert state.stage == "queued"
+    assert persistence.load_run_events("queued-run", path=db_path)[0]["to_status"] == "queued"
+
+
+def test_claim_next_run_is_exclusive_and_uses_lease_token(db_path: Path) -> None:
+    now = datetime.now(timezone.utc)
+    persistence.create_run_security(
+        "claim-me",
+        access_hash=hash_access_token("token"),
+        encrypted_request="ciphertext",
+        encryption_key_id="v1",
+        request_expires_at=now + timedelta(hours=1),
+        access_expires_at=now + timedelta(days=1),
+        path=db_path,
+    )
+
+    first = persistence.claim_next_run(
+        worker_id="worker-a",
+        lease_token="lease-a",
+        lease_seconds=60,
+        path=db_path,
+    )
+    second = persistence.claim_next_run(
+        worker_id="worker-b",
+        lease_token="lease-b",
+        lease_seconds=60,
+        path=db_path,
+    )
+
+    assert first is not None
+    assert first.run_id == "claim-me"
+    assert first.status == "running"
+    assert first.lease_owner == "worker-a"
+    assert first.lease_token == "lease-a"
+    assert first.attempt_count == 1
+    assert second is None
+
+
+def test_stale_worker_cannot_heartbeat_or_finalize_after_reclaim(db_path: Path) -> None:
+    now = datetime.now(timezone.utc)
+    persistence.create_run_security(
+        "lease-race",
+        access_hash=hash_access_token("token"),
+        encrypted_request="ciphertext",
+        encryption_key_id="v1",
+        request_expires_at=now + timedelta(hours=1),
+        access_expires_at=now + timedelta(days=1),
+        path=db_path,
+    )
+    first = persistence.claim_next_run(
+        worker_id="worker-a",
+        lease_token="lease-a",
+        lease_seconds=1,
+        now=now,
+        path=db_path,
+    )
+    assert first is not None
+
+    recovered, dead = persistence.recover_stale_leases(
+        now=now + timedelta(seconds=2),
+        path=db_path,
+    )
+    assert (recovered, dead) == (1, 0)
+
+    second = persistence.claim_next_run(
+        worker_id="worker-b",
+        lease_token="lease-b",
+        lease_seconds=60,
+        now=now + timedelta(seconds=3),
+        path=db_path,
+    )
+    assert second is not None
+    assert second.lease_owner == "worker-b"
+
+    assert not persistence.heartbeat_run(
+        "lease-race",
+        worker_id="worker-a",
+        lease_token="lease-a",
+        path=db_path,
+    )
+    stale_finalize = persistence.complete_run_with_result(
+        _make_hunt_result("lease-race"),
+        worker_id="worker-a",
+        lease_token="lease-a",
+        path=db_path,
+    )
+    assert stale_finalize is not None
+    assert stale_finalize.status == "running"
+    assert persistence.load_run("lease-race", path=db_path) is None
+
+
+def test_expired_legacy_lease_cannot_mutate_before_recovery(db_path: Path) -> None:
+    now = datetime.now(timezone.utc)
+    persistence.create_run_security(
+        "expired-before-recovery",
+        access_hash=hash_access_token("token"),
+        encrypted_request="ciphertext",
+        encryption_key_id="v1",
+        request_expires_at=now + timedelta(hours=1),
+        access_expires_at=now + timedelta(days=1),
+        path=db_path,
+    )
+    claimed = persistence.claim_next_run(
+        worker_id="worker-a",
+        lease_token="expired-lease",
+        lease_seconds=1,
+        now=now,
+        path=db_path,
+    )
+    assert claimed is not None
+    expired_at = now + timedelta(seconds=2)
+
+    assert not persistence.heartbeat_run(
+        claimed.run_id,
+        worker_id="worker-a",
+        lease_token="expired-lease",
+        now=expired_at,
+        path=db_path,
+    )
+    assert not persistence.update_run_stage(
+        claimed.run_id,
+        worker_id="worker-a",
+        lease_token="expired-lease",
+        stage="should-not-stick",
+        now=expired_at,
+        path=db_path,
+    )
+    completed = persistence.complete_run_with_result(
+        _make_hunt_result(claimed.run_id),
+        worker_id="worker-a",
+        lease_token="expired-lease",
+        now=expired_at,
+        path=db_path,
+    )
+    succeeded = persistence.mark_run_succeeded(
+        claimed.run_id,
+        worker_id="worker-a",
+        lease_token="expired-lease",
+        now=expired_at,
+        path=db_path,
+    )
+    failed = persistence.mark_run_failed(
+        claimed.run_id,
+        worker_id="worker-a",
+        lease_token="expired-lease",
+        error="ExpiredWorker",
+        now=expired_at,
+        path=db_path,
+    )
+    retried = persistence.mark_run_attempt_failed(
+        claimed.run_id,
+        worker_id="worker-a",
+        lease_token="expired-lease",
+        error="ExpiredWorker",
+        now=expired_at,
+        path=db_path,
+    )
+
+    assert completed is not None and completed.status == "running"
+    assert succeeded is not None and succeeded.status == "running"
+    assert failed is not None and failed.status == "running"
+    assert retried is not None and retried.status == "running"
+    assert persistence.load_run(claimed.run_id, path=db_path) is None
+    current = persistence.get_run_state(claimed.run_id, path=db_path)
+    assert current is not None
+    assert current.stage == "claimed"
+
+
+def test_failed_attempt_retries_then_dead_letters(db_path: Path) -> None:
+    now = datetime.now(timezone.utc)
+    persistence.create_run_security(
+        "poison",
+        access_hash=hash_access_token("token"),
+        encrypted_request="ciphertext",
+        encryption_key_id="v1",
+        request_expires_at=now + timedelta(hours=1),
+        access_expires_at=now + timedelta(days=1),
+        max_attempts=2,
+        path=db_path,
+    )
+
+    first = persistence.claim_next_run(
+        worker_id="worker",
+        lease_token="lease-1",
+        path=db_path,
+    )
+    assert first is not None
+    retry = persistence.mark_run_attempt_failed(
+        "poison",
+        worker_id="worker",
+        lease_token="lease-1",
+        error="Sensitive detail should not matter",
+        path=db_path,
+    )
+    assert retry is not None
+    assert retry.status == "queued"
+    assert retry.last_error == "Sensitive detail should not matter"
+
+    second = persistence.claim_next_run(
+        worker_id="worker",
+        lease_token="lease-2",
+        path=db_path,
+    )
+    assert second is not None
+    dead = persistence.mark_run_attempt_failed(
+        "poison",
+        worker_id="worker",
+        lease_token="lease-2",
+        error="StillBroken",
+        path=db_path,
+    )
+
+    assert dead is not None
+    assert dead.status == "dead_letter"
+    assert persistence.load_encrypted_request("poison", path=db_path) is not None
+
+
+def test_operator_requeue_dead_letter_writes_audit_event(db_path: Path) -> None:
+    now = datetime.now(timezone.utc)
+    persistence.create_run_security(
+        "operator-run",
+        access_hash=hash_access_token("token"),
+        encrypted_request="ciphertext",
+        encryption_key_id="v1",
+        request_expires_at=now + timedelta(hours=1),
+        access_expires_at=now + timedelta(days=1),
+        max_attempts=1,
+        path=db_path,
+    )
+    claimed = persistence.claim_next_run(
+        worker_id="worker",
+        lease_token="lease",
+        path=db_path,
+    )
+    assert claimed is not None
+    dead = persistence.mark_run_attempt_failed(
+        "operator-run",
+        worker_id="worker",
+        lease_token="lease",
+        error="PoisonError",
+        path=db_path,
+    )
+    assert dead is not None
+    assert dead.status == "dead_letter"
+
+    requeued = persistence.requeue_dead_letter(
+        "operator-run",
+        actor="operator",
+        reason="fixed bad dependency",
+        path=db_path,
+    )
+
+    assert requeued is not None
+    assert requeued.status == "queued"
+    assert requeued.attempt_count == 0
+    events = persistence.load_run_events("operator-run", path=db_path)
+    assert events[-1]["from_status"] == "dead_letter"
+    assert events[-1]["to_status"] == "queued"
+    assert events[-1]["reason"] == "fixed bad dependency"
+
+
+def test_complete_run_with_result_is_atomic_and_clears_request(db_path: Path) -> None:
+    now = datetime.now(timezone.utc)
+    persistence.create_run_security(
+        "atomic-run",
+        access_hash=hash_access_token("token"),
+        encrypted_request="ciphertext",
+        encryption_key_id="v1",
+        request_expires_at=now + timedelta(hours=1),
+        access_expires_at=now + timedelta(days=1),
+        path=db_path,
+    )
+    claimed = persistence.claim_next_run(
+        worker_id="worker",
+        lease_token="lease",
+        path=db_path,
+    )
+    assert claimed is not None
+
+    final = persistence.complete_run_with_result(
+        _make_hunt_result("atomic-run"),
+        worker_id="worker",
+        lease_token="lease",
+        path=db_path,
+    )
+
+    assert final is not None
+    assert final.status == "succeeded"
+    assert persistence.load_run("atomic-run", path=db_path) is not None
+    assert persistence.load_encrypted_request("atomic-run", path=db_path) is None
+
+
+def test_cancel_running_beats_stale_success_commit(db_path: Path) -> None:
+    now = datetime.now(timezone.utc)
+    persistence.create_run_security(
+        "cancel-race",
+        access_hash=hash_access_token("token"),
+        encrypted_request="ciphertext",
+        encryption_key_id="v1",
+        request_expires_at=now + timedelta(hours=1),
+        access_expires_at=now + timedelta(days=1),
+        path=db_path,
+    )
+    claimed = persistence.claim_next_run(
+        worker_id="worker",
+        lease_token="lease",
+        path=db_path,
+    )
+    assert claimed is not None
+
+    cancelled = persistence.cancel_run("cancel-race", path=db_path)
+    stale = persistence.complete_run_with_result(
+        _make_hunt_result("cancel-race"),
+        worker_id="worker",
+        lease_token="lease",
+        path=db_path,
+    )
+
+    assert cancelled is not None
+    assert cancelled.status == "cancelled"
+    assert stale is not None
+    assert stale.status == "cancelled"
+    assert persistence.load_run("cancel-race", path=db_path) is None

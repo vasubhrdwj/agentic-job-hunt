@@ -37,11 +37,11 @@ class MockToolsTest(unittest.TestCase):
         self.assertEqual(len(roles), 3)
         self.assertTrue(all(Role.model_validate(role).company for role in roles))
 
-    def test_find_referrals_mock_returns_three_valid_people_per_role(self) -> None:
+    def test_find_referrals_mock_returns_five_valid_people_per_role(self) -> None:
         role = Role.model_validate(search_jobs_mock(self.criteria)[0])
         people = find_referrals_mock(role)
 
-        self.assertEqual(len(people), 3)
+        self.assertEqual(len(people), 5)
         validated_people = [Person.model_validate(person) for person in people]
         self.assertTrue(all(person.company == role.company for person in validated_people))
         self.assertTrue(all(person.profile_url for person in validated_people))
@@ -52,7 +52,7 @@ class MockToolsTest(unittest.TestCase):
         role = search_jobs_mock(self.criteria)[1]
         people = find_referrals_mock(role)
 
-        self.assertEqual(len(people), 3)
+        self.assertEqual(len(people), 5)
         self.assertTrue(all(Person.model_validate(person).name for person in people))
 
     def test_find_referrals_mock_returns_fallback_people_for_real_search_companies(self) -> None:
@@ -67,7 +67,7 @@ class MockToolsTest(unittest.TestCase):
 
         people = find_referrals_mock(role)
 
-        self.assertEqual(len(people), 3)
+        self.assertEqual(len(people), 5)
         validated_people = [Person.model_validate(person) for person in people]
         self.assertTrue(all(person.company == "Twilio" for person in validated_people))
         self.assertTrue(

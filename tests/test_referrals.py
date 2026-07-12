@@ -388,7 +388,47 @@ class ReferralsTest(unittest.TestCase):
 
         self.assertIn('site:linkedin.com/in "Twilio" "identity access"', queries)
         self.assertIn('site:linkedin.com/in "Twilio" "engineering manager"', queries)
+        self.assertIn('site:linkedin.com/in "Twilio" "technical recruiter"', queries)
         self.assertTrue(any(query.startswith('site:github.com "Twilio"') for query in queries))
+
+    def test_contact_bench_selects_five_with_leader_and_recruiter_when_available(
+        self,
+    ) -> None:
+        titles = [
+            "Staff Identity Engineer",
+            "Senior Security Engineer",
+            "Backend Platform Engineer",
+            "Principal Software Engineer",
+            "Engineering Manager",
+            "Technical Recruiter",
+            "Identity Architect",
+        ]
+        candidates = [
+            referrals.ReferralCandidate(
+                person=Person(
+                    name=f"Candidate {index}",
+                    title=title,
+                    company="Twilio",
+                    profile_url=f"https://www.linkedin.com/in/candidate-{index}",
+                    source="linkedin",
+                    why_relevant="Verified current employee near the role.",
+                    verified_current_employer=True,
+                    confidence=0.9,
+                ),
+                score=200 - index,
+                query="test",
+                company_visible=True,
+            )
+            for index, title in enumerate(titles)
+        ]
+
+        people = referrals._choose_people(candidates)
+
+        self.assertEqual(len(people), 5)
+        categories = [referrals._contact_category(person.title) for person in people]
+        self.assertGreaterEqual(categories.count("peer"), 2)
+        self.assertIn("leader", categories)
+        self.assertIn("recruiter", categories)
 
     def test_adk_can_build_function_declaration_for_find_referrals(self) -> None:
         with warnings.catch_warnings():
@@ -408,7 +448,7 @@ class ReferralsTest(unittest.TestCase):
 
         people = find_referrals(self.role)
 
-        self.assertLessEqual(len(people), 3)
+        self.assertLessEqual(len(people), 5)
         for person in people:
             self.assertIsInstance(person, Person)
             self.assertTrue(person.name)

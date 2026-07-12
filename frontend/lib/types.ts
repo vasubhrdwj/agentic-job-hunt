@@ -1,99 +1,53 @@
-// Mirrors job_hunt_agent/schemas.py and job_hunt_agent/api.py.
-// Update both sides together when fields change.
+// UI-ready views derived from the generated FastAPI contract. Fields with
+// server defaults are strengthened only where the API always serializes them.
 
-export type Seniority = "junior" | "mid" | "senior" | "staff";
-export type OutcomeKind =
-  | "replied"
-  | "no_reply"
-  | "introduced"
-  | "rejected"
-  | "pending";
-export type PersonSource = "linkedin" | "github" | "company_page" | "other";
-export type EmploymentType = "full_time" | "contract" | "intern" | "unknown";
-export type CompanySource =
-  | "greenhouse"
-  | "lever"
-  | "ashby"
-  | "workday"
-  | "smartrecruiters"
-  | "workable"
-  | "bespoke"
-  | "google_jobs"
-  | "scrape";
+import type { components } from "./api-generated";
 
-export type JobCriteria = {
-  role_keywords: string[];
-  seniority: Seniority;
-  location: string[];
-  comp_min_lpa?: number | null;
-  comp_max_lpa?: number | null;
+type ApiSchemas = components["schemas"];
+
+export type Seniority = ApiSchemas["JobCriteria"]["seniority"];
+export type OutcomeKind = ApiSchemas["OutcomeLog"]["outcome"];
+export type RunStatus = ApiSchemas["RunStateResponse"]["status"];
+export type PersonSource = ApiSchemas["Person"]["source"];
+export type EmploymentType = ApiSchemas["EmploymentType"];
+export type CompanySource = ApiSchemas["CompanySource"];
+
+export type JobCriteria = Omit<ApiSchemas["JobCriteria"], "employment_types"> & {
   employment_types: EmploymentType[];
-  max_age_days?: number | null;
-  country: string;
 };
 
-export type Role = {
-  company: string;
-  title: string;
-  url: string;
-  location: string;
-  summary: string;
-  match_reason: string;
-  source: CompanySource;
+export type Role = Omit<ApiSchemas["Role"], "apply_urls"> & {
   apply_urls: string[];
-  posted_at?: string | null;
-  source_updated_at?: string | null;
-  employment_type: EmploymentType;
-  raw_description?: string | null;
-  fit_score?: number | null;
-  confidence: number;
 };
 
-export type Person = {
-  name: string;
-  title: string;
-  company: string;
-  profile_url: string;
-  source: PersonSource;
-  why_relevant: string;
-  verified_current_employer: boolean;
-  confidence: number;
-};
+export type Person = ApiSchemas["Person"];
 
-export type OutreachDraft = {
+export type OutreachDraft = Omit<
+  ApiSchemas["OutreachDraft"],
+  "draft_id" | "role" | "person"
+> & {
   draft_id: string;
   role: Role;
   person: Person;
-  message: string;
-  /** Composite 1-5 LLM-judge score (V9). Null when the judge was unavailable. */
-  eval_score?: number | null;
 };
 
-export type HuntResult = {
-  run_id: string;
+export type HuntResult = Omit<ApiSchemas["HuntResult"], "roles" | "outreach"> & {
   roles: Role[];
   outreach: OutreachDraft[];
 };
 
-export type HuntCreatedResponse = HuntResult & {
-  status: "succeeded";
-  access_token: string;
-};
+export type RunStateResponse = ApiSchemas["RunStateResponse"];
 
-export type OutcomeLog = {
-  draft_id: string;
-  outcome: OutcomeKind;
-  notes?: string | null;
-  logged_at?: string | null; // server-set on insert
-};
+export type HuntCreatedResponse = ApiSchemas["HuntCreatedResponse"];
 
-export type OutcomesResponse = {
-  ok: boolean;
-  inserted: number;
-  outcomes: OutcomeLog[];
-};
+export type OutcomeLog = ApiSchemas["OutcomeLog"];
 
-export type RunDetailResponse = {
-  hunt_result: HuntResult;
+export type OutcomesResponse = ApiSchemas["OutcomesResponse"];
+
+export type RunDetailResponse = Omit<
+  ApiSchemas["RunDetailResponse"],
+  "hunt_result" | "outcomes"
+> & {
+  hunt_result?: HuntResult | null;
   outcomes: OutcomeLog[];
 };

@@ -1,33 +1,43 @@
-"""FastAPI surface for the job-hunt pipeline.
+"""FastAPI surface for the queued job-hunt pipeline.
 
-The frontend POSTs ``/api/hunt`` to run the pipeline, then uses the returned
-run capability as a bearer token to read, delete, or append outcomes for that
-private run.
-
-The pipeline call blocks for the full duration of ``run_hunt`` (~90s on
-real tools). The SQLite write happens after the pipeline returns so the
-DB is never held open across that window.
+The frontend POSTs ``/api/hunt`` to enqueue an encrypted request. Practical
+workspaces authorize every run through the owner's opaque cookie and durable
+owner scope. The returned run capability remains only for the development-only
+legacy API compatibility path.
 """
 
 from __future__ import annotations
 
+import hashlib
+import hmac
+import logging
 import os
 from datetime import datetime, timedelta, timezone
-from typing import Iterable
-from typing import Literal
+from typing import Iterable, Literal
 from uuid import uuid4
 
-from fastapi import FastAPI, Header, HTTPException, Request
+from fastapi import Depends, FastAPI, Header, HTTPException, Request, Response, Security, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, Field, field_validator
+from fastapi.security import APIKeyCookie, HTTPAuthorizationCredentials, HTTPBearer
+from pydantic import BaseModel, Field
+from sqlalchemy.exc import SQLAlchemyError
 
-from . import persistence
-from .run import run_hunt
-from .schemas import HuntResult, JobCriteria, OutcomeLog
+from . import hunt_repository, persistence
+from .database import DatabaseConfigError, database_from_env, resolve_database_url
+from .requests import HuntRequestPayload, canonical_request_json
+from .routers.health import create_health_router
+from .auth import session_cookie_name
+from .routers.session import (
+    AuthenticatedOwner,
+    create_session_router,
+    require_migrated_database,
+    require_owner_mutation,
+    require_owner_session,
+)
+from .schemas import HuntResult, OutcomeLog
 from .security import (
-    MAX_RESUME_CHARS,
     REQUEST_RETENTION_HOURS,
     RUN_RETENTION_DAYS,
     SecurityConfigError,
@@ -35,7 +45,7 @@ from .security import (
     hash_access_token,
     load_data_keyring,
 )
-from .sources.registry import RegistryError
+from .sources.registry import RegistryError, load_company_pack
 
 
 TRUTHY_ENV_VALUES = {"1", "true", "yes", "on"}
@@ -47,40 +57,16 @@ DEFAULT_ALLOWED_ORIGINS = (
 )
 LOCAL_ORIGIN_MARKERS = ("localhost", "127.0.0.1", "[::1]")
 DEFAULT_RETENTION_CLEANUP_INTERVAL_SECONDS = 3600.0
-
-
-class HuntRequest(BaseModel):
-    resume_text: str = Field(
-        min_length=1,
-        max_length=MAX_RESUME_CHARS,
-        description="Plain-text resume body.",
-    )
-    criteria: JobCriteria = Field(description="Filters for the hunt.")
-    provider_consent: Literal[True] = Field(
-        description=(
-            "Explicit consent to send bounded resume excerpts to the configured "
-            "paid model provider under the disclosed retention terms."
-        ),
-    )
-    use_self_rag: bool = Field(
-        default=True,
-        description=(
-            "Toggle V8 self-RAG. Set False for the V10 round-1 baseline so the "
-            "demo can compare drafts with and without past-trace exemplars."
-        ),
-    )
-    pack: str = Field(
-        default="backend_india",
-        pattern=r"^[A-Za-z0-9][A-Za-z0-9_-]*$",
-        description="Curated company pack used for first-party job discovery.",
-    )
-
-    @field_validator("resume_text")
-    @classmethod
-    def resume_must_not_be_blank(cls, value: str) -> str:
-        if not value.strip():
-            raise ValueError("resume_text must not be blank")
-        return value
+MAX_IDEMPOTENCY_KEY_CHARS = 200
+LOGGER = logging.getLogger(__name__)
+RunStatus = Literal[
+    "queued",
+    "running",
+    "succeeded",
+    "failed",
+    "cancelled",
+    "dead_letter",
+]
 
 
 class OutcomesRequest(BaseModel):
@@ -98,18 +84,36 @@ class OutcomesResponse(BaseModel):
     outcomes: list[OutcomeLog]
 
 
-class RunDetailResponse(BaseModel):
-    hunt_result: HuntResult
-    outcomes: list[OutcomeLog]
+class RunStateResponse(BaseModel):
+    run_id: str
+    status: RunStatus
+    stage: str
+    attempt_count: int
+    max_attempts: int
+    queued_at: str | None = None
+    started_at: str | None = None
+    completed_at: str | None = None
+    cancelled_at: str | None = None
+    failed_at: str | None = None
+    dead_lettered_at: str | None = None
+    last_error: str | None = None
 
 
-class HuntCreatedResponse(HuntResult):
-    status: Literal["succeeded"]
+class RunDetailResponse(RunStateResponse):
+    hunt_result: HuntResult | None = None
+    outcomes: list[OutcomeLog] = Field(default_factory=list)
+
+
+class HuntCreatedResponse(RunStateResponse):
     access_token: str = Field(
         description=(
-            "Run capability. Send it only as an Authorization bearer token; "
-            "it is not recoverable from the server."
+            "Legacy-compatible run capability. Practical workspaces authorize "
+            "through the owner session and do not require this token."
         ),
+    )
+    reused: bool = Field(
+        default=False,
+        description="True when an idempotency key returned an existing run.",
     )
 
 
@@ -119,6 +123,10 @@ class HealthResponse(BaseModel):
 
 class DeleteResponse(BaseModel):
     ok: bool
+
+
+class RequeueRequest(BaseModel):
+    reason: str | None = Field(default=None, max_length=500)
 
 
 def _env_bool(name: str, *, default: bool = False) -> bool:
@@ -141,6 +149,12 @@ def _tracing_enabled() -> bool:
     return _env_bool("ENABLE_TRACING", default=_is_production())
 
 
+def _practical_mode_enabled() -> bool:
+    # Public paid-provider submission must be an explicit development-only
+    # compatibility choice. Production defaults to the private workspace.
+    return _env_bool("ENABLE_PRACTICAL_MODE", default=_is_production())
+
+
 def _retention_cleanup_interval_seconds() -> float:
     raw = os.getenv("RETENTION_CLEANUP_INTERVAL_SECONDS", "").strip()
     if not raw:
@@ -161,11 +175,15 @@ def _validate_production_config() -> None:
         return
 
     errors: list[str] = []
+    if not _practical_mode_enabled():
+        errors.append(
+            "ENABLE_PRACTICAL_MODE must be true in production; "
+            "the public legacy hunt is development-only"
+        )
     required = (
         "GOOGLE_API_KEY",
         "PHOENIX_API_KEY",
         "PHOENIX_COLLECTOR_ENDPOINT",
-        "JOB_HUNT_DB_PATH",
         "JOB_HUNT_DATA_KEYS",
         "ALLOWED_ORIGINS",
     )
@@ -190,9 +208,14 @@ def _validate_production_config() -> None:
     if _env_bool("ENABLE_TRACE_DRAFT_CONTENT", default=False):
         errors.append("ENABLE_TRACE_DRAFT_CONTENT must be false in production")
 
-    db_path = os.getenv("JOB_HUNT_DB_PATH", "").strip()
-    if db_path and not os.path.isabs(db_path):
-        errors.append("JOB_HUNT_DB_PATH must be an absolute path when ENVIRONMENT=production")
+    if _practical_mode_enabled():
+        for name in ("DATABASE_URL", "JOB_HUNT_OWNER_ID", "JOB_HUNT_OWNER_TOKEN_HASH"):
+            if not os.getenv(name, "").strip():
+                errors.append(f"{name} is required when practical mode is enabled")
+        try:
+            resolve_database_url(required=True, production=True)
+        except DatabaseConfigError as exc:
+            errors.append(str(exc))
 
     allowed_origins = _parse_allowed_origins()
     if "*" in allowed_origins:
@@ -213,30 +236,164 @@ def _unknown_draft_ids(
     return {entry.draft_id for entry in outcomes if entry.draft_id not in known}
 
 
+def _request_hash(canonical_json: str) -> str:
+    return hashlib.sha256(canonical_json.encode("utf-8")).hexdigest()
+
+
+def _idempotency_hash(idempotency_key: str | None) -> str | None:
+    if idempotency_key is None:
+        return None
+    normalized = idempotency_key.strip()
+    if not normalized:
+        return None
+    if len(normalized) > MAX_IDEMPOTENCY_KEY_CHARS:
+        raise HTTPException(status_code=400, detail="idempotency key is too long")
+    return hash_access_token(normalized)
+
+
+def _safe_access_token(header_token: str | None) -> str:
+    token = (header_token or "").strip()
+    if not token:
+        return generate_access_token()
+    if len(token) < 32:
+        raise HTTPException(status_code=400, detail="client run access token is too short")
+    return token
+
+
+def _state_response(state: persistence.RunQueueState) -> dict[str, object]:
+    return {
+        "run_id": state.run_id,
+        "status": state.status,
+        "stage": state.stage,
+        "attempt_count": state.attempt_count,
+        "max_attempts": state.max_attempts,
+        "queued_at": state.queued_at,
+        "started_at": state.started_at,
+        "completed_at": state.completed_at,
+        "cancelled_at": state.cancelled_at,
+        "failed_at": state.failed_at,
+        "dead_lettered_at": state.dead_lettered_at,
+        "last_error": state.last_error,
+    }
+
+
+def _practical_state_response(state: hunt_repository.HuntState) -> dict[str, object]:
+    """Serialize durable queue state without exposing owner/job internals."""
+
+    return {
+        "run_id": state.run_id,
+        "status": state.status,
+        "stage": state.stage,
+        "attempt_count": state.attempt_count,
+        "max_attempts": state.max_attempts,
+        "queued_at": state.created_at.isoformat(),
+        "started_at": _optional_datetime_text(state.started_at),
+        "completed_at": _optional_datetime_text(state.completed_at),
+        "cancelled_at": _optional_datetime_text(state.cancelled_at),
+        "failed_at": _optional_datetime_text(state.failed_at),
+        "dead_lettered_at": _optional_datetime_text(state.dead_lettered_at),
+        "last_error": state.last_error,
+    }
+
+
+def _optional_datetime_text(value: datetime | None) -> str | None:
+    return value.isoformat() if value is not None else None
+
+
+def _is_expired(value: datetime, now: datetime | None = None) -> bool:
+    current = now or datetime.now(timezone.utc)
+    normalized = value.replace(tzinfo=timezone.utc) if value.tzinfo is None else value
+    return normalized.astimezone(timezone.utc) <= current.astimezone(timezone.utc)
+
+
 def create_app() -> FastAPI:
     """Application factory. Tests use this to swap the SQLite path per run."""
     _validate_production_config()
-    app = FastAPI(title="Job Hunt Signal API", version="0.1.0")
+    app = FastAPI(title="Job Hunt Signal API", version="0.2.0")
+    practical_mode = _practical_mode_enabled()
+    allowed_origins = _parse_allowed_origins()
+    owner_cookie = APIKeyCookie(
+        name=session_cookie_name(),
+        scheme_name="OwnerSessionCookie",
+        description="Opaque HttpOnly session issued by POST /api/session.",
+        auto_error=False,
+    )
+    run_bearer = HTTPBearer(
+        scheme_name="RunCapability",
+        description="Private bearer capability returned when a hunt is created.",
+        auto_error=False,
+    )
+    operator_bearer = HTTPBearer(
+        scheme_name="OperatorCapability",
+        description="Operator-only bearer capability for dead-letter recovery.",
+        auto_error=False,
+    )
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=_parse_allowed_origins(),
-        allow_methods=["DELETE", "GET", "POST"],
-        allow_headers=["Authorization", "Content-Type"],
+        allow_origins=allowed_origins,
+        allow_credentials=True,
+        allow_methods=["DELETE", "GET", "HEAD", "PATCH", "POST", "PUT"],
+        allow_headers=[
+            "Authorization",
+            "Content-Type",
+            "Idempotency-Key",
+            "If-Match",
+            "Origin",
+            "X-Run-Access-Token",
+            "X-CSRF-Token",
+        ],
     )
+
+    try:
+        practical_database = database_from_env(required=False)
+    except DatabaseConfigError as exc:
+        raise RuntimeError(f"Invalid durable database config: {exc}") from exc
+    app.state.practical_database = practical_database
+    app.include_router(
+        create_session_router(
+            practical_database,
+            allowed_origins=allowed_origins,
+            production=_is_production(),
+        )
+    )
+    app.include_router(create_health_router(practical_database))
 
     @app.middleware("http")
     async def prevent_private_response_caching(request: Request, call_next):
         nonlocal last_retention_cleanup_at
         now = datetime.now(timezone.utc)
-        if (
+        if request.url.path != "/health" and (
             retention_cleanup_interval == 0
             or (now - last_retention_cleanup_at).total_seconds()
             >= retention_cleanup_interval
         ):
-            persistence.purge_expired_data(now=now)
-            last_retention_cleanup_at = now
+            cleanup_succeeded = False
+            try:
+                if practical_mode:
+                    if (
+                        practical_database is not None
+                        and practical_database.migrations_current()
+                    ):
+                        with practical_database.session() as session:
+                            hunt_repository.purge_expired_hunts(session, now=now)
+                        cleanup_succeeded = True
+                else:
+                    persistence.purge_expired_data(now=now)
+                    cleanup_succeeded = True
+            except SQLAlchemyError as exc:
+                # Retention is retried on a later request. Liveness must remain
+                # available while readiness reports the durable outage.
+                LOGGER.warning(
+                    "durable hunt retention failed error_type=%s",
+                    type(exc).__name__,
+                )
+            if cleanup_succeeded:
+                last_retention_cleanup_at = now
         response = await call_next(request)
-        if request.url.path == "/api/hunt" or request.url.path.startswith("/api/runs/"):
+        if (
+            request.url.path in {"/api/hunt", "/api/session", "/api/health", "/ready"}
+            or request.url.path.startswith("/api/runs/")
+        ):
             response.headers["Cache-Control"] = "no-store, max-age=0"
             response.headers["Pragma"] = "no-cache"
         return response
@@ -256,17 +413,32 @@ def create_app() -> FastAPI:
         ]
         return JSONResponse(status_code=422, content={"detail": detail})
 
-    persistence.init_db()
-    persistence.purge_expired_data()
+    @app.exception_handler(SQLAlchemyError)
+    async def sanitized_database_error(
+        _request: Request,
+        exc: SQLAlchemyError,
+    ) -> JSONResponse:
+        LOGGER.warning("durable database request failed error_type=%s", type(exc).__name__)
+        return JSONResponse(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            content={"detail": "durable database is unavailable"},
+        )
+
+    if not practical_mode:
+        persistence.init_db()
+        persistence.purge_expired_data()
     retention_cleanup_interval = _retention_cleanup_interval_seconds()
-    last_retention_cleanup_at = datetime.now(timezone.utc)
+    last_retention_cleanup_at = (
+        datetime.min.replace(tzinfo=timezone.utc)
+        if practical_mode
+        else datetime.now(timezone.utc)
+    )
     try:
         data_keyring = load_data_keyring(production=_is_production())
     except SecurityConfigError as exc:
         raise RuntimeError(f"Invalid production config: {exc}") from exc
 
     use_mocks = _env_bool("USE_MOCKS", default=False)
-    enable_tracing = _tracing_enabled()
 
     def require_run_access(run_id: str, authorization: str | None) -> None:
         if not authorization:
@@ -277,7 +449,85 @@ def create_app() -> FastAPI:
         if not persistence.authorize_run(run_id, hash_access_token(token.strip())):
             raise HTTPException(status_code=404, detail="run not found")
 
-    @app.api_route("/health", methods=["GET", "HEAD"], response_model=HealthResponse)
+    def require_operator_access(authorization: str | None) -> None:
+        configured_hash = os.getenv("JOB_HUNT_OPERATOR_TOKEN_HASH", "").strip()
+        if not configured_hash:
+            raise HTTPException(status_code=503, detail="operator requeue is not configured")
+        if not authorization:
+            raise HTTPException(status_code=401, detail="operator token required")
+        scheme, separator, token = authorization.partition(" ")
+        if not separator or scheme.lower() != "bearer" or not token.strip():
+            raise HTTPException(status_code=401, detail="invalid operator authorization")
+        if not hmac.compare_digest(configured_hash, hash_access_token(token.strip())):
+            raise HTTPException(status_code=403, detail="operator access denied")
+
+    def bearer_header(credentials: HTTPAuthorizationCredentials | None) -> str | None:
+        if credentials is None:
+            return None
+        return f"{credentials.scheme} {credentials.credentials}"
+
+    def require_practical_hunt_owner(
+        raw_request: Request,
+        _session_cookie: str | None = Security(owner_cookie),
+    ) -> AuthenticatedOwner:
+        """Protect provider-consuming work with the private owner session."""
+
+        return require_owner_mutation(
+            practical_database,
+            raw_request,
+            allowed_origins=allowed_origins,
+            production=_is_production(),
+        )
+
+    def require_practical_run_read(
+        raw_request: Request,
+        _session_cookie: str | None = Security(owner_cookie),
+    ) -> AuthenticatedOwner:
+        return require_owner_session(practical_database, raw_request)
+
+    def require_practical_run_mutation(
+        raw_request: Request,
+        _session_cookie: str | None = Security(owner_cookie),
+    ) -> AuthenticatedOwner:
+        return require_owner_mutation(
+            practical_database,
+            raw_request,
+            allowed_origins=allowed_origins,
+            production=_is_production(),
+        )
+
+    def allow_legacy_hunt() -> None:
+        return None
+
+    def require_legacy_run_capability(
+        run_id: str,
+        credentials: HTTPAuthorizationCredentials | None = Security(run_bearer),
+    ) -> None:
+        require_run_access(run_id, bearer_header(credentials))
+
+    def require_legacy_operator_capability(
+        credentials: HTTPAuthorizationCredentials | None = Security(operator_bearer),
+    ) -> None:
+        require_operator_access(bearer_header(credentials))
+
+    hunt_owner_dependency = (
+        require_practical_hunt_owner if practical_mode else allow_legacy_hunt
+    )
+    run_read_dependency = (
+        require_practical_run_read if practical_mode else require_legacy_run_capability
+    )
+    run_mutation_dependency = (
+        require_practical_run_mutation
+        if practical_mode
+        else require_legacy_run_capability
+    )
+    requeue_dependency = (
+        require_practical_run_mutation
+        if practical_mode
+        else require_legacy_operator_capability
+    )
+
+    @app.get("/health", response_model=HealthResponse, operation_id="health_liveness")
     def health() -> HealthResponse:
         """Lightweight liveness check for the deployment platform.
 
@@ -285,47 +535,108 @@ def create_app() -> FastAPI:
         """
         return HealthResponse(ok=True)
 
-    @app.post("/api/hunt", response_model=HuntCreatedResponse)
-    def post_hunt(request: HuntRequest) -> HuntCreatedResponse:
-        """Run the pipeline once and persist the HuntResult."""
+    @app.head("/health", include_in_schema=False)
+    def health_head() -> Response:
+        return Response(status_code=200)
+
+    @app.post(
+        "/api/hunt",
+        response_model=HuntCreatedResponse,
+        status_code=status.HTTP_202_ACCEPTED,
+    )
+    def post_hunt(
+        payload: HuntRequestPayload,
+        owner: AuthenticatedOwner | None = Depends(hunt_owner_dependency),
+        idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+        run_access_token: str | None = Header(default=None, alias="X-Run-Access-Token"),
+    ) -> HuntCreatedResponse:
+        """Persist an encrypted request and return immediately with queued state."""
+
+        if not use_mocks:
+            try:
+                load_company_pack(payload.pack)
+            except RegistryError as exc:
+                raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+        canonical_json = canonical_request_json(payload)
+        request_fingerprint = _request_hash(canonical_json)
+        idempotency_key_hash = _idempotency_hash(idempotency_key)
+        access_token = _safe_access_token(run_access_token)
+
+        if practical_mode:
+            assert owner is not None
+            now = datetime.now(timezone.utc)
+            database = require_migrated_database(practical_database)
+            try:
+                with database.session() as session:
+                    # Idempotency is bounded by run retention. Purge first so
+                    # an expired key cannot resurrect or extend an old run.
+                    hunt_repository.purge_expired_hunts(session, now=now)
+                    created = hunt_repository.create_or_reuse_hunt(
+                        session,
+                        owner_id=owner.owner_id,
+                        request_json=canonical_json,
+                        request_hash=request_fingerprint,
+                        access_hash=hash_access_token(access_token),
+                        keyring=data_keyring,
+                        request_expires_at=now + timedelta(hours=REQUEST_RETENTION_HOURS),
+                        access_expires_at=now + timedelta(days=RUN_RETENTION_DAYS),
+                        idempotency_key_hash=idempotency_key_hash,
+                        actor=f"owner:{owner.owner_id}",
+                        now=now,
+                    )
+            except hunt_repository.IdempotencyConflict as exc:
+                raise HTTPException(status_code=409, detail=str(exc)) from exc
+            except hunt_repository.HuntRepositoryError as exc:
+                LOGGER.error(
+                    "durable hunt creation invariant failed error_type=%s",
+                    type(exc).__name__,
+                )
+                raise HTTPException(
+                    status_code=500,
+                    detail="durable hunt state is inconsistent",
+                ) from exc
+            return HuntCreatedResponse(
+                **_practical_state_response(created.state),
+                access_token=access_token,
+                reused=created.reused,
+            )
+
+        if idempotency_key_hash is not None:
+            hit = persistence.find_run_by_idempotency_key(idempotency_key_hash)
+            if hit is not None:
+                if hit.request_hash != request_fingerprint:
+                    raise HTTPException(
+                        status_code=409,
+                        detail="idempotency key was already used for a different request",
+                    )
+                persistence.replace_access_hash(
+                    hit.state.run_id,
+                    access_hash=hash_access_token(access_token),
+                )
+                return HuntCreatedResponse(
+                    **_state_response(hit.state),
+                    access_token=access_token,
+                    reused=True,
+                )
+
         new_run_id = uuid4().hex
-        access_token = generate_access_token()
         now = datetime.now(timezone.utc)
-        encrypted_request = data_keyring.encrypt(request.model_dump_json())
-        persistence.create_run_security(
+        encrypted_request = data_keyring.encrypt(canonical_json)
+        state = persistence.create_run_security(
             new_run_id,
             access_hash=hash_access_token(access_token),
             encrypted_request=encrypted_request.ciphertext,
             encryption_key_id=encrypted_request.key_id,
             request_expires_at=now + timedelta(hours=REQUEST_RETENTION_HOURS),
             access_expires_at=now + timedelta(days=RUN_RETENTION_DAYS),
+            idempotency_key_hash=idempotency_key_hash,
+            request_hash=request_fingerprint,
         )
-        try:
-            result = run_hunt(
-                resume_text=request.resume_text,
-                criteria=request.criteria,
-                run_id=new_run_id,
-                use_mocks=use_mocks,
-                use_self_rag=request.use_self_rag,
-                enable_tracing=enable_tracing,
-                pack=request.pack,
-            )
-        except RegistryError as exc:
-            persistence.delete_run(new_run_id)
-            raise HTTPException(status_code=400, detail=str(exc)) from exc
-        except Exception:
-            persistence.delete_run(new_run_id)
-            raise
-        try:
-            persistence.save_run(result)
-            persistence.complete_run_security(new_run_id)
-        except Exception:
-            persistence.delete_run(new_run_id)
-            raise
         return HuntCreatedResponse(
-            **result.model_dump(),
-            status="succeeded",
+            **_state_response(state),
             access_token=access_token,
+            reused=False,
         )
 
     @app.post(
@@ -335,10 +646,66 @@ def create_app() -> FastAPI:
     def post_outcomes(
         run_id: str,
         request: OutcomesRequest,
-        authorization: str | None = Header(default=None),
+        owner: AuthenticatedOwner | None = Depends(run_mutation_dependency),
     ) -> OutcomesResponse:
-        """Append user-logged outcomes for a previously stored hunt."""
-        require_run_access(run_id, authorization)
+        """Append user-logged outcomes for a completed hunt."""
+        if practical_mode:
+            assert owner is not None
+            database = require_migrated_database(practical_database)
+            with database.session() as session:
+                state = hunt_repository.load_hunt_state(
+                    session,
+                    owner_id=owner.owner_id,
+                    hunt_run_id=run_id,
+                )
+                if state is None:
+                    raise HTTPException(status_code=404, detail="run not found")
+                if state.status != "succeeded":
+                    raise HTTPException(
+                        status_code=409,
+                        detail="outcomes can only be logged after a run succeeds",
+                    )
+                stored = hunt_repository.load_hunt_result(
+                    session,
+                    owner_id=owner.owner_id,
+                    hunt_run_id=run_id,
+                    keyring=data_keyring,
+                )
+                if stored is None:
+                    raise HTTPException(status_code=404, detail="run not found")
+                known_draft_ids = {draft.draft_id for draft in stored.outreach}
+                unknown = _unknown_draft_ids(request.outcomes, known_draft_ids)
+                if unknown:
+                    raise HTTPException(
+                        status_code=400,
+                        detail={
+                            "message": "outcomes reference draft_ids not in this run",
+                            "unknown_draft_ids": sorted(unknown),
+                        },
+                    )
+                try:
+                    inserted = hunt_repository.append_hunt_outcomes(
+                        session,
+                        owner_id=owner.owner_id,
+                        hunt_run_id=run_id,
+                        outcomes=request.outcomes,
+                        keyring=data_keyring,
+                    )
+                except hunt_repository.HuntStateConflict as exc:
+                    raise HTTPException(
+                        status_code=409,
+                        detail="outcomes can only be logged after a run succeeds",
+                    ) from exc
+            return OutcomesResponse(ok=True, inserted=len(inserted), outcomes=inserted)
+
+        state = persistence.get_run_state(run_id)
+        if state is None:
+            raise HTTPException(status_code=404, detail=f"run_id {run_id!r} not found")
+        if state.status != "succeeded":
+            raise HTTPException(
+                status_code=409,
+                detail="outcomes can only be logged after a run succeeds",
+            )
         stored = persistence.load_run(run_id)
         if stored is None:
             raise HTTPException(status_code=404, detail=f"run_id {run_id!r} not found")
@@ -363,15 +730,147 @@ def create_app() -> FastAPI:
     )
     def get_run(
         run_id: str,
-        authorization: str | None = Header(default=None),
+        owner: AuthenticatedOwner | None = Depends(run_read_dependency),
     ) -> RunDetailResponse:
-        """Return the stored HuntResult plus every logged outcome for it."""
-        require_run_access(run_id, authorization)
-        stored = persistence.load_run(run_id)
-        if stored is None:
+        """Return queue state, plus result/outcomes after the run succeeds."""
+        if practical_mode:
+            assert owner is not None
+            database = require_migrated_database(practical_database)
+            expired = False
+            with database.session() as session:
+                state = hunt_repository.load_hunt_state(
+                    session,
+                    owner_id=owner.owner_id,
+                    hunt_run_id=run_id,
+                )
+                if state is not None and _is_expired(state.access_expires_at):
+                    hunt_repository.delete_hunt(
+                        session,
+                        owner_id=owner.owner_id,
+                        hunt_run_id=run_id,
+                    )
+                    expired = True
+                    stored = None
+                    outcomes = []
+                elif state is not None:
+                    stored = hunt_repository.load_hunt_result(
+                        session,
+                        owner_id=owner.owner_id,
+                        hunt_run_id=run_id,
+                        keyring=data_keyring,
+                    )
+                    outcomes = hunt_repository.load_hunt_outcomes(
+                        session,
+                        owner_id=owner.owner_id,
+                        hunt_run_id=run_id,
+                        keyring=data_keyring,
+                    )
+                else:
+                    stored = None
+                    outcomes = []
+            if state is None or expired:
+                raise HTTPException(status_code=404, detail="run not found")
+            return RunDetailResponse(
+                **_practical_state_response(state),
+                hunt_result=stored,
+                outcomes=outcomes,
+            )
+
+        state = persistence.get_run_state(run_id)
+        if state is None:
             raise HTTPException(status_code=404, detail=f"run_id {run_id!r} not found")
-        outcomes = persistence.load_outcomes(run_id)
-        return RunDetailResponse(hunt_result=stored, outcomes=outcomes)
+        stored = persistence.load_run(run_id)
+        outcomes = persistence.load_outcomes(run_id) if stored is not None else []
+        return RunDetailResponse(
+            **_state_response(state),
+            hunt_result=stored,
+            outcomes=outcomes,
+        )
+
+    @app.post(
+        "/api/runs/{run_id}/cancel",
+        response_model=RunStateResponse,
+    )
+    def cancel_run(
+        run_id: str,
+        owner: AuthenticatedOwner | None = Depends(run_mutation_dependency),
+    ) -> RunStateResponse:
+        """Cancel a queued/running run through its authorized workspace."""
+        if practical_mode:
+            assert owner is not None
+            database = require_migrated_database(practical_database)
+            with database.session() as session:
+                state = hunt_repository.cancel_hunt(
+                    session,
+                    owner_id=owner.owner_id,
+                    hunt_run_id=run_id,
+                    actor=f"owner:{owner.owner_id}",
+                )
+                if state is None:
+                    raise HTTPException(status_code=404, detail="run not found")
+            return RunStateResponse(**_practical_state_response(state))
+
+        state = persistence.cancel_run(run_id)
+        if state is None:
+            raise HTTPException(status_code=404, detail=f"run_id {run_id!r} not found")
+        return RunStateResponse(**_state_response(state))
+
+    @app.post(
+        "/api/runs/{run_id}/requeue",
+        response_model=RunStateResponse,
+    )
+    def requeue_run(
+        run_id: str,
+        request: RequeueRequest,
+        owner: AuthenticatedOwner | None = Depends(requeue_dependency),
+    ) -> RunStateResponse:
+        """Move a dead-letter run back to queued through an authorized action."""
+        if practical_mode:
+            assert owner is not None
+            database = require_migrated_database(practical_database)
+            with database.session() as session:
+                state = hunt_repository.requeue_hunt_dead_letter(
+                    session,
+                    owner_id=owner.owner_id,
+                    hunt_run_id=run_id,
+                    actor=f"owner:{owner.owner_id}",
+                    reason=request.reason,
+                )
+                if state is None:
+                    raise HTTPException(status_code=404, detail="run not found")
+                if state.status != "queued":
+                    if state.status != "dead_letter":
+                        raise HTTPException(
+                            status_code=409,
+                            detail="only dead-letter runs can be requeued",
+                        )
+                    raise HTTPException(
+                        status_code=409,
+                        detail=(
+                            "dead-letter run cannot be requeued because its "
+                            "request is unavailable"
+                        ),
+                    )
+            return RunStateResponse(**_practical_state_response(state))
+
+        before = persistence.get_run_state(run_id)
+        if before is None:
+            raise HTTPException(status_code=404, detail=f"run_id {run_id!r} not found")
+        if before.status != "dead_letter":
+            raise HTTPException(status_code=409, detail="only dead-letter runs can be requeued")
+        state = persistence.requeue_dead_letter(
+            run_id,
+            actor="operator",
+            reason=request.reason,
+        )
+        if state is None:
+            raise HTTPException(status_code=404, detail=f"run_id {run_id!r} not found")
+        if state.status != "queued":
+            raise HTTPException(
+                status_code=409,
+                detail="dead-letter run cannot be requeued because its request is unavailable",
+            )
+        return RunStateResponse(**_state_response(state))
 
     @app.delete(
         "/api/runs/{run_id}",
@@ -379,11 +878,22 @@ def create_app() -> FastAPI:
     )
     def delete_run(
         run_id: str,
-        authorization: str | None = Header(default=None),
+        owner: AuthenticatedOwner | None = Depends(run_mutation_dependency),
     ) -> DeleteResponse:
-        """Delete a run, its encrypted request metadata, and all outcomes."""
+        """Delete a run, its encrypted request metadata, audit events, and outcomes."""
+        if practical_mode:
+            assert owner is not None
+            database = require_migrated_database(practical_database)
+            with database.session() as session:
+                deleted = hunt_repository.delete_hunt(
+                    session,
+                    owner_id=owner.owner_id,
+                    hunt_run_id=run_id,
+                )
+                if not deleted:
+                    raise HTTPException(status_code=404, detail="run not found")
+            return DeleteResponse(ok=True)
 
-        require_run_access(run_id, authorization)
         persistence.delete_run(run_id)
         return DeleteResponse(ok=True)
 

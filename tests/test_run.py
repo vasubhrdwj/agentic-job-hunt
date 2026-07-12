@@ -166,7 +166,7 @@ class RunHuntTest(unittest.TestCase):
         self.assertGreater(result.roles[0].fit_score, result.roles[1].fit_score)
         self.assertEqual(result.outreach, [])
 
-    def test_run_hunt_with_mocks_produces_three_by_three_outreach(self) -> None:
+    def test_run_hunt_with_mocks_produces_three_by_five_outreach(self) -> None:
         result = run_hunt(
             resume_text="Built SCIM provisioning and identity automation services.",
             criteria=self.criteria,
@@ -174,7 +174,7 @@ class RunHuntTest(unittest.TestCase):
         )
 
         self.assertEqual(len(result.roles), 3)
-        self.assertEqual(len(result.outreach), 9)
+        self.assertEqual(len(result.outreach), 15)
         self.assertTrue(all(draft.message for draft in result.outreach))
 
     def test_run_hunt_can_emit_trace_spans_without_resume_attributes(self) -> None:
@@ -360,7 +360,7 @@ class RunHuntTest(unittest.TestCase):
 
         self.assertIn("roles", payload)
         self.assertIn("outreach", payload)
-        self.assertEqual(len(payload["outreach"]), 9)
+        self.assertEqual(len(payload["outreach"]), 15)
 
 
 if __name__ == "__main__":

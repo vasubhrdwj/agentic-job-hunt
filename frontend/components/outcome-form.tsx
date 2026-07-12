@@ -20,12 +20,10 @@ type DraftState = {
 
 export function OutcomeForm({
   runId,
-  accessToken,
   huntResult,
   previousOutcomes,
 }: {
   runId: string;
-  accessToken: string;
   huntResult: HuntResult;
   previousOutcomes: OutcomeLog[];
 }) {
@@ -65,7 +63,7 @@ export function OutcomeForm({
 
     setPending(true);
     try {
-      const res = await postOutcomes(runId, accessToken, logs);
+      const res = await postOutcomes(runId, logs);
       setSavedCount(res.inserted);
     } catch (err) {
       const message =

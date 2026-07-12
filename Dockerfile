@@ -18,6 +18,8 @@ ENV PATH=/root/.local/bin:$PATH \
     PYTHONDONTWRITEBYTECODE=1
 
 COPY --from=builder /root/.local /root/.local
+COPY alembic.ini ./alembic.ini
+COPY migrations/ ./migrations/
 COPY job_hunt_agent/ ./job_hunt_agent/
 COPY config/ ./config/
 

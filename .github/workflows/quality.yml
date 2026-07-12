@@ -1,0 +1,80 @@
+name: Quality
+
+on:
+  pull_request:
+  push:
+    branches: [main, master, v2-rebuild]
+
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: job_hunt_test
+          POSTGRES_USER: job_hunt
+          POSTGRES_PASSWORD: job_hunt
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U job_hunt -d job_hunt_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      POSTGRES_URL: postgresql+psycopg://job_hunt:job_hunt@127.0.0.1:5432/job_hunt_test
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+          cache: pip
+      - name: Install dependencies
+        run: |
+          python -m venv .venv
+          .venv/bin/python -m pip install -r requirements.txt -r requirements-dev.txt
+      - name: Upgrade and verify migrations
+        run: |
+          DATABASE_URL="$POSTGRES_URL" .venv/bin/python -m alembic upgrade head
+          DATABASE_URL="$POSTGRES_URL" .venv/bin/python -m alembic check
+      - name: Run backend suite with mandatory Postgres gates
+        run: TEST_DATABASE_URL="$POSTGRES_URL" .venv/bin/python -m pytest -q
+
+  frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+          cache: pip
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "20.18"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install backend contract dependencies
+        run: |
+          python -m venv .venv
+          .venv/bin/python -m pip install -r requirements.txt
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+      - name: Verify generated API contract
+        working-directory: frontend
+        run: npm run api:check
+      - name: Lint and typecheck
+        working-directory: frontend
+        run: |
+          npm run lint
+          npm run typecheck
+      - name: Production build
+        working-directory: frontend
+        run: npm run build
+      - name: Production dependency audit
+        working-directory: frontend
+        run: npm audit --omit=dev --audit-level=high

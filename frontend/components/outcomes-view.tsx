@@ -3,66 +3,42 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { ApiError, getRun } from "@/lib/api";
-import { loadRunAccess } from "@/lib/run-access";
 import type { RunDetailResponse } from "@/lib/types";
 import { OutcomeForm } from "@/components/outcome-form";
 
 export function OutcomesView({ runId }: { runId: string }) {
   const [detail, setDetail] = useState<RunDetailResponse | null>();
-  const [accessToken, setAccessToken] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
     async function load() {
-      const token = loadRunAccess(runId);
-      if (!token) {
-        throw new Error(
-          "This browser session does not have the access token for this private run.",
-        );
-      }
-      const loaded = await getRun(runId, token);
+      const loaded = await getRun(runId);
       if (!cancelled) {
-        setAccessToken(token);
         setDetail(loaded);
       }
     }
 
     void load().catch((err: unknown) => {
-        if (cancelled) return;
-        setError(
-          err instanceof ApiError && err.status === 401
-            ? "The access token for this run is invalid or expired."
-            : err instanceof Error
-              ? err.message
-              : "Unable to load this run.",
-        );
-      });
+      if (cancelled) return;
+      setError(
+        err instanceof ApiError && err.status === 401
+          ? "Your owner session is missing or expired. Sign in again to view this run."
+          : err instanceof Error
+            ? err.message
+            : "Unable to load this run.",
+      );
+    });
     return () => {
       cancelled = true;
     };
   }, [runId]);
 
   if (error) {
-    return (
-      <main className="mx-auto w-full max-w-3xl flex-1 px-6 py-12">
-        <div
-          role="alert"
-          className="rounded-lg border border-amber-200 bg-amber-50 p-6 text-sm text-amber-950 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-100"
-        >
-          <p>{error}</p>
-          <Link
-            href="/"
-            className="mt-4 inline-block font-medium underline underline-offset-2"
-          >
-            Start a new hunt
-          </Link>
-        </div>
-      </main>
-    );
+    return <OutcomeError message={error} />;
   }
 
-  if (detail === undefined || !accessToken) {
+  if (detail === undefined) {
     return (
       <main className="mx-auto w-full max-w-3xl flex-1 px-6 py-12">
         <p role="status" className="text-sm text-zinc-500">
@@ -73,11 +49,27 @@ export function OutcomesView({ runId }: { runId: string }) {
   }
 
   if (detail === null) {
+    return <OutcomeError message="This run does not exist or is no longer available." />;
+  }
+
+  if (detail.status !== "succeeded" || !detail.hunt_result) {
     return (
       <main className="mx-auto w-full max-w-3xl flex-1 px-6 py-12">
-        <p role="alert" className="text-sm text-zinc-700 dark:text-zinc-300">
-          This run does not exist or is no longer available.
-        </p>
+        <div
+          role="alert"
+          className="rounded-lg border border-amber-200 bg-amber-50 p-6 text-sm text-amber-950 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-100"
+        >
+          <p>
+            Outcomes can only be logged after a hunt succeeds. Current status:{" "}
+            <span className="font-mono">{detail.status}</span>.
+          </p>
+          <Link
+            href={`/runs/${runId}`}
+            className="mt-4 inline-block font-medium underline underline-offset-2"
+          >
+            Back to run status
+          </Link>
+        </div>
       </main>
     );
   }
@@ -112,10 +104,28 @@ export function OutcomesView({ runId }: { runId: string }) {
 
       <OutcomeForm
         runId={runId}
-        accessToken={accessToken}
         huntResult={detail.hunt_result}
         previousOutcomes={detail.outcomes}
       />
+    </main>
+  );
+}
+
+function OutcomeError({ message }: { message: string }) {
+  return (
+    <main className="mx-auto w-full max-w-3xl flex-1 px-6 py-12">
+      <div
+        role="alert"
+        className="rounded-lg border border-amber-200 bg-amber-50 p-6 text-sm text-amber-950 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-100"
+      >
+        <p>{message}</p>
+        <Link
+          href="/"
+          className="mt-4 inline-block font-medium underline underline-offset-2"
+        >
+          Start a new hunt
+        </Link>
+      </div>
     </main>
   );
 }

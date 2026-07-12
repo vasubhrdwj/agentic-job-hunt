@@ -2,9 +2,12 @@
 
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { postHunt, ApiError } from "@/lib/api";
-import { saveRunAccess } from "@/lib/run-access";
+import {
+  consumeHuntIdempotencyKey,
+  huntIdempotencyKey,
+} from "@/lib/hunt-idempotency";
 import type {
   EmploymentType,
   JobCriteria,
@@ -31,6 +34,7 @@ function splitCsv(value: string): string[] {
 
 export function InputForm() {
   const router = useRouter();
+  const submissionInFlight = useRef(false);
   const [resume, setResume] = useState("");
   const [keywords, setKeywords] = useState(
     "backend engineer, software engineer, backend developer",
@@ -52,6 +56,7 @@ export function InputForm() {
 
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
+    if (submissionInFlight.current) return;
     setError(null);
 
     const keywordList = splitCsv(keywords);
@@ -89,10 +94,12 @@ export function InputForm() {
       country: "in",
     };
 
+    submissionInFlight.current = true;
     setPending(true);
     try {
-      const result = await postHunt(resume, criteria, pack);
-      saveRunAccess(result.run_id, result.access_token);
+      const idempotencyKey = await huntIdempotencyKey(resume, criteria, pack);
+      const result = await postHunt(resume, criteria, pack, idempotencyKey);
+      await consumeHuntIdempotencyKey(resume, criteria, pack);
       router.push(`/runs/${result.run_id}`);
     } catch (err) {
       const message =
@@ -102,6 +109,7 @@ export function InputForm() {
             ? err.message
             : "Unknown error.";
       setError(message);
+      submissionInFlight.current = false;
       setPending(false);
     }
   }
@@ -262,6 +270,7 @@ export function InputForm() {
 
       <label className="flex items-start gap-3 rounded-lg border border-zinc-200 bg-white p-4 text-sm dark:border-zinc-800 dark:bg-zinc-900">
         <input
+          id="provider-consent"
           type="checkbox"
           checked={providerConsent}
           onChange={(event) => setProviderConsent(event.target.checked)}
@@ -282,6 +291,7 @@ export function InputForm() {
 
       <button
         type="submit"
+        disabled={pending}
         className="inline-flex h-11 items-center justify-center rounded-md bg-indigo-600 px-6 text-sm font-medium text-white hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 disabled:opacity-60"
       >
         Run hunt

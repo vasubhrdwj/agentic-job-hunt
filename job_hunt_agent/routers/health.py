@@ -1,0 +1,183 @@
+"""Liveness-adjacent readiness and owner-visible operational health."""
+
+from __future__ import annotations
+
+import os
+from datetime import datetime, timezone
+
+from fastapi import APIRouter, Request, Security
+from fastapi.responses import JSONResponse
+from fastapi.security import APIKeyCookie
+from sqlalchemy import func, select
+from sqlalchemy.orm import Session
+
+from ..database import MIGRATION_HEAD, Database
+from ..auth import session_cookie_name
+from ..models import BackgroundJob, WorkerHeartbeat
+from .session import require_owner_session
+
+
+DEFAULT_WORKER_HEARTBEAT_MAX_AGE_SECONDS = 90
+ACTIVE_JOB_STATUSES = ("queued", "running")
+
+
+def create_health_router(database: Database | None) -> APIRouter:
+    router = APIRouter(tags=["operational-health"])
+    owner_cookie = APIKeyCookie(
+        name=session_cookie_name(),
+        scheme_name="OwnerSessionCookie",
+        description="Opaque HttpOnly session issued by POST /api/session.",
+        auto_error=False,
+    )
+
+    @router.get("/ready", include_in_schema=False)
+    def readiness() -> JSONResponse:
+        snapshot = readiness_snapshot(database)
+        return JSONResponse(
+            status_code=200 if snapshot["ok"] else 503,
+            content=snapshot,
+            headers={"Cache-Control": "no-store, max-age=0"},
+        )
+
+    @router.get("/api/health")
+    def owner_health(
+        request: Request,
+        _session_cookie: str | None = Security(owner_cookie),
+    ) -> dict[str, object]:
+        owner = require_owner_session(database, request)
+        assert database is not None
+        snapshot = readiness_snapshot(database)
+        with database.session() as session:
+            counts = _owner_queue_counts(session, owner_id=owner.owner_id)
+        return {
+            **snapshot,
+            "owner_id": owner.owner_id,
+            "queue": {
+                "counts": counts,
+                "dead_letter": counts.get("dead_letter", 0),
+            },
+        }
+
+    return router
+
+
+def readiness_snapshot(
+    database: Database | None,
+    *,
+    now: datetime | None = None,
+) -> dict[str, object]:
+    current = _as_utc(now or datetime.now(timezone.utc))
+    configured = database is not None
+    reachable = configured and database.reachable()
+    revision = database.current_migration_revision() if reachable and database else None
+    migrations_current = revision == MIGRATION_HEAD
+    worker_payload: dict[str, object] = {
+        "fresh": False,
+        "worker_id": None,
+        "worker_ids": [],
+        "fresh_worker_count": 0,
+        "last_seen_at": None,
+        "age_seconds": None,
+        "supported_kinds": [],
+        "active_job_kinds": [],
+        "unsupported_active_kinds": [],
+    }
+
+    if migrations_current and database is not None:
+        with database.session() as session:
+            heartbeats = list(
+                session.scalars(
+                    select(WorkerHeartbeat).order_by(WorkerHeartbeat.last_seen_at.desc())
+                )
+            )
+            active_job_kinds = sorted(
+                set(
+                    session.scalars(
+                        select(BackgroundJob.kind).where(
+                            BackgroundJob.status.in_(ACTIVE_JOB_STATUSES)
+                        )
+                    )
+                )
+            )
+
+        max_age_seconds = _heartbeat_max_age_seconds()
+        fresh_heartbeats = [
+            heartbeat
+            for heartbeat in heartbeats
+            if _heartbeat_age_seconds(heartbeat, now=current) <= max_age_seconds
+        ]
+        supported_kinds = sorted(
+            {
+                kind
+                for heartbeat in fresh_heartbeats
+                for kind in heartbeat.supported_kinds
+                if isinstance(kind, str)
+            }
+        )
+        unsupported_active_kinds = sorted(set(active_job_kinds) - set(supported_kinds))
+
+        if heartbeats:
+            latest_heartbeat = heartbeats[0]
+            last_seen = _as_utc(latest_heartbeat.last_seen_at)
+            age_seconds = _heartbeat_age_seconds(latest_heartbeat, now=current)
+            worker_payload = {
+                "fresh": bool(fresh_heartbeats),
+                "worker_id": latest_heartbeat.worker_id,
+                "worker_ids": [heartbeat.worker_id for heartbeat in fresh_heartbeats],
+                "fresh_worker_count": len(fresh_heartbeats),
+                "last_seen_at": last_seen.isoformat(),
+                "age_seconds": round(age_seconds, 3),
+                "supported_kinds": supported_kinds,
+                "active_job_kinds": active_job_kinds,
+                "unsupported_active_kinds": unsupported_active_kinds,
+            }
+        else:
+            worker_payload["active_job_kinds"] = active_job_kinds
+            worker_payload["unsupported_active_kinds"] = unsupported_active_kinds
+
+    ok = bool(
+        reachable
+        and migrations_current
+        and worker_payload["fresh"]
+        and not worker_payload["unsupported_active_kinds"]
+    )
+    return {
+        "ok": ok,
+        "database": {"configured": configured, "reachable": bool(reachable)},
+        "migrations": {
+            "current": migrations_current,
+            "revision": revision,
+            "expected_revision": MIGRATION_HEAD,
+        },
+        "worker": worker_payload,
+    }
+
+
+def _heartbeat_max_age_seconds() -> int:
+    raw = os.getenv(
+        "JOB_HUNT_WORKER_HEARTBEAT_MAX_AGE_SECONDS",
+        str(DEFAULT_WORKER_HEARTBEAT_MAX_AGE_SECONDS),
+    ).strip()
+    try:
+        return max(1, int(raw))
+    except ValueError:
+        return DEFAULT_WORKER_HEARTBEAT_MAX_AGE_SECONDS
+
+
+def _as_utc(value: datetime) -> datetime:
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc)
+
+
+def _heartbeat_age_seconds(heartbeat: WorkerHeartbeat, *, now: datetime) -> float:
+    return max(0.0, (now - _as_utc(heartbeat.last_seen_at)).total_seconds())
+
+
+def _owner_queue_counts(session: Session, *, owner_id: str) -> dict[str, int]:
+    rows = session.execute(
+        select(BackgroundJob.status, func.count(BackgroundJob.id))
+        .where(BackgroundJob.owner_id == owner_id)
+        .group_by(BackgroundJob.status)
+    )
+    return {str(status): int(count) for status, count in rows}

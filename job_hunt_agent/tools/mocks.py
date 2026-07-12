@@ -77,7 +77,7 @@ def search_jobs_mock(criteria: JobCriteria) -> list[dict[str, Any]]:
 
 
 def find_referrals_mock(role: Role) -> list[dict[str, Any]]:
-    """Return three canned referral targets for a role."""
+    """Return five diverse canned referral targets for a role."""
     role = _validate_role(role)
     people_by_company = {
         "Okta": [
@@ -112,6 +112,28 @@ def find_referrals_mock(role: Role) -> list[dict[str, Any]]:
                 why_relevant=(
                     "Works near enterprise integrations, a key part of the role's "
                     "lifecycle automation surface."
+                ),
+            ),
+            Person(
+                name="Vikram Joshi",
+                title="Senior Engineer, Directory Sync",
+                company="Okta",
+                profile_url="https://example.com/mock/profiles/vikram-joshi",
+                source="other",
+                why_relevant=(
+                    "Builds directory synchronization systems adjacent to the "
+                    "role's provisioning scope."
+                ),
+            ),
+            Person(
+                name="Sanya Kulkarni",
+                title="Technical Recruiter, Engineering",
+                company="Okta",
+                profile_url="https://example.com/mock/profiles/sanya-kulkarni",
+                source="other",
+                why_relevant=(
+                    "Recruits for engineering and can route interest to the "
+                    "appropriate lifecycle-management team."
                 ),
             ),
         ],
@@ -149,6 +171,28 @@ def find_referrals_mock(role: Role) -> list[dict[str, Any]]:
                     "in the posting."
                 ),
             ),
+            Person(
+                name="Deepak Rao",
+                title="Staff Engineer, Backend Platform",
+                company="Saviynt",
+                profile_url="https://example.com/mock/profiles/deepak-rao",
+                source="other",
+                why_relevant=(
+                    "Works on the backend platform supporting identity-governance "
+                    "services."
+                ),
+            ),
+            Person(
+                name="Kavya Bhat",
+                title="Technical Recruiter, Product Engineering",
+                company="Saviynt",
+                profile_url="https://example.com/mock/profiles/kavya-bhat",
+                source="other",
+                why_relevant=(
+                    "Recruits product engineers and can confirm the relevant hiring "
+                    "team and process."
+                ),
+            ),
         ],
         "JumpCloud": [
             Person(
@@ -184,6 +228,28 @@ def find_referrals_mock(role: Role) -> list[dict[str, Any]]:
                     "directory data flows."
                 ),
             ),
+            Person(
+                name="Arvind Krishnan",
+                title="Senior Engineer, Device Identity",
+                company="JumpCloud",
+                profile_url="https://example.com/mock/profiles/arvind-krishnan",
+                source="other",
+                why_relevant=(
+                    "Builds identity services that consume the directory platform's "
+                    "core data flows."
+                ),
+            ),
+            Person(
+                name="Isha Kapoor",
+                title="Technical Recruiter, Platform Engineering",
+                company="JumpCloud",
+                profile_url="https://example.com/mock/profiles/isha-kapoor",
+                source="other",
+                why_relevant=(
+                    "Recruits platform engineers and can route questions about the "
+                    "directory-platform opening."
+                ),
+            ),
         ],
     }
 
@@ -195,7 +261,7 @@ def find_referrals_mock(role: Role) -> list[dict[str, Any]]:
                 "confidence": 1.0,
             },
         ).model_dump()
-        for person in people[:3]
+        for person in people[:5]
     ]
 
 
@@ -235,6 +301,28 @@ def _fallback_people_for_role(role: Role) -> list[Person]:
             why_relevant=(
                 f"Mock contact for {role.company}; recruiting can route the "
                 f"candidate to the {role.title} hiring team."
+            ),
+        ),
+        Person(
+            name="Kabir Malhotra",
+            title=f"Staff Engineer, {title_scope}",
+            company=role.company,
+            profile_url=f"https://example.com/mock/profiles/{company_slug}-kabir-malhotra",
+            source="other",
+            why_relevant=(
+                f"Mock contact for {role.company}; staff-level work is likely "
+                f"adjacent to the {role.title} role's technical scope."
+            ),
+        ),
+        Person(
+            name="Tara Anand",
+            title="Talent Sourcer, Engineering",
+            company=role.company,
+            profile_url=f"https://example.com/mock/profiles/{company_slug}-tara-anand",
+            source="other",
+            why_relevant=(
+                f"Mock recruiting contact for {role.company}; can route interest "
+                f"to the hiring team for {role.title}."
             ),
         ),
     ]

@@ -1,0 +1,1528 @@
+{
+  "components": {
+    "schemas": {
+      "CompanySource": {
+        "description": "Supported strategies for discovering a company's open roles.",
+        "enum": [
+          "greenhouse",
+          "lever",
+          "ashby",
+          "workday",
+          "smartrecruiters",
+          "workable",
+          "bespoke",
+          "google_jobs",
+          "scrape"
+        ],
+        "title": "CompanySource",
+        "type": "string"
+      },
+      "DeleteResponse": {
+        "properties": {
+          "ok": {
+            "title": "Ok",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "title": "DeleteResponse",
+        "type": "object"
+      },
+      "EmploymentType": {
+        "description": "Normalized employment types exposed by source adapters.",
+        "enum": [
+          "full_time",
+          "contract",
+          "intern",
+          "unknown"
+        ],
+        "title": "EmploymentType",
+        "type": "string"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "title": "Detail",
+            "type": "array"
+          }
+        },
+        "title": "HTTPValidationError",
+        "type": "object"
+      },
+      "HealthResponse": {
+        "properties": {
+          "ok": {
+            "title": "Ok",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "title": "HealthResponse",
+        "type": "object"
+      },
+      "HuntCreatedResponse": {
+        "properties": {
+          "access_token": {
+            "description": "Legacy-compatible run capability. Practical workspaces authorize through the owner session and do not require this token.",
+            "title": "Access Token",
+            "type": "string"
+          },
+          "attempt_count": {
+            "title": "Attempt Count",
+            "type": "integer"
+          },
+          "cancelled_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cancelled At"
+          },
+          "completed_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed At"
+          },
+          "dead_lettered_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dead Lettered At"
+          },
+          "failed_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Failed At"
+          },
+          "last_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Error"
+          },
+          "max_attempts": {
+            "title": "Max Attempts",
+            "type": "integer"
+          },
+          "queued_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Queued At"
+          },
+          "reused": {
+            "default": false,
+            "description": "True when an idempotency key returned an existing run.",
+            "title": "Reused",
+            "type": "boolean"
+          },
+          "run_id": {
+            "title": "Run Id",
+            "type": "string"
+          },
+          "stage": {
+            "title": "Stage",
+            "type": "string"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At"
+          },
+          "status": {
+            "enum": [
+              "queued",
+              "running",
+              "succeeded",
+              "failed",
+              "cancelled",
+              "dead_letter"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "run_id",
+          "status",
+          "stage",
+          "attempt_count",
+          "max_attempts",
+          "access_token"
+        ],
+        "title": "HuntCreatedResponse",
+        "type": "object"
+      },
+      "HuntRequestPayload": {
+        "description": "Validated user request stored in the encrypted queue envelope.",
+        "properties": {
+          "criteria": {
+            "$ref": "#/components/schemas/JobCriteria",
+            "description": "Filters for the hunt."
+          },
+          "pack": {
+            "default": "backend_india",
+            "description": "Curated company pack used for first-party job discovery.",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$",
+            "title": "Pack",
+            "type": "string"
+          },
+          "provider_consent": {
+            "const": true,
+            "description": "Explicit consent to send bounded resume excerpts to the configured paid model provider under the disclosed retention terms.",
+            "title": "Provider Consent",
+            "type": "boolean"
+          },
+          "resume_text": {
+            "description": "Plain-text resume body.",
+            "maxLength": 50000,
+            "minLength": 1,
+            "title": "Resume Text",
+            "type": "string"
+          },
+          "use_self_rag": {
+            "default": true,
+            "description": "Toggle V8 self-RAG. Set False for the V10 round-1 baseline so the demo can compare drafts with and without past-trace exemplars.",
+            "title": "Use Self Rag",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "resume_text",
+          "criteria",
+          "provider_consent"
+        ],
+        "title": "HuntRequestPayload",
+        "type": "object"
+      },
+      "HuntResult": {
+        "description": "Structured output from the end-to-end job-hunt runner.",
+        "properties": {
+          "outreach": {
+            "description": "Drafted outreach messages grouped by role/person pair.",
+            "items": {
+              "$ref": "#/components/schemas/OutreachDraft"
+            },
+            "title": "Outreach",
+            "type": "array"
+          },
+          "roles": {
+            "description": "Roles found for the supplied criteria.",
+            "items": {
+              "$ref": "#/components/schemas/Role"
+            },
+            "title": "Roles",
+            "type": "array"
+          },
+          "run_id": {
+            "description": "Stable id for this hunt. Ties the result to its Phoenix trace and to any outcomes logged later. Generated by run_hunt() if not supplied by the caller.",
+            "title": "Run Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "run_id",
+          "roles",
+          "outreach"
+        ],
+        "title": "HuntResult",
+        "type": "object"
+      },
+      "JobCriteria": {
+        "description": "User-supplied filters that constrain which jobs we go fetch.",
+        "properties": {
+          "comp_max_lpa": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Upper bound for comp in lakhs per annum (INR). Optional.",
+            "title": "Comp Max Lpa"
+          },
+          "comp_min_lpa": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Minimum acceptable comp in lakhs per annum (INR). Optional.",
+            "title": "Comp Min Lpa"
+          },
+          "country": {
+            "default": "in",
+            "description": "Lowercase country code used to scope source queries.",
+            "title": "Country",
+            "type": "string"
+          },
+          "employment_types": {
+            "description": "Employment types accepted by the search.",
+            "items": {
+              "$ref": "#/components/schemas/EmploymentType"
+            },
+            "title": "Employment Types",
+            "type": "array"
+          },
+          "location": {
+            "description": "Acceptable locations. Free-form strings matched against the listing site's conventions. Example: ['Hyderabad', 'Remote-India'].",
+            "items": {
+              "type": "string"
+            },
+            "title": "Location",
+            "type": "array"
+          },
+          "max_age_days": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": 45,
+            "description": "Maximum listing age in days, or None to disable age filtering.",
+            "title": "Max Age Days"
+          },
+          "role_keywords": {
+            "description": "Keywords that must appear in the job title or body. Example: ['SCIM', 'identity', 'IAM'].",
+            "items": {
+              "type": "string"
+            },
+            "title": "Role Keywords",
+            "type": "array"
+          },
+          "seniority": {
+            "description": "Seniority band the user is targeting.",
+            "enum": [
+              "junior",
+              "mid",
+              "senior",
+              "staff"
+            ],
+            "title": "Seniority",
+            "type": "string"
+          }
+        },
+        "required": [
+          "role_keywords",
+          "seniority",
+          "location"
+        ],
+        "title": "JobCriteria",
+        "type": "object"
+      },
+      "OutcomeLog": {
+        "description": "User-logged result for one drafted message.",
+        "properties": {
+          "draft_id": {
+            "description": "OutreachDraft.draft_id this outcome belongs to. The owning run_id is supplied by the request envelope, not the log entry.",
+            "title": "Draft Id",
+            "type": "string"
+          },
+          "logged_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "When the outcome was recorded. Server overwrites this on insert with a timezone-aware UTC timestamp.",
+            "title": "Logged At"
+          },
+          "notes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Optional free-text note about the outcome.",
+            "title": "Notes"
+          },
+          "outcome": {
+            "description": "Latest user-reported status for this draft.",
+            "enum": [
+              "replied",
+              "no_reply",
+              "introduced",
+              "rejected",
+              "pending"
+            ],
+            "title": "Outcome",
+            "type": "string"
+          }
+        },
+        "required": [
+          "draft_id",
+          "outcome"
+        ],
+        "title": "OutcomeLog",
+        "type": "object"
+      },
+      "OutcomesRequest": {
+        "properties": {
+          "outcomes": {
+            "description": "Outcome entries to append. The owning run_id comes from the URL path, not from the entries themselves.",
+            "items": {
+              "$ref": "#/components/schemas/OutcomeLog"
+            },
+            "title": "Outcomes",
+            "type": "array"
+          }
+        },
+        "required": [
+          "outcomes"
+        ],
+        "title": "OutcomesRequest",
+        "type": "object"
+      },
+      "OutcomesResponse": {
+        "properties": {
+          "inserted": {
+            "title": "Inserted",
+            "type": "integer"
+          },
+          "ok": {
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "outcomes": {
+            "items": {
+              "$ref": "#/components/schemas/OutcomeLog"
+            },
+            "title": "Outcomes",
+            "type": "array"
+          }
+        },
+        "required": [
+          "ok",
+          "inserted",
+          "outcomes"
+        ],
+        "title": "OutcomesResponse",
+        "type": "object"
+      },
+      "OutreachDraft": {
+        "description": "One drafted outreach message for one role/person pair.",
+        "properties": {
+          "draft_id": {
+            "description": "Stable id for this draft. Outcomes log against this id so the (run_id, draft_id) pair is the canonical join key.",
+            "title": "Draft Id",
+            "type": "string"
+          },
+          "eval_score": {
+            "anyOf": [
+              {
+                "maximum": 5.0,
+                "minimum": 1.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Composite 1-5 LLM-judge score written by run_hunt() (V9). None when the judge was unavailable; never blocks the pipeline.",
+            "title": "Eval Score"
+          },
+          "message": {
+            "description": "Concise referral-request message. Plain text, no markdown, no placeholder fields.",
+            "title": "Message",
+            "type": "string"
+          },
+          "person": {
+            "$ref": "#/components/schemas/Person",
+            "description": "Referral target this draft is addressed to."
+          },
+          "role": {
+            "$ref": "#/components/schemas/Role",
+            "description": "Role this outreach draft is tied to."
+          }
+        },
+        "required": [
+          "role",
+          "person",
+          "message"
+        ],
+        "title": "OutreachDraft",
+        "type": "object"
+      },
+      "Person": {
+        "description": "A plausible referral target at the hiring company.",
+        "properties": {
+          "company": {
+            "description": "Company the person currently works at. Should match Role.company for a valid referral candidate.",
+            "title": "Company",
+            "type": "string"
+          },
+          "confidence": {
+            "default": 0.0,
+            "description": "Confidence in the referral evidence, from 0 to 1.",
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Confidence",
+            "type": "number"
+          },
+          "name": {
+            "description": "Person's full name as it appears on their public profile.",
+            "title": "Name",
+            "type": "string"
+          },
+          "profile_url": {
+            "description": "URL to a public profile (LinkedIn, GitHub, or company page). Must come from a real tool result \u2014 never fabricated by the model.",
+            "title": "Profile Url",
+            "type": "string"
+          },
+          "source": {
+            "description": "Where the profile URL came from.",
+            "enum": [
+              "linkedin",
+              "github",
+              "company_page",
+              "other"
+            ],
+            "title": "Source",
+            "type": "string"
+          },
+          "title": {
+            "description": "Current job title at the target company.",
+            "title": "Title",
+            "type": "string"
+          },
+          "verified_current_employer": {
+            "default": false,
+            "description": "True only when evidence confirms the person's current employer.",
+            "title": "Verified Current Employer",
+            "type": "boolean"
+          },
+          "why_relevant": {
+            "description": "One sentence on why this person is a good referral target for this specific role. Should reference something concrete about the role or the person's title \u2014 not generic praise.",
+            "title": "Why Relevant",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "title",
+          "company",
+          "profile_url",
+          "source",
+          "why_relevant"
+        ],
+        "title": "Person",
+        "type": "object"
+      },
+      "RequeueRequest": {
+        "properties": {
+          "reason": {
+            "anyOf": [
+              {
+                "maxLength": 500,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          }
+        },
+        "title": "RequeueRequest",
+        "type": "object"
+      },
+      "Role": {
+        "description": "A single open job posting that matched the user's criteria.",
+        "properties": {
+          "apply_urls": {
+            "description": "All known apply links, with first-party links first.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Apply Urls",
+            "type": "array"
+          },
+          "company": {
+            "description": "Name of the hiring company.",
+            "title": "Company",
+            "type": "string"
+          },
+          "confidence": {
+            "default": 1.0,
+            "description": "Source-quality confidence from 0 to 1.",
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Confidence",
+            "type": "number"
+          },
+          "employment_type": {
+            "$ref": "#/components/schemas/EmploymentType",
+            "default": "unknown",
+            "description": "Normalized employment type reported by the source."
+          },
+          "fit_score": {
+            "anyOf": [
+              {
+                "maximum": 1.0,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Resume-fit score from 0 to 1, when available.",
+            "title": "Fit Score"
+          },
+          "location": {
+            "description": "Location string from the posting (city, region, or 'Remote').",
+            "title": "Location",
+            "type": "string"
+          },
+          "match_reason": {
+            "description": "Specific justification for why this role matches the criteria. Should reference concrete details from the listing, not just echo the keywords back.",
+            "title": "Match Reason",
+            "type": "string"
+          },
+          "posted_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Source-provided posting timestamp or date.",
+            "title": "Posted At"
+          },
+          "raw_description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Full job-description text used by downstream fit scoring.",
+            "title": "Raw Description"
+          },
+          "source": {
+            "$ref": "#/components/schemas/CompanySource",
+            "default": "google_jobs",
+            "description": "Source strategy that produced this role."
+          },
+          "source_updated_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Source-provided last-updated timestamp. This is not presented as the original posting date.",
+            "title": "Source Updated At"
+          },
+          "summary": {
+            "description": "2-3 sentence summary of the role, extracted from the posting. Plain text, no markdown.",
+            "title": "Summary",
+            "type": "string"
+          },
+          "title": {
+            "description": "Job title exactly as it appears on the posting.",
+            "title": "Title",
+            "type": "string"
+          },
+          "url": {
+            "description": "Canonical URL to the job posting. Must resolve to a real page \u2014 never fabricated by the model.",
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "company",
+          "title",
+          "url",
+          "location",
+          "summary",
+          "match_reason"
+        ],
+        "title": "Role",
+        "type": "object"
+      },
+      "RunDetailResponse": {
+        "properties": {
+          "attempt_count": {
+            "title": "Attempt Count",
+            "type": "integer"
+          },
+          "cancelled_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cancelled At"
+          },
+          "completed_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed At"
+          },
+          "dead_lettered_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dead Lettered At"
+          },
+          "failed_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Failed At"
+          },
+          "hunt_result": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/HuntResult"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "last_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Error"
+          },
+          "max_attempts": {
+            "title": "Max Attempts",
+            "type": "integer"
+          },
+          "outcomes": {
+            "items": {
+              "$ref": "#/components/schemas/OutcomeLog"
+            },
+            "title": "Outcomes",
+            "type": "array"
+          },
+          "queued_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Queued At"
+          },
+          "run_id": {
+            "title": "Run Id",
+            "type": "string"
+          },
+          "stage": {
+            "title": "Stage",
+            "type": "string"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At"
+          },
+          "status": {
+            "enum": [
+              "queued",
+              "running",
+              "succeeded",
+              "failed",
+              "cancelled",
+              "dead_letter"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "run_id",
+          "status",
+          "stage",
+          "attempt_count",
+          "max_attempts"
+        ],
+        "title": "RunDetailResponse",
+        "type": "object"
+      },
+      "RunStateResponse": {
+        "properties": {
+          "attempt_count": {
+            "title": "Attempt Count",
+            "type": "integer"
+          },
+          "cancelled_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cancelled At"
+          },
+          "completed_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed At"
+          },
+          "dead_lettered_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dead Lettered At"
+          },
+          "failed_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Failed At"
+          },
+          "last_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Error"
+          },
+          "max_attempts": {
+            "title": "Max Attempts",
+            "type": "integer"
+          },
+          "queued_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Queued At"
+          },
+          "run_id": {
+            "title": "Run Id",
+            "type": "string"
+          },
+          "stage": {
+            "title": "Stage",
+            "type": "string"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At"
+          },
+          "status": {
+            "enum": [
+              "queued",
+              "running",
+              "succeeded",
+              "failed",
+              "cancelled",
+              "dead_letter"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "run_id",
+          "status",
+          "stage",
+          "attempt_count",
+          "max_attempts"
+        ],
+        "title": "RunStateResponse",
+        "type": "object"
+      },
+      "SessionCreateRequest": {
+        "properties": {
+          "owner_token": {
+            "maxLength": 512,
+            "minLength": 32,
+            "title": "Owner Token",
+            "type": "string"
+          }
+        },
+        "required": [
+          "owner_token"
+        ],
+        "title": "SessionCreateRequest",
+        "type": "object"
+      },
+      "SessionDeleteResponse": {
+        "properties": {
+          "ok": {
+            "title": "Ok",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "title": "SessionDeleteResponse",
+        "type": "object"
+      },
+      "SessionResponse": {
+        "properties": {
+          "display_name": {
+            "title": "Display Name",
+            "type": "string"
+          },
+          "expires_at": {
+            "format": "date-time",
+            "title": "Expires At",
+            "type": "string"
+          },
+          "owner_id": {
+            "title": "Owner Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "owner_id",
+          "display_name",
+          "expires_at"
+        ],
+        "title": "SessionResponse",
+        "type": "object"
+      },
+      "ValidationError": {
+        "properties": {
+          "ctx": {
+            "title": "Context",
+            "type": "object"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "title": "Location",
+            "type": "array"
+          },
+          "msg": {
+            "title": "Message",
+            "type": "string"
+          },
+          "type": {
+            "title": "Error Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError",
+        "type": "object"
+      }
+    },
+    "securitySchemes": {
+      "OwnerSessionCookie": {
+        "description": "Opaque HttpOnly session issued by POST /api/session.",
+        "in": "cookie",
+        "name": "job_hunt_session",
+        "type": "apiKey"
+      }
+    }
+  },
+  "info": {
+    "title": "Job Hunt Signal API",
+    "version": "0.2.0"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/api/health": {
+      "get": {
+        "operationId": "owner_health_api_health_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Owner Health Api Health Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "OwnerSessionCookie": []
+          }
+        ],
+        "summary": "Owner Health",
+        "tags": [
+          "operational-health"
+        ]
+      }
+    },
+    "/api/hunt": {
+      "post": {
+        "description": "Persist an encrypted request and return immediately with queued state.",
+        "operationId": "post_hunt_api_hunt_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Run-Access-Token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Run-Access-Token"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HuntRequestPayload"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HuntCreatedResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OwnerSessionCookie": []
+          }
+        ],
+        "summary": "Post Hunt"
+      }
+    },
+    "/api/runs/{run_id}": {
+      "delete": {
+        "description": "Delete a run, its encrypted request metadata, audit events, and outcomes.",
+        "operationId": "delete_run_api_runs__run_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "title": "Run Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeleteResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OwnerSessionCookie": []
+          }
+        ],
+        "summary": "Delete Run"
+      },
+      "get": {
+        "description": "Return queue state, plus result/outcomes after the run succeeds.",
+        "operationId": "get_run_api_runs__run_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "title": "Run Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunDetailResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OwnerSessionCookie": []
+          }
+        ],
+        "summary": "Get Run"
+      }
+    },
+    "/api/runs/{run_id}/cancel": {
+      "post": {
+        "description": "Cancel a queued/running run through its authorized workspace.",
+        "operationId": "cancel_run_api_runs__run_id__cancel_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "title": "Run Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunStateResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OwnerSessionCookie": []
+          }
+        ],
+        "summary": "Cancel Run"
+      }
+    },
+    "/api/runs/{run_id}/outcomes": {
+      "post": {
+        "description": "Append user-logged outcomes for a completed hunt.",
+        "operationId": "post_outcomes_api_runs__run_id__outcomes_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "title": "Run Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OutcomesRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OutcomesResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OwnerSessionCookie": []
+          }
+        ],
+        "summary": "Post Outcomes"
+      }
+    },
+    "/api/runs/{run_id}/requeue": {
+      "post": {
+        "description": "Move a dead-letter run back to queued through an authorized action.",
+        "operationId": "requeue_run_api_runs__run_id__requeue_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "title": "Run Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RequeueRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunStateResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OwnerSessionCookie": []
+          }
+        ],
+        "summary": "Requeue Run"
+      }
+    },
+    "/api/session": {
+      "delete": {
+        "operationId": "delete_session_api_session_delete",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionDeleteResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "OwnerSessionCookie": []
+          }
+        ],
+        "summary": "Delete Session",
+        "tags": [
+          "owner-session"
+        ]
+      },
+      "get": {
+        "operationId": "get_session_api_session_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "OwnerSessionCookie": []
+          }
+        ],
+        "summary": "Get Session",
+        "tags": [
+          "owner-session"
+        ]
+      },
+      "post": {
+        "operationId": "create_session_api_session_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SessionCreateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Session",
+        "tags": [
+          "owner-session"
+        ]
+      }
+    },
+    "/health": {
+      "get": {
+        "description": "Lightweight liveness check for the deployment platform.\n\nHEAD is allowed because uptime monitors (UptimeRobot) probe with it.",
+        "operationId": "health_liveness",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Health"
+      }
+    }
+  }
+}
