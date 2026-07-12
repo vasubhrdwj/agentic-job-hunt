@@ -28,6 +28,10 @@ from . import hunt_repository, persistence
 from .database import DatabaseConfigError, database_from_env, resolve_database_url
 from .requests import HuntRequestPayload, canonical_request_json
 from .routers.health import create_health_router
+from .routers.workspace import (
+    create_workspace_router,
+    install_workspace_error_handler,
+)
 from .auth import session_cookie_name
 from .routers.session import (
     AuthenticatedOwner,
@@ -46,6 +50,7 @@ from .security import (
     load_data_keyring,
 )
 from .sources.registry import RegistryError, load_company_pack
+from .sqlalchemy_owner_workspace import SqlAlchemyOwnerWorkspaceStore
 
 
 TRUTHY_ENV_VALUES = {"1", "true", "yes", "on"}
@@ -342,6 +347,7 @@ def create_app() -> FastAPI:
             "X-Run-Access-Token",
             "X-CSRF-Token",
         ],
+        expose_headers=["ETag", "X-Request-ID"],
     )
 
     try:
@@ -393,6 +399,9 @@ def create_app() -> FastAPI:
         if (
             request.url.path in {"/api/hunt", "/api/session", "/api/health", "/ready"}
             or request.url.path.startswith("/api/runs/")
+            or request.url.path.startswith("/api/me/")
+            or request.url.path.startswith("/api/career-tracks")
+            or request.url.path.startswith("/api/saved-searches")
         ):
             response.headers["Cache-Control"] = "no-store, max-age=0"
             response.headers["Pragma"] = "no-cache"
@@ -437,6 +446,23 @@ def create_app() -> FastAPI:
         data_keyring = load_data_keyring(production=_is_production())
     except SecurityConfigError as exc:
         raise RuntimeError(f"Invalid production config: {exc}") from exc
+
+    workspace_store = (
+        SqlAlchemyOwnerWorkspaceStore(practical_database, data_keyring)
+        if practical_mode and practical_database is not None
+        else None
+    )
+    app.state.owner_workspace_store = workspace_store
+    if practical_mode:
+        app.include_router(
+            create_workspace_router(
+                practical_database,
+                workspace_store,
+                allowed_origins=allowed_origins,
+                production=_is_production(),
+            )
+        )
+        install_workspace_error_handler(app)
 
     use_mocks = _env_bool("USE_MOCKS", default=False)
 

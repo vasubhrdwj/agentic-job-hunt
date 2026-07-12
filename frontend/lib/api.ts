@@ -66,6 +66,7 @@ export async function postHunt(
   criteria: JobCriteria,
   pack: string,
   idempotencyKey: string,
+  useSelfRag = true,
 ): Promise<HuntCreatedResponse> {
   const res = await fetch(`${API_BASE}/api/hunt`, {
     method: "POST",
@@ -77,6 +78,7 @@ export async function postHunt(
       resume_text: resumeText,
       criteria,
       pack,
+      use_self_rag: useSelfRag,
       provider_consent: true,
     }),
   });

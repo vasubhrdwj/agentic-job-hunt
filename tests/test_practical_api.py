@@ -23,7 +23,17 @@ from job_hunt_agent.job_queue import (
     fail_job_attempt,
     record_worker_heartbeat,
 )
-from job_hunt_agent.models import BackgroundJob, HuntOutcome, HuntRun, Owner, OwnerSession
+from job_hunt_agent.models import (
+    AchievementEvidence,
+    BackgroundJob,
+    CandidateProfile,
+    HuntOutcome,
+    HuntRun,
+    Owner,
+    OwnerMutationReceipt,
+    OwnerSession,
+    ResumeVersion,
+)
 from job_hunt_agent.schemas import HuntResult, OutreachDraft, Person, Role
 from job_hunt_agent.security import hash_access_token, load_data_keyring
 
@@ -557,6 +567,169 @@ def test_practical_owner_can_cancel_and_requeue_without_operator_bearer(
     assert requeued.json()["attempt_count"] == 0
 
 
+def test_owner_onboarding_to_saved_search_to_queued_hunt_is_immediately_usable(
+    practical_client: tuple[TestClient, Database],
+) -> None:
+    client, database = practical_client
+    _login(client)
+
+    profile = client.put(
+        "/api/me/profile",
+        headers={"Origin": ALLOWED_ORIGIN, "If-Match": '"0"'},
+        json={
+            "career_thesis": "Build secure, reliable identity platforms.",
+            "current_title": "Senior Backend Engineer",
+            "current_location": "Bengaluru",
+            "work_authorizations": [{"country_code": "in", "status": "citizen"}],
+            "work_modes": ["remote", "hybrid"],
+            "employment_types": ["full_time"],
+            "notice_period_days": 30,
+            "onboarding_step": "resume",
+        },
+    )
+    assert profile.status_code == 200, profile.text
+    assert profile.headers["etag"] == '"1"'
+
+    resume_text = (
+        "Built SCIM provisioning services.\n"
+        "Reduced identity synchronization failures by 40%."
+    )
+    resume = client.post(
+        "/api/me/resume-versions",
+        headers={"Origin": ALLOWED_ORIGIN, "Idempotency-Key": "base-resume-v1"},
+        json={
+            "label": "Identity platform resume",
+            "content": resume_text,
+            "source": "pasted",
+            "set_as_base": True,
+        },
+    )
+    assert resume.status_code == 201, resume.text
+    resume_body = resume.json()
+    assert resume_body["is_base"] is True
+
+    profile_with_resume = client.get("/api/me/profile")
+    assert profile_with_resume.status_code == 200
+    assert profile_with_resume.json()["base_resume"]["id"] == resume_body["id"]
+
+    track = client.post(
+        "/api/career-tracks",
+        headers={"Origin": ALLOWED_ORIGIN, "Idempotency-Key": "identity-track-v1"},
+        json={
+            "name": "Identity platform",
+            "role_families": ["Backend", "Platform", "Identity"],
+            "seniority_levels": ["senior", "staff"],
+            "target_locations": ["Remote-India", "Bengaluru"],
+            "priorities": {
+                "compensation": 4,
+                "scope": 5,
+                "learning": 5,
+                "company_quality": 4,
+                "flexibility": 5,
+            },
+            "active": True,
+        },
+    )
+    assert track.status_code == 201, track.text
+
+    evidence = client.post(
+        "/api/me/evidence",
+        headers={"Origin": ALLOWED_ORIGIN, "Idempotency-Key": "evidence-v1"},
+        json={
+            "statement": "Reduced identity synchronization failures by 40%.",
+            "source_resume_version_id": resume_body["id"],
+            "source_excerpt": "Reduced identity synchronization failures by 40%.",
+            "skills": ["SCIM", "Reliability"],
+            "origin": "resume_suggestion",
+        },
+    )
+    assert evidence.status_code == 201, evidence.text
+    assert evidence.json()["approval_state"] == "pending"
+    approved = client.patch(
+        f"/api/me/evidence/{evidence.json()['id']}",
+        headers={"Origin": ALLOWED_ORIGIN, "If-Match": '"1"'},
+        json={"approval_state": "approved"},
+    )
+    assert approved.status_code == 200, approved.text
+    assert approved.json()["approval_state"] == "approved"
+    assert approved.json()["approved_at"] is not None
+
+    search = client.post(
+        "/api/saved-searches",
+        headers={"Origin": ALLOWED_ORIGIN, "Idempotency-Key": "identity-search-v1"},
+        json={
+            "name": "Senior identity roles",
+            "career_track_id": track.json()["id"],
+            "criteria": {
+                "role_keywords": ["identity", "SCIM", "IAM"],
+                "seniority": "senior",
+                "location": ["Remote-India", "Bengaluru"],
+                "comp_min_lpa": 35,
+                "comp_max_lpa": 60,
+                "employment_types": ["full_time"],
+                "max_age_days": 30,
+                "country": "in",
+            },
+            "schedule": {
+                "cadence": "weekdays",
+                "timezone": "Asia/Kolkata",
+                "local_time": "08:30",
+            },
+            "pack": "backend_india",
+            "active": True,
+        },
+    )
+    assert search.status_code == 201, search.text
+    assert search.json()["resume_version_id"] == resume_body["id"]
+    assert search.json()["next_scan_at"] is not None
+
+    projection = client.get(
+        f"/api/saved-searches/{search.json()['id']}/hunt-input"
+    )
+    assert projection.status_code == 200, projection.text
+    projection_body = projection.json()
+    assert projection_body["ready"] is True
+    assert projection_body["blockers"] == []
+    assert projection_body["input"]["resume_text"] == resume_text
+    assert projection_body["input"]["criteria"] == search.json()["criteria"]
+
+    with database.session() as session:
+        stored_profile = session.scalar(select(CandidateProfile))
+        stored_resume = session.scalar(select(ResumeVersion))
+        stored_evidence = session.scalar(select(AchievementEvidence))
+        receipts = list(session.scalars(select(OwnerMutationReceipt)))
+        assert stored_profile is not None
+        assert stored_resume is not None
+        assert stored_evidence is not None
+        private_storage = " ".join(
+            [
+                stored_profile.encrypted_payload,
+                stored_resume.encrypted_content,
+                stored_evidence.encrypted_payload,
+            ]
+        )
+        assert "Build secure, reliable identity platforms" not in private_storage
+        assert resume_text not in private_storage
+        assert "Reduced identity synchronization failures" not in private_storage
+        assert receipts
+        assert all(receipt.idempotency_key_hash != "base-resume-v1" for receipt in receipts)
+
+    hunt_input = projection_body["input"]
+    queued = client.post(
+        "/api/hunt",
+        headers={"Origin": ALLOWED_ORIGIN, "Idempotency-Key": "run-saved-search-v1"},
+        json={
+            "resume_text": hunt_input["resume_text"],
+            "criteria": hunt_input["criteria"],
+            "pack": hunt_input["pack"],
+            "use_self_rag": hunt_input["use_self_rag"],
+            "provider_consent": True,
+        },
+    )
+    assert queued.status_code == 202, queued.text
+    assert queued.json()["status"] == "queued"
+
+
 def test_openapi_marks_hunt_as_cookie_authenticated(
     practical_client: tuple[TestClient, Database],
 ) -> None:
@@ -592,6 +765,40 @@ def test_openapi_marks_hunt_as_cookie_authenticated(
         assert schema["paths"][path][method]["security"] == [
             {"OwnerSessionCookie": []}
         ]
+    for path in (
+        "/api/me/profile",
+        "/api/me/resume-versions",
+        "/api/me/evidence",
+        "/api/career-tracks",
+        "/api/saved-searches",
+        "/api/saved-searches/{saved_search_id}/hunt-input",
+    ):
+        assert path in schema["paths"]
+        for operation in schema["paths"][path].values():
+            if isinstance(operation, dict) and "responses" in operation:
+                assert operation["security"] == [{"OwnerSessionCookie": []}]
+
+
+def test_workspace_validation_problem_is_field_aware_and_hides_private_input(
+    practical_client: tuple[TestClient, Database],
+) -> None:
+    client, _database = practical_client
+    _login(client)
+    marker = "DISTINCTIVE-PRIVATE-PROFILE-MARKER"
+    response = client.put(
+        "/api/me/profile",
+        headers={"Origin": ALLOWED_ORIGIN, "If-Match": '"0"'},
+        json={"current_title": marker + ("x" * 200)},
+    )
+
+    assert response.status_code == 422
+    body = response.json()
+    assert body["code"] == "invalid_request"
+    assert body["message"] == "Request validation failed"
+    assert any(error["field"] == "current_title" for error in body["field_errors"])
+    assert marker not in response.text
+    assert '"input"' not in response.text
+    assert response.headers["cache-control"] == "no-store, max-age=0"
 
 
 def test_readiness_requires_current_migration_and_fresh_worker(
@@ -703,11 +910,15 @@ def test_legacy_liveness_remains_available_without_durable_database(
     monkeypatch.setenv("JOB_HUNT_DB_PATH", str(tmp_path / "legacy-only.db"))
     monkeypatch.setenv("ENVIRONMENT", "development")
     monkeypatch.setenv("USE_MOCKS", "1")
+    monkeypatch.setenv("ENABLE_PRACTICAL_MODE", "0")
     app = create_app()
     with TestClient(app) as client:
         assert client.get("/health").status_code == 200
         assert client.head("/health").status_code == 200
         assert client.get("/ready").status_code == 503
+        assert client.get("/api/me/profile").status_code == 404
+        assert client.get("/api/career-tracks").status_code == 404
+        assert client.get("/api/saved-searches").status_code == 404
         login = client.post(
             "/api/session",
             json={"owner_token": OWNER_TOKEN},

@@ -13,14 +13,14 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import Iterator
 
-from sqlalchemy import Engine, create_engine, text
+from sqlalchemy import Engine, create_engine, event, text
 from sqlalchemy.engine import make_url
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session, sessionmaker
 
 
 DATABASE_URL_ENV = "DATABASE_URL"
-MIGRATION_HEAD = "20260712_0003"
+MIGRATION_HEAD = "20260713_0004"
 
 
 class DatabaseConfigError(RuntimeError):
@@ -88,6 +88,8 @@ class Database:
             pool_pre_ping=True,
             connect_args=connect_args,
         )
+        if backend_name == "sqlite":
+            event.listen(self.engine, "connect", _enable_sqlite_foreign_keys)
         self.session_factory = sessionmaker(
             bind=self.engine,
             class_=Session,
@@ -136,3 +138,13 @@ class Database:
 def database_from_env(*, required: bool = True) -> Database | None:
     url = resolve_database_url(required=required)
     return Database(url) if url is not None else None
+
+
+def _enable_sqlite_foreign_keys(dbapi_connection: object, _record: object) -> None:
+    """Make SQLite tests enforce the same owner/cascade FKs as PostgreSQL."""
+
+    cursor = dbapi_connection.cursor()  # type: ignore[attr-defined]
+    try:
+        cursor.execute("PRAGMA foreign_keys=ON")
+    finally:
+        cursor.close()

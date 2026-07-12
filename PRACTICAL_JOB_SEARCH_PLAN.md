@@ -1,6 +1,6 @@
 # Practical Job Search Control Room — Implementable Plan
 
-**Status:** Phase 0 durable foundation complete; Phase 1 profile and saved-search work is next
+**Status:** Phase 0 complete; Phase 1A reusable profile/search workflow complete; Slice 2 opportunity radar is next
 **Primary user:** one private owner using the product for a real job search
 **North-star metric:** qualified interviews for genuinely better roles per hour of user effort
 **First complete release:** durable opportunity radar + application pipeline + five-person contact bench + manual, staged outreach
@@ -547,9 +547,10 @@ Definition of done:
 Current checkpoint: steps 0A–0F are implemented and hermetically verified.
 Practical mode now uses Postgres exclusively for hunt requests, jobs, encrypted
 results, and encrypted outcomes. SQLite remains only behind the explicit
-`ENABLE_PRACTICAL_MODE=0` development compatibility path. The remaining two
-frontend-foundation items above will be completed alongside the first durable
-profile/search forms in Slice 1.
+`ENABLE_PRACTICAL_MODE=0` development compatibility path. The first durable
+profile/search forms now include standard problem handling and explicit
+loading, empty, validation, conflict, and retry states; broader query/form/test
+framework adoption can proceed incrementally with later product surfaces.
 
 ### Slice 1 — Profile, evidence, and saved searches
 
@@ -557,17 +558,18 @@ profile/search forms in Slice 1.
 
 Backend tasks:
 
-- [ ] Add profile, career-track, resume-version, achievement-evidence, and saved-search models/services/routes.
+- [x] Add profile, career-track, resume-version, achievement-evidence, and saved-search models/services/routes.
 - [ ] Parse a resume into suggested evidence, but require explicit approval before reuse.
-- [ ] Support multiple target tracks and seniority levels.
+- [x] Support multiple target tracks and seniority levels.
 - [ ] Separate hard exclusions, ranking preferences, and include-but-flag-unknown policies.
-- [ ] Validate compensation semantics and migrate legacy criteria.
-- [ ] Calculate timezone-correct `next_scan_at` values.
+- [x] Validate compensation semantics.
+- [ ] Migrate legacy criteria into saved searches.
+- [x] Calculate timezone-correct `next_scan_at` values.
 
 Frontend tasks:
 
-- [ ] Build resumable onboarding: resume, career target, evidence approval, first saved search.
-- [ ] Build profile/evidence editors and saved-search CRUD.
+- [x] Build resumable onboarding: resume, career target, evidence approval, first saved search.
+- [x] Build profile/evidence editors and saved-search CRUD.
 - [ ] Make hard versus soft versus unknown policy visible for every relevant filter.
 
 Definition of done:
@@ -577,6 +579,12 @@ Definition of done:
 - Contradictory compensation values fail inline and server-side.
 - No generated achievement is usable until approved.
 - Search schedule and next run are visible and timezone-correct.
+
+Phase 1A checkpoint: the practical remembered-workflow core is shipped and
+provider-free. Resume suggestion parsing, legacy-criteria import, and the
+hard/soft/unknown filter redesign remain explicit follow-up work; no UI claims
+those semantics exist yet. The persisted profile/search foundation is ready for
+Slice 2 opportunity ingestion and deduplication.
 
 ### Slice 2 — Opportunity radar and Today inbox
 

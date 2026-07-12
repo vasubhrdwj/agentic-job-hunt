@@ -10,14 +10,28 @@ from .foundation import (
     OwnerSession,
     WorkerHeartbeat,
 )
+from .profile import (
+    AchievementEvidence,
+    CandidateProfile,
+    CareerTrack,
+    OwnerMutationReceipt,
+    ResumeVersion,
+    SavedSearch,
+)
 
 __all__ = [
     "Base",
     "BackgroundJob",
     "BackgroundJobEvent",
+    "AchievementEvidence",
+    "CandidateProfile",
+    "CareerTrack",
     "HuntOutcome",
     "HuntRun",
     "Owner",
+    "OwnerMutationReceipt",
     "OwnerSession",
+    "ResumeVersion",
+    "SavedSearch",
     "WorkerHeartbeat",
 ]

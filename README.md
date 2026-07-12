@@ -22,9 +22,10 @@ cp .env.example .env  # fill in GOOGLE_API_KEY, SERPAPI_API_KEY, PHOENIX_*
 
 The repository is being upgraded from a one-run hackathon demo into a private
 job-search workspace. The implementable product plan is in
-[`PRACTICAL_JOB_SEARCH_PLAN.md`](PRACTICAL_JOB_SEARCH_PLAN.md); current Phase 0
-delivery and its honest compatibility boundary are in
-[`docs/PHASE_0_FOUNDATION.md`](docs/PHASE_0_FOUNDATION.md).
+[`PRACTICAL_JOB_SEARCH_PLAN.md`](PRACTICAL_JOB_SEARCH_PLAN.md); the delivered
+foundation and first reusable job-search workflow are documented in
+[`docs/PHASE_0_FOUNDATION.md`](docs/PHASE_0_FOUNDATION.md) and
+[`docs/PHASE_1_PROFILE_SEARCH.md`](docs/PHASE_1_PROFILE_SEARCH.md).
 
 The delivered foundation includes migrated Postgres models, private owner
 sessions, owner-scoped generic jobs, lease/cancellation safety, capability-aware
@@ -33,6 +34,13 @@ Postgres CI gates. Practical hunt requests, results, outcomes, and generic
 worker dispatch now use encrypted, owner-scoped Postgres state. SQLite remains
 only behind the explicit `ENABLE_PRACTICAL_MODE=0` development compatibility
 path.
+
+Phase 1 adds a persistent candidate profile, immutable encrypted resume
+versions, career targets, approval-gated achievement evidence, and saved
+searches. Use **Profile** to save the information you otherwise repeat, then
+use **Saved searches → Run now** to review an exact resume and criteria prefill
+before explicitly launching the existing hunt. Cadence preferences are stored
+and timezone-correct, but automatic scanning is deliberately not connected yet.
 
 For the private local workspace:
 
@@ -132,6 +140,16 @@ POST   /api/runs/{run_id}/cancel    owner session + allowed Origin
 POST   /api/runs/{run_id}/outcomes  owner session + allowed Origin (succeeded only)
 DELETE /api/runs/{run_id}           owner session + allowed Origin
 POST   /api/runs/{run_id}/requeue   owner session + allowed Origin (dead-letter only)
+GET/PUT /api/me/profile             owner profile + current base-resume metadata
+GET/POST /api/me/resume-versions    immutable encrypted resume versions
+GET/POST /api/me/evidence           approval-gated achievement evidence
+PATCH  /api/me/evidence/{id}        edit/review evidence with If-Match
+GET/POST /api/career-tracks         reusable career targets
+GET/PATCH/DELETE /api/career-tracks/{id}
+GET/POST /api/saved-searches        pinned criteria, resume, target, and cadence
+GET/PATCH/DELETE /api/saved-searches/{id}
+GET    /api/saved-searches/{id}/hunt-input
+                                    → provider-free exact hunt prefill
 GET    /health                      → { ok: true }
 GET    /ready                       → DB migration + compatible worker readiness
 ```
@@ -339,8 +357,12 @@ job_hunt_agent/        ADK agent, schemas, pipeline runner, tracing
   api.py               FastAPI surface (enqueue, status, cancel, outcomes)
   database.py          SQLAlchemy engine/session lifecycle and migration head
   hunt_repository.py   Encrypted owner-scoped Postgres hunt aggregate
+  profile_repository.py Profile, resume-version, and career-target persistence
+  evidence_repository.py Encrypted approval-gated achievement evidence
+  saved_search_repository.py Saved criteria and timezone projections
+  sqlalchemy_owner_workspace.py Transaction-owning profile/search API adapter
   job_queue.py         Generic Postgres jobs, leases, events, and heartbeats
-  models/              Owner, session, job, hunt, and outcome tables
+  models/              Owner, profile, search, job, hunt, and outcome tables
   evals.py             LLM-as-judge draft scoring (V9)
   mcp_client.py        Phoenix past-draft retrieval (self-RAG)
   persistence.py       Explicit practical-mode-off SQLite compatibility path

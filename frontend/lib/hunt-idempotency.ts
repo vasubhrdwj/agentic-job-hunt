@@ -4,6 +4,7 @@ type HuntSubmission = {
   resume_text: string;
   criteria: JobCriteria;
   pack: string;
+  use_self_rag: boolean;
   provider_consent: true;
 };
 
@@ -26,11 +27,13 @@ async function submissionFingerprint(
   resumeText: string,
   criteria: JobCriteria,
   pack: string,
+  useSelfRag = true,
 ): Promise<string> {
   const submission: HuntSubmission = {
     resume_text: resumeText,
     criteria,
     pack,
+    use_self_rag: useSelfRag,
     provider_consent: true,
   };
   const canonical = JSON.stringify(canonicalize(submission));
@@ -48,8 +51,14 @@ export async function huntIdempotencyKey(
   resumeText: string,
   criteria: JobCriteria,
   pack: string,
+  useSelfRag = true,
 ): Promise<string> {
-  const fingerprint = await submissionFingerprint(resumeText, criteria, pack);
+  const fingerprint = await submissionFingerprint(
+    resumeText,
+    criteria,
+    pack,
+    useSelfRag,
+  );
   const storageKey = `${STORAGE_PREFIX}${fingerprint}`;
   let existing = inMemoryKeys.get(storageKey) ?? null;
   try {
@@ -73,8 +82,14 @@ export async function consumeHuntIdempotencyKey(
   resumeText: string,
   criteria: JobCriteria,
   pack: string,
+  useSelfRag = true,
 ): Promise<void> {
-  const fingerprint = await submissionFingerprint(resumeText, criteria, pack);
+  const fingerprint = await submissionFingerprint(
+    resumeText,
+    criteria,
+    pack,
+    useSelfRag,
+  );
   const storageKey = `${STORAGE_PREFIX}${fingerprint}`;
   inMemoryKeys.delete(storageKey);
   try {
