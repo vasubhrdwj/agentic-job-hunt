@@ -1,6 +1,7 @@
 """SQLAlchemy models for the durable practical-product path."""
 
 from .base import Base
+from .application import ActionItem, Application, ApplicationActivityEvent
 from .foundation import (
     BackgroundJob,
     BackgroundJobEvent,
@@ -32,6 +33,9 @@ from .opportunity import (
 
 __all__ = [
     "Base",
+    "ActionItem",
+    "Application",
+    "ApplicationActivityEvent",
     "BackgroundJob",
     "BackgroundJobEvent",
     "AchievementEvidence",

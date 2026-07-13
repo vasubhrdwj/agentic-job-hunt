@@ -14,6 +14,7 @@ from urllib.parse import urlsplit
 
 from pydantic import AfterValidator, BaseModel, ConfigDict, Field, model_validator
 
+from .application_schemas import PursuitBundle
 from .schemas import CompanySource
 
 
@@ -193,9 +194,11 @@ class OpportunityDecisionState(str, Enum):
     inbox = "inbox"
     watch = "watch"
     dismiss = "dismiss"
+    pursued = "pursued"
 
 
 class OpportunityDecisionAction(str, Enum):
+    pursue = "pursue"
     watch = "watch"
     dismiss = "dismiss"
     restore_to_inbox = "restore_to_inbox"
@@ -528,25 +531,58 @@ class OpportunityDecisionRequest(ContractModel):
         max_length=MAX_DECISION_NOTE_CHARS,
     )
     restore_decision_event_id: OpaqueId | None = None
+    initial_action_due_on: date | None = None
 
     @model_validator(mode="after")
     def action_shape_is_exact(self) -> Self:
-        if self.action is OpportunityDecisionAction.dismiss:
+        if self.action is OpportunityDecisionAction.pursue:
+            if (
+                self.dismiss_reason is not None
+                or self.note is not None
+                or self.restore_decision_event_id is not None
+            ):
+                raise ValueError(
+                    "pursue can only include the optional initial_action_due_on"
+                )
+        elif self.action is OpportunityDecisionAction.dismiss:
             if self.dismiss_reason is None:
                 raise ValueError("dismiss requires a structured dismiss_reason")
             if self.restore_decision_event_id is not None:
                 raise ValueError("dismiss cannot restore a decision event")
+            if self.initial_action_due_on is not None:
+                raise ValueError("dismiss cannot include an initial action due date")
             if self.dismiss_reason is DismissReason.other and self.note is None:
                 raise ValueError("dismiss_reason other requires a note")
         elif self.action is OpportunityDecisionAction.watch:
-            if self.dismiss_reason is not None or self.restore_decision_event_id is not None:
-                raise ValueError("watch cannot include dismiss or restore fields")
-        else:
+            if (
+                self.dismiss_reason is not None
+                or self.restore_decision_event_id is not None
+                or self.initial_action_due_on is not None
+            ):
+                raise ValueError(
+                    "watch cannot include dismiss, restore, or pursue fields"
+                )
+        elif self.action is OpportunityDecisionAction.restore_to_inbox:
             if self.restore_decision_event_id is None:
                 raise ValueError("restore_to_inbox requires restore_decision_event_id")
-            if self.dismiss_reason is not None or self.note is not None:
-                raise ValueError("restore_to_inbox cannot include a reason or note")
+            if (
+                self.dismiss_reason is not None
+                or self.note is not None
+                or self.initial_action_due_on is not None
+            ):
+                raise ValueError(
+                    "restore_to_inbox cannot include a reason, note, or pursue fields"
+                )
         return self
+
+
+class PursueOpportunityRequest(ContractModel):
+    """Narrow pursue-only command used by the atomic application boundary."""
+
+    action: Literal[OpportunityDecisionAction.pursue] = (
+        OpportunityDecisionAction.pursue
+    )
+    initial_action_due_on: date | None = None
 
 
 class OpportunityDecisionEvent(ContractModel):
@@ -566,7 +602,23 @@ class OpportunityDecisionEvent(ContractModel):
 
     @model_validator(mode="after")
     def transition_matches_action(self) -> Self:
-        if self.action is OpportunityDecisionAction.watch:
+        if self.action is OpportunityDecisionAction.pursue:
+            if (
+                self.previous_state
+                not in {
+                    OpportunityDecisionState.inbox,
+                    OpportunityDecisionState.watch,
+                    OpportunityDecisionState.dismiss,
+                }
+                or self.state is not OpportunityDecisionState.pursued
+                or self.dismiss_reason is not None
+                or self.note is not None
+                or self.restores_event_id is not None
+            ):
+                raise ValueError(
+                    "pursue events must enter pursued from inbox, watch, or dismiss"
+                )
+        elif self.action is OpportunityDecisionAction.watch:
             if (
                 self.state is not OpportunityDecisionState.watch
                 or self.dismiss_reason is not None
@@ -582,14 +634,19 @@ class OpportunityDecisionEvent(ContractModel):
                 raise ValueError("dismiss events must include a reason")
             if self.dismiss_reason is DismissReason.other and self.note is None:
                 raise ValueError("dismiss_reason other requires a note")
-        elif (
-            self.state is not OpportunityDecisionState.inbox
-            or self.previous_state is OpportunityDecisionState.inbox
-            or self.dismiss_reason is not None
-            or self.note is not None
-            or self.restores_event_id is None
-        ):
-            raise ValueError("restore events must restore a prior decision to inbox")
+        elif self.action is OpportunityDecisionAction.restore_to_inbox:
+            if (
+                self.state is not OpportunityDecisionState.inbox
+                or self.previous_state
+                not in {
+                    OpportunityDecisionState.watch,
+                    OpportunityDecisionState.dismiss,
+                }
+                or self.dismiss_reason is not None
+                or self.note is not None
+                or self.restores_event_id is None
+            ):
+                raise ValueError("restore events must restore a prior decision to inbox")
         return self
 
 
@@ -598,6 +655,7 @@ class OpportunityDecisionResponse(ContractModel):
     opportunity_version: int = Field(ge=1)
     state: OpportunityDecisionState
     event: OpportunityDecisionEvent
+    pursuit: PursuitBundle | None = None
 
     @model_validator(mode="after")
     def event_matches_resource(self) -> Self:
@@ -605,6 +663,13 @@ class OpportunityDecisionResponse(ContractModel):
             raise ValueError("decision event must belong to the opportunity")
         if self.event.state is not self.state:
             raise ValueError("decision event state must match the opportunity")
+        if self.event.action is OpportunityDecisionAction.pursue:
+            if self.state is not OpportunityDecisionState.pursued or self.pursuit is None:
+                raise ValueError("pursue responses require a pursuit bundle")
+            if self.pursuit.application.opportunity_id != self.opportunity_id:
+                raise ValueError("pursuit application must belong to the opportunity")
+        elif self.pursuit is not None:
+            raise ValueError("only pursue responses can include a pursuit bundle")
         return self
 
 
@@ -844,6 +909,7 @@ __all__ = [
     "PostingChangedField",
     "PostingState",
     "PostingVersionSummary",
+    "PursueOpportunityRequest",
     "SavedSearchProvenance",
     "ScanCounts",
     "ScanCreateRequest",

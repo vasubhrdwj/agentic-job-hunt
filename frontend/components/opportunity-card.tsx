@@ -12,10 +12,14 @@ import { OpportunityActions } from "./opportunity-actions";
 export function OpportunityCard({
   opportunity,
   pending,
+  ownerLocalDate,
+  ownerTimezone,
   onDecision,
 }: {
   opportunity: TodayOpportunityItem;
   pending: boolean;
+  ownerLocalDate: string;
+  ownerTimezone: string;
   onDecision: Parameters<typeof OpportunityActions>[0]["onDecision"];
 }) {
   const posting = opportunity.posting;
@@ -106,6 +110,8 @@ export function OpportunityCard({
         <OpportunityActions
           opportunity={opportunity}
           pending={pending}
+          ownerLocalDate={ownerLocalDate}
+          ownerTimezone={ownerTimezone}
           onDecision={onDecision}
         />
       </div>

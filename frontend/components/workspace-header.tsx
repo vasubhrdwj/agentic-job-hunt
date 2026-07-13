@@ -2,7 +2,7 @@ import Link from "next/link";
 
 import { SessionStatus } from "@/components/session-status";
 
-type WorkspaceSection = "today" | "searches" | "profile" | "hunt";
+type WorkspaceSection = "today" | "applications" | "searches" | "profile" | "hunt";
 
 const NAV_ITEMS: Array<{
   href: string;
@@ -10,6 +10,7 @@ const NAV_ITEMS: Array<{
   section: WorkspaceSection;
 }> = [
   { href: "/today", label: "Today", section: "today" },
+  { href: "/applications", label: "Applications", section: "applications" },
   { href: "/searches", label: "Saved searches", section: "searches" },
   { href: "/profile", label: "Profile", section: "profile" },
   { href: "/hunt", label: "Legacy hunt", section: "hunt" },

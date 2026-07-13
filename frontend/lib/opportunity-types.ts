@@ -1,3 +1,5 @@
+import type { PursuitBundle } from "./application-types";
+
 export type ScanStatus =
   | "queued"
   | "running"
@@ -14,8 +16,9 @@ export type ScanStage =
   | "finalizing"
   | "complete";
 
-export type OpportunityDecisionState = "inbox" | "watch" | "dismiss";
+export type OpportunityDecisionState = "inbox" | "watch" | "dismiss" | "pursued";
 export type OpportunityDecisionAction =
+  | "pursue"
   | "watch"
   | "dismiss"
   | "restore_to_inbox";
@@ -205,6 +208,7 @@ export interface OpportunityDecisionPayload {
   dismiss_reason?: DismissReason;
   note?: string;
   restore_decision_event_id?: string;
+  initial_action_due_on?: string;
 }
 
 export interface OpportunityDecisionResponse {
@@ -212,6 +216,7 @@ export interface OpportunityDecisionResponse {
   opportunity_version: number;
   state: OpportunityDecisionState;
   event: OpportunityDecisionEvent;
+  pursuit: PursuitBundle | null;
 }
 
 export interface TodayQuery {

@@ -1,0 +1,219 @@
+"""Owner-scoped application pursuit and next-action records."""
+
+from __future__ import annotations
+
+from datetime import date, datetime
+from uuid import uuid4
+
+from sqlalchemy import (
+    CheckConstraint,
+    Date,
+    DateTime,
+    ForeignKey,
+    ForeignKeyConstraint,
+    Index,
+    Integer,
+    String,
+    UniqueConstraint,
+    func,
+    text,
+)
+from sqlalchemy.orm import Mapped, mapped_column
+
+from .base import Base
+
+
+def _uuid_hex() -> str:
+    return uuid4().hex
+
+
+class Application(Base):
+    """One controlled pursuit per owner opportunity."""
+
+    __tablename__ = "applications"
+    __table_args__ = (
+        UniqueConstraint("owner_id", "id", name="uq_applications_owner_id_id"),
+        UniqueConstraint(
+            "owner_id",
+            "owner_opportunity_id",
+            name="uq_applications_owner_opportunity",
+        ),
+        ForeignKeyConstraint(
+            ["owner_id", "owner_opportunity_id", "job_posting_id"],
+            [
+                "owner_opportunities.owner_id",
+                "owner_opportunities.id",
+                "owner_opportunities.job_posting_id",
+            ],
+            name="fk_applications_owner_opportunity",
+            ondelete="CASCADE",
+        ),
+        ForeignKeyConstraint(
+            ["owner_id", "job_posting_id", "pursued_posting_version_id"],
+            [
+                "job_posting_versions.owner_id",
+                "job_posting_versions.job_posting_id",
+                "job_posting_versions.id",
+            ],
+            name="fk_applications_owner_posting_version",
+            deferrable=True,
+            initially="DEFERRED",
+        ),
+        CheckConstraint("stage = 'pursuing'", name="stage"),
+        CheckConstraint("version >= 1", name="version_positive"),
+        Index("ix_applications_owner_stage", "owner_id", "stage", "updated_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid_hex)
+    owner_id: Mapped[str] = mapped_column(
+        ForeignKey("owners.id", ondelete="CASCADE"), nullable=False
+    )
+    owner_opportunity_id: Mapped[str] = mapped_column(String(32), nullable=False)
+    job_posting_id: Mapped[str] = mapped_column(String(32), nullable=False)
+    pursued_posting_version_id: Mapped[str] = mapped_column(String(32), nullable=False)
+    stage: Mapped[str] = mapped_column(String(24), nullable=False, default="pursuing")
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
+    )
+
+
+class ActionItem(Base):
+    """A dated, mutable next action for one application."""
+
+    __tablename__ = "action_items"
+    __table_args__ = (
+        UniqueConstraint("owner_id", "id", name="uq_action_items_owner_id_id"),
+        UniqueConstraint(
+            "owner_id",
+            "application_id",
+            "id",
+            name="uq_action_items_owner_application_id",
+        ),
+        ForeignKeyConstraint(
+            ["owner_id", "application_id"],
+            ["applications.owner_id", "applications.id"],
+            name="fk_action_items_owner_application",
+            ondelete="CASCADE",
+        ),
+        CheckConstraint(
+            "kind = 'review_and_prepare_application'", name="kind"
+        ),
+        CheckConstraint(
+            "length(trim(title)) BETWEEN 1 AND 240", name="title_length"
+        ),
+        CheckConstraint(
+            "status IN ('open', 'completed', 'cancelled')", name="status"
+        ),
+        CheckConstraint(
+            "(status = 'open' AND completed_at IS NULL AND cancelled_at IS NULL) OR "
+            "(status = 'completed' AND completed_at IS NOT NULL "
+            "AND cancelled_at IS NULL) OR "
+            "(status = 'cancelled' AND cancelled_at IS NOT NULL "
+            "AND completed_at IS NULL)",
+            name="status_timestamps",
+        ),
+        CheckConstraint("version >= 1", name="version_positive"),
+        Index(
+            "uq_action_items_owner_application_open",
+            "owner_id",
+            "application_id",
+            unique=True,
+            sqlite_where=text("status = 'open'"),
+            postgresql_where=text("status = 'open'"),
+        ),
+        Index("ix_action_items_owner_due", "owner_id", "status", "due_on"),
+    )
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid_hex)
+    owner_id: Mapped[str] = mapped_column(
+        ForeignKey("owners.id", ondelete="CASCADE"), nullable=False
+    )
+    application_id: Mapped[str] = mapped_column(String(32), nullable=False)
+    kind: Mapped[str] = mapped_column(
+        String(64), nullable=False, default="review_and_prepare_application"
+    )
+    title: Mapped[str] = mapped_column(String(240), nullable=False)
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="open")
+    due_on: Mapped[date] = mapped_column(Date, nullable=False)
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    cancelled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
+    )
+
+
+class ApplicationActivityEvent(Base):
+    """Append-only application timeline event."""
+
+    __tablename__ = "application_activity_events"
+    __table_args__ = (
+        UniqueConstraint(
+            "owner_id", "id", name="uq_application_activity_events_owner_id_id"
+        ),
+        UniqueConstraint(
+            "owner_id",
+            "application_id",
+            "sequence_number",
+            name="uq_application_activity_events_owner_sequence",
+        ),
+        ForeignKeyConstraint(
+            ["owner_id", "application_id"],
+            ["applications.owner_id", "applications.id"],
+            name="fk_application_activity_events_owner_application",
+            ondelete="CASCADE",
+        ),
+        ForeignKeyConstraint(
+            ["owner_id", "application_id", "action_item_id"],
+            ["action_items.owner_id", "action_items.application_id", "action_items.id"],
+            name="fk_application_activity_events_owner_action",
+            deferrable=True,
+            initially="DEFERRED",
+        ),
+        CheckConstraint("sequence_number >= 1", name="sequence_positive"),
+        CheckConstraint("event_type = 'application_created'", name="event_type"),
+        CheckConstraint(
+            "sequence_number = 1 AND from_stage IS NULL "
+            "AND to_stage = 'pursuing' AND action_item_id IS NOT NULL",
+            name="creation_shape",
+        ),
+        Index(
+            "uq_application_activity_events_owner_created",
+            "owner_id",
+            "application_id",
+            unique=True,
+            sqlite_where=text("event_type = 'application_created'"),
+            postgresql_where=text("event_type = 'application_created'"),
+        ),
+        Index(
+            "ix_application_activity_events_timeline",
+            "application_id",
+            "occurred_at",
+            "sequence_number",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid_hex)
+    owner_id: Mapped[str] = mapped_column(
+        ForeignKey("owners.id", ondelete="CASCADE"), nullable=False
+    )
+    application_id: Mapped[str] = mapped_column(String(32), nullable=False)
+    sequence_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    event_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    from_stage: Mapped[str | None] = mapped_column(String(24))
+    to_stage: Mapped[str] = mapped_column(String(24), nullable=False)
+    action_item_id: Mapped[str] = mapped_column(String(32), nullable=False)
+    occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
+__all__ = ["ActionItem", "Application", "ApplicationActivityEvent"]

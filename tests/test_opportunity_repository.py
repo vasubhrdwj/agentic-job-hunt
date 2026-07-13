@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+import json
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -690,6 +692,23 @@ def test_version_fenced_decisions_are_encrypted_append_only_and_restore_latest(
             now=NOW + timedelta(minutes=1),
         )
         assert watched.state.value == "watch"
+        watched_row = session.get(OpportunityDecisionEvent, watched.event.id)
+        assert watched_row is not None
+        legacy_payload = {
+            "action": "watch",
+            "dismiss_reason": None,
+            "note": "PRIVATE WATCH NOTE",
+            "restore_decision_event_id": None,
+        }
+        legacy_request_hash = hashlib.sha256(
+            json.dumps(
+                legacy_payload,
+                ensure_ascii=False,
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode("utf-8")
+        ).hexdigest()
+        assert watched_row.request_hash == legacy_request_hash
         replay = decide_owner_opportunity(
             session,
             owner_id="owner-a",

@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { FormEvent, useEffect, useRef, useState } from "react";
 
 import type {
@@ -27,33 +28,84 @@ const DISMISS_REASONS: Array<{ value: DismissReason; label: string }> = [
   { value: "other", label: "Another reason" },
 ];
 
+export interface DecisionResult {
+  ok: boolean;
+  error?: string;
+}
+
 export function OpportunityActions({
   opportunity,
   pending,
+  ownerLocalDate,
+  ownerTimezone,
   onDecision,
 }: {
   opportunity: TodayOpportunityItem;
   pending: boolean;
-  onDecision: (payload: OpportunityDecisionPayload) => Promise<void>;
+  ownerLocalDate: string;
+  ownerTimezone: string;
+  onDecision: (payload: OpportunityDecisionPayload) => Promise<DecisionResult>;
 }) {
-  const dialogRef = useRef<HTMLDialogElement>(null);
+  const pursueDialogRef = useRef<HTMLDialogElement>(null);
+  const dismissDialogRef = useRef<HTMLDialogElement>(null);
+  const pursueTriggerRef = useRef<HTMLButtonElement | null>(null);
   const dismissTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const [initialDueOn, setInitialDueOn] = useState(
+    () => dateOffset(ownerLocalDate, 1),
+  );
   const [reason, setReason] = useState<DismissReason>("not_relevant");
   const [note, setNote] = useState("");
+  const [pursueDialogError, setPursueDialogError] = useState<string | null>(null);
   const [dialogError, setDialogError] = useState<string | null>(null);
 
   useEffect(() => {
-    const dialog = dialogRef.current;
-    if (!dialog) return;
-    const restoreFocus = () => dismissTriggerRef.current?.focus();
-    dialog.addEventListener("close", restoreFocus);
-    return () => dialog.removeEventListener("close", restoreFocus);
+    const pursueDialog = pursueDialogRef.current;
+    const dismissDialog = dismissDialogRef.current;
+    const restorePursueFocus = () => pursueTriggerRef.current?.focus();
+    const restoreDismissFocus = () => dismissTriggerRef.current?.focus();
+    pursueDialog?.addEventListener("close", restorePursueFocus);
+    dismissDialog?.addEventListener("close", restoreDismissFocus);
+    return () => {
+      pursueDialog?.removeEventListener("close", restorePursueFocus);
+      dismissDialog?.removeEventListener("close", restoreDismissFocus);
+    };
   }, []);
+
+  function openPursue(event: React.MouseEvent<HTMLButtonElement>) {
+    pursueTriggerRef.current = event.currentTarget;
+    setInitialDueOn(dateOffset(ownerLocalDate, 1));
+    setPursueDialogError(null);
+    pursueDialogRef.current?.showModal();
+  }
 
   function openDismiss(event: React.MouseEvent<HTMLButtonElement>) {
     dismissTriggerRef.current = event.currentTarget;
     setDialogError(null);
-    dialogRef.current?.showModal();
+    dismissDialogRef.current?.showModal();
+  }
+
+  async function submitPursue(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (
+      !initialDueOn
+      || initialDueOn < dateOffset(ownerLocalDate, 0)
+      || initialDueOn > dateOffset(ownerLocalDate, 365)
+    ) {
+      setPursueDialogError("Choose a due date from today through one year from now.");
+      return;
+    }
+    const saved = await onDecision({
+      action: "pursue",
+      initial_action_due_on: initialDueOn,
+    });
+    if (saved.ok) {
+      pursueDialogRef.current?.close();
+    } else {
+      setPursueDialogError(
+        `We couldn't confirm the application. ${saved.error ?? "Please try again."} `
+        + "Your chosen date is still here, and retrying is safe.",
+      );
+    }
   }
 
   async function submitDismiss(event: FormEvent<HTMLFormElement>) {
@@ -63,27 +115,63 @@ export function OpportunityActions({
       setDialogError("Add a short note for the other reason.");
       return;
     }
-    dialogRef.current?.close();
-    await onDecision({
+    const saved = await onDecision({
       action: "dismiss",
       dismiss_reason: reason,
       ...(trimmedNote ? { note: trimmedNote } : {}),
     });
-    setNote("");
-    setReason("not_relevant");
+    if (saved.ok) {
+      dismissDialogRef.current?.close();
+      setNote("");
+      setReason("not_relevant");
+    } else {
+      setDialogError(
+        `${saved.error ?? "We couldn't confirm that decision."} `
+        + "Your reason and note are still here.",
+      );
+    }
   }
 
-  const canRestore = opportunity.state !== "inbox" && opportunity.latest_decision;
+  if (opportunity.state === "pursued") {
+    return (
+      <div className="flex min-w-0 flex-wrap items-center gap-3">
+        <span className="rounded-full bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-800 dark:bg-emerald-950 dark:text-emerald-200">
+          Application started
+        </span>
+        <Link href="/applications" className={secondaryButtonClasses}>
+          Open application workspace
+        </Link>
+      </div>
+    );
+  }
+
+  const canRestore = (
+    opportunity.state === "watch" || opportunity.state === "dismiss"
+  ) && opportunity.latest_decision;
+  const postingCanBePursued = opportunity.posting.state === "open";
 
   return (
     <>
       <div className="flex min-w-0 flex-wrap gap-2" role="group" aria-label="Opportunity decision">
+        <button
+          ref={pursueTriggerRef}
+          type="button"
+          disabled={pending || !postingCanBePursued}
+          onClick={openPursue}
+          className={primaryButtonClasses}
+          title={postingCanBePursued ? undefined : "Only an open posting can be pursued"}
+          aria-label={postingCanBePursued
+            ? `Pursue ${opportunity.posting.title} at ${opportunity.posting.company}`
+            : `${opportunity.posting.title} cannot be pursued because only open postings are eligible`}
+        >
+          {pending ? "Saving…" : postingCanBePursued ? "Pursue" : "Posting unavailable"}
+        </button>
         {opportunity.state !== "watch" ? (
           <button
             type="button"
             disabled={pending}
             onClick={() => void onDecision({ action: "watch" })}
-            className={primaryButtonClasses}
+            className={secondaryButtonClasses}
             aria-label={`Watch ${opportunity.posting.title} at ${opportunity.posting.company}`}
           >
             {pending ? "Saving…" : "Watch"}
@@ -118,7 +206,75 @@ export function OpportunityActions({
       </div>
 
       <dialog
-        ref={dialogRef}
+        ref={pursueDialogRef}
+        onCancel={(event) => {
+          if (pending) event.preventDefault();
+        }}
+        aria-labelledby={`pursue-title-${opportunity.id}`}
+        aria-describedby={`pursue-description-${opportunity.id}`}
+        className="m-auto w-[calc(100%_-_2rem)] max-w-lg rounded-2xl border border-zinc-200 bg-white p-0 text-zinc-950 shadow-2xl backdrop:bg-black/40 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50"
+      >
+        <form onSubmit={submitPursue} className="space-y-5 p-5 sm:p-6">
+          <div>
+            <h2 id={`pursue-title-${opportunity.id}`} className="text-lg font-semibold">
+              Start pursuing this role?
+            </h2>
+            <p
+              id={`pursue-description-${opportunity.id}`}
+              className="mt-2 text-sm leading-6 text-zinc-600 dark:text-zinc-400"
+            >
+              This creates one application record and one dated task: review the role
+              and prepare the application. You can open it immediately afterward.
+            </p>
+          </div>
+          <div>
+            <label htmlFor={`pursue-due-${opportunity.id}`} className="text-sm font-medium">
+              First task due date
+            </label>
+            <input
+              id={`pursue-due-${opportunity.id}`}
+              type="date"
+              required
+              min={dateOffset(ownerLocalDate, 0)}
+              max={dateOffset(ownerLocalDate, 365)}
+              value={initialDueOn}
+              onChange={(event) => {
+                setInitialDueOn(event.target.value);
+                setPursueDialogError(null);
+              }}
+              className={`${inputClasses} mt-2`}
+              autoFocus
+            />
+            <p className="mt-2 text-xs leading-5 text-zinc-500">
+              Tomorrow is the default in {ownerTimezone}. Pick a realistic date you will actually honor.
+            </p>
+          </div>
+          {pursueDialogError ? (
+            <p role="alert" className="text-sm text-red-700 dark:text-red-300">
+              {pursueDialogError}
+            </p>
+          ) : null}
+          <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+            <button
+              type="button"
+              disabled={pending}
+              onClick={() => pursueDialogRef.current?.close()}
+              className={secondaryButtonClasses}
+            >
+              Keep reviewing
+            </button>
+            <button type="submit" disabled={pending} className={primaryButtonClasses}>
+              {pending ? "Creating…" : "Create application"}
+            </button>
+          </div>
+        </form>
+      </dialog>
+
+      <dialog
+        ref={dismissDialogRef}
+        onCancel={(event) => {
+          if (pending) event.preventDefault();
+        }}
         aria-labelledby={`dismiss-title-${opportunity.id}`}
         aria-describedby={`dismiss-description-${opportunity.id}`}
         className="m-auto w-[calc(100%_-_2rem)] max-w-lg rounded-2xl border border-zinc-200 bg-white p-0 text-zinc-950 shadow-2xl backdrop:bg-black/40 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50"
@@ -143,7 +299,10 @@ export function OpportunityActions({
             <select
               id={`dismiss-reason-${opportunity.id}`}
               value={reason}
-              onChange={(event) => setReason(event.target.value as DismissReason)}
+              onChange={(event) => {
+                setReason(event.target.value as DismissReason);
+                setDialogError(null);
+              }}
               className={`${inputClasses} mt-2`}
               autoFocus
             >
@@ -163,7 +322,10 @@ export function OpportunityActions({
               id={`dismiss-note-${opportunity.id}`}
               value={note}
               maxLength={500}
-              onChange={(event) => setNote(event.target.value)}
+              onChange={(event) => {
+                setNote(event.target.value);
+                setDialogError(null);
+              }}
               className={`${textareaClasses} mt-2`}
               placeholder="A short, factual reminder"
             />
@@ -172,17 +334,26 @@ export function OpportunityActions({
           <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
             <button
               type="button"
-              onClick={() => dialogRef.current?.close()}
+              disabled={pending}
+              onClick={() => dismissDialogRef.current?.close()}
               className={secondaryButtonClasses}
             >
               Keep reviewing
             </button>
-            <button type="submit" className={primaryButtonClasses}>Dismiss role</button>
+            <button type="submit" disabled={pending} className={primaryButtonClasses}>
+              {pending ? "Saving…" : "Dismiss role"}
+            </button>
           </div>
         </form>
       </dialog>
     </>
   );
+}
+
+function dateOffset(base: string, days: number): string {
+  const [year, month, day] = base.split("-").map(Number);
+  const date = new Date(Date.UTC(year, month - 1, day + days));
+  return date.toISOString().slice(0, 10);
 }
 
 export function DecisionUndo({

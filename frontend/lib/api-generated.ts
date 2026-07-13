@@ -4,6 +4,57 @@
  */
 
 export interface paths {
+    "/api/applications": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Owner Applications */
+        get: operations["list_owner_applications_api_applications_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/applications/{application_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Owner Application */
+        get: operations["get_owner_application_api_applications__application_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/applications/{application_id}/activity": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Owner Application Activity */
+        get: operations["list_owner_application_activity_api_applications__application_id__activity_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/career-tracks": {
         parameters: {
             query?: never;
@@ -528,6 +579,158 @@ export interface components {
             /** Version */
             version: number;
         };
+        /**
+         * ActionItemKind
+         * @enum {string}
+         */
+        ActionItemKind: "review_and_prepare_application";
+        /** ActionItemResponse */
+        ActionItemResponse: {
+            /** Application Id */
+            application_id: string;
+            /** Cancelled At */
+            cancelled_at?: string | null;
+            /** Completed At */
+            completed_at?: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Due On
+             * Format: date
+             */
+            due_on: string;
+            /** Id */
+            id: string;
+            kind: components["schemas"]["ActionItemKind"];
+            status: components["schemas"]["ActionItemStatus"];
+            /** Title */
+            title: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+            /** Version */
+            version: number;
+        };
+        /**
+         * ActionItemStatus
+         * @enum {string}
+         */
+        ActionItemStatus: "open" | "completed" | "cancelled";
+        /** ApplicationActivityEventResponse */
+        ApplicationActivityEventResponse: {
+            /** Action Item Id */
+            action_item_id?: string | null;
+            /** Application Id */
+            application_id: string;
+            event_type: components["schemas"]["ApplicationActivityEventType"];
+            from_stage?: components["schemas"]["ApplicationStage"] | null;
+            /** Id */
+            id: string;
+            /**
+             * Occurred At
+             * Format: date-time
+             */
+            occurred_at: string;
+            /** Sequence Number */
+            sequence_number: number;
+            to_stage?: components["schemas"]["ApplicationStage"] | null;
+        };
+        /**
+         * ApplicationActivityEventType
+         * @enum {string}
+         */
+        ApplicationActivityEventType: "application_created";
+        /** ApplicationActivityListResponse */
+        ApplicationActivityListResponse: {
+            /**
+             * Data Source
+             * @default database
+             * @constant
+             */
+            data_source: "database";
+            /** Items */
+            items?: components["schemas"]["ApplicationActivityEventResponse"][];
+        };
+        /** ApplicationDetailResponse */
+        ApplicationDetailResponse: {
+            /** Activity */
+            activity: components["schemas"]["ApplicationActivityEventResponse"][];
+            application: components["schemas"]["ApplicationSummary"];
+            /**
+             * Data Source
+             * @default database
+             * @constant
+             */
+            data_source: "database";
+        };
+        /** ApplicationListResponse */
+        ApplicationListResponse: {
+            /**
+             * Data Source
+             * @default database
+             * @constant
+             */
+            data_source: "database";
+            /** Items */
+            items?: components["schemas"]["ApplicationSummary"][];
+            /** Next Cursor */
+            next_cursor?: string | null;
+            /** Total */
+            total: number;
+        };
+        /**
+         * ApplicationPostingState
+         * @enum {string}
+         */
+        ApplicationPostingState: "open" | "closed" | "unknown";
+        /** ApplicationPostingSummary */
+        ApplicationPostingSummary: {
+            /** Canonical Url */
+            canonical_url: string;
+            /** Company */
+            company: string;
+            /** First Party */
+            first_party: boolean;
+            /** Id */
+            id: string;
+            state: components["schemas"]["ApplicationPostingState"];
+            /** Title */
+            title: string;
+        };
+        /**
+         * ApplicationStage
+         * @enum {string}
+         */
+        ApplicationStage: "pursuing";
+        /** ApplicationSummary */
+        ApplicationSummary: {
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            current_action: components["schemas"]["ActionItemResponse"];
+            /** Id */
+            id: string;
+            /** Opportunity Id */
+            opportunity_id: string;
+            posting: components["schemas"]["ApplicationPostingSummary"];
+            /** Pursued Posting Version Id */
+            pursued_posting_version_id: string;
+            stage: components["schemas"]["ApplicationStage"];
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+            /** Version */
+            version: number;
+        };
         /** CandidateProfileResponse */
         CandidateProfileResponse: {
             base_resume?: components["schemas"]["ResumeVersionSummary"] | null;
@@ -941,7 +1144,7 @@ export interface components {
          * OpportunityDecisionAction
          * @enum {string}
          */
-        OpportunityDecisionAction: "watch" | "dismiss" | "restore_to_inbox";
+        OpportunityDecisionAction: "pursue" | "watch" | "dismiss" | "restore_to_inbox";
         /** OpportunityDecisionEvent */
         OpportunityDecisionEvent: {
             action: components["schemas"]["OpportunityDecisionAction"];
@@ -966,6 +1169,8 @@ export interface components {
         OpportunityDecisionRequest: {
             action: components["schemas"]["OpportunityDecisionAction"];
             dismiss_reason?: components["schemas"]["DismissReason"] | null;
+            /** Initial Action Due On */
+            initial_action_due_on?: string | null;
             /** Note */
             note?: string | null;
             /** Restore Decision Event Id */
@@ -978,13 +1183,14 @@ export interface components {
             opportunity_id: string;
             /** Opportunity Version */
             opportunity_version: number;
+            pursuit?: components["schemas"]["PursuitBundle"] | null;
             state: components["schemas"]["OpportunityDecisionState"];
         };
         /**
          * OpportunityDecisionState
          * @enum {string}
          */
-        OpportunityDecisionState: "inbox" | "watch" | "dismiss";
+        OpportunityDecisionState: "inbox" | "watch" | "dismiss" | "pursued";
         /** OpportunityDetailResponse */
         OpportunityDetailResponse: {
             /** Apply Urls */
@@ -1254,6 +1460,13 @@ export interface components {
              * @default false
              */
             retryable: boolean;
+        };
+        /** PursuitBundle */
+        PursuitBundle: {
+            activity: components["schemas"]["ApplicationActivityEventResponse"];
+            application: components["schemas"]["ApplicationSummary"];
+            /** Application Created */
+            application_created: boolean;
         };
         /** RequeueRequest */
         RequeueRequest: {
@@ -1860,8 +2073,15 @@ export interface components {
              * Format: date-time
              */
             expires_at: string;
+            /**
+             * Local Date
+             * Format: date
+             */
+            local_date: string;
             /** Owner Id */
             owner_id: string;
+            /** Timezone */
+            timezone: string;
         };
         /** TextEvidenceFact */
         TextEvidenceFact: {
@@ -2014,6 +2234,289 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    list_owner_applications_api_applications_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+                cursor?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApplicationListResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Precondition Required */
+            428: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+        };
+    };
+    get_owner_application_api_applications__application_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                application_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApplicationDetailResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Precondition Required */
+            428: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+        };
+    };
+    list_owner_application_activity_api_applications__application_id__activity_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                application_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApplicationActivityListResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Precondition Required */
+            428: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+        };
+    };
     list_career_tracks_api_career_tracks_get: {
         parameters: {
             query?: never;

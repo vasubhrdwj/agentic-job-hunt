@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { decideOpportunity, getOpportunity } from "@/lib/opportunity-api";
@@ -25,7 +26,16 @@ interface UndoState {
   label: string;
 }
 
-export function OpportunityReview({ opportunityId }: { opportunityId: string }) {
+export function OpportunityReview({
+  opportunityId,
+  ownerLocalDate,
+  ownerTimezone,
+}: {
+  opportunityId: string;
+  ownerLocalDate: string;
+  ownerTimezone: string;
+}) {
+  const router = useRouter();
   const [opportunity, setOpportunity] = useState<OpportunityDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -50,11 +60,20 @@ export function OpportunityReview({ opportunityId }: { opportunityId: string }) 
     return () => clearTimeout(timer);
   }, [load]);
 
-  async function applyDecision(payload: OpportunityDecisionPayload) {
-    if (!opportunity) return;
+  async function applyDecision(
+    payload: OpportunityDecisionPayload,
+  ): Promise<{ ok: boolean; error?: string }> {
+    if (!opportunity) {
+      return { ok: false, error: "The saved opportunity is unavailable." };
+    }
     setPending(true);
     setError(null);
-    const receiptKey = `${opportunity.id}:${payload.action}:${payload.restore_decision_event_id ?? "new"}`;
+    const receiptKey = [
+      opportunity.id,
+      payload.action,
+      payload.restore_decision_event_id ?? "new",
+      payload.initial_action_due_on ?? "default",
+    ].join(":");
     decisionKeys.current[receiptKey] ??= createIdempotencyKey(`opportunity:${receiptKey}`);
     try {
       const response = await decideOpportunity(
@@ -71,7 +90,13 @@ export function OpportunityReview({ opportunityId }: { opportunityId: string }) 
         latest_decision: response.event,
         decision_history: [...current.decision_history, response.event],
       } : current);
-      if (payload.action !== "restore_to_inbox") {
+      if (payload.action === "pursue") {
+        setUndo(null);
+        const applicationId = response.pursuit?.application.id;
+        router.push(applicationId
+          ? `/applications/${encodeURIComponent(applicationId)}`
+          : "/applications");
+      } else if (payload.action !== "restore_to_inbox") {
         setUndo({
           version: response.opportunity_version,
           eventId: response.event.id,
@@ -81,9 +106,12 @@ export function OpportunityReview({ opportunityId }: { opportunityId: string }) 
       } else {
         setUndo(null);
       }
+      return { ok: true };
     } catch (reason) {
-      setError(errorText(reason, "Unable to save this decision."));
+      const actionError = errorText(reason, "Unable to save this decision.");
       await load();
+      setError(actionError);
+      return { ok: false, error: actionError };
     } finally {
       setPending(false);
     }
@@ -163,7 +191,13 @@ export function OpportunityReview({ opportunityId }: { opportunityId: string }) 
         <OpportunityFactGrid facts={opportunity.facts} />
         <MatchEvidence opportunity={opportunity} />
         <div className="mt-6 border-t border-zinc-200 pt-5 dark:border-zinc-800">
-          <OpportunityActions opportunity={opportunity} pending={pending} onDecision={applyDecision} />
+          <OpportunityActions
+            opportunity={opportunity}
+            pending={pending}
+            ownerLocalDate={ownerLocalDate}
+            ownerTimezone={ownerTimezone}
+            onDecision={applyDecision}
+          />
         </div>
       </article>
 

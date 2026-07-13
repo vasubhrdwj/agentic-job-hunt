@@ -22,7 +22,11 @@ export default async function JobReviewPage({
         title="Review opportunity"
         description="Inspect the preserved source facts, explicit unknowns, deterministic resume evidence, and saved-search provenance before deciding."
       />
-      <OpportunityReview opportunityId={opportunityId} />
+      <OpportunityReview
+        opportunityId={opportunityId}
+        ownerLocalDate={session.local_date}
+        ownerTimezone={session.timezone}
+      />
     </main>
   );
 }

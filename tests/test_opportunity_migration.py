@@ -24,6 +24,12 @@ RADAR_TABLES = {
     "opportunity_decision_events",
 }
 
+APPLICATION_TABLES = {
+    "applications",
+    "action_items",
+    "application_activity_events",
+}
+
 
 def test_opportunity_radar_migration_round_trip_and_metadata_parity(
     tmp_path: Path,
@@ -39,8 +45,9 @@ def test_opportunity_radar_migration_round_trip_and_metadata_parity(
     try:
         inspector = inspect(database.engine)
         assert database.current_migration_revision() == MIGRATION_HEAD
-        assert MIGRATION_HEAD == "20260713_0005"
+        assert MIGRATION_HEAD == "20260713_0006"
         assert RADAR_TABLES.issubset(inspector.get_table_names())
+        assert APPLICATION_TABLES.issubset(inspector.get_table_names())
 
         posting_columns = {
             column["name"]: column
@@ -124,15 +131,70 @@ def test_opportunity_radar_migration_round_trip_and_metadata_parity(
         }
         assert "ck_opportunity_scan_sources_complete_board_only" in source_checks
         decision_checks = {
-            constraint["name"]
+            constraint["name"]: constraint["sqltext"]
             for constraint in inspector.get_check_constraints(
                 "opportunity_decision_events"
             )
         }
         assert "ck_opportunity_decision_events_note_envelope_complete" in decision_checks
         assert "ck_opportunity_decision_events_decision_reason" in decision_checks
+        assert "pursued" in decision_checks[
+            "ck_opportunity_decision_events_decision_values"
+        ]
+
+        application_uniques = {
+            constraint["name"]: tuple(constraint["column_names"])
+            for constraint in inspector.get_unique_constraints("applications")
+        }
+        assert application_uniques["uq_applications_owner_opportunity"] == (
+            "owner_id",
+            "owner_opportunity_id",
+        )
+        action_columns = {
+            column["name"]: column
+            for column in inspector.get_columns("action_items")
+        }
+        assert action_columns["due_on"]["nullable"] is False
+        assert action_columns["title"]["type"].length == 240
+        action_indexes = {
+            index["name"]: index for index in inspector.get_indexes("action_items")
+        }
+        assert action_indexes["uq_action_items_owner_application_open"]["unique"] == 1
+        activity_columns = {
+            column["name"] for column in inspector.get_columns(
+                "application_activity_events"
+            )
+        }
+        assert "version" not in activity_columns
+        assert "updated_at" not in activity_columns
+        activity_indexes = {
+            index["name"]: index
+            for index in inspector.get_indexes("application_activity_events")
+        }
+        assert activity_indexes[
+            "uq_application_activity_events_owner_created"
+        ]["unique"] == 1
+        activity_foreign_keys = {
+            foreign_key["name"]: tuple(foreign_key["constrained_columns"])
+            for foreign_key in inspector.get_foreign_keys(
+                "application_activity_events"
+            )
+        }
+        assert activity_foreign_keys[
+            "fk_application_activity_events_owner_action"
+        ] == ("owner_id", "application_id", "action_item_id")
     finally:
         database.dispose()
+
+    command.downgrade(config, "20260713_0005")
+    application_downgraded = Database(url)
+    try:
+        tables = inspect(application_downgraded.engine).get_table_names()
+        assert application_downgraded.current_migration_revision() == "20260713_0005"
+        assert APPLICATION_TABLES.isdisjoint(tables)
+        assert RADAR_TABLES.issubset(tables)
+    finally:
+        application_downgraded.dispose()
 
     command.downgrade(config, "20260713_0004")
     downgraded = Database(url)

@@ -19,7 +19,10 @@ export default async function TodayPage() {
         description="Review persisted, deduplicated roles from your saved searches. Unknown facts and degraded sources stay visible; opening this page never searches the web or calls a model."
       />
       <Suspense fallback={<p role="status" className="text-sm text-zinc-500">Loading your persisted opportunity inbox…</p>}>
-        <TodayWorkspace />
+        <TodayWorkspace
+          ownerLocalDate={session.local_date}
+          ownerTimezone={session.timezone}
+        />
       </Suspense>
     </main>
   );

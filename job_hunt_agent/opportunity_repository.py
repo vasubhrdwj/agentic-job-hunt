@@ -646,7 +646,13 @@ def decide_owner_opportunity(
     if not normalized_key or len(normalized_key) > 200:
         raise ValueError("idempotency key must be 1-200 characters")
     key_hash = _sha256(normalized_key)
-    request_hash = _sha256(_canonical_json(request.model_dump(mode="json")))
+    request_payload = request.model_dump(mode="json")
+    # Phase 2B added a pursue-only field to this shared transport model. Keep
+    # ordinary decision hashes byte-for-byte compatible with Phase 2A so an
+    # already accepted Watch/Dismiss/Restore key still replays after upgrade.
+    if request.action is not OpportunityDecisionAction.pursue:
+        request_payload.pop("initial_action_due_on", None)
+    request_hash = _sha256(_canonical_json(request_payload))
     opportunity = session.scalar(
         select(OwnerOpportunity)
         .where(
@@ -673,6 +679,13 @@ def decide_owner_opportunity(
             raise ResourceConflict("decision replay was superseded by a newer decision")
         return _decision_response(opportunity, replay, keyring)
 
+    if request.action is OpportunityDecisionAction.pursue:
+        raise ValueError("pursue must use the atomic application boundary")
+    if opportunity.decision == "pursued":
+        raise ResourceConflict(
+            "pursued opportunities are managed through their application"
+        )
+
     require_version(
         "opportunity",
         opportunity.id,
@@ -696,7 +709,7 @@ def decide_owner_opportunity(
         target = "dismiss"
         reason = request.dismiss_reason.value if request.dismiss_reason else None
         compensates = None
-    else:
+    elif action is OpportunityDecisionAction.restore_to_inbox:
         target = "inbox"
         reason = None
         compensates = session.scalar(
@@ -719,6 +732,8 @@ def decide_owner_opportunity(
             or compensates.new_decision != opportunity.decision
         ):
             raise ResourceConflict("restore target is not the current opportunity decision")
+    else:  # pragma: no cover - enum exhaustiveness is defended above.
+        raise ValueError("unsupported opportunity decision action")
     if opportunity.decision == target:
         raise ResourceConflict("opportunity is already in the requested decision state")
 
@@ -1503,11 +1518,12 @@ def _decision_event_response(
         if raw_note is not None and not isinstance(raw_note, str):
             raise OpportunityRepositoryError("decision note payload is invalid")
         note = raw_note
-    action = (
-        OpportunityDecisionAction.restore_to_inbox
-        if row.new_decision == "inbox"
-        else OpportunityDecisionAction(row.new_decision)
-    )
+    if row.new_decision == "inbox":
+        action = OpportunityDecisionAction.restore_to_inbox
+    elif row.new_decision == "pursued":
+        action = OpportunityDecisionAction.pursue
+    else:
+        action = OpportunityDecisionAction(row.new_decision)
     return OpportunityDecisionEvent(
         id=row.id,
         opportunity_id=row.owner_opportunity_id,

@@ -40,7 +40,13 @@ interface UndoState {
   expiresAt: number;
 }
 
-export function TodayWorkspace() {
+export function TodayWorkspace({
+  ownerLocalDate,
+  ownerTimezone,
+}: {
+  ownerLocalDate: string;
+  ownerTimezone: string;
+}) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const view = validView(searchParams.get("view"));
@@ -145,10 +151,15 @@ export function TodayWorkspace() {
   async function applyDecision(
     opportunity: TodayOpportunityItem,
     payload: OpportunityDecisionPayload,
-  ) {
+  ): Promise<{ ok: boolean; error?: string }> {
     setPendingOpportunityId(opportunity.id);
     setActionError(null);
-    const receiptKey = `${opportunity.id}:${payload.action}:${payload.restore_decision_event_id ?? "new"}`;
+    const receiptKey = [
+      opportunity.id,
+      payload.action,
+      payload.restore_decision_event_id ?? "new",
+      payload.initial_action_due_on ?? "default",
+    ].join(":");
     decisionKeys.current[receiptKey] ??= createIdempotencyKey(`opportunity:${receiptKey}`);
     try {
       const response = await decideOpportunity(
@@ -159,7 +170,14 @@ export function TodayWorkspace() {
       );
       delete decisionKeys.current[receiptKey];
       applyDecisionLocally(response);
-      if (payload.action !== "restore_to_inbox") {
+      if (payload.action === "pursue") {
+        setUndo(null);
+        setFilterNonce((value) => value + 1);
+        const applicationId = response.pursuit?.application.id;
+        router.push(applicationId
+          ? `/applications/${encodeURIComponent(applicationId)}`
+          : "/applications");
+      } else if (payload.action !== "restore_to_inbox") {
         setUndo({
           opportunityId: opportunity.id,
           opportunityVersion: response.opportunity_version,
@@ -170,10 +188,13 @@ export function TodayWorkspace() {
       } else {
         setUndo(null);
       }
-      setFilterNonce((value) => value + 1);
+      if (payload.action !== "pursue") setFilterNonce((value) => value + 1);
+      return { ok: true };
     } catch (reason) {
-      setActionError(errorText(reason, "Unable to save this decision."));
+      const message = errorText(reason, "Unable to save this decision.");
+      setActionError(message);
       setFilterNonce((value) => value + 1);
+      return { ok: false, error: message };
     } finally {
       setPendingOpportunityId(null);
     }
@@ -320,6 +341,8 @@ export function TodayWorkspace() {
               key={opportunity.id}
               opportunity={opportunity}
               pending={pendingOpportunityId === opportunity.id}
+              ownerLocalDate={ownerLocalDate}
+              ownerTimezone={ownerTimezone}
               onDecision={(payload) => applyDecision(opportunity, payload)}
             />
           ))}
@@ -424,9 +447,9 @@ function TodayEmptyState({ view, filtered, savedSearchCount, totalOpportunityCou
   } else if (scanHealth === "never_run") {
     title = "Run your first role scan";
     body = "Scanning a saved search creates persisted opportunities here without discovering contacts or drafting outreach.";
-  } else if (totalOpportunityCount === 0 && scanHealth === "healthy") {
-    title = "The latest scan completed with no matching roles";
-    body = "This is a successful empty result, not a source error. Adjust the saved search only if its criteria are too narrow.";
+  } else if (view === "all" && totalOpportunityCount === 0 && scanHealth === "healthy") {
+    title = "No roles remain in this review workspace";
+    body = "Your latest scan is healthy. Pursued roles live in Applications, and new matches will appear here after future scans.";
   } else if (filtered) {
     title = "No roles match these filters";
     body = "Clear the filters to return to the full persisted inbox.";

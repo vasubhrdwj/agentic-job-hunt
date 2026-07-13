@@ -1,6 +1,6 @@
 # Practical Job Search Control Room — Implementable Plan
 
-**Status:** Phase 0, Phase 1, and the Phase 2A manual opportunity radar are complete and verified; application pipeline is next
+**Status:** Phase 0, Phase 1, and Phase 2A are complete; Phase 3A adds the atomic Pursue/application foundation, and the verified five-person contact bench is the immediate next checkpoint
 **Primary user:** one private owner using the product for a real job search
 **North-star metric:** qualified interviews for genuinely better roles per hour of user effort
 **First complete release:** durable opportunity radar + application pipeline + five-person contact bench + manual, staged outreach
@@ -60,9 +60,9 @@ career profile
 | Contacts | Current-employer verification, public-profile discovery, and five contacts per returned role | Evidence is compressed and drafts are still generated eagerly | Discover 10–12, retain at least five verified and diverse contacts, then sequence outreach |
 | Drafting | Drafter, evaluator, and existing outcome loop | Edits live only in React state; learning may use generated rather than sent text | Persist every message version and learn only from the exact version marked sent |
 | Queue | Postgres leases, heartbeats, retries, cancellation, `legacy_hunt`, and search-only `scan_saved_search` dispatch | Assessments, contacts, and application packs have no handlers yet | Add them only after the owner chooses to pursue a role |
-| Storage | Encrypted profile/resume/search data plus normalized scans, postings, versions, observations, provenance, opportunities, and decision events | No application or next-action records yet | Add an atomic application + next-action boundary before exposing Pursue |
-| API | Owner-scoped profile, search, scan, Today, opportunity, decision, hunt, and outcome resources | No application/contact/action APIs yet | Add the pursuit and contact workflow without weakening existing owner/version fences |
-| Frontend | Profile, Saved searches, database-only Today inbox, full opportunity review, and separate Legacy hunt | Watch/Dismiss are useful, but there is no application pipeline yet | Add Pursue only when it creates a real application and dated next action |
+| Storage | Encrypted profile/resume/search data; durable radar records; and the Phase 3A application, open action, and immutable creation activity | Only the initial `pursuing` stage and creation action exist | Add governed stage/action transitions without weakening the one-current-action invariant |
+| API | Owner-scoped profile, search, scan, Today, opportunity, application-read, decision, hunt, and outcome resources | Application mutation is currently limited to atomic Pursue; no contact/action-update API exists | Add the verified contact workflow next, then the remaining application transitions |
+| Frontend | Profile, Saved searches, Today, opportunity review, Applications list/dossier, and separate Legacy hunt | The dossier shows the real current action and creation history, but has no stage/action/contact controls yet | Add honest `N/5 verified` contact coverage before richer pipeline controls |
 | Observability | Phoenix/OpenTelemetry and live registry verification | Health says only that the HTTP process responds | Readiness includes database, worker heartbeat, scheduler lag, and source-run health |
 
 The existing `run_hunt` path remains available temporarily for demo compatibility. It is not the architecture for the practical product.
@@ -372,10 +372,18 @@ POST       /api/opportunities/{id}/assessment
 
 ### Applications and actions
 
+Implemented in the Phase 3A checkpoint:
+
 ```text
-GET/POST   /api/applications
-GET/PATCH  /api/applications/{id}
+GET        /api/applications
+GET        /api/applications/{id}
 GET        /api/applications/{id}/activity
+```
+
+Planned after the narrow pursuit boundary:
+
+```text
+PATCH      /api/applications/{id}
 POST       /api/applications/{id}/notes
 GET/POST   /api/action-items
 PATCH      /api/action-items/{id}
@@ -457,17 +465,25 @@ Filters live in URL search parameters. Dismiss asks for a reason, updates optimi
 
 ### 7.2 Job review and application dossier
 
-The pre-pursuit job page contains source facts, preserved JD, career value, eligibility, gaps, unknowns, provenance, and first-seen/change history. Expensive contact and pack work has not run yet.
+The pre-pursuit job page contains persisted source facts, preserved posting
+versions, unknowns, provenance, and first-seen/change history. Expensive
+contact and pack work has not run yet. Career-value, eligibility, and
+requirement-to-evidence assessments remain planned.
 
-After `Pursue`, the application dossier has:
+The Phase 3A dossier currently has:
 
-- **Overview:** stage, posting state, important dates, career value, next action
+- **Overview:** `pursuing` stage, posting state and first-party link, pursued
+  posting version, and the open dated next action
+- **Activity:** the immutable application-creation event
+
+The expanded dossier will add:
+
 - **Fit & evidence:** requirement-to-approved-achievement mapping and gaps
 - **Application pack:** tailored resume version, diff, answers, and claim provenance
 - **People:** five-person coverage, rankings, evidence, waves, messages, and outcomes
-- **Activity:** immutable decisions, notes, sends, replies, application changes, and interviews
+- **Activity:** later decisions, notes, sends, replies, application changes, and interviews
 
-Application stages:
+Target application stages (only `pursuing` exists in Phase 3A):
 
 ```text
 pursuing -> ready_to_apply -> applied -> screening -> interviewing -> offer -> closed
@@ -597,14 +613,17 @@ Backend tasks:
 - [ ] Separate broad ingestion from hard filtering in the source resolver.
 - [x] Add posting/version/alias/observation persistence and safe lifecycle foundations.
 - [x] Add manual scan orchestration, finalization, match creation, and owner-level opportunity dedupe.
-- [ ] Add versioned four-part assessment and `/api/today` projection.
+- [x] Add the database-only `/api/today` projection.
+- [ ] Add versioned four-part assessment.
 - [x] Store unknown metadata with confidence rather than dropping it by default.
 
 Frontend tasks:
 
 - [x] Build Today summary, opportunity cards, filters, scan status, and degraded-source state.
-- [ ] Build job-review page with preserved JD, assessments, evidence, gaps, and provenance.
-- [ ] Add `Pursue`, `Watch`, `Dismiss`, hide-company, reason capture, and Undo.
+- [x] Build job review with preserved posting versions, source facts, unknowns, and provenance.
+- [ ] Add assessments, approved evidence, and gaps to job review.
+- [x] Add `Pursue`, `Watch`, `Dismiss`, reason capture, and Undo.
+- [ ] Add hide-company.
 
 Definition of done:
 
@@ -623,14 +642,16 @@ Definition of done:
 
 Backend tasks:
 
-- [ ] Make `Pursue` transactionally create one application, event, and initial next action.
-- [ ] Add application stages, required transition fields, notes, immutable events, and action items.
+- [x] Make `Pursue` transactionally create one application, immutable creation event, and open dated next action.
+- [x] Add the owner-scoped `pursuing` application, its initial action, and its creation activity.
+- [ ] Add later application stages, required transition fields, notes, and action updates.
 - [ ] Cancel or replace irrelevant actions on stage changes.
 - [ ] Require applied date and resume version at `applied`; require outcome at `closed`.
 
 Frontend tasks:
 
-- [ ] Build application dossier shell, pipeline list/board, and activity timeline.
+- [x] Build the database-only Applications list and initial dossier with the current action and creation activity.
+- [ ] Expand the list into a stage-aware pipeline once stage transitions exist.
 - [ ] Build the unified action center and Today action integration.
 - [ ] Add accessible stage menus and required transition dialogs.
 - [ ] Build a grouped, non-horizontal mobile pipeline.
@@ -643,6 +664,17 @@ Definition of done:
 - Closing records an outcome and cancels irrelevant actions.
 - Completing or snoozing an action updates Today, pipeline, and dossier.
 - All stage transitions work with keyboard only.
+
+Phase 3A deliberately stops at the smallest trustworthy pursuit boundary. Its
+API/UI contract and deferred scope are documented in
+[`docs/PHASE_3_APPLICATION_PIPELINE.md`](docs/PHASE_3_APPLICATION_PIPELINE.md).
+The current `pursuing` application always has one visible dated action; the
+remaining definition-of-done items apply to later Phase 3 checkpoints.
+
+The immediate next checkpoint is the Slice 4 foundation: discover a larger
+pool and retain at least five distinct verified, appropriate contacts for each
+pursued role when the evidence supports five. This is still unimplemented; an
+honest evidence-backed shortfall must remain valid.
 
 ### Slice 4 — Five-person contact bench and staged outreach
 
@@ -869,10 +901,22 @@ Measure these over the first 30 days:
 - Zero automatic external sends or applications.
 - Zero loss of accepted user data across normal restarts and deploys.
 
-## 13. First implementation checkpoint
+## 13. Implementation checkpoints
 
-The first meaningful checkpoint is not a redesigned homepage. It is this backend-level invariant:
+The first meaningful checkpoint was not a redesigned homepage. It was this
+durable radar and pursuit invariant:
 
-> Running the same saved search twice creates no duplicate opportunity; a pursued role creates exactly one application with a next action; and contact discovery returns five verified people when five exist while allowing no more than the configured outreach wave to be active.
+> Running the same saved search twice creates no duplicate opportunity, and a
+> pursued role creates exactly one application with exactly one dated next
+> action and one immutable creation activity.
 
-Once that passes integration tests, build the Today and contact UI on top of it. That sequence turns the current impressive demo into a product the owner can trust throughout a real job search.
+The radar half and the Phase 3A pursuit boundary are now implemented. The next
+checkpoint is separate and remains locked:
+
+> Contact discovery retains at least five verified, appropriate people when
+> five exist, reports an honest shortfall otherwise, and allows no more than the
+> configured outreach wave to be active.
+
+That five-person contact checkpoint is not implemented yet. Building it on the
+durable application ID keeps evidence, messages, replies, and future learning
+attached to the real job-search workflow instead of disposable run output.

@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 import pytest
 from cryptography.fernet import Fernet
@@ -13,6 +14,9 @@ from sqlalchemy import func, select
 import job_hunt_agent.sqlalchemy_opportunity_workspace as workspace_module
 from job_hunt_agent.database import Database
 from job_hunt_agent.models import (
+    ActionItem,
+    Application,
+    ApplicationActivityEvent,
     BackgroundJob,
     Base,
     CareerTrack,
@@ -24,9 +28,14 @@ from job_hunt_agent.models import (
     ResumeVersion,
     SavedSearch,
 )
-from job_hunt_agent.opportunity_repository import persist_scan_source_role
+from job_hunt_agent.application_repository import ApplicationRepositoryError
+from job_hunt_agent.opportunity_repository import (
+    OpportunityNotFound,
+    persist_scan_source_role,
+)
 from job_hunt_agent.opportunity_schemas import (
     OpportunityDecisionRequest,
+    PursueOpportunityRequest,
     ScanCreateRequest,
     TodayQuery,
 )
@@ -36,6 +45,7 @@ from job_hunt_agent.owner_workspace import (
     WorkspaceNotFound,
     WorkspaceUnavailable,
 )
+from job_hunt_agent.repository_errors import ResourceConflict, VersionConflict
 from job_hunt_agent.schemas import Company, CompanySource, EmploymentType, Role
 from job_hunt_agent.security import DataKeyring
 from job_hunt_agent.sources.registry import CompanyRegistry, RegistryError
@@ -538,3 +548,144 @@ def test_decision_delegation_maps_not_found_versions_and_idempotency_and_encrypt
             idempotency_key="foreign-decision",
             payload=OpportunityDecisionRequest(action="watch"),
         )
+
+
+def test_decision_dispatches_pursuit_to_the_atomic_application_boundary_only(
+    opportunity_workspace: tuple[Database, SqlAlchemyOpportunityWorkspaceStore],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _database, store = opportunity_workspace
+    pursue_result = object()
+    ordinary_result = object()
+    calls: list[tuple[str, object]] = []
+
+    def fake_pursue(session, **kwargs):
+        calls.append(("pursue", session))
+        assert kwargs["owner_id"] == "owner-a"
+        assert kwargs["opportunity_id"] == "opportunity-a"
+        assert kwargs["expected_version"] == 4
+        assert kwargs["idempotency_key"] == "pursue-1"
+        assert kwargs["request"] == PursueOpportunityRequest(
+            initial_action_due_on=date(2026, 7, 15)
+        )
+        return pursue_result
+
+    def fake_ordinary(session, **kwargs):
+        calls.append(("ordinary", session))
+        assert kwargs["owner_id"] == "owner-a"
+        assert kwargs["opportunity_id"] == "opportunity-a"
+        assert kwargs["expected_version"] == 4
+        assert kwargs["idempotency_key"] == "watch-1"
+        assert kwargs["request"] == OpportunityDecisionRequest(action="watch")
+        assert kwargs["keyring"] is store.keyring
+        return ordinary_result
+
+    monkeypatch.setattr(workspace_module, "pursue_owner_opportunity", fake_pursue)
+    monkeypatch.setattr(workspace_module, "decide_owner_opportunity", fake_ordinary)
+
+    pursued = store.decide_opportunity(
+        owner_id="owner-a",
+        opportunity_id="opportunity-a",
+        expected_version=4,
+        idempotency_key="pursue-1",
+        payload=OpportunityDecisionRequest(
+            action="pursue",
+            initial_action_due_on=date(2026, 7, 15),
+        ),
+    )
+    watched = store.decide_opportunity(
+        owner_id="owner-a",
+        opportunity_id="opportunity-a",
+        expected_version=4,
+        idempotency_key="watch-1",
+        payload=OpportunityDecisionRequest(action="watch"),
+    )
+
+    assert pursued is pursue_result
+    assert watched is ordinary_result
+    assert [kind for kind, _session in calls] == ["pursue", "ordinary"]
+    assert calls[0][1] is not calls[1][1]
+
+
+def test_pursuit_dispatch_atomically_persists_one_graph_and_maps_key_conflicts(
+    opportunity_workspace: tuple[Database, SqlAlchemyOpportunityWorkspaceStore],
+) -> None:
+    database, store = opportunity_workspace
+    opportunity_id, _scan_id = _persist_opportunity(database, store)
+    local_today = datetime.now(ZoneInfo("Asia/Kolkata")).date()
+    due_on = local_today + timedelta(days=1)
+
+    pursued = store.decide_opportunity(
+        owner_id="owner-a",
+        opportunity_id=opportunity_id,
+        expected_version=1,
+        idempotency_key="pursue-atomic",
+        payload=OpportunityDecisionRequest(
+            action="pursue",
+            initial_action_due_on=due_on,
+        ),
+    )
+
+    assert pursued.state.value == "pursued"
+    assert pursued.opportunity_version == 2
+    assert pursued.pursuit is not None
+    assert pursued.pursuit.application_created is True
+    assert pursued.pursuit.application.current_action.due_on == due_on
+    with database.session() as session:
+        assert session.scalar(select(func.count(Application.id))) == 1
+        assert session.scalar(select(func.count(ActionItem.id))) == 1
+        assert session.scalar(select(func.count(ApplicationActivityEvent.id))) == 1
+        assert session.scalar(select(func.count(OpportunityDecisionEvent.id))) == 1
+
+    with pytest.raises(WorkspaceConflict) as changed_request:
+        store.decide_opportunity(
+            owner_id="owner-a",
+            opportunity_id=opportunity_id,
+            expected_version=2,
+            idempotency_key="pursue-atomic",
+            payload=OpportunityDecisionRequest(
+                action="pursue",
+                initial_action_due_on=due_on + timedelta(days=1),
+            ),
+        )
+    assert changed_request.value.code == "idempotency_conflict"
+
+
+def test_pursuit_repository_errors_map_to_workspace_contracts(
+    opportunity_workspace: tuple[Database, SqlAlchemyOpportunityWorkspaceStore],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _database, store = opportunity_workspace
+    payload = OpportunityDecisionRequest(action="pursue")
+
+    def pursue_with(error: Exception):
+        def fail(*_args, **_kwargs):
+            raise error
+
+        monkeypatch.setattr(workspace_module, "pursue_owner_opportunity", fail)
+        return lambda: store.decide_opportunity(
+            owner_id="owner-a",
+            opportunity_id="opportunity-a",
+            expected_version=4,
+            idempotency_key="pursue-1",
+            payload=payload,
+        )
+
+    with pytest.raises(WorkspaceNotFound) as missing:
+        pursue_with(OpportunityNotFound("PRIVATE_FOREIGN_OPPORTUNITY"))()
+    assert str(missing.value) == "opportunity not found"
+
+    with pytest.raises(WorkspaceConflict) as stale:
+        pursue_with(VersionConflict("opportunity", "opportunity-a", 4, 5))()
+    assert stale.value.code == "version_conflict"
+
+    with pytest.raises(WorkspaceConflict) as conflict:
+        pursue_with(ResourceConflict("closed postings cannot be pursued"))()
+    assert conflict.value.code == "resource_conflict"
+
+    with pytest.raises(WorkspaceInputError):
+        pursue_with(ValueError("initial action due date is out of range"))()
+
+    with pytest.raises(WorkspaceUnavailable) as inconsistent:
+        pursue_with(ApplicationRepositoryError("PRIVATE_BROKEN_GRAPH"))()
+    assert str(inconsistent.value) == "application data is inconsistent"

@@ -27,7 +27,9 @@ foundation and first reusable job-search workflow are documented in
 [`docs/PHASE_0_FOUNDATION.md`](docs/PHASE_0_FOUNDATION.md) and
 [`docs/PHASE_1_PROFILE_SEARCH.md`](docs/PHASE_1_PROFILE_SEARCH.md). The manual,
 durable opportunity radar is documented in
-[`docs/PHASE_2_OPPORTUNITY_RADAR.md`](docs/PHASE_2_OPPORTUNITY_RADAR.md).
+[`docs/PHASE_2_OPPORTUNITY_RADAR.md`](docs/PHASE_2_OPPORTUNITY_RADAR.md). The
+first practical application checkpoint is documented in
+[`docs/PHASE_3_APPLICATION_PIPELINE.md`](docs/PHASE_3_APPLICATION_PIPELINE.md).
 
 The delivered foundation includes migrated Postgres models, private owner
 sessions, owner-scoped generic jobs, lease/cancellation safety, capability-aware
@@ -45,6 +47,12 @@ across saved searches, and a database-only **Today** inbox. Today exposes
 unknown facts and supports durable Watch, Dismiss, and restore decisions; it
 never searches live sources, reads a resume, discovers contacts, drafts text,
 or calls a model merely because the page was opened.
+
+Phase 3A adds an atomic **Pursue** decision. It creates exactly one application,
+one open dated next action, and one immutable creation activity, then exposes a
+database-only Applications list and dossier. The only current application stage
+is `pursuing`; stage transitions, action updates, application packs, and contact
+discovery remain explicit follow-up work.
 
 The separate **Legacy hunt** remains available when you explicitly want the
 current end-to-end flow with resume matching, at least five appropriate
@@ -166,7 +174,11 @@ GET    /api/scans/{id}              → persisted progress, counts, and safe sou
 GET    /api/today                   → database-only deduplicated opportunity inbox
 GET    /api/opportunities/{id}      → posting facts, versions, provenance, decision history
 POST   /api/opportunities/{id}/decision
-                                    → watch, dismiss, or restore (If-Match + idempotency)
+                                    → pursue, watch, dismiss, or restore (If-Match + idempotency)
+GET    /api/applications            → database-only pursuing applications + next actions
+GET    /api/applications/{id}       → application dossier + immutable activity
+GET    /api/applications/{id}/activity
+                                    → database-only immutable activity stream
 GET    /health                      → { ok: true }
 GET    /ready                       → DB migration + compatible worker readiness
 ```

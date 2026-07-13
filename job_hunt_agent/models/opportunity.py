@@ -635,10 +635,14 @@ class OwnerOpportunity(Base):
             name="fk_owner_opportunities_owner_reviewed_version",
             ondelete="RESTRICT",
         ),
-        CheckConstraint("decision IN ('inbox', 'watch', 'dismiss')", name="decision"),
+        CheckConstraint(
+            "decision IN ('inbox', 'watch', 'dismiss', 'pursued')",
+            name="decision",
+        ),
         CheckConstraint(
             "(decision = 'dismiss' AND decision_reason_code IS NOT NULL) OR "
-            "(decision IN ('inbox', 'watch') AND decision_reason_code IS NULL)",
+            "(decision IN ('inbox', 'watch', 'pursued') "
+            "AND decision_reason_code IS NULL)",
             name="decision_reason",
         ),
         CheckConstraint("version >= 1", name="version_positive"),
@@ -722,14 +726,15 @@ class OpportunityDecisionEvent(Base):
             ondelete="RESTRICT",
         ),
         CheckConstraint(
-            "previous_decision IN ('inbox', 'watch', 'dismiss') AND "
-            "new_decision IN ('inbox', 'watch', 'dismiss')",
+            "previous_decision IN ('inbox', 'watch', 'dismiss', 'pursued') AND "
+            "new_decision IN ('inbox', 'watch', 'dismiss', 'pursued')",
             name="decision_values",
         ),
         CheckConstraint("previous_decision <> new_decision", name="decision_changed"),
         CheckConstraint(
             "(new_decision = 'dismiss' AND reason_code IS NOT NULL) OR "
-            "(new_decision IN ('inbox', 'watch') AND reason_code IS NULL)",
+            "(new_decision IN ('inbox', 'watch', 'pursued') "
+            "AND reason_code IS NULL)",
             name="decision_reason",
         ),
         CheckConstraint(

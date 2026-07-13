@@ -36,6 +36,9 @@ from job_hunt_agent.models import (
 )
 from job_hunt_agent.schemas import HuntResult, OutreachDraft, Person, Role
 from job_hunt_agent.security import hash_access_token, load_data_keyring
+from job_hunt_agent.sqlalchemy_application_workspace import (
+    SqlAlchemyApplicationWorkspaceStore,
+)
 
 
 OWNER_TOKEN = "phase-zero-owner-token-with-more-than-thirty-two-characters"
@@ -125,6 +128,17 @@ def _login(client: TestClient) -> dict[str, object]:
     return response.json()
 
 
+def test_practical_mode_mounts_the_database_application_workspace(
+    practical_client: tuple[TestClient, Database],
+) -> None:
+    client, database = practical_client
+
+    store = client.app.state.application_workspace_store
+    assert isinstance(store, SqlAlchemyApplicationWorkspaceStore)
+    assert store.database is database
+    assert "/api/applications" in client.get("/openapi.json").json()["paths"]
+
+
 def test_owner_session_survives_requests_and_is_stored_only_as_a_hash(
     practical_client: tuple[TestClient, Database],
 ) -> None:
@@ -133,6 +147,8 @@ def test_owner_session_survives_requests_and_is_stored_only_as_a_hash(
 
     assert body["owner_id"] == "owner"
     assert body["display_name"] == "Owner"
+    assert body["timezone"] == "UTC"
+    assert isinstance(body["local_date"], str)
     assert OWNER_TOKEN not in str(body)
     set_cookie = client.cookies.get("job_hunt_session")
     assert set_cookie is not None

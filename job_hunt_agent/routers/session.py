@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import date, datetime, timezone
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from fastapi import APIRouter, HTTPException, Request, Response, Security, status
 from fastapi.security import APIKeyCookie
@@ -27,6 +28,8 @@ class SessionCreateRequest(BaseModel):
 class SessionResponse(BaseModel):
     owner_id: str
     display_name: str
+    timezone: str
+    local_date: date
     expires_at: datetime
 
 
@@ -38,6 +41,8 @@ class SessionDeleteResponse(BaseModel):
 class AuthenticatedOwner:
     owner_id: str
     display_name: str
+    timezone: str
+    local_date: date
     expires_at: datetime
 
 
@@ -76,6 +81,8 @@ def create_session_router(
             stored = load_owner_session(session, grant.token, touch=False)
             assert stored is not None
             display_name = stored.owner.display_name
+            owner_timezone = stored.owner.timezone
+            owner_local_date = _local_date(owner_timezone)
 
         response.set_cookie(
             key=session_cookie_name(),
@@ -91,6 +98,8 @@ def create_session_router(
         return SessionResponse(
             owner_id=grant.owner_id,
             display_name=display_name,
+            timezone=owner_timezone,
+            local_date=owner_local_date,
             expires_at=grant.expires_at,
         )
 
@@ -105,6 +114,8 @@ def create_session_router(
         return SessionResponse(
             owner_id=owner.owner_id,
             display_name=owner.display_name,
+            timezone=owner.timezone,
+            local_date=owner.local_date,
             expires_at=owner.expires_at,
         )
 
@@ -164,8 +175,21 @@ def require_owner_session(database: Database | None, request: Request) -> Authen
         return AuthenticatedOwner(
             owner_id=stored.owner_id,
             display_name=stored.owner.display_name,
+            timezone=stored.owner.timezone,
+            local_date=_local_date(stored.owner.timezone),
             expires_at=stored.expires_at,
         )
+
+
+def _local_date(timezone_name: str) -> date:
+    try:
+        zone = ZoneInfo(timezone_name)
+    except (ValueError, ZoneInfoNotFoundError) as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="owner timezone is invalid",
+        ) from exc
+    return datetime.now(timezone.utc).astimezone(zone).date()
 
 
 def require_owner_mutation(

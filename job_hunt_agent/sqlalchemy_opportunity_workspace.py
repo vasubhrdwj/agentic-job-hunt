@@ -13,6 +13,10 @@ from pydantic import ValidationError
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 
+from .application_repository import (
+    ApplicationRepositoryError,
+    pursue_owner_opportunity,
+)
 from .database import Database
 from .job_queue import enqueue_job, utcnow
 from .models import (
@@ -28,6 +32,7 @@ from .mutation_receipts import (
     complete_owner_mutation,
 )
 from .opportunity_schemas import (
+    OpportunityDecisionAction,
     OpportunityDecisionRequest,
     OpportunityDecisionResponse,
     OpportunityDetailResponse,
@@ -41,6 +46,7 @@ from .opportunity_schemas import (
     ScanWarningScope,
     TodayListResponse,
     TodayQuery,
+    PursueOpportunityRequest,
 )
 from .opportunity_repository import (
     DecisionIdempotencyConflict,
@@ -347,6 +353,21 @@ class SqlAlchemyOpportunityWorkspaceStore:
         payload: OpportunityDecisionRequest,
     ) -> OpportunityDecisionResponse:
         with _opportunity_errors(), self.database.session() as session:
+            if payload.action is OpportunityDecisionAction.pursue:
+                pursue_request = PursueOpportunityRequest.model_validate(
+                    payload.model_dump(
+                        include={"action", "initial_action_due_on"},
+                        mode="json",
+                    )
+                )
+                return pursue_owner_opportunity(
+                    session,
+                    owner_id=owner_id,
+                    opportunity_id=opportunity_id,
+                    request=pursue_request,
+                    expected_version=expected_version,
+                    idempotency_key=idempotency_key,
+                )
             return decide_owner_opportunity(
                 session,
                 owner_id=owner_id,
@@ -600,6 +621,8 @@ def _opportunity_errors() -> Iterator[None]:
         raise WorkspaceNotFound("opportunity not found") from exc
     except PostingIdentityConflict as exc:
         raise WorkspaceConflict(str(exc), code="posting_identity_conflict") from exc
+    except ApplicationRepositoryError as exc:
+        raise WorkspaceUnavailable("application data is inconsistent") from exc
     except OpportunityRepositoryError as exc:
         raise WorkspaceUnavailable("opportunity data is inconsistent") from exc
     except (PrivatePayloadBindingError, DecryptionError) as exc:

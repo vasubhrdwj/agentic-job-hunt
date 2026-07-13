@@ -2,11 +2,18 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 
 import pytest
 from pydantic import ValidationError
 
+from job_hunt_agent.application_schemas import (
+    ActionItemResponse,
+    ApplicationActivityEventResponse,
+    ApplicationPostingSummary,
+    ApplicationSummary,
+    PursuitBundle,
+)
 from job_hunt_agent.opportunity_schemas import (
     CompensationEvidenceFact,
     DateEvidenceFact,
@@ -19,6 +26,7 @@ from job_hunt_agent.opportunity_schemas import (
     OpportunityPosting,
     OpportunityUnknown,
     PostingVersionSummary,
+    PursueOpportunityRequest,
     SavedSearchProvenance,
     ScanCounts,
     ScanCreateRequest,
@@ -136,6 +144,56 @@ def _item(**updates: object) -> TodayOpportunityItem:
     }
     values.update(updates)
     return TodayOpportunityItem.model_validate(values)
+
+
+def _pursuit_bundle(
+    *,
+    opportunity_id: str = "opportunity1",
+    application_id: str = "application1",
+) -> PursuitBundle:
+    action = ActionItemResponse(
+        id="action1",
+        version=1,
+        application_id=application_id,
+        kind="review_and_prepare_application",
+        status="open",
+        title="Review the role and prepare the application",
+        due_on=date(2026, 7, 15),
+        created_at=NOW,
+        updated_at=NOW,
+    )
+    application = ApplicationSummary(
+        id=application_id,
+        version=1,
+        opportunity_id=opportunity_id,
+        pursued_posting_version_id="postingversion1",
+        stage="pursuing",
+        posting=ApplicationPostingSummary(
+            id="posting1",
+            company="Example",
+            title="Senior Backend Engineer",
+            canonical_url="https://careers.example.com/jobs/123",
+            first_party=True,
+            state="open",
+        ),
+        current_action=action,
+        created_at=NOW,
+        updated_at=NOW,
+    )
+    activity = ApplicationActivityEventResponse(
+        id="activity1",
+        application_id=application_id,
+        sequence_number=1,
+        event_type="application_created",
+        to_stage="pursuing",
+        action_item_id=action.id,
+        occurred_at=NOW,
+    )
+    return PursuitBundle(
+        application=application,
+        activity=activity,
+        application_created=True,
+    )
 
 
 def test_posting_closure_can_follow_last_positive_confirmation() -> None:
@@ -320,9 +378,17 @@ def test_match_summary_is_transparent_or_explicitly_not_assessed() -> None:
 @pytest.mark.parametrize(
     "payload",
     [
+        {"action": "pursue", "note": "not part of the atomic pursue command"},
+        {"action": "pursue", "dismiss_reason": "company"},
         {"action": "dismiss"},
         {"action": "dismiss", "dismiss_reason": "other"},
+        {
+            "action": "dismiss",
+            "dismiss_reason": "company",
+            "initial_action_due_on": "2026-07-15",
+        },
         {"action": "watch", "dismiss_reason": "company"},
+        {"action": "watch", "initial_action_due_on": "2026-07-15"},
         {"action": "restore_to_inbox"},
         {
             "action": "restore_to_inbox",
@@ -352,6 +418,106 @@ def test_watch_dismiss_and_restore_decisions_have_exact_shapes() -> None:
     assert watch.action.value == "watch"
     assert dismiss.dismiss_reason is not None
     assert restore.restore_decision_event_id == "event1"
+
+
+def test_pursue_request_has_only_an_optional_initial_due_date() -> None:
+    pursue = OpportunityDecisionRequest(
+        action="pursue",
+        initial_action_due_on=date(2026, 7, 15),
+    )
+    narrow = PursueOpportunityRequest(initial_action_due_on=date(2026, 7, 16))
+
+    assert pursue.initial_action_due_on == date(2026, 7, 15)
+    assert narrow.action.value == "pursue"
+    with pytest.raises(ValidationError):
+        PursueOpportunityRequest.model_validate({"action": "watch"})
+    with pytest.raises(ValidationError, match="extra_forbidden"):
+        PursueOpportunityRequest.model_validate(
+            {"action": "pursue", "note": "not accepted"}
+        )
+
+
+@pytest.mark.parametrize("previous_state", ["inbox", "watch", "dismiss"])
+def test_pursue_event_enters_pursued_from_a_practical_prior_state(
+    previous_state: str,
+) -> None:
+    event = OpportunityDecisionEvent(
+        id="decision1",
+        opportunity_id="opportunity1",
+        action="pursue",
+        previous_state=previous_state,
+        state="pursued",
+        created_at=NOW,
+    )
+    assert event.state.value == "pursued"
+
+
+def test_pursue_event_and_response_require_the_atomic_pursuit_bundle() -> None:
+    event = OpportunityDecisionEvent(
+        id="decision1",
+        opportunity_id="opportunity1",
+        action="pursue",
+        previous_state="inbox",
+        state="pursued",
+        created_at=NOW,
+    )
+    response = OpportunityDecisionResponse(
+        opportunity_id="opportunity1",
+        opportunity_version=2,
+        state="pursued",
+        event=event,
+        pursuit=_pursuit_bundle(),
+    )
+    assert response.pursuit is not None
+    assert response.pursuit.application.current_action.due_on == date(2026, 7, 15)
+
+    with pytest.raises(ValidationError, match="pursuit bundle"):
+        OpportunityDecisionResponse(
+            opportunity_id="opportunity1",
+            opportunity_version=2,
+            state="pursued",
+            event=event,
+        )
+    with pytest.raises(ValidationError, match="belong"):
+        OpportunityDecisionResponse(
+            opportunity_id="opportunity1",
+            opportunity_version=2,
+            state="pursued",
+            event=event,
+            pursuit=_pursuit_bundle(opportunity_id="opportunity2"),
+        )
+
+
+def test_non_pursue_response_cannot_smuggle_a_pursuit_bundle() -> None:
+    event = OpportunityDecisionEvent(
+        id="event1",
+        opportunity_id="opportunity1",
+        action="watch",
+        previous_state="inbox",
+        state="watch",
+        created_at=NOW,
+    )
+    with pytest.raises(ValidationError, match="only pursue"):
+        OpportunityDecisionResponse(
+            opportunity_id="opportunity1",
+            opportunity_version=2,
+            state="watch",
+            event=event,
+            pursuit=_pursuit_bundle(),
+        )
+
+
+def test_restore_cannot_reopen_a_pursued_opportunity() -> None:
+    with pytest.raises(ValidationError, match="restore events"):
+        OpportunityDecisionEvent(
+            id="event2",
+            opportunity_id="opportunity1",
+            action="restore_to_inbox",
+            previous_state="pursued",
+            state="inbox",
+            restores_event_id="decision1",
+            created_at=NOW,
+        )
 
 
 def test_decision_response_is_bound_to_one_opportunity_and_state() -> None:
