@@ -6,7 +6,7 @@ from contextlib import contextmanager
 from typing import Iterator
 
 from pydantic import ValidationError
-from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 
 from .application_repository import (
     ApplicationRepositoryError,
@@ -21,15 +21,32 @@ from .application_schemas import (
     CursorToken,
 )
 from .database import Database
-from .owner_workspace import WorkspaceUnavailable
+from .mutation_receipts import MutationIdempotencyConflict, MutationPending
+from .outreach_repository import (
+    OutreachRepositoryError,
+    load_application_outreach,
+    record_outreach_event,
+    save_outreach_message,
+    start_outreach_sequence,
+)
+from .outreach_schemas import (
+    ApplicationOutreachResponse,
+    OutreachEventCreate,
+    OutreachMessageCreate,
+)
+from .owner_workspace import WorkspaceConflict, WorkspaceUnavailable
+from .private_payloads import PrivatePayloadBindingError
+from .repository_errors import ResourceConflict, VersionConflict
+from .security import DataKeyring, DecryptionError
 from .sqlalchemy_contact_workspace import SqlAlchemyContactWorkspaceStore
 
 
 class SqlAlchemyApplicationWorkspaceStore(SqlAlchemyContactWorkspaceStore):
     """Serve application projections without invoking providers or workers."""
 
-    def __init__(self, database: Database) -> None:
+    def __init__(self, database: Database, keyring: DataKeyring) -> None:
         self.database = database
+        self.keyring = keyring
 
     def list_applications(
         self,
@@ -72,6 +89,82 @@ class SqlAlchemyApplicationWorkspaceStore(SqlAlchemyContactWorkspaceStore):
                 application_id=application_id,
             )
 
+    def get_application_outreach(
+        self,
+        *,
+        owner_id: str,
+        application_id: str,
+    ) -> ApplicationOutreachResponse | None:
+        with _outreach_errors(), self.database.session() as session:
+            return load_application_outreach(
+                session,
+                owner_id=owner_id,
+                application_id=application_id,
+                keyring=self.keyring,
+            )
+
+    def start_application_outreach(
+        self,
+        *,
+        owner_id: str,
+        application_id: str,
+        expected_application_version: int,
+        idempotency_key: str,
+    ) -> ApplicationOutreachResponse | None:
+        with _outreach_errors(), self.database.session() as session:
+            return start_outreach_sequence(
+                session,
+                owner_id=owner_id,
+                application_id=application_id,
+                expected_application_version=expected_application_version,
+                idempotency_key=idempotency_key,
+                keyring=self.keyring,
+            )
+
+    def save_outreach_message(
+        self,
+        *,
+        owner_id: str,
+        application_id: str,
+        sequence_id: str,
+        payload: OutreachMessageCreate,
+        expected_sequence_version: int,
+        idempotency_key: str,
+    ) -> ApplicationOutreachResponse | None:
+        with _outreach_errors(), self.database.session() as session:
+            return save_outreach_message(
+                session,
+                owner_id=owner_id,
+                application_id=application_id,
+                sequence_id=sequence_id,
+                payload=payload,
+                expected_sequence_version=expected_sequence_version,
+                idempotency_key=idempotency_key,
+                keyring=self.keyring,
+            )
+
+    def record_outreach_event(
+        self,
+        *,
+        owner_id: str,
+        application_id: str,
+        sequence_id: str,
+        payload: OutreachEventCreate,
+        expected_sequence_version: int,
+        idempotency_key: str,
+    ) -> ApplicationOutreachResponse | None:
+        with _outreach_errors(), self.database.session() as session:
+            return record_outreach_event(
+                session,
+                owner_id=owner_id,
+                application_id=application_id,
+                sequence_id=sequence_id,
+                payload=payload,
+                expected_sequence_version=expected_sequence_version,
+                idempotency_key=idempotency_key,
+                keyring=self.keyring,
+            )
+
 
 @contextmanager
 def _application_errors() -> Iterator[None]:
@@ -88,6 +181,36 @@ def _application_errors() -> Iterator[None]:
     except SQLAlchemyError as exc:
         raise WorkspaceUnavailable(
             "application workspace database is unavailable"
+        ) from exc
+
+
+@contextmanager
+def _outreach_errors() -> Iterator[None]:
+    try:
+        yield
+    except WorkspaceUnavailable:
+        raise
+    except WorkspaceConflict:
+        raise
+    except VersionConflict as exc:
+        raise WorkspaceConflict(str(exc), code="version_conflict") from exc
+    except MutationIdempotencyConflict as exc:
+        raise WorkspaceConflict(str(exc), code="idempotency_conflict") from exc
+    except MutationPending as exc:
+        raise WorkspaceConflict(str(exc), code="mutation_pending") from exc
+    except ResourceConflict as exc:
+        raise WorkspaceConflict(str(exc)) from exc
+    except (OutreachRepositoryError, PrivatePayloadBindingError, DecryptionError) as exc:
+        raise WorkspaceUnavailable("outreach data is inconsistent") from exc
+    except ValidationError as exc:
+        raise WorkspaceUnavailable(
+            "stored outreach data failed contract validation"
+        ) from exc
+    except IntegrityError as exc:
+        raise WorkspaceConflict("outreach conflicts with existing state") from exc
+    except SQLAlchemyError as exc:
+        raise WorkspaceUnavailable(
+            "application outreach database is unavailable"
         ) from exc
 
 

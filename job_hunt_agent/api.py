@@ -466,7 +466,7 @@ def create_app() -> FastAPI:
         else None
     )
     application_store = (
-        SqlAlchemyApplicationWorkspaceStore(practical_database)
+        SqlAlchemyApplicationWorkspaceStore(practical_database, data_keyring)
         if practical_mode and practical_database is not None
         else None
     )

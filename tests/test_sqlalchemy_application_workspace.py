@@ -22,6 +22,7 @@ from job_hunt_agent.models import (
     OwnerOpportunity,
 )
 from job_hunt_agent.owner_workspace import WorkspaceUnavailable
+from job_hunt_agent.security import load_data_keyring
 from job_hunt_agent.sqlalchemy_application_workspace import (
     SqlAlchemyApplicationWorkspaceStore,
 )
@@ -149,7 +150,10 @@ def application_workspace(
             )
         )
     try:
-        yield database, SqlAlchemyApplicationWorkspaceStore(database)
+        yield database, SqlAlchemyApplicationWorkspaceStore(
+            database,
+            load_data_keyring(production=False),
+        )
     finally:
         database.dispose()
 

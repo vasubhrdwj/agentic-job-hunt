@@ -89,6 +89,74 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/applications/{application_id}/outreach": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Owner Application Outreach */
+        get: operations["get_owner_application_outreach_api_applications__application_id__outreach_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/applications/{application_id}/outreach-sequences": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Start Owner Application Outreach */
+        post: operations["start_owner_application_outreach_api_applications__application_id__outreach_sequences_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/applications/{application_id}/outreach-sequences/{sequence_id}/events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Record Owner Application Outreach Event */
+        post: operations["record_owner_application_outreach_event_api_applications__application_id__outreach_sequences__sequence_id__events_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/applications/{application_id}/outreach-sequences/{sequence_id}/messages": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Save Owner Application Outreach Message */
+        post: operations["save_owner_application_outreach_message_api_applications__application_id__outreach_sequences__sequence_id__messages_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/career-tracks": {
         parameters: {
             query?: never;
@@ -743,6 +811,31 @@ export interface components {
             /** Total */
             total: number;
         };
+        /**
+         * ApplicationOutreachResponse
+         * @description Database-only state for an application's one manual outreach sequence.
+         */
+        ApplicationOutreachResponse: {
+            /** Application Id */
+            application_id: string;
+            /**
+             * Data Source
+             * @default database
+             * @constant
+             */
+            data_source: "database";
+            /** Recipients */
+            recipients?: components["schemas"]["OutreachRecipientResponse"][];
+            sequence?: components["schemas"]["OutreachSequenceResponse"] | null;
+            status: components["schemas"]["ApplicationOutreachStatus"];
+            /** Timeline */
+            timeline?: (components["schemas"]["OutreachSequenceStartedTimelineEvent"] | components["schemas"]["OutreachMessageSavedTimelineEvent"] | components["schemas"]["OutreachCopiedTimelineEvent"] | components["schemas"]["OutreachMarkedSentTimelineEvent"] | components["schemas"]["OutreachOutcomeTimelineEvent"] | components["schemas"]["OutreachPausedTimelineEvent"] | components["schemas"]["OutreachResumedTimelineEvent"] | components["schemas"]["OutreachStoppedTimelineEvent"] | components["schemas"]["OutreachWaveAdvancedTimelineEvent"])[];
+        };
+        /**
+         * ApplicationOutreachStatus
+         * @enum {string}
+         */
+        ApplicationOutreachStatus: "not_started" | "active" | "paused" | "stopped" | "completed";
         /**
          * ApplicationPostingState
          * @enum {string}
@@ -1608,6 +1701,40 @@ export interface components {
             outcomes: components["schemas"]["OutcomeLog"][];
         };
         /**
+         * OutreachChannel
+         * @enum {string}
+         */
+        OutreachChannel: "linkedin" | "email" | "other";
+        /** OutreachCopiedEventCreate */
+        OutreachCopiedEventCreate: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            event_type: "copied";
+            /** Message Version Id */
+            message_version_id: string;
+        };
+        /** OutreachCopiedTimelineEvent */
+        OutreachCopiedTimelineEvent: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            event_type: "copied";
+            /** Id */
+            id: string;
+            /** Message Version Id */
+            message_version_id: string;
+            /**
+             * Occurred At
+             * Format: date-time
+             */
+            occurred_at: string;
+            /** Sequence Id */
+            sequence_id: string;
+        };
+        /**
          * OutreachDraft
          * @description One drafted outreach message for one role/person pair.
          */
@@ -1631,6 +1758,352 @@ export interface components {
             person: components["schemas"]["Person"];
             /** @description Role this outreach draft is tied to. */
             role: components["schemas"]["Role"];
+        };
+        /** OutreachMarkedSentEventCreate */
+        OutreachMarkedSentEventCreate: {
+            channel: components["schemas"]["OutreachChannel"];
+            /**
+             * Confirm Exact Version
+             * @constant
+             */
+            confirm_exact_version: true;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            event_type: "marked_sent";
+            /** Message Version Id */
+            message_version_id: string;
+        };
+        /** OutreachMarkedSentTimelineEvent */
+        OutreachMarkedSentTimelineEvent: {
+            channel: components["schemas"]["OutreachChannel"];
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            event_type: "marked_sent";
+            /** Id */
+            id: string;
+            /** Message Version Id */
+            message_version_id: string;
+            /**
+             * Occurred At
+             * Format: date-time
+             */
+            occurred_at: string;
+            /** Sequence Id */
+            sequence_id: string;
+        };
+        /**
+         * OutreachMessageCreate
+         * @description Create the next immutable version for one recipient and message kind.
+         */
+        OutreachMessageCreate: {
+            /** Application Contact Id */
+            application_contact_id: string;
+            /** Body */
+            body: string;
+            kind: components["schemas"]["OutreachMessageKind"];
+        };
+        /**
+         * OutreachMessageKind
+         * @enum {string}
+         */
+        OutreachMessageKind: "initial" | "follow_up";
+        /** OutreachMessageSavedTimelineEvent */
+        OutreachMessageSavedTimelineEvent: {
+            /** Application Contact Id */
+            application_contact_id: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            event_type: "message_saved";
+            /** Id */
+            id: string;
+            kind: components["schemas"]["OutreachMessageKind"];
+            /** Message Version Id */
+            message_version_id: string;
+            /**
+             * Occurred At
+             * Format: date-time
+             */
+            occurred_at: string;
+            /** Sequence Id */
+            sequence_id: string;
+        };
+        /**
+         * OutreachMessageVersionResponse
+         * @description Latest exact stored body for one initial or follow-up message.
+         */
+        OutreachMessageVersionResponse: {
+            /** Body */
+            body: string;
+            /** Copied At */
+            copied_at?: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Id */
+            id: string;
+            kind: components["schemas"]["OutreachMessageKind"];
+            /** Sent At */
+            sent_at?: string | null;
+            sent_channel?: components["schemas"]["OutreachChannel"] | null;
+            /** Version Number */
+            version_number: number;
+        };
+        /**
+         * OutreachOutcome
+         * @enum {string}
+         */
+        OutreachOutcome: "no_reply" | "declined" | "unreachable" | "useful_reply" | "introduced" | "referred" | "do_not_contact";
+        /** OutreachOutcomeEventCreate */
+        OutreachOutcomeEventCreate: {
+            /** Application Contact Id */
+            application_contact_id: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            event_type: "outcome";
+            outcome: components["schemas"]["OutreachOutcome"];
+        };
+        /** OutreachOutcomeTimelineEvent */
+        OutreachOutcomeTimelineEvent: {
+            /** Application Contact Id */
+            application_contact_id: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            event_type: "outcome_recorded";
+            /** Id */
+            id: string;
+            /**
+             * Occurred At
+             * Format: date-time
+             */
+            occurred_at: string;
+            outcome: components["schemas"]["OutreachOutcome"];
+            /** Sequence Id */
+            sequence_id: string;
+        };
+        /** OutreachPauseEventCreate */
+        OutreachPauseEventCreate: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            event_type: "pause";
+            /** Reason */
+            reason: string;
+        };
+        /** OutreachPausedTimelineEvent */
+        OutreachPausedTimelineEvent: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            event_type: "paused";
+            /** Id */
+            id: string;
+            /**
+             * Occurred At
+             * Format: date-time
+             */
+            occurred_at: string;
+            /** Reason */
+            reason: string;
+            /** Sequence Id */
+            sequence_id: string;
+        };
+        /**
+         * OutreachRecipientResponse
+         * @description One pinned verified recipient and their latest message projections.
+         */
+        OutreachRecipientResponse: {
+            /** Application Contact Id */
+            application_contact_id: string;
+            /** Bench Rank */
+            bench_rank: number;
+            bench_state: components["schemas"]["ContactBenchState"];
+            category: components["schemas"]["ContactCategory"];
+            /** Contact Id */
+            contact_id: string;
+            /** Current Company */
+            current_company: string;
+            /** Current Title */
+            current_title: string;
+            /** Follow Up Due At */
+            follow_up_due_at?: string | null;
+            follow_up_message?: components["schemas"]["OutreachMessageVersionResponse"] | null;
+            initial_message?: components["schemas"]["OutreachMessageVersionResponse"] | null;
+            lifecycle: components["schemas"]["ContactLifecycle"];
+            outcome?: components["schemas"]["OutreachOutcome"] | null;
+            /** Outcome At */
+            outcome_at?: string | null;
+            /** Profile Url */
+            profile_url: string;
+            /** Public Name */
+            public_name: string;
+            /** Sequence Id */
+            sequence_id: string;
+            /** Wave */
+            wave: number;
+        };
+        /** OutreachResumeEventCreate */
+        OutreachResumeEventCreate: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            event_type: "resume";
+            /** Reason */
+            reason: string;
+        };
+        /** OutreachResumedTimelineEvent */
+        OutreachResumedTimelineEvent: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            event_type: "resumed";
+            /** Id */
+            id: string;
+            /**
+             * Occurred At
+             * Format: date-time
+             */
+            occurred_at: string;
+            /** Reason */
+            reason: string;
+            /** Sequence Id */
+            sequence_id: string;
+        };
+        /**
+         * OutreachSequenceResponse
+         * @description One pinned, versioned manual outreach sequence for an application.
+         */
+        OutreachSequenceResponse: {
+            /** Active Wave */
+            active_wave?: number | null;
+            /** Application Id */
+            application_id: string;
+            /** Completed At */
+            completed_at?: string | null;
+            /** Contact Plan Id */
+            contact_plan_id: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Id */
+            id: string;
+            /**
+             * Manual Only
+             * @default true
+             * @constant
+             */
+            manual_only: true;
+            /** Paused At */
+            paused_at?: string | null;
+            /** Reason */
+            reason?: string | null;
+            /**
+             * Started At
+             * Format: date-time
+             */
+            started_at: string;
+            status: components["schemas"]["OutreachSequenceStatus"];
+            /** Stopped At */
+            stopped_at?: string | null;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+            /** Version */
+            version: number;
+        };
+        /** OutreachSequenceStartedTimelineEvent */
+        OutreachSequenceStartedTimelineEvent: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            event_type: "sequence_started";
+            /** Id */
+            id: string;
+            /**
+             * Occurred At
+             * Format: date-time
+             */
+            occurred_at: string;
+            /** Sequence Id */
+            sequence_id: string;
+            /**
+             * Wave
+             * @constant
+             */
+            wave: 1;
+        };
+        /**
+         * OutreachSequenceStatus
+         * @enum {string}
+         */
+        OutreachSequenceStatus: "active" | "paused" | "stopped" | "completed";
+        /** OutreachStopEventCreate */
+        OutreachStopEventCreate: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            event_type: "stop";
+            /** Reason */
+            reason: string;
+        };
+        /** OutreachStoppedTimelineEvent */
+        OutreachStoppedTimelineEvent: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            event_type: "stopped";
+            /** Id */
+            id: string;
+            /**
+             * Occurred At
+             * Format: date-time
+             */
+            occurred_at: string;
+            /** Reason */
+            reason: string;
+            /** Sequence Id */
+            sequence_id: string;
+        };
+        /** OutreachWaveAdvancedTimelineEvent */
+        OutreachWaveAdvancedTimelineEvent: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            event_type: "wave_advanced";
+            /** Id */
+            id: string;
+            /**
+             * Occurred At
+             * Format: date-time
+             */
+            occurred_at: string;
+            /** Sequence Id */
+            sequence_id: string;
+            /** Wave */
+            wave: number;
         };
         /**
          * Person
@@ -2911,6 +3384,401 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ApplicationContactBenchResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Precondition Required */
+            428: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+        };
+    };
+    get_owner_application_outreach_api_applications__application_id__outreach_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                application_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApplicationOutreachResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Precondition Required */
+            428: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+        };
+    };
+    start_owner_application_outreach_api_applications__application_id__outreach_sequences_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "If-Match"?: string | null;
+                "Idempotency-Key"?: string | null;
+            };
+            path: {
+                application_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApplicationOutreachResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Precondition Required */
+            428: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+        };
+    };
+    record_owner_application_outreach_event_api_applications__application_id__outreach_sequences__sequence_id__events_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "If-Match"?: string | null;
+                "Idempotency-Key"?: string | null;
+            };
+            path: {
+                application_id: string;
+                sequence_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OutreachCopiedEventCreate"] | components["schemas"]["OutreachMarkedSentEventCreate"] | components["schemas"]["OutreachOutcomeEventCreate"] | components["schemas"]["OutreachPauseEventCreate"] | components["schemas"]["OutreachResumeEventCreate"] | components["schemas"]["OutreachStopEventCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApplicationOutreachResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Precondition Required */
+            428: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+        };
+    };
+    save_owner_application_outreach_message_api_applications__application_id__outreach_sequences__sequence_id__messages_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "If-Match"?: string | null;
+                "Idempotency-Key"?: string | null;
+            };
+            path: {
+                application_id: string;
+                sequence_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OutreachMessageCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApplicationOutreachResponse"];
                 };
             };
             /** @description Bad Request */

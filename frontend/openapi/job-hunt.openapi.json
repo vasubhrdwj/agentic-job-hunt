@@ -608,6 +608,111 @@
         "title": "ApplicationListResponse",
         "type": "object"
       },
+      "ApplicationOutreachResponse": {
+        "additionalProperties": false,
+        "description": "Database-only state for an application's one manual outreach sequence.",
+        "properties": {
+          "application_id": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
+            "title": "Application Id",
+            "type": "string"
+          },
+          "data_source": {
+            "const": "database",
+            "default": "database",
+            "title": "Data Source",
+            "type": "string"
+          },
+          "recipients": {
+            "items": {
+              "$ref": "#/components/schemas/OutreachRecipientResponse"
+            },
+            "maxItems": 5,
+            "title": "Recipients",
+            "type": "array"
+          },
+          "sequence": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OutreachSequenceResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "status": {
+            "$ref": "#/components/schemas/ApplicationOutreachStatus"
+          },
+          "timeline": {
+            "items": {
+              "discriminator": {
+                "mapping": {
+                  "copied": "#/components/schemas/OutreachCopiedTimelineEvent",
+                  "marked_sent": "#/components/schemas/OutreachMarkedSentTimelineEvent",
+                  "message_saved": "#/components/schemas/OutreachMessageSavedTimelineEvent",
+                  "outcome_recorded": "#/components/schemas/OutreachOutcomeTimelineEvent",
+                  "paused": "#/components/schemas/OutreachPausedTimelineEvent",
+                  "resumed": "#/components/schemas/OutreachResumedTimelineEvent",
+                  "sequence_started": "#/components/schemas/OutreachSequenceStartedTimelineEvent",
+                  "stopped": "#/components/schemas/OutreachStoppedTimelineEvent",
+                  "wave_advanced": "#/components/schemas/OutreachWaveAdvancedTimelineEvent"
+                },
+                "propertyName": "event_type"
+              },
+              "oneOf": [
+                {
+                  "$ref": "#/components/schemas/OutreachSequenceStartedTimelineEvent"
+                },
+                {
+                  "$ref": "#/components/schemas/OutreachMessageSavedTimelineEvent"
+                },
+                {
+                  "$ref": "#/components/schemas/OutreachCopiedTimelineEvent"
+                },
+                {
+                  "$ref": "#/components/schemas/OutreachMarkedSentTimelineEvent"
+                },
+                {
+                  "$ref": "#/components/schemas/OutreachOutcomeTimelineEvent"
+                },
+                {
+                  "$ref": "#/components/schemas/OutreachPausedTimelineEvent"
+                },
+                {
+                  "$ref": "#/components/schemas/OutreachResumedTimelineEvent"
+                },
+                {
+                  "$ref": "#/components/schemas/OutreachStoppedTimelineEvent"
+                },
+                {
+                  "$ref": "#/components/schemas/OutreachWaveAdvancedTimelineEvent"
+                }
+              ]
+            },
+            "maxItems": 200,
+            "title": "Timeline",
+            "type": "array"
+          }
+        },
+        "required": [
+          "application_id",
+          "status"
+        ],
+        "title": "ApplicationOutreachResponse",
+        "type": "object"
+      },
+      "ApplicationOutreachStatus": {
+        "enum": [
+          "not_started",
+          "active",
+          "paused",
+          "stopped",
+          "completed"
+        ],
+        "title": "ApplicationOutreachStatus",
+        "type": "string"
+      },
       "ApplicationPostingState": {
         "enum": [
           "open",
@@ -3092,6 +3197,75 @@
         "title": "OutcomesResponse",
         "type": "object"
       },
+      "OutreachChannel": {
+        "enum": [
+          "linkedin",
+          "email",
+          "other"
+        ],
+        "title": "OutreachChannel",
+        "type": "string"
+      },
+      "OutreachCopiedEventCreate": {
+        "additionalProperties": false,
+        "properties": {
+          "event_type": {
+            "const": "copied",
+            "title": "Event Type",
+            "type": "string"
+          },
+          "message_version_id": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
+            "title": "Message Version Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "event_type",
+          "message_version_id"
+        ],
+        "title": "OutreachCopiedEventCreate",
+        "type": "object"
+      },
+      "OutreachCopiedTimelineEvent": {
+        "additionalProperties": false,
+        "properties": {
+          "event_type": {
+            "const": "copied",
+            "title": "Event Type",
+            "type": "string"
+          },
+          "id": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
+            "title": "Id",
+            "type": "string"
+          },
+          "message_version_id": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
+            "title": "Message Version Id",
+            "type": "string"
+          },
+          "occurred_at": {
+            "format": "date-time",
+            "title": "Occurred At",
+            "type": "string"
+          },
+          "sequence_id": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
+            "title": "Sequence Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "sequence_id",
+          "occurred_at",
+          "event_type",
+          "message_version_id"
+        ],
+        "title": "OutreachCopiedTimelineEvent",
+        "type": "object"
+      },
       "OutreachDraft": {
         "description": "One drafted outreach message for one role/person pair.",
         "properties": {
@@ -3134,6 +3308,853 @@
           "message"
         ],
         "title": "OutreachDraft",
+        "type": "object"
+      },
+      "OutreachMarkedSentEventCreate": {
+        "additionalProperties": false,
+        "properties": {
+          "channel": {
+            "$ref": "#/components/schemas/OutreachChannel"
+          },
+          "confirm_exact_version": {
+            "const": true,
+            "title": "Confirm Exact Version",
+            "type": "boolean"
+          },
+          "event_type": {
+            "const": "marked_sent",
+            "title": "Event Type",
+            "type": "string"
+          },
+          "message_version_id": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
+            "title": "Message Version Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "event_type",
+          "message_version_id",
+          "channel",
+          "confirm_exact_version"
+        ],
+        "title": "OutreachMarkedSentEventCreate",
+        "type": "object"
+      },
+      "OutreachMarkedSentTimelineEvent": {
+        "additionalProperties": false,
+        "properties": {
+          "channel": {
+            "$ref": "#/components/schemas/OutreachChannel"
+          },
+          "event_type": {
+            "const": "marked_sent",
+            "title": "Event Type",
+            "type": "string"
+          },
+          "id": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
+            "title": "Id",
+            "type": "string"
+          },
+          "message_version_id": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
+            "title": "Message Version Id",
+            "type": "string"
+          },
+          "occurred_at": {
+            "format": "date-time",
+            "title": "Occurred At",
+            "type": "string"
+          },
+          "sequence_id": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
+            "title": "Sequence Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "sequence_id",
+          "occurred_at",
+          "event_type",
+          "message_version_id",
+          "channel"
+        ],
+        "title": "OutreachMarkedSentTimelineEvent",
+        "type": "object"
+      },
+      "OutreachMessageCreate": {
+        "additionalProperties": false,
+        "description": "Create the next immutable version for one recipient and message kind.",
+        "properties": {
+          "application_contact_id": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
+            "title": "Application Contact Id",
+            "type": "string"
+          },
+          "body": {
+            "maxLength": 4000,
+            "minLength": 1,
+            "title": "Body",
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/OutreachMessageKind"
+          }
+        },
+        "required": [
+          "application_contact_id",
+          "kind",
+          "body"
+        ],
+        "title": "OutreachMessageCreate",
+        "type": "object"
+      },
+      "OutreachMessageKind": {
+        "enum": [
+          "initial",
+          "follow_up"
+        ],
+        "title": "OutreachMessageKind",
+        "type": "string"
+      },
+      "OutreachMessageSavedTimelineEvent": {
+        "additionalProperties": false,
+        "properties": {
+          "application_contact_id": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
+            "title": "Application Contact Id",
+            "type": "string"
+          },
+          "event_type": {
+            "const": "message_saved",
+            "title": "Event Type",
+            "type": "string"
+          },
+          "id": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/OutreachMessageKind"
+          },
+          "message_version_id": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
+            "title": "Message Version Id",
+            "type": "string"
+          },
+          "occurred_at": {
+            "format": "date-time",
+            "title": "Occurred At",
+            "type": "string"
+          },
+          "sequence_id": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
+            "title": "Sequence Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "sequence_id",
+          "occurred_at",
+          "event_type",
+          "application_contact_id",
+          "message_version_id",
+          "kind"
+        ],
+        "title": "OutreachMessageSavedTimelineEvent",
+        "type": "object"
+      },
+      "OutreachMessageVersionResponse": {
+        "additionalProperties": false,
+        "description": "Latest exact stored body for one initial or follow-up message.",
+        "properties": {
+          "body": {
+            "maxLength": 4000,
+            "minLength": 1,
+            "title": "Body",
+            "type": "string"
+          },
+          "copied_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Copied At"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/OutreachMessageKind"
+          },
+          "sent_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sent At"
+          },
+          "sent_channel": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OutreachChannel"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "version_number": {
+            "minimum": 1.0,
+            "title": "Version Number",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "version_number",
+          "kind",
+          "body",
+          "created_at"
+        ],
+        "title": "OutreachMessageVersionResponse",
+        "type": "object"
+      },
+      "OutreachOutcome": {
+        "enum": [
+          "no_reply",
+          "declined",
+          "unreachable",
+          "useful_reply",
+          "introduced",
+          "referred",
+          "do_not_contact"
+        ],
+        "title": "OutreachOutcome",
+        "type": "string"
+      },
+      "OutreachOutcomeEventCreate": {
+        "additionalProperties": false,
+        "properties": {
+          "application_contact_id": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
+            "title": "Application Contact Id",
+            "type": "string"
+          },
+          "event_type": {
+            "const": "outcome",
+            "title": "Event Type",
+            "type": "string"
+          },
+          "outcome": {
+            "$ref": "#/components/schemas/OutreachOutcome"
+          }
+        },
+        "required": [
+          "event_type",
+          "application_contact_id",
+          "outcome"
+        ],
+        "title": "OutreachOutcomeEventCreate",
+        "type": "object"
+      },
+      "OutreachOutcomeTimelineEvent": {
+        "additionalProperties": false,
+        "properties": {
+          "application_contact_id": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
+            "title": "Application Contact Id",
+            "type": "string"
+          },
+          "event_type": {
+            "const": "outcome_recorded",
+            "title": "Event Type",
+            "type": "string"
+          },
+          "id": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
+            "title": "Id",
+            "type": "string"
+          },
+          "occurred_at": {
+            "format": "date-time",
+            "title": "Occurred At",
+            "type": "string"
+          },
+          "outcome": {
+            "$ref": "#/components/schemas/OutreachOutcome"
+          },
+          "sequence_id": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
+            "title": "Sequence Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "sequence_id",
+          "occurred_at",
+          "event_type",
+          "application_contact_id",
+          "outcome"
+        ],
+        "title": "OutreachOutcomeTimelineEvent",
+        "type": "object"
+      },
+      "OutreachPauseEventCreate": {
+        "additionalProperties": false,
+        "properties": {
+          "event_type": {
+            "const": "pause",
+            "title": "Event Type",
+            "type": "string"
+          },
+          "reason": {
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": [
+          "reason",
+          "event_type"
+        ],
+        "title": "OutreachPauseEventCreate",
+        "type": "object"
+      },
+      "OutreachPausedTimelineEvent": {
+        "additionalProperties": false,
+        "properties": {
+          "event_type": {
+            "const": "paused",
+            "title": "Event Type",
+            "type": "string"
+          },
+          "id": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
+            "title": "Id",
+            "type": "string"
+          },
+          "occurred_at": {
+            "format": "date-time",
+            "title": "Occurred At",
+            "type": "string"
+          },
+          "reason": {
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Reason",
+            "type": "string"
+          },
+          "sequence_id": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
+            "title": "Sequence Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "sequence_id",
+          "occurred_at",
+          "event_type",
+          "reason"
+        ],
+        "title": "OutreachPausedTimelineEvent",
+        "type": "object"
+      },
+      "OutreachRecipientResponse": {
+        "additionalProperties": false,
+        "description": "One pinned verified recipient and their latest message projections.",
+        "properties": {
+          "application_contact_id": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
+            "title": "Application Contact Id",
+            "type": "string"
+          },
+          "bench_rank": {
+            "maximum": 5.0,
+            "minimum": 1.0,
+            "title": "Bench Rank",
+            "type": "integer"
+          },
+          "bench_state": {
+            "$ref": "#/components/schemas/ContactBenchState"
+          },
+          "category": {
+            "$ref": "#/components/schemas/ContactCategory"
+          },
+          "contact_id": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
+            "title": "Contact Id",
+            "type": "string"
+          },
+          "current_company": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Current Company",
+            "type": "string"
+          },
+          "current_title": {
+            "maxLength": 300,
+            "minLength": 1,
+            "title": "Current Title",
+            "type": "string"
+          },
+          "follow_up_due_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Follow Up Due At"
+          },
+          "follow_up_message": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OutreachMessageVersionResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "initial_message": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OutreachMessageVersionResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "lifecycle": {
+            "$ref": "#/components/schemas/ContactLifecycle"
+          },
+          "outcome": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OutreachOutcome"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "outcome_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Outcome At"
+          },
+          "profile_url": {
+            "maxLength": 2048,
+            "minLength": 1,
+            "title": "Profile Url",
+            "type": "string"
+          },
+          "public_name": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Public Name",
+            "type": "string"
+          },
+          "sequence_id": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
+            "title": "Sequence Id",
+            "type": "string"
+          },
+          "wave": {
+            "maximum": 5.0,
+            "minimum": 1.0,
+            "title": "Wave",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "sequence_id",
+          "application_contact_id",
+          "contact_id",
+          "public_name",
+          "profile_url",
+          "lifecycle",
+          "current_title",
+          "current_company",
+          "category",
+          "bench_rank",
+          "wave",
+          "bench_state"
+        ],
+        "title": "OutreachRecipientResponse",
+        "type": "object"
+      },
+      "OutreachResumeEventCreate": {
+        "additionalProperties": false,
+        "properties": {
+          "event_type": {
+            "const": "resume",
+            "title": "Event Type",
+            "type": "string"
+          },
+          "reason": {
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": [
+          "reason",
+          "event_type"
+        ],
+        "title": "OutreachResumeEventCreate",
+        "type": "object"
+      },
+      "OutreachResumedTimelineEvent": {
+        "additionalProperties": false,
+        "properties": {
+          "event_type": {
+            "const": "resumed",
+            "title": "Event Type",
+            "type": "string"
+          },
+          "id": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
+            "title": "Id",
+            "type": "string"
+          },
+          "occurred_at": {
+            "format": "date-time",
+            "title": "Occurred At",
+            "type": "string"
+          },
+          "reason": {
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Reason",
+            "type": "string"
+          },
+          "sequence_id": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
+            "title": "Sequence Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "sequence_id",
+          "occurred_at",
+          "event_type",
+          "reason"
+        ],
+        "title": "OutreachResumedTimelineEvent",
+        "type": "object"
+      },
+      "OutreachSequenceResponse": {
+        "additionalProperties": false,
+        "description": "One pinned, versioned manual outreach sequence for an application.",
+        "properties": {
+          "active_wave": {
+            "anyOf": [
+              {
+                "maximum": 5.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Active Wave"
+          },
+          "application_id": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
+            "title": "Application Id",
+            "type": "string"
+          },
+          "completed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed At"
+          },
+          "contact_plan_id": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
+            "title": "Contact Plan Id",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
+            "title": "Id",
+            "type": "string"
+          },
+          "manual_only": {
+            "const": true,
+            "default": true,
+            "title": "Manual Only",
+            "type": "boolean"
+          },
+          "paused_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Paused At"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "maxLength": 100,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "started_at": {
+            "format": "date-time",
+            "title": "Started At",
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/OutreachSequenceStatus"
+          },
+          "stopped_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stopped At"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          },
+          "version": {
+            "minimum": 1.0,
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "version",
+          "application_id",
+          "contact_plan_id",
+          "status",
+          "started_at",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "OutreachSequenceResponse",
+        "type": "object"
+      },
+      "OutreachSequenceStartedTimelineEvent": {
+        "additionalProperties": false,
+        "properties": {
+          "event_type": {
+            "const": "sequence_started",
+            "title": "Event Type",
+            "type": "string"
+          },
+          "id": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
+            "title": "Id",
+            "type": "string"
+          },
+          "occurred_at": {
+            "format": "date-time",
+            "title": "Occurred At",
+            "type": "string"
+          },
+          "sequence_id": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
+            "title": "Sequence Id",
+            "type": "string"
+          },
+          "wave": {
+            "const": 1,
+            "title": "Wave",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "sequence_id",
+          "occurred_at",
+          "event_type",
+          "wave"
+        ],
+        "title": "OutreachSequenceStartedTimelineEvent",
+        "type": "object"
+      },
+      "OutreachSequenceStatus": {
+        "enum": [
+          "active",
+          "paused",
+          "stopped",
+          "completed"
+        ],
+        "title": "OutreachSequenceStatus",
+        "type": "string"
+      },
+      "OutreachStopEventCreate": {
+        "additionalProperties": false,
+        "properties": {
+          "event_type": {
+            "const": "stop",
+            "title": "Event Type",
+            "type": "string"
+          },
+          "reason": {
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": [
+          "reason",
+          "event_type"
+        ],
+        "title": "OutreachStopEventCreate",
+        "type": "object"
+      },
+      "OutreachStoppedTimelineEvent": {
+        "additionalProperties": false,
+        "properties": {
+          "event_type": {
+            "const": "stopped",
+            "title": "Event Type",
+            "type": "string"
+          },
+          "id": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
+            "title": "Id",
+            "type": "string"
+          },
+          "occurred_at": {
+            "format": "date-time",
+            "title": "Occurred At",
+            "type": "string"
+          },
+          "reason": {
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Reason",
+            "type": "string"
+          },
+          "sequence_id": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
+            "title": "Sequence Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "sequence_id",
+          "occurred_at",
+          "event_type",
+          "reason"
+        ],
+        "title": "OutreachStoppedTimelineEvent",
+        "type": "object"
+      },
+      "OutreachWaveAdvancedTimelineEvent": {
+        "additionalProperties": false,
+        "properties": {
+          "event_type": {
+            "const": "wave_advanced",
+            "title": "Event Type",
+            "type": "string"
+          },
+          "id": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
+            "title": "Id",
+            "type": "string"
+          },
+          "occurred_at": {
+            "format": "date-time",
+            "title": "Occurred At",
+            "type": "string"
+          },
+          "sequence_id": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
+            "title": "Sequence Id",
+            "type": "string"
+          },
+          "wave": {
+            "maximum": 5.0,
+            "minimum": 2.0,
+            "title": "Wave",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "sequence_id",
+          "occurred_at",
+          "event_type",
+          "wave"
+        ],
+        "title": "OutreachWaveAdvancedTimelineEvent",
         "type": "object"
       },
       "Person": {
@@ -6155,6 +7176,645 @@
           }
         ],
         "summary": "Get Owner Application Contacts",
+        "tags": [
+          "applications"
+        ]
+      }
+    },
+    "/api/applications/{application_id}/outreach": {
+      "get": {
+        "operationId": "get_owner_application_outreach_api_applications__application_id__outreach_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "application_id",
+            "required": true,
+            "schema": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
+              "title": "Application Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApplicationOutreachResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
+          "428": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Precondition Required"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "security": [
+          {
+            "OwnerSessionCookie": []
+          }
+        ],
+        "summary": "Get Owner Application Outreach",
+        "tags": [
+          "applications"
+        ]
+      }
+    },
+    "/api/applications/{application_id}/outreach-sequences": {
+      "post": {
+        "operationId": "start_owner_application_outreach_api_applications__application_id__outreach_sequences_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "application_id",
+            "required": true,
+            "schema": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
+              "title": "Application Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "If-Match",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApplicationOutreachResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
+          "428": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Precondition Required"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "security": [
+          {
+            "OwnerSessionCookie": []
+          }
+        ],
+        "summary": "Start Owner Application Outreach",
+        "tags": [
+          "applications"
+        ]
+      }
+    },
+    "/api/applications/{application_id}/outreach-sequences/{sequence_id}/events": {
+      "post": {
+        "operationId": "record_owner_application_outreach_event_api_applications__application_id__outreach_sequences__sequence_id__events_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "application_id",
+            "required": true,
+            "schema": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
+              "title": "Application Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "sequence_id",
+            "required": true,
+            "schema": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
+              "title": "Sequence Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "If-Match",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "discriminator": {
+                  "mapping": {
+                    "copied": "#/components/schemas/OutreachCopiedEventCreate",
+                    "marked_sent": "#/components/schemas/OutreachMarkedSentEventCreate",
+                    "outcome": "#/components/schemas/OutreachOutcomeEventCreate",
+                    "pause": "#/components/schemas/OutreachPauseEventCreate",
+                    "resume": "#/components/schemas/OutreachResumeEventCreate",
+                    "stop": "#/components/schemas/OutreachStopEventCreate"
+                  },
+                  "propertyName": "event_type"
+                },
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/OutreachCopiedEventCreate"
+                  },
+                  {
+                    "$ref": "#/components/schemas/OutreachMarkedSentEventCreate"
+                  },
+                  {
+                    "$ref": "#/components/schemas/OutreachOutcomeEventCreate"
+                  },
+                  {
+                    "$ref": "#/components/schemas/OutreachPauseEventCreate"
+                  },
+                  {
+                    "$ref": "#/components/schemas/OutreachResumeEventCreate"
+                  },
+                  {
+                    "$ref": "#/components/schemas/OutreachStopEventCreate"
+                  }
+                ],
+                "title": "Payload"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApplicationOutreachResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
+          "428": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Precondition Required"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "security": [
+          {
+            "OwnerSessionCookie": []
+          }
+        ],
+        "summary": "Record Owner Application Outreach Event",
+        "tags": [
+          "applications"
+        ]
+      }
+    },
+    "/api/applications/{application_id}/outreach-sequences/{sequence_id}/messages": {
+      "post": {
+        "operationId": "save_owner_application_outreach_message_api_applications__application_id__outreach_sequences__sequence_id__messages_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "application_id",
+            "required": true,
+            "schema": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
+              "title": "Application Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "sequence_id",
+            "required": true,
+            "schema": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
+              "title": "Sequence Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "If-Match",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OutreachMessageCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApplicationOutreachResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
+          "428": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Precondition Required"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "security": [
+          {
+            "OwnerSessionCookie": []
+          }
+        ],
+        "summary": "Save Owner Application Outreach Message",
         "tags": [
           "applications"
         ]

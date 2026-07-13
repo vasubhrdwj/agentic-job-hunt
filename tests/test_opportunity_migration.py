@@ -45,7 +45,7 @@ def test_opportunity_radar_migration_round_trip_and_metadata_parity(
     try:
         inspector = inspect(database.engine)
         assert database.current_migration_revision() == MIGRATION_HEAD
-        assert MIGRATION_HEAD == "20260713_0007"
+        assert MIGRATION_HEAD == "20260713_0008"
         assert RADAR_TABLES.issubset(inspector.get_table_names())
         assert APPLICATION_TABLES.issubset(inspector.get_table_names())
 

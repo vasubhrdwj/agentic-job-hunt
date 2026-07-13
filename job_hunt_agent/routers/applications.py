@@ -26,6 +26,11 @@ from ..application_workspace import ApplicationWorkspaceStore
 from ..auth import session_cookie_name
 from ..contact_schemas import ApplicationContactBenchResponse
 from ..database import Database
+from ..outreach_schemas import (
+    ApplicationOutreachResponse,
+    OutreachEventCreate,
+    OutreachMessageCreate,
+)
 from .session import AuthenticatedOwner, require_owner_mutation, require_owner_session
 from .workspace import (
     COMMON_ERROR_RESPONSES,
@@ -181,6 +186,129 @@ def create_application_router(
         if contacts is None:
             _not_found("application")
         return contacts
+
+    @router.get(
+        "/api/applications/{application_id}/outreach",
+        response_model=ApplicationOutreachResponse,
+        responses=COMMON_ERROR_RESPONSES,
+    )
+    def get_owner_application_outreach(
+        application_id: OpaqueId,
+        response: Response,
+        owner: AuthenticatedOwner = Security(require_read_owner),
+    ) -> ApplicationOutreachResponse:
+        outreach = _invoke(
+            _store(store).get_application_outreach,
+            owner_id=owner.owner_id,
+            application_id=application_id,
+        )
+        if outreach is None:
+            _not_found("application")
+        if outreach.sequence is not None:
+            _set_etag(response, outreach.sequence.version)
+        return outreach
+
+    @router.post(
+        "/api/applications/{application_id}/outreach-sequences",
+        response_model=ApplicationOutreachResponse,
+        status_code=status.HTTP_201_CREATED,
+        responses=COMMON_ERROR_RESPONSES,
+    )
+    def start_owner_application_outreach(
+        application_id: OpaqueId,
+        response: Response,
+        owner: AuthenticatedOwner = Security(require_mutation_owner),
+        if_match: str | None = Header(default=None, alias="If-Match"),
+        idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+    ) -> ApplicationOutreachResponse:
+        outreach = _invoke(
+            _store(store).start_application_outreach,
+            owner_id=owner.owner_id,
+            application_id=application_id,
+            expected_application_version=_expected_version(if_match),
+            idempotency_key=_required_idempotency_key(idempotency_key),
+        )
+        if outreach is None:
+            _not_found("application")
+        if outreach.sequence is None:
+            raise WorkspaceApiError(
+                status.HTTP_503_SERVICE_UNAVAILABLE,
+                "workspace_unavailable",
+                "application outreach storage is unavailable",
+                retryable=True,
+            )
+        _set_etag(response, outreach.sequence.version)
+        return outreach
+
+    @router.post(
+        "/api/applications/{application_id}/outreach-sequences/{sequence_id}/messages",
+        response_model=ApplicationOutreachResponse,
+        responses=COMMON_ERROR_RESPONSES,
+    )
+    def save_owner_application_outreach_message(
+        application_id: OpaqueId,
+        sequence_id: OpaqueId,
+        payload: OutreachMessageCreate,
+        response: Response,
+        owner: AuthenticatedOwner = Security(require_mutation_owner),
+        if_match: str | None = Header(default=None, alias="If-Match"),
+        idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+    ) -> ApplicationOutreachResponse:
+        outreach = _invoke(
+            _store(store).save_outreach_message,
+            owner_id=owner.owner_id,
+            application_id=application_id,
+            sequence_id=sequence_id,
+            payload=payload,
+            expected_sequence_version=_expected_version(if_match),
+            idempotency_key=_required_idempotency_key(idempotency_key),
+        )
+        if outreach is None:
+            _not_found("outreach sequence")
+        if outreach.sequence is None:
+            raise WorkspaceApiError(
+                status.HTTP_503_SERVICE_UNAVAILABLE,
+                "workspace_unavailable",
+                "application outreach storage is unavailable",
+                retryable=True,
+            )
+        _set_etag(response, outreach.sequence.version)
+        return outreach
+
+    @router.post(
+        "/api/applications/{application_id}/outreach-sequences/{sequence_id}/events",
+        response_model=ApplicationOutreachResponse,
+        responses=COMMON_ERROR_RESPONSES,
+    )
+    def record_owner_application_outreach_event(
+        application_id: OpaqueId,
+        sequence_id: OpaqueId,
+        payload: OutreachEventCreate,
+        response: Response,
+        owner: AuthenticatedOwner = Security(require_mutation_owner),
+        if_match: str | None = Header(default=None, alias="If-Match"),
+        idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+    ) -> ApplicationOutreachResponse:
+        outreach = _invoke(
+            _store(store).record_outreach_event,
+            owner_id=owner.owner_id,
+            application_id=application_id,
+            sequence_id=sequence_id,
+            payload=payload,
+            expected_sequence_version=_expected_version(if_match),
+            idempotency_key=_required_idempotency_key(idempotency_key),
+        )
+        if outreach is None:
+            _not_found("outreach sequence")
+        if outreach.sequence is None:
+            raise WorkspaceApiError(
+                status.HTTP_503_SERVICE_UNAVAILABLE,
+                "workspace_unavailable",
+                "application outreach storage is unavailable",
+                retryable=True,
+            )
+        _set_etag(response, outreach.sequence.version)
+        return outreach
 
     return router
 

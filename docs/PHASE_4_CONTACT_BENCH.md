@@ -1,7 +1,7 @@
 # Phase 4 — Verified contact bench
 
-**Status:** Phase 4A through 4C are implemented. Manual staged outreach remains
-the explicit 4D checkpoint.
+**Status:** Phase 4A through 4D1 are implemented. The practical outreach UI is
+the explicit 4D2 checkpoint.
 
 ## Outcome
 
@@ -10,8 +10,9 @@ appropriate people from a larger discovery pool. Five is the target, never a
 padding requirement: if only three people have sufficient evidence, the
 product must persist and display `3/5 verified` with structured reasons.
 
-This phase finds and verifies public professional profiles. It does **not**
-draft, send, or imply that outreach has happened.
+The contact search finds and verifies public professional profiles. The 4D1
+backend can now preserve owner-written message versions and explicit manual
+actions, but it does **not** generate or send a message.
 
 ## Product rules
 
@@ -75,10 +76,33 @@ internal ranking components as candidate quality.
 
 ### 4D — Manual staged outreach
 
-- Persist exact message versions and manual copy/mark-sent events.
-- Unlock only the allowed first wave; keep later contacts as reserves.
-- Allow at most one follow-up and stop or pause later waves after a useful
-  reply, introduction, referral, or terminal application outcome.
+#### 4D1 — Durable safety boundary
+
+- Pin one completed contact plan to one owner-scoped outreach sequence.
+- Unlock the strongest non-recruiter and, when present, one recruiter for a
+  distinct purpose; keep every later person as an ordered reserve.
+- Persist immutable encrypted message revisions. Copying and manually marking
+  one exact version sent are separate idempotent events.
+- Persist a timezone-correct five-business-day follow-up date, allow at most
+  one initial send and one follow-up per person, and reject premature follow-up
+  or no-reply actions.
+- Enforce 30-day person cooldowns and at most three cold employee contacts for
+  one company in a rolling seven-day window.
+- Pause the sequence after a useful reply; stop it after an introduction,
+  referral, do-not-contact request, or explicit owner stop. Every later
+  mutation rechecks posting/application state and stops instead of acting when
+  the role is no longer active.
+- Keep every read database-only. There is no model call, provider call,
+  clipboard action, messaging integration, timer-driven transition, or send.
+
+#### 4D2 — Practical composer and controls
+
+- Add the persistent message editor, copy-and-mark-sent confirmation,
+  follow-up due state, outcome controls, pause/resume, and stop actions to the
+  application dossier.
+- Keep Clipboard success separate from the server-side manual-send assertion.
+- Reconcile ambiguous mutations with the same idempotency key and preserve the
+  last known sequence through transient failures.
 
 ## Phase 4A definition of done
 
@@ -123,3 +147,21 @@ internal ranking components as candidate quality.
   idempotency key, so retrying cannot duplicate a paid search.
 - Desktop and mobile browser QA cover not-started, queued, `5/5`, `3/5`, failed
   refresh with a prior result, do-not-contact restrictions, and posting closure.
+
+## Phase 4D1 definition of done
+
+- Starting outreach is owner-scoped, same-origin, version checked, idempotent,
+  and pins exactly one completed evidence-backed bench.
+- Only the safe first wave is ready; later recipients remain server-enforced
+  reserves and cannot be drafted or marked sent.
+- Exact v1/v2 message bodies are encrypted at rest, survive reload, and the
+  version manually marked sent remains auditable.
+- Copy never implies send. Mark-sent requires a prior copy of the exact latest
+  version and persists one dated five-business-day follow-up.
+- Early follow-ups, duplicate initial/follow-up sends, recent same-person
+  contact, and a fourth cold company contact in seven days fail closed.
+- Useful replies pause; introductions, referrals, do-not-contact requests, and
+  manual stop preserve history and stop remaining waves. A mutation attempted
+  after posting closure stops the sequence rather than saving or sending.
+- Migration upgrade, schema parity, downgrade/re-upgrade, contracts, repository
+  transitions, router security, and the full backend suite pass.

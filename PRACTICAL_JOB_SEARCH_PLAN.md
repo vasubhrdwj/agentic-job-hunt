@@ -671,10 +671,11 @@ API/UI contract and deferred scope are documented in
 The current `pursuing` application always has one visible dated action; the
 remaining definition-of-done items apply to later Phase 3 checkpoints.
 
-The immediate next checkpoint is the Slice 4 foundation: discover a larger
-pool and retain at least five distinct verified, appropriate contacts for each
-pursued role when the evidence supports five. This is still unimplemented; an
-honest evidence-backed shortfall must remain valid.
+Slice 4A–4D1 now discovers a larger pool, retains up to five distinct verified
+people without padding evidence shortfalls, and persists a server-enforced
+manual outreach sequence with encrypted exact message versions. The immediate
+next checkpoint is the practical composer and outcome controls for that safe
+backend; AI drafting and messaging integrations remain deferred.
 
 ### Slice 4 — Five-person contact bench and staged outreach
 
@@ -682,21 +683,21 @@ honest evidence-backed shortfall must remain valid.
 
 Backend tasks:
 
-- [ ] Split referral work into `discover_contacts(candidate_limit=12)` and `select_contact_bench(target_count=5)`.
-- [ ] Preserve employer evidence excerpt/URL/time, team relevance, category, relationship status, and score components.
-- [ ] Normalize profile URLs and enforce owner/company/person cooldowns.
+- [x] Split referral work into `discover_contacts(candidate_limit=12)` and `select_contact_bench(target_count=5)`.
+- [x] Preserve employer evidence excerpt/URL/time, team relevance, category, relationship status, and score components.
+- [x] Normalize profile URLs and enforce owner/company/person cooldowns.
 - [ ] Search separately for team peers, leaders, recruiters, and owner-provided warm paths.
-- [ ] Persist contact plan, application contacts, exact message versions, sends, and events.
-- [ ] Enforce wave unlocks, one follow-up, stop conditions, and mutation idempotency server-side.
+- [x] Persist contact plan, application contacts, exact message versions, sends, and events.
+- [x] Enforce wave unlocks, one follow-up, stop conditions, and mutation idempotency server-side.
 - [ ] Migrate legacy `draft_id` and outcome rows into attempts/events when importing old data.
 - [ ] Update learning retrieval to use the exact persisted message marked sent.
 
 Frontend tasks:
 
-- [ ] Build contact-search progress and honest `N/5 verified` coverage.
+- [x] Build contact-search progress and honest `N/5 verified` coverage.
 - [ ] Build ranked evidence-rich contact cards and wave/cooldown states.
 - [ ] Build persistent message composer, copy-and-mark-sent, follow-up, outcome, and stop controls.
-- [ ] Show partial coverage and structured exhaustion reasons without placeholders.
+- [x] Show partial coverage and structured exhaustion reasons without placeholders.
 
 Definition of done:
 

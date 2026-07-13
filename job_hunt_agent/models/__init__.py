@@ -31,6 +31,7 @@ from .opportunity import (
     OwnerOpportunity,
     SavedSearchMatch,
 )
+from .outreach import OutreachEvent, OutreachMessageVersion, OutreachSequence
 
 __all__ = [
     "Base",
@@ -58,6 +59,9 @@ __all__ = [
     "OpportunityDecisionEvent",
     "OpportunityScan",
     "OpportunityScanSource",
+    "OutreachEvent",
+    "OutreachMessageVersion",
+    "OutreachSequence",
     "ResumeVersion",
     "SavedSearch",
     "SavedSearchMatch",
