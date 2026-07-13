@@ -2,16 +2,17 @@ import Link from "next/link";
 
 import { SessionStatus } from "@/components/session-status";
 
-type WorkspaceSection = "hunt" | "profile" | "searches";
+type WorkspaceSection = "today" | "searches" | "profile" | "hunt";
 
 const NAV_ITEMS: Array<{
   href: string;
   label: string;
   section: WorkspaceSection;
 }> = [
-  { href: "/", label: "New hunt", section: "hunt" },
-  { href: "/profile", label: "Profile", section: "profile" },
+  { href: "/today", label: "Today", section: "today" },
   { href: "/searches", label: "Saved searches", section: "searches" },
+  { href: "/profile", label: "Profile", section: "profile" },
+  { href: "/hunt", label: "Legacy hunt", section: "hunt" },
 ];
 
 export function WorkspaceHeader({

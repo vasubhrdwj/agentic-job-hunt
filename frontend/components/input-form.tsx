@@ -154,7 +154,7 @@ export function InputForm() {
     setSelectedSearchId(searchId);
     setSavedSearchError(null);
     if (!searchId) {
-      window.history.replaceState(null, "", "/");
+      window.history.replaceState(null, "", "/hunt");
       setKeywords(DEFAULT_KEYWORDS);
       setLocations(DEFAULT_LOCATIONS);
       setSeniority("junior");
@@ -181,7 +181,7 @@ export function InputForm() {
     window.history.replaceState(
       null,
       "",
-      `/?savedSearch=${encodeURIComponent(searchId)}`,
+      `/hunt?savedSearch=${encodeURIComponent(searchId)}`,
     );
     const search = savedSearches.find((item) => item.id === searchId);
     try {

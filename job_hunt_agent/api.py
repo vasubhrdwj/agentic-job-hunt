@@ -28,6 +28,7 @@ from . import hunt_repository, persistence
 from .database import DatabaseConfigError, database_from_env, resolve_database_url
 from .requests import HuntRequestPayload, canonical_request_json
 from .routers.health import create_health_router
+from .routers.opportunities import create_opportunity_router
 from .routers.workspace import (
     create_workspace_router,
     install_workspace_error_handler,
@@ -51,6 +52,7 @@ from .security import (
 )
 from .sources.registry import RegistryError, load_company_pack
 from .sqlalchemy_owner_workspace import SqlAlchemyOwnerWorkspaceStore
+from .sqlalchemy_opportunity_workspace import SqlAlchemyOpportunityWorkspaceStore
 
 
 TRUTHY_ENV_VALUES = {"1", "true", "yes", "on"}
@@ -314,7 +316,7 @@ def _is_expired(value: datetime, now: datetime | None = None) -> bool:
 def create_app() -> FastAPI:
     """Application factory. Tests use this to swap the SQLite path per run."""
     _validate_production_config()
-    app = FastAPI(title="Job Hunt Signal API", version="0.2.0")
+    app = FastAPI(title="Job Hunt Signal API", version="0.3.0")
     practical_mode = _practical_mode_enabled()
     allowed_origins = _parse_allowed_origins()
     owner_cookie = APIKeyCookie(
@@ -402,6 +404,9 @@ def create_app() -> FastAPI:
             or request.url.path.startswith("/api/me/")
             or request.url.path.startswith("/api/career-tracks")
             or request.url.path.startswith("/api/saved-searches")
+            or request.url.path.startswith("/api/scans")
+            or request.url.path == "/api/today"
+            or request.url.path.startswith("/api/opportunities")
         ):
             response.headers["Cache-Control"] = "no-store, max-age=0"
             response.headers["Pragma"] = "no-cache"
@@ -452,12 +457,26 @@ def create_app() -> FastAPI:
         if practical_mode and practical_database is not None
         else None
     )
+    opportunity_store = (
+        SqlAlchemyOpportunityWorkspaceStore(practical_database, data_keyring)
+        if practical_mode and practical_database is not None
+        else None
+    )
     app.state.owner_workspace_store = workspace_store
+    app.state.opportunity_workspace_store = opportunity_store
     if practical_mode:
         app.include_router(
             create_workspace_router(
                 practical_database,
                 workspace_store,
+                allowed_origins=allowed_origins,
+                production=_is_production(),
+            )
+        )
+        app.include_router(
+            create_opportunity_router(
+                practical_database,
+                opportunity_store,
                 allowed_origins=allowed_origins,
                 production=_is_production(),
             )

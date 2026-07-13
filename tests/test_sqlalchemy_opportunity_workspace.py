@@ -1,0 +1,540 @@
+"""Transaction and privacy tests for the concrete opportunity workspace."""
+
+from __future__ import annotations
+
+import json
+from datetime import datetime, timezone
+from pathlib import Path
+
+import pytest
+from cryptography.fernet import Fernet
+from sqlalchemy import func, select
+
+import job_hunt_agent.sqlalchemy_opportunity_workspace as workspace_module
+from job_hunt_agent.database import Database
+from job_hunt_agent.models import (
+    BackgroundJob,
+    Base,
+    CareerTrack,
+    OpportunityScan,
+    OpportunityScanSource,
+    OpportunityDecisionEvent,
+    Owner,
+    OwnerMutationReceipt,
+    ResumeVersion,
+    SavedSearch,
+)
+from job_hunt_agent.opportunity_repository import persist_scan_source_role
+from job_hunt_agent.opportunity_schemas import (
+    OpportunityDecisionRequest,
+    ScanCreateRequest,
+    TodayQuery,
+)
+from job_hunt_agent.owner_workspace import (
+    WorkspaceConflict,
+    WorkspaceInputError,
+    WorkspaceNotFound,
+    WorkspaceUnavailable,
+)
+from job_hunt_agent.schemas import Company, CompanySource, EmploymentType, Role
+from job_hunt_agent.security import DataKeyring
+from job_hunt_agent.sources.registry import CompanyRegistry, RegistryError
+from job_hunt_agent.sqlalchemy_opportunity_workspace import (
+    SqlAlchemyOpportunityWorkspaceStore,
+)
+
+
+NOW = datetime(2026, 7, 13, 9, 0, tzinfo=timezone.utc)
+
+
+@pytest.fixture
+def opportunity_workspace(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> tuple[Database, SqlAlchemyOpportunityWorkspaceStore]:
+    database = Database(f"sqlite+pysqlite:///{tmp_path / 'workspace.db'}")
+    Base.metadata.create_all(database.engine)
+    with database.session() as session:
+        _seed_search(session, owner_id="owner-a", search_id="search-a", version=3)
+        session.add(Owner(id="owner-b", display_name="Owner B", timezone="UTC"))
+    registry = CompanyRegistry(
+        [
+            _company("acme", CompanySource.greenhouse),
+            _company("beta", CompanySource.lever),
+        ],
+        name="test-pack",
+    )
+    monkeypatch.setattr(
+        workspace_module,
+        "load_company_pack",
+        lambda pack: registry if pack == "backend_india" else None,
+    )
+    keyring = DataKeyring([("test-v1", Fernet.generate_key().decode("ascii"))])
+    try:
+        yield database, SqlAlchemyOpportunityWorkspaceStore(database, keyring)
+    finally:
+        database.dispose()
+
+
+def _company(slug: str, source: CompanySource) -> Company:
+    return Company(
+        name=slug.title(),
+        slug=slug,
+        source=source,
+        source_token=slug,
+        careers_domains=[f"{slug}.example"],
+        hire_locations=["India"],
+        tags=["backend"],
+        active=True,
+    )
+
+
+def _seed_search(
+    session,
+    *,
+    owner_id: str,
+    search_id: str,
+    version: int,
+) -> None:
+    session.add(Owner(id=owner_id, display_name="Owner A", timezone="Asia/Kolkata"))
+    session.add(
+        CareerTrack(
+            id=f"track-{owner_id}",
+            owner_id=owner_id,
+            name="Backend growth",
+            role_families=["Backend Engineer"],
+            seniority_levels=["senior"],
+            target_locations=["Remote India"],
+            priorities={},
+            active=True,
+            version=1,
+        )
+    )
+    session.add(
+        ResumeVersion(
+            id=f"resume-{owner_id}",
+            owner_id=owner_id,
+            label="Base resume",
+            encrypted_content="PRIVATE RESUME CIPHERTEXT",
+            encryption_key_id="test-v1",
+            content_hash="a" * 64,
+            source="pasted",
+            is_base=True,
+            version=1,
+        )
+    )
+    session.add(
+        SavedSearch(
+            id=search_id,
+            owner_id=owner_id,
+            career_track_id=f"track-{owner_id}",
+            resume_version_id=f"resume-{owner_id}",
+            name="Senior backend roles",
+            criteria_schema_version=1,
+            criteria={
+                "role_keywords": ["backend", "platform"],
+                "seniority": "senior",
+                "location": ["Remote India"],
+                "comp_min_lpa": 30,
+                "comp_max_lpa": None,
+                "employment_types": ["full_time"],
+                "max_age_days": 45,
+                "country": "in",
+            },
+            pack="backend_india",
+            use_self_rag=True,
+            cadence="manual",
+            schedule={"local_time": None, "days_of_week": []},
+            timezone="Asia/Kolkata",
+            active=True,
+            next_scan_at=None,
+            version=version,
+        )
+    )
+
+
+def _create_scan(store: SqlAlchemyOpportunityWorkspaceStore, *, key: str = "scan-1"):
+    return store.create_scan(
+        owner_id="owner-a",
+        saved_search_id="search-a",
+        expected_saved_search_version=3,
+        idempotency_key=key,
+        payload=ScanCreateRequest(),
+    )
+
+
+def _persist_opportunity(
+    database: Database,
+    store: SqlAlchemyOpportunityWorkspaceStore,
+) -> tuple[str, str]:
+    scan = _create_scan(store)
+    with database.session() as session:
+        source = session.scalar(
+            select(OpportunityScanSource).where(
+                OpportunityScanSource.opportunity_scan_id == scan.id,
+                OpportunityScanSource.company_slug == "acme",
+            )
+        )
+        assert source is not None
+        source.status = "running"
+        source.started_at = NOW
+        source.observed_count = 1
+        source.returned_count = 1
+        session.flush()
+        result = persist_scan_source_role(
+            session,
+            owner_id="owner-a",
+            scan_source_id=source.id,
+            role=Role(
+                company="Acme",
+                company_slug="acme",
+                source_job_id="GH-123",
+                title="Senior Backend Engineer",
+                url="https://acme.example/jobs/GH-123",
+                location="Remote India",
+                summary="Build reliable backend systems.",
+                match_reason="PRIVATE MATCH PROSE FROM RESUME",
+                source=CompanySource.greenhouse,
+                apply_urls=["https://acme.example/jobs/GH-123"],
+                posted_at=None,
+                employment_type=EmploymentType.unknown,
+                raw_description="Design and operate reliable backend systems.",
+            ),
+            first_party_url_verified=True,
+            now=NOW,
+        )
+        return result.opportunity_id, scan.id
+
+
+def test_create_scan_snapshots_criteria_partitions_pack_and_enqueues_ids_only(
+    opportunity_workspace: tuple[Database, SqlAlchemyOpportunityWorkspaceStore],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    database, store = opportunity_workspace
+    monkeypatch.setattr(workspace_module, "utcnow", lambda: NOW)
+
+    created = _create_scan(store)
+
+    assert created.status.value == "queued"
+    assert created.stage.value == "queued"
+    assert created.saved_search_version == 3
+    assert created.counts.sources_total == 2
+    assert created.counts.sources_completed == 0
+    assert created.warnings == []
+
+    with database.session() as session:
+        scan = session.get(OpportunityScan, created.id)
+        assert scan is not None
+        assert scan.criteria_snapshot["role_keywords"] == ["backend", "platform"]
+        assert scan.background_job_id is not None
+        sources = list(
+            session.scalars(
+                select(OpportunityScanSource)
+                .where(OpportunityScanSource.opportunity_scan_id == scan.id)
+                .order_by(OpportunityScanSource.company_slug)
+            )
+        )
+        assert [(row.company_slug, row.source, row.status) for row in sources] == [
+            ("acme", "greenhouse", "pending"),
+            ("beta", "lever", "pending"),
+        ]
+        assert all(
+            row.fetch_scope == "criteria_filtered" and row.completeness == "unknown"
+            for row in sources
+        )
+        job = session.get(BackgroundJob, scan.background_job_id)
+        assert job is not None
+        assert job.kind == "scan_saved_search"
+        assert job.owner_id == "owner-a"
+        assert job.subject_type == "opportunity_scan"
+        assert job.subject_id == scan.id
+        assert job.payload == {
+            "opportunity_scan_id": scan.id,
+            "saved_search_id": "search-a",
+            "saved_search_version": 3,
+        }
+        durable_scan = json.dumps(
+            {
+                "criteria": scan.criteria_snapshot,
+                "dedupe_key": scan.dedupe_key,
+                "request_hash": scan.request_hash,
+                "payload": job.payload,
+            },
+            sort_keys=True,
+        )
+        assert "PRIVATE RESUME" not in durable_scan
+        assert "resume_text" not in durable_scan
+        assert session.scalar(select(func.count(OwnerMutationReceipt.id))) == 1
+
+
+def test_create_scan_replays_once_and_changed_request_or_stale_version_conflicts(
+    opportunity_workspace: tuple[Database, SqlAlchemyOpportunityWorkspaceStore],
+) -> None:
+    database, store = opportunity_workspace
+    created = _create_scan(store)
+    replay = _create_scan(store)
+    assert replay.id == created.id
+
+    with database.session() as session:
+        assert session.scalar(select(func.count(OpportunityScan.id))) == 1
+        assert session.scalar(select(func.count(OpportunityScanSource.id))) == 2
+        assert session.scalar(select(func.count(BackgroundJob.id))) == 1
+
+    with pytest.raises(WorkspaceConflict) as changed:
+        store.create_scan(
+            owner_id="owner-a",
+            saved_search_id="search-a",
+            expected_saved_search_version=4,
+            idempotency_key="scan-1",
+            payload=ScanCreateRequest(),
+        )
+    assert changed.value.code == "idempotency_conflict"
+
+    with pytest.raises(WorkspaceConflict) as stale:
+        store.create_scan(
+            owner_id="owner-a",
+            saved_search_id="search-a",
+            expected_saved_search_version=4,
+            idempotency_key="scan-stale",
+            payload=ScanCreateRequest(),
+        )
+    assert stale.value.code == "version_conflict"
+
+
+def test_scan_creation_requires_owned_active_search_and_masks_pack_failure(
+    opportunity_workspace: tuple[Database, SqlAlchemyOpportunityWorkspaceStore],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    database, store = opportunity_workspace
+    with pytest.raises(WorkspaceNotFound):
+        store.create_scan(
+            owner_id="owner-b",
+            saved_search_id="search-a",
+            expected_saved_search_version=3,
+            idempotency_key="foreign",
+            payload=ScanCreateRequest(),
+        )
+
+    with database.session() as session:
+        search = session.get(SavedSearch, "search-a")
+        assert search is not None
+        search.active = False
+        search.version += 1
+    with pytest.raises(WorkspaceConflict) as inactive:
+        store.create_scan(
+            owner_id="owner-a",
+            saved_search_id="search-a",
+            expected_saved_search_version=4,
+            idempotency_key="inactive",
+            payload=ScanCreateRequest(),
+        )
+    assert inactive.value.code == "inactive_saved_search"
+
+    with database.session() as session:
+        search = session.get(SavedSearch, "search-a")
+        assert search is not None
+        search.active = True
+        search.version += 1
+    monkeypatch.setattr(
+        workspace_module,
+        "load_company_pack",
+        lambda _pack: (_ for _ in ()).throw(
+            RegistryError("PRIVATE_PATH /secret/config.yaml")
+        ),
+    )
+    with pytest.raises(WorkspaceInputError) as unavailable:
+        store.create_scan(
+            owner_id="owner-a",
+            saved_search_id="search-a",
+            expected_saved_search_version=5,
+            idempotency_key="invalid-pack",
+            payload=ScanCreateRequest(),
+        )
+    assert unavailable.value.field == "pack"
+    assert "PRIVATE_PATH" not in str(unavailable.value)
+
+    with database.session() as session:
+        assert session.scalar(select(func.count(OpportunityScan.id))) == 0
+        assert session.scalar(select(func.count(BackgroundJob.id))) == 0
+        assert session.scalar(select(func.count(OwnerMutationReceipt.id))) == 0
+
+
+def test_get_scan_projects_fixed_safe_warnings_without_raw_source_errors(
+    opportunity_workspace: tuple[Database, SqlAlchemyOpportunityWorkspaceStore],
+) -> None:
+    database, store = opportunity_workspace
+    created = _create_scan(store)
+    with database.session() as session:
+        scan = session.get(OpportunityScan, created.id)
+        assert scan is not None
+        completed_at = scan.created_at
+        scan.status = "failed"
+        scan.stage = "PRIVATE provider stage"
+        scan.started_at = completed_at
+        scan.finalized_at = completed_at
+        scan.terminal_source_count = 2
+        scan.failed_source_count = 2
+        scan.version += 1
+        for index, source in enumerate(
+            session.scalars(
+                select(OpportunityScanSource).where(
+                    OpportunityScanSource.opportunity_scan_id == scan.id
+                )
+            )
+        ):
+            source.status = "failed"
+            source.started_at = completed_at
+            source.completed_at = completed_at
+            source.error_code = (
+                "source_timeout" if index == 0 else "PRIVATE_TOKEN raw provider body"
+            )
+            source.warning_codes = ["PRIVATE_INTERNAL_WARNING"]
+            source.version += 1
+
+    response = store.get_scan(owner_id="owner-a", scan_id=created.id)
+    assert response is not None
+    assert response.status.value == "failed"
+    assert response.stage.value == "complete"
+    assert response.counts.sources_completed == 2
+    assert response.counts.sources_failed == 2
+    assert response.counts.sources_degraded == 0
+    assert {warning.code.value for warning in response.warnings} >= {
+        "source_timeout",
+        "source_unavailable",
+        "source_incomplete",
+    }
+    serialized = response.model_dump_json()
+    assert "PRIVATE_TOKEN" not in serialized
+    assert "PRIVATE_INTERNAL_WARNING" not in serialized
+    assert "raw provider body" not in serialized
+    assert "provider stage" not in serialized
+
+    assert store.get_scan(owner_id="owner-b", scan_id=created.id) is None
+    assert store.get_scan(owner_id="owner-a", scan_id="missing-scan") is None
+
+
+def test_today_and_detail_delegate_to_database_only_repository_projections(
+    opportunity_workspace: tuple[Database, SqlAlchemyOpportunityWorkspaceStore],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    database, store = opportunity_workspace
+    opportunity_id, scan_id = _persist_opportunity(database, store)
+    monkeypatch.setattr(
+        workspace_module,
+        "load_company_pack",
+        lambda _pack: (_ for _ in ()).throw(AssertionError("provider path called")),
+    )
+
+    today = store.list_today(owner_id="owner-a", query=TodayQuery())
+    detail = store.get_opportunity(
+        owner_id="owner-a", opportunity_id=opportunity_id
+    )
+    scan = store.get_scan(owner_id="owner-a", scan_id=scan_id)
+
+    assert today.data_source == "database"
+    assert [item.id for item in today.items] == [opportunity_id]
+    assert today.items[0].posting.summary == "Build reliable backend systems."
+    assert today.items[0].match.state.value == "not_assessed"
+    assert detail is not None and detail.data_source == "database"
+    assert detail.description == "Design and operate reliable backend systems."
+    assert detail.apply_urls == ["https://acme.example/jobs/GH-123"]
+    assert "PRIVATE MATCH PROSE" not in detail.model_dump_json()
+    assert scan is not None
+    assert scan.counts.observed_postings == 1
+    assert scan.counts.matched_postings == 1
+
+    foreign_today = store.list_today(owner_id="owner-b", query=TodayQuery())
+    assert foreign_today.items == []
+    assert store.get_opportunity(
+        owner_id="owner-b", opportunity_id=opportunity_id
+    ) is None
+
+
+def test_decision_delegation_maps_not_found_versions_and_idempotency_and_encrypts_note(
+    opportunity_workspace: tuple[Database, SqlAlchemyOpportunityWorkspaceStore],
+) -> None:
+    database, store = opportunity_workspace
+    opportunity_id, _scan_id = _persist_opportunity(database, store)
+
+    watched = store.decide_opportunity(
+        owner_id="owner-a",
+        opportunity_id=opportunity_id,
+        expected_version=1,
+        idempotency_key="watch-1",
+        payload=OpportunityDecisionRequest(action="watch"),
+    )
+    assert watched.state.value == "watch"
+    assert watched.opportunity_version == 2
+    replay = store.decide_opportunity(
+        owner_id="owner-a",
+        opportunity_id=opportunity_id,
+        expected_version=1,
+        idempotency_key="watch-1",
+        payload=OpportunityDecisionRequest(action="watch"),
+    )
+    assert replay == watched
+
+    with pytest.raises(WorkspaceConflict) as reused:
+        store.decide_opportunity(
+            owner_id="owner-a",
+            opportunity_id=opportunity_id,
+            expected_version=2,
+            idempotency_key="watch-1",
+            payload=OpportunityDecisionRequest(
+                action="dismiss",
+                dismiss_reason="not_relevant",
+            ),
+        )
+    assert reused.value.code == "idempotency_conflict"
+
+    with pytest.raises(WorkspaceConflict) as stale:
+        store.decide_opportunity(
+            owner_id="owner-a",
+            opportunity_id=opportunity_id,
+            expected_version=1,
+            idempotency_key="stale-decision",
+            payload=OpportunityDecisionRequest(
+                action="dismiss",
+                dismiss_reason="not_relevant",
+            ),
+        )
+    assert stale.value.code == "version_conflict"
+
+    dismissed = store.decide_opportunity(
+        owner_id="owner-a",
+        opportunity_id=opportunity_id,
+        expected_version=2,
+        idempotency_key="dismiss-1",
+        payload=OpportunityDecisionRequest(
+            action="dismiss",
+            dismiss_reason="other",
+            note="PRIVATE DECISION NOTE",
+        ),
+    )
+    assert dismissed.state.value == "dismiss"
+    assert dismissed.event.note == "PRIVATE DECISION NOTE"
+    with database.session() as session:
+        row = session.scalar(
+            select(OpportunityDecisionEvent).where(
+                OpportunityDecisionEvent.id == dismissed.event.id
+            )
+        )
+        assert row is not None and row.encrypted_note is not None
+        assert "PRIVATE DECISION NOTE" not in row.encrypted_note
+        row.encrypted_note = "invalid-encrypted-note"
+
+    with pytest.raises(WorkspaceUnavailable) as corrupted:
+        store.get_opportunity(
+            owner_id="owner-a",
+            opportunity_id=opportunity_id,
+        )
+    assert "PRIVATE DECISION NOTE" not in str(corrupted.value)
+
+    with pytest.raises(WorkspaceNotFound):
+        store.decide_opportunity(
+            owner_id="owner-b",
+            opportunity_id=opportunity_id,
+            expected_version=3,
+            idempotency_key="foreign-decision",
+            payload=OpportunityDecisionRequest(action="watch"),
+        )

@@ -25,7 +25,9 @@ job-search workspace. The implementable product plan is in
 [`PRACTICAL_JOB_SEARCH_PLAN.md`](PRACTICAL_JOB_SEARCH_PLAN.md); the delivered
 foundation and first reusable job-search workflow are documented in
 [`docs/PHASE_0_FOUNDATION.md`](docs/PHASE_0_FOUNDATION.md) and
-[`docs/PHASE_1_PROFILE_SEARCH.md`](docs/PHASE_1_PROFILE_SEARCH.md).
+[`docs/PHASE_1_PROFILE_SEARCH.md`](docs/PHASE_1_PROFILE_SEARCH.md). The manual,
+durable opportunity radar is documented in
+[`docs/PHASE_2_OPPORTUNITY_RADAR.md`](docs/PHASE_2_OPPORTUNITY_RADAR.md).
 
 The delivered foundation includes migrated Postgres models, private owner
 sessions, owner-scoped generic jobs, lease/cancellation safety, capability-aware
@@ -37,10 +39,18 @@ path.
 
 Phase 1 adds a persistent candidate profile, immutable encrypted resume
 versions, career targets, approval-gated achievement evidence, and saved
-searches. Use **Profile** to save the information you otherwise repeat, then
-use **Saved searches → Run now** to review an exact resume and criteria prefill
-before explicitly launching the existing hunt. Cadence preferences are stored
-and timezone-correct, but automatic scanning is deliberately not connected yet.
+searches. Phase 2 adds a search-only **Scan roles** action, stable native job
+identity, immutable posting versions, source-health warnings, deduplication
+across saved searches, and a database-only **Today** inbox. Today exposes
+unknown facts and supports durable Watch, Dismiss, and restore decisions; it
+never searches live sources, reads a resume, discovers contacts, drafts text,
+or calls a model merely because the page was opened.
+
+The separate **Legacy hunt** remains available when you explicitly want the
+current end-to-end flow with resume matching, at least five appropriate
+referral leads per returned role, and draft generation. Cadence preferences
+are stored and timezone-correct, but automatic scan dispatch is deliberately
+not connected yet.
 
 For the private local workspace:
 
@@ -150,6 +160,13 @@ GET/POST /api/saved-searches        pinned criteria, resume, target, and cadence
 GET/PATCH/DELETE /api/saved-searches/{id}
 GET    /api/saved-searches/{id}/hunt-input
                                     → provider-free exact hunt prefill
+POST   /api/saved-searches/{id}/scans
+                                    → 202 durable search-only scan (If-Match + idempotency)
+GET    /api/scans/{id}              → persisted progress, counts, and safe source warnings
+GET    /api/today                   → database-only deduplicated opportunity inbox
+GET    /api/opportunities/{id}      → posting facts, versions, provenance, decision history
+POST   /api/opportunities/{id}/decision
+                                    → watch, dismiss, or restore (If-Match + idempotency)
 GET    /health                      → { ok: true }
 GET    /ready                       → DB migration + compatible worker readiness
 ```

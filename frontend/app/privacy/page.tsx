@@ -4,7 +4,7 @@ export default function PrivacyPage() {
   return (
     <main className="mx-auto w-full max-w-3xl flex-1 px-6 py-12 sm:py-16">
       <Link
-        href="/"
+        href="/hunt"
         className="text-sm text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100"
       >
         ← Back to hunt

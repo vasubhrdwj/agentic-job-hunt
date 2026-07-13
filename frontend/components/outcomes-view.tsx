@@ -84,10 +84,10 @@ export function OutcomesView({ runId }: { runId: string }) {
           ← Back to review
         </Link>
         <Link
-          href="/"
+          href="/hunt"
           className="text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100"
         >
-          New hunt
+          Legacy hunt
         </Link>
       </nav>
 
@@ -120,7 +120,7 @@ function OutcomeError({ message }: { message: string }) {
       >
         <p>{message}</p>
         <Link
-          href="/"
+          href="/hunt"
           className="mt-4 inline-block font-medium underline underline-offset-2"
         >
           Start a new hunt

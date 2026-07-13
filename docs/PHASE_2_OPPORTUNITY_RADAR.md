@@ -1,6 +1,10 @@
 # Phase 2 — Durable Opportunity Radar
 
-**Status:** Phase 2A contract and identity work started from commit `4cd8d49`.
+**Status:** 2A1 is pushed in commit `31043a9`. The complete manual radar
+vertical (2A2–2A4) is implemented and passes hermetic backend/frontend gates,
+including retry replay, content reversion, pinned scan settings, trusted apply
+links, and terminal-worker recovery. The real-Postgres concurrency gate and
+authoritative lifecycle closure remain pending.
 
 ## Outcome
 
@@ -33,6 +37,8 @@ scan architecture.
 - A posting identity prefers `(source, company_slug, source_job_id)`.
 - A trusted canonical job URL is the fallback. Company + title is never an
   identity key.
+- URL fallback keys are company-scoped. Alternate apply links remain versioned
+  facts and never merge postings; differing native requisition IDs stay distinct.
 - A changed title, description, location, or source fact creates an immutable
   posting version; it does not create a second opportunity.
 - Opportunities are unique by `(owner_id, job_posting_id)` and retain every
@@ -52,6 +58,8 @@ scan architecture.
 
 ### 2A1 — Identity and fetch truth
 
+**Implemented.**
+
 - Add optional stable identity fields to `Role` without breaking legacy
   constructors or stored hunt results.
 - Populate native IDs in first-party adapters and deterministic IDs in mocks.
@@ -61,13 +69,18 @@ scan architecture.
 
 ### 2A2 — Durable postings and opportunities
 
+**Implemented.**
+
 - Add scan run/source run, posting, posting version, alias, observation,
   saved-search match, opportunity, and decision-event records.
-- Pin the saved-search version and criteria snapshot accepted for each scan.
+- Pin the saved-search version, criteria snapshot, and company pack accepted
+  for each scan.
 - Upsert posting/version/observation and owner opportunity in one finalization
   boundary without duplicating results on retry.
 
 ### 2A3 — Search-only worker and API
+
+**Implemented for manual scans.**
 
 - `POST /api/saved-searches/{id}/scans` creates or replays one scan.
 - `GET /api/scans/{id}` reports real persisted progress and degradation.
@@ -77,6 +90,8 @@ scan architecture.
   finalization pass the release gate.
 
 ### 2A4 — Today review inbox
+
+**Implemented.**
 
 - `GET /api/today` returns persisted summary counts, last scan health, and
   deduplicated opportunities.
@@ -108,3 +123,21 @@ Phase 2A is complete when:
 9. first-party apply URLs and all unknown facts remain explicit; and
 10. the existing full hunt, five-contact output, profile, and saved-search flows
     continue to pass their release gates.
+
+## Current verification
+
+- Full backend: 565 passed, 8 skipped, and 16 subtests passed.
+- Search-worker tests prove retry convergence, three durable mock
+  opportunities, first-party URL enforcement, source-failure retention, and
+  zero hunt/referral/drafting/resume/model calls.
+- The same posting across scans creates one opportunity and one immutable
+  version; changed source facts add a version; two searches retain two
+  provenance edges.
+- Frontend API contract generation, lint, typecheck, and a production webpack
+  build pass for `/today`, `/jobs/[id]`, `/searches`, and `/hunt`.
+- Real PostgreSQL was not reachable from the restricted QA sandbox, so the
+  concurrent native-key upsert gate still needs its configured CI or local
+  Docker run.
+- Complete-board fetching and two-authoritative-omission closure remain
+  deliberately disabled. Current criteria-filtered or partial scans never
+  close or hide an existing opportunity.

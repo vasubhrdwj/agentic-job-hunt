@@ -359,7 +359,7 @@ def test_practical_worker_processes_only_postgres_and_clears_current_job(
             assert "Built SCIM systems." not in hunt.encrypted_result
             assert job is not None and job.status == "succeeded"
             assert heartbeat is not None
-            assert heartbeat.supported_kinds == ["legacy_hunt"]
+            assert heartbeat.supported_kinds == ["legacy_hunt", "scan_saved_search"]
             assert heartbeat.current_job_id is None
     finally:
         database.dispose()

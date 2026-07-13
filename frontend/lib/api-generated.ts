@@ -183,6 +183,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/opportunities/{opportunity_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Opportunity */
+        get: operations["get_opportunity_api_opportunities__opportunity_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/opportunities/{opportunity_id}/decision": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Decide Opportunity */
+        post: operations["decide_opportunity_api_opportunities__opportunity_id__decision_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/runs/{run_id}": {
         parameters: {
             query?: never;
@@ -321,6 +355,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/saved-searches/{saved_search_id}/scans": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create Scan */
+        post: operations["create_scan_api_saved_searches__saved_search_id__scans_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/scans/{scan_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Scan */
+        get: operations["get_scan_api_scans__scan_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/session": {
         parameters: {
             query?: never;
@@ -335,6 +403,23 @@ export interface paths {
         post: operations["create_session_api_session_post"];
         /** Delete Session */
         delete: operations["delete_session_api_session_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/today": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Today */
+        get: operations["list_today_api_today_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -605,17 +690,75 @@ export interface components {
          * @enum {string}
          */
         CompanySource: "greenhouse" | "lever" | "ashby" | "workday" | "smartrecruiters" | "workable" | "bespoke" | "google_jobs" | "scrape";
+        /** CompensationEvidenceFact */
+        CompensationEvidenceFact: {
+            /** Observed At */
+            observed_at?: string | null;
+            /** Source Label */
+            source_label?: string | null;
+            state: components["schemas"]["EvidenceState"];
+            value?: components["schemas"]["CompensationValue"] | null;
+        };
+        /**
+         * CompensationPeriod
+         * @enum {string}
+         */
+        CompensationPeriod: "annual" | "monthly" | "hourly";
+        /** CompensationValue */
+        CompensationValue: {
+            /** Currency */
+            currency: string;
+            /** Maximum */
+            maximum?: number | null;
+            /** Minimum */
+            minimum?: number | null;
+            period: components["schemas"]["CompensationPeriod"];
+        };
+        /** DateEvidenceFact */
+        DateEvidenceFact: {
+            /** Observed At */
+            observed_at?: string | null;
+            /** Source Label */
+            source_label?: string | null;
+            state: components["schemas"]["EvidenceState"];
+            /** Value */
+            value?: string | null;
+        };
         /** DeleteResponse */
         DeleteResponse: {
             /** Ok */
             ok: boolean;
         };
         /**
+         * DismissReason
+         * @enum {string}
+         */
+        DismissReason: "not_relevant" | "seniority_mismatch" | "location_or_mode" | "compensation" | "not_a_better_move" | "company" | "already_applied" | "closed_or_invalid" | "duplicate" | "other";
+        /**
          * EmploymentType
          * @description Normalized employment types exposed by source adapters.
          * @enum {string}
          */
         EmploymentType: "full_time" | "contract" | "intern" | "unknown";
+        /** EmploymentTypeEvidenceFact */
+        EmploymentTypeEvidenceFact: {
+            /** Observed At */
+            observed_at?: string | null;
+            /** Source Label */
+            source_label?: string | null;
+            state: components["schemas"]["EvidenceState"];
+            value?: components["schemas"]["EmploymentTypeValue"] | null;
+        };
+        /**
+         * EmploymentTypeValue
+         * @enum {string}
+         */
+        EmploymentTypeValue: "full_time" | "contract" | "intern";
+        /**
+         * EvidenceState
+         * @enum {string}
+         */
+        EvidenceState: "verified" | "inferred" | "unknown";
         /** HTTPValidationError */
         HTTPValidationError: {
             /** Detail */
@@ -785,6 +928,165 @@ export interface components {
             seniority: "junior" | "mid" | "senior" | "staff";
         };
         /**
+         * MatchAssessmentState
+         * @enum {string}
+         */
+        MatchAssessmentState: "assessed" | "not_assessed";
+        /**
+         * NotAssessedReason
+         * @enum {string}
+         */
+        NotAssessedReason: "assessment_pending" | "resume_unavailable" | "description_unavailable" | "not_requested";
+        /**
+         * OpportunityDecisionAction
+         * @enum {string}
+         */
+        OpportunityDecisionAction: "watch" | "dismiss" | "restore_to_inbox";
+        /** OpportunityDecisionEvent */
+        OpportunityDecisionEvent: {
+            action: components["schemas"]["OpportunityDecisionAction"];
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            dismiss_reason?: components["schemas"]["DismissReason"] | null;
+            /** Id */
+            id: string;
+            /** Note */
+            note?: string | null;
+            /** Opportunity Id */
+            opportunity_id: string;
+            previous_state: components["schemas"]["OpportunityDecisionState"];
+            /** Restores Event Id */
+            restores_event_id?: string | null;
+            state: components["schemas"]["OpportunityDecisionState"];
+        };
+        /** OpportunityDecisionRequest */
+        OpportunityDecisionRequest: {
+            action: components["schemas"]["OpportunityDecisionAction"];
+            dismiss_reason?: components["schemas"]["DismissReason"] | null;
+            /** Note */
+            note?: string | null;
+            /** Restore Decision Event Id */
+            restore_decision_event_id?: string | null;
+        };
+        /** OpportunityDecisionResponse */
+        OpportunityDecisionResponse: {
+            event: components["schemas"]["OpportunityDecisionEvent"];
+            /** Opportunity Id */
+            opportunity_id: string;
+            /** Opportunity Version */
+            opportunity_version: number;
+            state: components["schemas"]["OpportunityDecisionState"];
+        };
+        /**
+         * OpportunityDecisionState
+         * @enum {string}
+         */
+        OpportunityDecisionState: "inbox" | "watch" | "dismiss";
+        /** OpportunityDetailResponse */
+        OpportunityDetailResponse: {
+            /** Apply Urls */
+            apply_urls: string[];
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Data Source
+             * @default database
+             * @constant
+             */
+            data_source: "database";
+            /** Decision History */
+            decision_history?: components["schemas"]["OpportunityDecisionEvent"][];
+            /** Description */
+            description?: string | null;
+            /** Discovered By */
+            discovered_by: components["schemas"]["SavedSearchProvenance"][];
+            facts: components["schemas"]["OpportunityFacts"];
+            /** Id */
+            id: string;
+            /** @default unassigned */
+            lane: components["schemas"]["OpportunityLane"];
+            latest_decision?: components["schemas"]["OpportunityDecisionEvent"] | null;
+            match: components["schemas"]["TransparentMatchSummary"];
+            posting: components["schemas"]["OpportunityPosting"];
+            /** Posting Versions */
+            posting_versions: components["schemas"]["PostingVersionSummary"][];
+            /** @default inbox */
+            state: components["schemas"]["OpportunityDecisionState"];
+            /** Unknowns */
+            unknowns?: components["schemas"]["OpportunityUnknown"][];
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+            /** Version */
+            version: number;
+        };
+        /**
+         * OpportunityFactField
+         * @enum {string}
+         */
+        OpportunityFactField: "location" | "employment_type" | "posted_date" | "compensation";
+        /** OpportunityFacts */
+        OpportunityFacts: {
+            compensation: components["schemas"]["CompensationEvidenceFact"];
+            employment_type: components["schemas"]["EmploymentTypeEvidenceFact"];
+            location: components["schemas"]["TextEvidenceFact"];
+            posted_date: components["schemas"]["DateEvidenceFact"];
+        };
+        /**
+         * OpportunityLane
+         * @enum {string}
+         */
+        OpportunityLane: "reach" | "core" | "hedge" | "unassigned";
+        /** OpportunityPosting */
+        OpportunityPosting: {
+            /** Canonical Url */
+            canonical_url: string;
+            change_kind: components["schemas"]["PostingChangeKind"];
+            /** Changed At */
+            changed_at?: string | null;
+            /** Company */
+            company: string;
+            /** Company Slug */
+            company_slug: string;
+            /** First Party */
+            first_party: boolean;
+            /**
+             * First Seen At
+             * Format: date-time
+             */
+            first_seen_at: string;
+            /** Id */
+            id: string;
+            /**
+             * Last Confirmed At
+             * Format: date-time
+             */
+            last_confirmed_at: string;
+            source: components["schemas"]["CompanySource"];
+            /** Source Job Id */
+            source_job_id?: string | null;
+            state: components["schemas"]["PostingState"];
+            /** Summary */
+            summary: string;
+            /** Title */
+            title: string;
+        };
+        /** OpportunityUnknown */
+        OpportunityUnknown: {
+            field: components["schemas"]["OpportunityFactField"];
+            /** Message */
+            message: string;
+            reason_code: components["schemas"]["UnknownReasonCode"];
+        };
+        /**
          * OutcomeLog
          * @description User-logged result for one drafted message.
          */
@@ -901,6 +1203,34 @@ export interface components {
              * @description One sentence on why this person is a good referral target for this specific role. Should reference something concrete about the role or the person's title — not generic praise.
              */
             why_relevant: string;
+        };
+        /**
+         * PostingChangeKind
+         * @enum {string}
+         */
+        PostingChangeKind: "new" | "changed" | "unchanged" | "closed" | "reopened";
+        /**
+         * PostingChangedField
+         * @enum {string}
+         */
+        PostingChangedField: "title" | "description" | "location" | "employment_type" | "posted_date" | "compensation" | "canonical_url" | "state";
+        /**
+         * PostingState
+         * @enum {string}
+         */
+        PostingState: "open" | "closed" | "unknown";
+        /** PostingVersionSummary */
+        PostingVersionSummary: {
+            change_kind: components["schemas"]["PostingChangeKind"];
+            /** Changed Fields */
+            changed_fields?: components["schemas"]["PostingChangedField"][];
+            /**
+             * Observed At
+             * Format: date-time
+             */
+            observed_at: string;
+            /** Version */
+            version: number;
         };
         /** ProblemFieldError */
         ProblemFieldError: {
@@ -1265,6 +1595,23 @@ export interface components {
             /** Use Self Rag */
             use_self_rag?: boolean | null;
         };
+        /** SavedSearchProvenance */
+        SavedSearchProvenance: {
+            /**
+             * First Matched At
+             * Format: date-time
+             */
+            first_matched_at: string;
+            /**
+             * Last Matched At
+             * Format: date-time
+             */
+            last_matched_at: string;
+            /** Saved Search Id */
+            saved_search_id: string;
+            /** Saved Search Name */
+            saved_search_name: string;
+        };
         /** SavedSearchResponse */
         SavedSearchResponse: {
             /**
@@ -1324,6 +1671,176 @@ export interface components {
             /** Timezone */
             timezone: string;
         };
+        /** ScanCounts */
+        ScanCounts: {
+            /**
+             * Changed Postings
+             * @default 0
+             */
+            changed_postings: number;
+            /**
+             * Matched Postings
+             * @default 0
+             */
+            matched_postings: number;
+            /**
+             * New Opportunities
+             * @default 0
+             */
+            new_opportunities: number;
+            /**
+             * Observed Postings
+             * @default 0
+             */
+            observed_postings: number;
+            /**
+             * Sources Completed
+             * @default 0
+             */
+            sources_completed: number;
+            /**
+             * Sources Degraded
+             * @default 0
+             */
+            sources_degraded: number;
+            /**
+             * Sources Failed
+             * @default 0
+             */
+            sources_failed: number;
+            /**
+             * Sources Succeeded
+             * @default 0
+             */
+            sources_succeeded: number;
+            /**
+             * Sources Total
+             * @default 0
+             */
+            sources_total: number;
+        };
+        /**
+         * ScanCreateRequest
+         * @description Explicitly manual in this slice; automatic cadence is not implied.
+         */
+        ScanCreateRequest: {
+            /**
+             * Trigger
+             * @default manual
+             * @constant
+             */
+            trigger: "manual";
+        };
+        /**
+         * ScanCreateResponse
+         * @description A created scan may be a replay of any already-persisted status.
+         */
+        ScanCreateResponse: {
+            /** Completed At */
+            completed_at?: string | null;
+            counts?: components["schemas"]["ScanCounts"];
+            /** Id */
+            id: string;
+            /**
+             * Queued At
+             * Format: date-time
+             */
+            queued_at: string;
+            /** Saved Search Id */
+            saved_search_id: string;
+            /** Saved Search Version */
+            saved_search_version: number;
+            stage: components["schemas"]["ScanStage"];
+            /** Started At */
+            started_at?: string | null;
+            status: components["schemas"]["ScanStatus"];
+            /** @default manual */
+            trigger: components["schemas"]["ScanTrigger"];
+            /** Version */
+            version: number;
+            /** Warnings */
+            warnings?: components["schemas"]["ScanWarning"][];
+        };
+        /**
+         * ScanHealthState
+         * @enum {string}
+         */
+        ScanHealthState: "never_run" | "healthy" | "degraded" | "running";
+        /**
+         * ScanStage
+         * @enum {string}
+         */
+        ScanStage: "queued" | "fetching" | "persisting" | "matching" | "finalizing" | "complete";
+        /**
+         * ScanStatus
+         * @enum {string}
+         */
+        ScanStatus: "queued" | "running" | "succeeded" | "partial" | "failed" | "cancelled";
+        /** ScanStatusResponse */
+        ScanStatusResponse: {
+            /** Completed At */
+            completed_at?: string | null;
+            counts?: components["schemas"]["ScanCounts"];
+            /** Id */
+            id: string;
+            /**
+             * Queued At
+             * Format: date-time
+             */
+            queued_at: string;
+            /** Saved Search Id */
+            saved_search_id: string;
+            /** Saved Search Version */
+            saved_search_version: number;
+            stage: components["schemas"]["ScanStage"];
+            /** Started At */
+            started_at?: string | null;
+            status: components["schemas"]["ScanStatus"];
+            /** @default manual */
+            trigger: components["schemas"]["ScanTrigger"];
+            /** Version */
+            version: number;
+            /** Warnings */
+            warnings?: components["schemas"]["ScanWarning"][];
+        };
+        /**
+         * ScanTrigger
+         * @enum {string}
+         */
+        ScanTrigger: "manual";
+        /** ScanWarning */
+        ScanWarning: {
+            code: components["schemas"]["ScanWarningCode"];
+            /** Company Slug */
+            company_slug?: string | null;
+            /** Last Success At */
+            last_success_at?: string | null;
+            /** Message */
+            message: string;
+            /**
+             * Occurred At
+             * Format: date-time
+             */
+            occurred_at: string;
+            /**
+             * Retryable
+             * @default false
+             */
+            retryable: boolean;
+            scope: components["schemas"]["ScanWarningScope"];
+            source?: components["schemas"]["CompanySource"] | null;
+        };
+        /**
+         * ScanWarningCode
+         * @description Public codes that cannot contain raw provider or exception content.
+         * @enum {string}
+         */
+        ScanWarningCode: "source_timeout" | "source_unavailable" | "source_invalid_response" | "source_incomplete" | "source_rate_limited" | "source_fallback_used" | "scan_interrupted" | "scan_retrying";
+        /**
+         * ScanWarningScope
+         * @enum {string}
+         */
+        ScanWarningScope: "scan" | "source";
         /** SessionCreateRequest */
         SessionCreateRequest: {
             /** Owner Token */
@@ -1346,6 +1863,116 @@ export interface components {
             /** Owner Id */
             owner_id: string;
         };
+        /** TextEvidenceFact */
+        TextEvidenceFact: {
+            /** Observed At */
+            observed_at?: string | null;
+            /** Source Label */
+            source_label?: string | null;
+            state: components["schemas"]["EvidenceState"];
+            /** Value */
+            value?: string | null;
+        };
+        /** TodayListResponse */
+        TodayListResponse: {
+            /**
+             * As Of
+             * Format: date-time
+             */
+            as_of: string;
+            /**
+             * Data Source
+             * @default database
+             * @constant
+             */
+            data_source: "database";
+            /** Items */
+            items?: components["schemas"]["TodayOpportunityItem"][];
+            /** Next Cursor */
+            next_cursor?: string | null;
+            scan_health: components["schemas"]["TodayScanHealth"];
+            summary: components["schemas"]["TodaySummary"];
+        };
+        /** TodayOpportunityItem */
+        TodayOpportunityItem: {
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Discovered By */
+            discovered_by: components["schemas"]["SavedSearchProvenance"][];
+            facts: components["schemas"]["OpportunityFacts"];
+            /** Id */
+            id: string;
+            /** @default unassigned */
+            lane: components["schemas"]["OpportunityLane"];
+            latest_decision?: components["schemas"]["OpportunityDecisionEvent"] | null;
+            match: components["schemas"]["TransparentMatchSummary"];
+            posting: components["schemas"]["OpportunityPosting"];
+            /** @default inbox */
+            state: components["schemas"]["OpportunityDecisionState"];
+            /** Unknowns */
+            unknowns?: components["schemas"]["OpportunityUnknown"][];
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+            /** Version */
+            version: number;
+        };
+        /** TodayScanHealth */
+        TodayScanHealth: {
+            /** Active Searches */
+            active_searches: number;
+            /** Last Attempt At */
+            last_attempt_at?: string | null;
+            /** Last Success At */
+            last_success_at?: string | null;
+            /** Running Scan Id */
+            running_scan_id?: string | null;
+            state: components["schemas"]["ScanHealthState"];
+            /** Warnings */
+            warnings?: components["schemas"]["ScanWarning"][];
+        };
+        /** TodaySummary */
+        TodaySummary: {
+            /** Dismissed */
+            dismissed: number;
+            /** Needs Decision */
+            needs_decision: number;
+            /** Watching */
+            watching: number;
+        };
+        /**
+         * TodayView
+         * @enum {string}
+         */
+        TodayView: "inbox" | "watching" | "dismissed" | "all";
+        /**
+         * TransparentMatchSummary
+         * @description A local, inspectable match result with no opaque fit percentage.
+         */
+        TransparentMatchSummary: {
+            /** Algorithm Version */
+            algorithm_version?: string | null;
+            /** Approved Evidence Ids */
+            approved_evidence_ids?: string[];
+            /** Matched Terms */
+            matched_terms?: string[];
+            not_assessed_reason?: components["schemas"]["NotAssessedReason"] | null;
+            /** Representative Requirement */
+            representative_requirement?: string | null;
+            /** Resume Version Id */
+            resume_version_id?: string | null;
+            state: components["schemas"]["MatchAssessmentState"];
+        };
+        /**
+         * UnknownReasonCode
+         * @enum {string}
+         */
+        UnknownReasonCode: "not_reported_by_source" | "source_field_ambiguous" | "source_refresh_degraded" | "not_supported_yet";
         /** ValidationError */
         ValidationError: {
             /** Context */
@@ -2788,6 +3415,201 @@ export interface operations {
             };
         };
     };
+    get_opportunity_api_opportunities__opportunity_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                opportunity_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpportunityDetailResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Precondition Required */
+            428: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+        };
+    };
+    decide_opportunity_api_opportunities__opportunity_id__decision_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "If-Match"?: string | null;
+                "Idempotency-Key"?: string | null;
+            };
+            path: {
+                opportunity_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OpportunityDecisionRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpportunityDecisionResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Precondition Required */
+            428: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+        };
+    };
     get_run_api_runs__run_id__get: {
         parameters: {
             query?: never;
@@ -3525,6 +4347,201 @@ export interface operations {
             };
         };
     };
+    create_scan_api_saved_searches__saved_search_id__scans_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "If-Match"?: string | null;
+                "Idempotency-Key"?: string | null;
+            };
+            path: {
+                saved_search_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ScanCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ScanCreateResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Precondition Required */
+            428: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+        };
+    };
+    get_scan_api_scans__scan_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                scan_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ScanStatusResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Precondition Required */
+            428: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+        };
+    };
     get_session_api_session_get: {
         parameters: {
             query?: never;
@@ -3594,6 +4611,104 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SessionDeleteResponse"];
+                };
+            };
+        };
+    };
+    list_today_api_today_get: {
+        parameters: {
+            query?: {
+                view?: components["schemas"]["TodayView"];
+                saved_search_id?: string | null;
+                lane?: components["schemas"]["OpportunityLane"] | null;
+                cursor?: string | null;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TodayListResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Precondition Required */
+            428: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
                 };
             };
         };

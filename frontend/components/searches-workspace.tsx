@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 
+import { createOpportunityScan } from "@/lib/opportunity-api";
 import {
   createIdempotencyKey,
   createSavedSearch,
@@ -92,10 +93,12 @@ export function SearchesWorkspace() {
     text: string;
   } | null>(null);
   const [runningId, setRunningId] = useState<string | null>(null);
+  const [fullHuntId, setFullHuntId] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [runError, setRunError] = useState<Record<string, string>>({});
   const createKey = useRef<string | null>(null);
+  const scanKeys = useRef<Record<string, string>>({});
 
   const reload = useCallback(async () => {
     setLoadError(null);
@@ -236,8 +239,8 @@ export function SearchesWorkspace() {
           editing
             ? "Saved search updated."
             : cadence === "manual"
-            ? "Saved search created. Use Run now whenever you are ready."
-            : "Saved search and schedule preference created. Automatic scans are not connected yet; use Run now for now.",
+            ? "Saved search created. Use Scan roles whenever you are ready."
+            : "Saved search and schedule preference created. Automatic scans are not connected yet; use Scan roles for now.",
       });
       await reload();
     } catch (error) {
@@ -306,8 +309,30 @@ export function SearchesWorkspace() {
     }
   }
 
-  async function runNow(search: SavedSearch) {
+  async function scanRoles(search: SavedSearch) {
     setRunningId(search.id);
+    setRunError((current) => ({ ...current, [search.id]: "" }));
+    try {
+      scanKeys.current[search.id] ??= createIdempotencyKey(`scan:${search.id}`);
+      const scan = await createOpportunityScan(
+        search.id,
+        search.version,
+        scanKeys.current[search.id],
+      );
+      delete scanKeys.current[search.id];
+      router.push(`/today?scan=${encodeURIComponent(scan.id)}`);
+    } catch (error) {
+      setRunError((current) => ({
+        ...current,
+        [search.id]: errorText(error, "Unable to start this role scan."),
+      }));
+    } finally {
+      setRunningId(null);
+    }
+  }
+
+  async function runFullHunt(search: SavedSearch) {
+    setFullHuntId(search.id);
     setRunError((current) => ({ ...current, [search.id]: "" }));
     try {
       const projection = await getSavedSearchHuntInput(search.id);
@@ -319,14 +344,14 @@ export function SearchesWorkspace() {
         }));
         return;
       }
-      router.push(`/?savedSearch=${encodeURIComponent(search.id)}`);
+      router.push(`/hunt?savedSearch=${encodeURIComponent(search.id)}`);
     } catch (error) {
       setRunError((current) => ({
         ...current,
         [search.id]: errorText(error, "Unable to prepare this search."),
       }));
     } finally {
-      setRunningId(null);
+      setFullHuntId(null);
     }
   }
 
@@ -431,7 +456,7 @@ export function SearchesWorkspace() {
 
             <div className="grid gap-5 sm:grid-cols-2">
               <FormField label="Company pack" htmlFor="search-pack"><select id="search-pack" value={pack} onChange={(event) => setPack(event.target.value)} className={inputClasses}><option value="backend_india">Backend · India + remote</option></select></FormField>
-              <FormField label="Cadence preference" htmlFor="search-cadence" hint="Only Run now works today. Other cadences are saved for the upcoming scan worker.">
+              <FormField label="Cadence preference" htmlFor="search-cadence" hint="Scan roles works today. Other cadences are saved for the upcoming automatic scheduler.">
                 <select id="search-cadence" value={cadence} onChange={(event) => setCadence(event.target.value as ScheduleCadence)} className={inputClasses}>
                   <option value="manual">Manual · Run when I choose</option>
                   <option value="daily">Daily · Not automated yet</option>
@@ -443,7 +468,7 @@ export function SearchesWorkspace() {
 
             {cadence !== "manual" ? (
               <div className="space-y-4 rounded-lg border border-amber-200 bg-amber-50 p-4 dark:border-amber-900 dark:bg-amber-950/30">
-                <p className="text-sm text-amber-900 dark:text-amber-100"><strong>Preference only:</strong> automatic scans are not connected yet. You can still use Run now.</p>
+                <p className="text-sm text-amber-900 dark:text-amber-100"><strong>Preference only:</strong> automatic scans are not connected yet. You can still use Scan roles.</p>
                 <div className="grid gap-4 sm:grid-cols-2">
                   <FormField label="Timezone" htmlFor="search-timezone"><input id="search-timezone" value={timezone} onChange={(event) => setTimezone(event.target.value)} className={inputClasses} /></FormField>
                   <FormField label="Local time" htmlFor="search-time"><input id="search-time" type="time" step={60} value={localTime} onChange={(event) => setLocalTime(event.target.value)} className={inputClasses} /></FormField>
@@ -460,7 +485,7 @@ export function SearchesWorkspace() {
             </label>
             <label className="flex items-start gap-3 text-sm">
               <input type="checkbox" checked={searchActive} onChange={(event) => setSearchActive(event.target.checked)} className="mt-1" />
-              <span><strong>Keep this search active</strong><br /><span className="text-zinc-500">Inactive searches remain saved but cannot be prepared with Run now.</span></span>
+              <span><strong>Keep this search active</strong><br /><span className="text-zinc-500">Inactive searches remain saved but cannot start a role scan or full hunt.</span></span>
             </label>
             {message ? <StatusMessage kind={message.kind}>{message.text}</StatusMessage> : null}
             <div className="flex flex-wrap gap-3">
@@ -475,10 +500,10 @@ export function SearchesWorkspace() {
       <WorkspaceSection
         eyebrow="Ready when you are"
         title="Your saved searches"
-        description="Run now prepares the exact resume and criteria for review on the existing hunt form. It never launches without your provider consent."
+        description="Scan roles searches configured job sources and saves deduplicated results to Today without contacts, drafting, or model calls. Run full hunt remains a separate provider-consent workflow."
       >
         {searches.length === 0 ? (
-          <div className="rounded-lg border border-dashed border-zinc-300 p-6 text-center dark:border-zinc-700"><p className="text-sm font-medium">No saved searches yet</p><p className="mt-1 text-sm text-zinc-500">Create one above, or keep using New hunt for one-off searches.</p></div>
+          <div className="rounded-lg border border-dashed border-zinc-300 p-6 text-center dark:border-zinc-700"><p className="text-sm font-medium">No saved searches yet</p><p className="mt-1 text-sm text-zinc-500">Create one above, or use Legacy hunt for a one-off search.</p></div>
         ) : (
           <div className="grid gap-4 lg:grid-cols-2">
             {searches.map((search) => {
@@ -491,10 +516,18 @@ export function SearchesWorkspace() {
                   <dl className="mt-3 grid grid-cols-2 gap-3 text-xs"><div><dt className="text-zinc-500">Locations</dt><dd className="mt-1">{search.criteria.location.join(", ")}</dd></div><div><dt className="text-zinc-500">Cadence</dt><dd className="mt-1 capitalize">{search.schedule.cadence}{search.schedule.cadence !== "manual" ? " · preference only" : ""}</dd></div><div><dt className="text-zinc-500">Last scan</dt><dd className="mt-1">{formatDate(search.last_scan_at)}</dd></div><div><dt className="text-zinc-500">Next automatic scan</dt><dd className="mt-1">Not connected yet</dd></div></dl>
                   {runError[search.id] ? <div className="mt-3"><StatusMessage kind="error">{runError[search.id]}</StatusMessage></div> : null}
                   <div className="mt-4 flex flex-wrap gap-2">
-                    <button type="button" disabled={runningId === search.id} onClick={() => void runNow(search)} className={primaryButtonClasses}>{runningId === search.id ? "Preparing…" : "Run now"}</button>
+                    <button type="button" disabled={!search.active || runningId === search.id || fullHuntId === search.id} onClick={() => void scanRoles(search)} className={primaryButtonClasses}>{runningId === search.id ? "Starting scan…" : "Scan roles"}</button>
+                    <button type="button" disabled={!search.active || fullHuntId === search.id || runningId === search.id} onClick={() => void runFullHunt(search)} className={secondaryButtonClasses}>{fullHuntId === search.id ? "Preparing…" : "Run full hunt"}</button>
                     <button type="button" onClick={() => editSearch(search)} className={secondaryButtonClasses}>Edit</button>
-                    <button type="button" disabled={deletingId === search.id} onClick={() => void removeSearch(search)} className={secondaryButtonClasses}>{deletingId === search.id ? "Deleting…" : "Delete"}</button>
+                    {search.last_scan_at ? null : (
+                      <button type="button" disabled={deletingId === search.id} onClick={() => void removeSearch(search)} className={secondaryButtonClasses}>{deletingId === search.id ? "Deleting…" : "Delete"}</button>
+                    )}
                   </div>
+                  {search.last_scan_at ? (
+                    <p className="mt-3 text-xs leading-5 text-zinc-500">
+                      This search is kept with its scan history. To stop using it, choose Edit and turn off <span className="font-medium text-zinc-700 dark:text-zinc-300">Keep this search active</span>.
+                    </p>
+                  ) : null}
                 </article>
               );
             })}

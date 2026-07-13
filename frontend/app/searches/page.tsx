@@ -15,7 +15,7 @@ export default async function SearchesPage() {
       <WorkspaceHeader
         active="searches"
         title="Saved searches"
-        description="Remember strong search setups, inspect their exact inputs, and run them deliberately. Scheduled preferences are stored, but automatic scanning is not live yet."
+        description="Remember strong search setups and scan them into your durable Today inbox. Scheduled preferences are stored, but automatic scanning remains off until manual scans are proven reliable."
       />
       <SearchesWorkspace />
     </main>

@@ -18,6 +18,17 @@ from .profile import (
     ResumeVersion,
     SavedSearch,
 )
+from .opportunity import (
+    JobObservation,
+    JobPosting,
+    JobPostingAlias,
+    JobPostingVersion,
+    OpportunityDecisionEvent,
+    OpportunityScan,
+    OpportunityScanSource,
+    OwnerOpportunity,
+    SavedSearchMatch,
+)
 
 __all__ = [
     "Base",
@@ -28,10 +39,19 @@ __all__ = [
     "CareerTrack",
     "HuntOutcome",
     "HuntRun",
+    "JobObservation",
+    "JobPosting",
+    "JobPostingAlias",
+    "JobPostingVersion",
     "Owner",
     "OwnerMutationReceipt",
+    "OwnerOpportunity",
     "OwnerSession",
+    "OpportunityDecisionEvent",
+    "OpportunityScan",
+    "OpportunityScanSource",
     "ResumeVersion",
     "SavedSearch",
+    "SavedSearchMatch",
     "WorkerHeartbeat",
 ]

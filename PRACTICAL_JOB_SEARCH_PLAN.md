@@ -1,6 +1,6 @@
 # Practical Job Search Control Room — Implementable Plan
 
-**Status:** Phase 0 complete; Phase 1A reusable profile/search workflow complete; Slice 2 opportunity radar is next
+**Status:** Phase 0, Phase 1, and the Phase 2A manual opportunity radar are complete and verified; application pipeline is next
 **Primary user:** one private owner using the product for a real job search
 **North-star metric:** qualified interviews for genuinely better roles per hour of user effort
 **First complete release:** durable opportunity radar + application pipeline + five-person contact bench + manual, staged outreach
@@ -55,14 +55,14 @@ career profile
 
 | Area | Reuse | Current limitation | Planned change |
 | --- | --- | --- | --- |
-| Job discovery | Eight first-party/ATS source strategies, company registry, URL checks | A run returns a small disposable result set | Scheduled scans persist every observation and create a deduplicated inbox |
+| Job discovery | Eight first-party/ATS source strategies, stable native IDs, safe URL aliases, and manual durable scans | Current adapters are criteria-filtered and intentionally non-authoritative for closure | Add broad, complete-board inventory before enabling lifecycle closure or schedules |
 | Role matching | Resume fit scorer and job-description evidence | Fit and opportunity quality are conflated | Separate eligibility, career value, evidence confidence, and action priority |
 | Contacts | Current-employer verification, public-profile discovery, and five contacts per returned role | Evidence is compressed and drafts are still generated eagerly | Discover 10–12, retain at least five verified and diverse contacts, then sequence outreach |
 | Drafting | Drafter, evaluator, and existing outcome loop | Edits live only in React state; learning may use generated rather than sent text | Persist every message version and learn only from the exact version marked sent |
-| Queue | Postgres leases, heartbeats, retries, cancellation, generic job kinds, and practical `legacy_hunt` dispatch | Only the hunt job has a full domain handler | Add handlers for scans, assessments, contacts, and application packs |
-| Storage | Migrated Postgres owner/session/job/hunt/result/outcome storage with encrypted private JSON | Hunt results remain run-shaped and cannot support a daily inbox or pipeline | Add normalized profile, search, opportunity, application, and contact records |
-| API | Owner-session FastAPI with owner-scoped hunt/run/outcome resources | Product resources beyond a hunt run do not exist yet | Add profile, search, opportunity, application, contact, outreach, and action APIs |
-| Frontend | Authenticated Next.js shell, same-origin proxy, durable deep links, and useful form/card/clipboard patterns | Still run-centric, with no persistent profile or application state | A Today inbox, dossier, pipeline, search settings, and contact workflow |
+| Queue | Postgres leases, heartbeats, retries, cancellation, `legacy_hunt`, and search-only `scan_saved_search` dispatch | Assessments, contacts, and application packs have no handlers yet | Add them only after the owner chooses to pursue a role |
+| Storage | Encrypted profile/resume/search data plus normalized scans, postings, versions, observations, provenance, opportunities, and decision events | No application or next-action records yet | Add an atomic application + next-action boundary before exposing Pursue |
+| API | Owner-scoped profile, search, scan, Today, opportunity, decision, hunt, and outcome resources | No application/contact/action APIs yet | Add the pursuit and contact workflow without weakening existing owner/version fences |
+| Frontend | Profile, Saved searches, database-only Today inbox, full opportunity review, and separate Legacy hunt | Watch/Dismiss are useful, but there is no application pipeline yet | Add Pursue only when it creates a real application and dated next action |
 | Observability | Phoenix/OpenTelemetry and live registry verification | Health says only that the HTTP process responds | Readiness includes database, worker heartbeat, scheduler lag, and source-run health |
 
 The existing `run_hunt` path remains available temporarily for demo compatibility. It is not the architecture for the practical product.
@@ -205,8 +205,8 @@ This fixes the current problem where a run is inaccessible in a new tab or brows
 Generalize the current durable worker rather than running the entire hunt eagerly:
 
 ```text
-legacy_hunt
-scan_saved_search
+legacy_hunt             # implemented
+scan_saved_search       # implemented for manual scans
 scan_company
 finalize_scan
 assess_opportunity
@@ -592,17 +592,17 @@ Slice 2 opportunity ingestion and deduplication.
 
 Backend tasks:
 
-- [ ] Add stable native IDs to `Role` and every adapter.
-- [ ] Return source fetch metadata including success and complete-inventory status.
+- [x] Add stable native IDs to `Role` and every adapter.
+- [x] Return source fetch metadata including success and complete-inventory status.
 - [ ] Separate broad ingestion from hard filtering in the source resolver.
-- [ ] Add posting/version/alias/observation persistence and lifecycle rules.
-- [ ] Add scan orchestration, finalization, match creation, and owner-level opportunity dedupe.
+- [x] Add posting/version/alias/observation persistence and safe lifecycle foundations.
+- [x] Add manual scan orchestration, finalization, match creation, and owner-level opportunity dedupe.
 - [ ] Add versioned four-part assessment and `/api/today` projection.
-- [ ] Store unknown metadata with confidence rather than dropping it by default.
+- [x] Store unknown metadata with confidence rather than dropping it by default.
 
 Frontend tasks:
 
-- [ ] Build Today summary, opportunity cards, filters, scan status, and degraded-source state.
+- [x] Build Today summary, opportunity cards, filters, scan status, and degraded-source state.
 - [ ] Build job-review page with preserved JD, assessments, evidence, gaps, and provenance.
 - [ ] Add `Pursue`, `Watch`, `Dismiss`, hide-company, reason capture, and Undo.
 

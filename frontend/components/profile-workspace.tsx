@@ -580,7 +580,7 @@ export function ProfileWorkspace() {
 
           <label className="flex items-start gap-3 text-sm">
             <input type="checkbox" checked={trackActive} onChange={(event) => setTrackActive(event.target.checked)} className="mt-1" />
-            <span><strong>Active career target</strong><br /><span className="text-zinc-500">Inactive targets remain saved but cannot power Run now.</span></span>
+            <span><strong>Active career target</strong><br /><span className="text-zinc-500">Inactive targets remain saved but cannot power a role scan or full hunt.</span></span>
           </label>
 
           <div>

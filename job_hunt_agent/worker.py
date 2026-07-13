@@ -13,6 +13,7 @@ from datetime import datetime, timezone
 from uuid import uuid4
 
 from pydantic import ValidationError
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from . import persistence
@@ -27,7 +28,14 @@ from .job_queue import (
     recover_stale_jobs,
     update_job_stage,
 )
-from .models import BackgroundJob, HuntRun
+from .models import (
+    BackgroundJob,
+    HuntRun,
+    JobObservation,
+    OpportunityScan,
+    OpportunityScanSource,
+)
+from .opportunity_scan_worker import SCAN_JOB_KIND, process_claimed_opportunity_scan
 from .requests import HuntRequestPayload
 from .run import run_hunt
 from .security import DataKeyring, DecryptionError, EncryptedEnvelope, load_data_keyring
@@ -40,7 +48,7 @@ DEFAULT_IDLE_SLEEP_SECONDS = 2.0
 DEFAULT_RETRY_DELAY_SECONDS = 0
 DEFAULT_WORKER_HEARTBEAT_MAX_AGE_SECONDS = 90.0
 DEFAULT_BUSY_HEARTBEAT_INTERVAL_SECONDS = 30.0
-PRACTICAL_JOB_KINDS = frozenset({"legacy_hunt"})
+PRACTICAL_JOB_KINDS = frozenset({"legacy_hunt", SCAN_JOB_KIND})
 WORKER_STARTED_AT = datetime.now(timezone.utc)
 
 
@@ -61,6 +69,15 @@ class PracticalWorkerError(RuntimeError):
 @dataclass(frozen=True)
 class ClaimedPracticalHunt:
     """Detached identifiers for one Postgres claim."""
+
+    job_id: str
+    run_id: str
+    lease_token: str
+
+
+@dataclass(frozen=True)
+class ClaimedPracticalScan:
+    """Detached identifiers for one search-only opportunity scan claim."""
 
     job_id: str
     run_id: str
@@ -195,12 +212,16 @@ def _run_practical_worker_once(
     use_mocks: bool,
     enable_tracing: bool,
 ) -> WorkerResult:
-    """Process only generic ``legacy_hunt`` jobs from the durable queue."""
+    """Claim and dispatch one supported durable practical job."""
 
     keyring = load_data_keyring(production=_is_production())
     lease_token = uuid4().hex
+    hunt_claim: ClaimedPracticalHunt | None = None
+    scan_claim: ClaimedPracticalScan | None = None
     with database.session() as session:
-        recover_stale_jobs(session)
+        current = datetime.now(timezone.utc)
+        recover_stale_jobs(session, now=current)
+        _reconcile_terminal_opportunity_scans(session, now=current)
         job = claim_next_job(
             session,
             worker_id=worker_id,
@@ -212,37 +233,101 @@ def _run_practical_worker_once(
             _record_worker_state(session, worker_id=worker_id, current_job_id=None)
             return WorkerResult(claimed=False)
 
-        run_id = _hunt_run_id(job)
         _record_worker_state(session, worker_id=worker_id, current_job_id=job.id)
-        hunt = session.get(HuntRun, run_id) if run_id is not None else None
-        if (
-            hunt is None
-            or hunt.background_job_id != job.id
-            or hunt.owner_id != job.owner_id
-        ):
-            failed = fail_job_attempt(
-                session,
-                job.id,
-                worker_id=worker_id,
+        if job.kind == SCAN_JOB_KIND:
+            scan_id = _opportunity_scan_id(job)
+            scan = session.get(OpportunityScan, scan_id) if scan_id is not None else None
+            if (
+                scan is None
+                or scan.background_job_id != job.id
+                or scan.owner_id != job.owner_id
+            ):
+                # If only the payload was corrupted, fail the matching
+                # same-owner domain row as well. Never cross owner scope or
+                # mutate a scan linked to another queue record.
+                subject_scan = (
+                    session.scalar(
+                        select(OpportunityScan)
+                        .where(
+                            OpportunityScan.owner_id == job.owner_id,
+                            OpportunityScan.id == job.subject_id,
+                            OpportunityScan.background_job_id == job.id,
+                        )
+                        .with_for_update()
+                    )
+                    if job.subject_type == "opportunity_scan" and job.subject_id
+                    else None
+                )
+                if subject_scan is not None:
+                    current = datetime.now(timezone.utc)
+                    subject_scan.status = "failed"
+                    subject_scan.stage = "complete"
+                    subject_scan.started_at = subject_scan.started_at or current
+                    subject_scan.finalized_at = current
+                    subject_scan.updated_at = current
+                    subject_scan.version += 1
+                failed = fail_job_attempt(
+                    session,
+                    job.id,
+                    worker_id=worker_id,
+                    lease_token=lease_token,
+                    error_code="InvalidScanReference",
+                    terminal=True,
+                )
+                if subject_scan is not None:
+                    _reconcile_terminal_opportunity_scans(session, now=current)
+                _record_worker_state(session, worker_id=worker_id, current_job_id=None)
+                return WorkerResult(
+                    claimed=True,
+                    status=failed.status if failed is not None else None,
+                    stage=failed.stage if failed is not None else None,
+                )
+            scan_claim = ClaimedPracticalScan(
+                job_id=job.id,
+                run_id=scan.id,
                 lease_token=lease_token,
-                error_code="InvalidHuntReference",
-                terminal=True,
             )
-            _record_worker_state(session, worker_id=worker_id, current_job_id=None)
-            return WorkerResult(
-                claimed=True,
-                status=failed.status if failed is not None else None,
-                stage=failed.stage if failed is not None else None,
+        else:
+            run_id = _hunt_run_id(job)
+            hunt = session.get(HuntRun, run_id) if run_id is not None else None
+            if (
+                hunt is None
+                or hunt.background_job_id != job.id
+                or hunt.owner_id != job.owner_id
+            ):
+                failed = fail_job_attempt(
+                    session,
+                    job.id,
+                    worker_id=worker_id,
+                    lease_token=lease_token,
+                    error_code="InvalidHuntReference",
+                    terminal=True,
+                )
+                _record_worker_state(session, worker_id=worker_id, current_job_id=None)
+                return WorkerResult(
+                    claimed=True,
+                    status=failed.status if failed is not None else None,
+                    stage=failed.stage if failed is not None else None,
+                )
+            assert run_id is not None
+            hunt_claim = ClaimedPracticalHunt(
+                job_id=job.id,
+                run_id=run_id,
+                lease_token=lease_token,
             )
 
-        claim = ClaimedPracticalHunt(
-            job_id=job.id,
-            run_id=run_id,
-            lease_token=lease_token,
+    if scan_claim is not None:
+        return process_claimed_practical_scan(
+            scan_claim,
+            database=database,
+            worker_id=worker_id,
+            lease_seconds=lease_seconds,
+            retry_delay_seconds=retry_delay_seconds,
+            use_mocks=use_mocks,
         )
-
+    assert hunt_claim is not None
     return process_claimed_practical_hunt(
-        claim,
+        hunt_claim,
         database=database,
         keyring=keyring,
         worker_id=worker_id,
@@ -251,6 +336,107 @@ def _run_practical_worker_once(
         use_mocks=use_mocks,
         enable_tracing=enable_tracing,
     )
+
+
+def _reconcile_terminal_opportunity_scans(
+    session: Session,
+    *,
+    now: datetime | None = None,
+) -> int:
+    """Make scan rows agree with terminal queue jobs after lease recovery."""
+
+    current = now or datetime.now(timezone.utc)
+    terminal_jobs = list(
+        session.execute(
+            select(OpportunityScan, BackgroundJob)
+            .join(
+                BackgroundJob,
+                OpportunityScan.background_job_id == BackgroundJob.id,
+            )
+            .where(
+                OpportunityScan.owner_id == BackgroundJob.owner_id,
+                BackgroundJob.kind == SCAN_JOB_KIND,
+                BackgroundJob.status.in_({"cancelled", "dead_letter"}),
+                OpportunityScan.status.in_(
+                    {"queued", "running", "failed", "cancelled"}
+                ),
+            )
+            .with_for_update()
+        ).all()
+    )
+    reconciled = 0
+    for scan, job in terminal_jobs:
+        target_status = "cancelled" if job.status == "cancelled" else "failed"
+        target_source_status = "cancelled" if job.status == "cancelled" else "failed"
+        sources = list(
+            session.scalars(
+                select(OpportunityScanSource)
+                .where(
+                    OpportunityScanSource.owner_id == scan.owner_id,
+                    OpportunityScanSource.opportunity_scan_id == scan.id,
+                )
+                .with_for_update()
+            )
+        )
+        changed = False
+        for source in sources:
+            if source.status in {"succeeded", "failed", "cancelled"}:
+                continue
+            source.status = target_source_status
+            if target_source_status == "failed":
+                # A recovered dead-letter represents an attempted source run,
+                # even when the process died before it could mark the source
+                # running. Keep the source timestamp/error invariants truthful.
+                source.started_at = source.started_at or current
+                source.error_code = "scan_interrupted"
+            else:
+                # Cancelled source rows intentionally carry no failure code.
+                source.error_code = None
+            source.warning_codes = sorted(
+                set([*source.warning_codes, "scan_interrupted"])
+            )
+            source.completed_at = current
+            source.updated_at = current
+            source.version += 1
+            changed = True
+
+        successful = sum(source.status == "succeeded" for source in sources)
+        failed = sum(source.status in {"failed", "cancelled"} for source in sources)
+        observed = int(
+            session.scalar(
+                select(func.count(JobObservation.id)).where(
+                    JobObservation.owner_id == scan.owner_id,
+                    JobObservation.opportunity_scan_id == scan.id,
+                )
+            )
+            or 0
+        )
+        expected_values = {
+            "status": target_status,
+            "stage": "complete",
+            "source_count": len(sources),
+            "terminal_source_count": len(sources),
+            "successful_source_count": successful,
+            "failed_source_count": failed,
+            "observed_count": observed,
+        }
+        if any(getattr(scan, field) != value for field, value in expected_values.items()):
+            changed = True
+        for field, value in expected_values.items():
+            setattr(scan, field, value)
+        if scan.started_at is None:
+            scan.started_at = job.started_at or current
+            changed = True
+        if scan.finalized_at is None:
+            scan.finalized_at = current
+            changed = True
+        if changed:
+            scan.updated_at = current
+            scan.version += 1
+            reconciled += 1
+
+    session.flush()
+    return reconciled
 
 
 def process_claimed_practical_hunt(
@@ -426,6 +612,148 @@ def process_claimed_practical_hunt(
         )
 
 
+def process_claimed_practical_scan(
+    claim: ClaimedPracticalScan,
+    *,
+    database: Database,
+    worker_id: str,
+    lease_seconds: int = DEFAULT_LEASE_SECONDS,
+    retry_delay_seconds: int = DEFAULT_RETRY_DELAY_SECONDS,
+    use_mocks: bool = False,
+) -> WorkerResult:
+    """Run a provider-free saved-search scan under a renewable queue lease."""
+
+    heartbeat = _PracticalLeaseHeartbeat(
+        database,
+        claim,
+        worker_id=worker_id,
+        lease_seconds=lease_seconds,
+    )
+    heartbeat.start()
+    fatal_error = False
+    try:
+        process_claimed_opportunity_scan(
+            claim,
+            database=database,
+            worker_id=worker_id,
+            use_mocks=use_mocks,
+        )
+        return _practical_worker_result(database, claim)
+    except Exception as exc:  # noqa: BLE001 - queue records a fixed safe code.
+        LOGGER.warning(
+            "opportunity scan worker attempt failed scan_id=%s error_type=%s",
+            claim.run_id,
+            type(exc).__name__,
+        )
+        try:
+            return _finish_practical_scan_attempt_failure(
+                database,
+                claim,
+                worker_id=worker_id,
+                retry_delay_seconds=retry_delay_seconds,
+            )
+        except Exception as failure_exc:  # noqa: BLE001 - a DB outage invalidates the lease.
+            fatal_error = True
+            LOGGER.error(
+                "opportunity scan failure transition failed scan_id=%s error_type=%s",
+                claim.run_id,
+                type(failure_exc).__name__,
+            )
+            raise PracticalWorkerError("practical scan worker failed") from None
+    finally:
+        heartbeat.stop()
+        _clear_practical_current_job(
+            database,
+            worker_id=worker_id,
+            available=not fatal_error,
+        )
+
+
+def _finish_practical_scan_attempt_failure(
+    database: Database,
+    claim: ClaimedPracticalScan,
+    *,
+    worker_id: str,
+    retry_delay_seconds: int,
+) -> WorkerResult:
+    """Reset an interrupted scan for retry or finalize it after exhaustion."""
+
+    current = datetime.now(timezone.utc)
+    with database.session() as session:
+        owned = lock_owned_running_job(
+            session,
+            claim.job_id,
+            worker_id=worker_id,
+            lease_token=claim.lease_token,
+        )
+        if owned is None:
+            _record_worker_state(session, worker_id=worker_id, current_job_id=None)
+            return _result_from_job(
+                session.get(BackgroundJob, claim.job_id),
+                run_id=claim.run_id,
+            )
+        failed = fail_job_attempt(
+            session,
+            owned.id,
+            worker_id=worker_id,
+            lease_token=claim.lease_token,
+            error_code="ScanProcessingFailed",
+            retry_delay_seconds=retry_delay_seconds,
+            terminal=False,
+            now=current,
+        )
+        scan = session.scalar(
+            select(OpportunityScan)
+            .where(
+                OpportunityScan.owner_id == owned.owner_id,
+                OpportunityScan.id == claim.run_id,
+            )
+            .with_for_update()
+        )
+        if scan is not None and failed is not None:
+            terminal = failed.status in {"cancelled", "dead_letter"}
+            scan.status = (
+                "cancelled"
+                if failed.status == "cancelled"
+                else "failed" if terminal else "queued"
+            )
+            scan.stage = "complete" if terminal else "queued"
+            scan.finalized_at = current if terminal else None
+            scan.updated_at = current
+            scan.version += 1
+            sources = list(
+                session.scalars(
+                    select(OpportunityScanSource)
+                    .where(
+                        OpportunityScanSource.owner_id == owned.owner_id,
+                        OpportunityScanSource.opportunity_scan_id == scan.id,
+                        OpportunityScanSource.status == "running",
+                    )
+                    .with_for_update()
+                )
+            )
+            for source in sources:
+                if terminal:
+                    source.status = "cancelled" if failed.status == "cancelled" else "failed"
+                    source.error_code = "scan_processing_failed"
+                    source.warning_codes = sorted(
+                        set([*source.warning_codes, "scan_processing_failed"])
+                    )
+                    source.completed_at = current
+                else:
+                    source.status = "pending"
+                    source.started_at = None
+                    source.completed_at = None
+                    source.error_code = None
+                    source.warning_codes = sorted(
+                        set([*source.warning_codes, "scan_retrying"])
+                    )
+                source.updated_at = current
+                source.version += 1
+        _record_worker_state(session, worker_id=worker_id, current_job_id=None)
+        return _result_from_job(failed, run_id=claim.run_id)
+
+
 def _hunt_run_id(job: BackgroundJob) -> str | None:
     payload = job.payload if isinstance(job.payload, dict) else {}
     run_id = payload.get("hunt_run_id")
@@ -433,6 +761,17 @@ def _hunt_run_id(job: BackgroundJob) -> str | None:
         return None
     normalized = run_id.strip()
     if job.subject_type != "hunt_run" or job.subject_id != normalized:
+        return None
+    return normalized
+
+
+def _opportunity_scan_id(job: BackgroundJob) -> str | None:
+    payload = job.payload if isinstance(job.payload, dict) else {}
+    scan_id = payload.get("opportunity_scan_id")
+    if not isinstance(scan_id, str) or not scan_id.strip() or len(scan_id) > 128:
+        return None
+    normalized = scan_id.strip()
+    if job.subject_type != "opportunity_scan" or job.subject_id != normalized:
         return None
     return normalized
 
@@ -507,7 +846,7 @@ def _update_practical_stage(
 
 def _renew_practical_lease(
     database: Database,
-    claim: ClaimedPracticalHunt,
+    claim: ClaimedPracticalHunt | ClaimedPracticalScan,
     *,
     worker_id: str,
     lease_seconds: int,
@@ -547,7 +886,7 @@ def _record_worker_state(
 
 def _practical_worker_result(
     database: Database,
-    claim: ClaimedPracticalHunt,
+    claim: ClaimedPracticalHunt | ClaimedPracticalScan,
 ) -> WorkerResult:
     with database.session() as session:
         return _result_from_job(
@@ -597,7 +936,7 @@ class _PracticalLeaseHeartbeat:
     def __init__(
         self,
         database: Database,
-        claim: ClaimedPracticalHunt,
+        claim: ClaimedPracticalHunt | ClaimedPracticalScan,
         *,
         worker_id: str,
         lease_seconds: int,

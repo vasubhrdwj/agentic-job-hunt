@@ -9,9 +9,15 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from .job_queue import utcnow
-from .models import CareerTrack, ResumeVersion, SavedSearch
+from .models import (
+    CareerTrack,
+    OpportunityScan,
+    ResumeVersion,
+    SavedSearch,
+    SavedSearchMatch,
+)
 from .profile_schemas import SavedSearchCreate, SavedSearchResponse, SavedSearchSchedule
-from .repository_errors import ResourceConflict, require_version
+from .repository_errors import ResourceConflict, ResourceInUse, require_version
 
 
 _DAY_INDEX = {"mon": 0, "tue": 1, "wed": 2, "thu": 3, "fri": 4, "sat": 5, "sun": 6}
@@ -153,6 +159,25 @@ def delete_saved_search(
     if row is None:
         return False
     require_version("saved_search", row.id, expected=expected_version, actual=row.version)
+    has_history = session.scalar(
+        select(OpportunityScan.id)
+        .where(
+            OpportunityScan.owner_id == owner_id,
+            OpportunityScan.saved_search_id == saved_search_id,
+        )
+        .limit(1)
+    ) or session.scalar(
+        select(SavedSearchMatch.id)
+        .where(
+            SavedSearchMatch.owner_id == owner_id,
+            SavedSearchMatch.saved_search_id == saved_search_id,
+        )
+        .limit(1)
+    )
+    if has_history is not None:
+        raise ResourceInUse(
+            "saved search has scan history; deactivate it to preserve opportunity provenance"
+        )
     session.delete(row)
     session.flush()
     return True

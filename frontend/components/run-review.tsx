@@ -125,7 +125,7 @@ export function RunReview({ runId }: { runId: string }) {
     setError(null);
     try {
       await deleteRun(runId);
-      router.push("/");
+      router.push("/hunt");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to delete this run.");
       setDeleting(false);
@@ -271,10 +271,10 @@ function RunShell({
     <main className="mx-auto w-full max-w-5xl flex-1 px-6 py-10">
       <nav className="mb-6 flex flex-wrap items-center justify-between gap-3 text-sm">
         <Link
-          href="/"
+          href="/hunt"
           className="text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100"
         >
-          ← New hunt
+          ← Legacy hunt
         </Link>
         <div className="flex items-center gap-2">
           {canCancel && (
@@ -374,7 +374,7 @@ function PrivateRunError({ message }: { message: string }) {
       >
         <p>{message}</p>
         <Link
-          href="/"
+          href="/hunt"
           className="mt-4 inline-block font-medium underline underline-offset-2"
         >
           Start a new hunt

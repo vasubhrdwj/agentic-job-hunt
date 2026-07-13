@@ -852,6 +852,158 @@
         "title": "CompanySource",
         "type": "string"
       },
+      "CompensationEvidenceFact": {
+        "additionalProperties": false,
+        "properties": {
+          "observed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Observed At"
+          },
+          "source_label": {
+            "anyOf": [
+              {
+                "maxLength": 120,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Label"
+          },
+          "state": {
+            "$ref": "#/components/schemas/EvidenceState"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CompensationValue"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "state"
+        ],
+        "title": "CompensationEvidenceFact",
+        "type": "object"
+      },
+      "CompensationPeriod": {
+        "enum": [
+          "annual",
+          "monthly",
+          "hourly"
+        ],
+        "title": "CompensationPeriod",
+        "type": "string"
+      },
+      "CompensationValue": {
+        "additionalProperties": false,
+        "properties": {
+          "currency": {
+            "pattern": "^[A-Z]{3}$",
+            "title": "Currency",
+            "type": "string"
+          },
+          "maximum": {
+            "anyOf": [
+              {
+                "maximum": 1000000000.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Maximum"
+          },
+          "minimum": {
+            "anyOf": [
+              {
+                "maximum": 1000000000.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Minimum"
+          },
+          "period": {
+            "$ref": "#/components/schemas/CompensationPeriod"
+          }
+        },
+        "required": [
+          "currency",
+          "period"
+        ],
+        "title": "CompensationValue",
+        "type": "object"
+      },
+      "DateEvidenceFact": {
+        "additionalProperties": false,
+        "properties": {
+          "observed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Observed At"
+          },
+          "source_label": {
+            "anyOf": [
+              {
+                "maxLength": 120,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Label"
+          },
+          "state": {
+            "$ref": "#/components/schemas/EvidenceState"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value"
+          }
+        },
+        "required": [
+          "state"
+        ],
+        "title": "DateEvidenceFact",
+        "type": "object"
+      },
       "DeleteResponse": {
         "properties": {
           "ok": {
@@ -865,6 +1017,22 @@
         "title": "DeleteResponse",
         "type": "object"
       },
+      "DismissReason": {
+        "enum": [
+          "not_relevant",
+          "seniority_mismatch",
+          "location_or_mode",
+          "compensation",
+          "not_a_better_move",
+          "company",
+          "already_applied",
+          "closed_or_invalid",
+          "duplicate",
+          "other"
+        ],
+        "title": "DismissReason",
+        "type": "string"
+      },
       "EmploymentType": {
         "description": "Normalized employment types exposed by source adapters.",
         "enum": [
@@ -874,6 +1042,72 @@
           "unknown"
         ],
         "title": "EmploymentType",
+        "type": "string"
+      },
+      "EmploymentTypeEvidenceFact": {
+        "additionalProperties": false,
+        "properties": {
+          "observed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Observed At"
+          },
+          "source_label": {
+            "anyOf": [
+              {
+                "maxLength": 120,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Label"
+          },
+          "state": {
+            "$ref": "#/components/schemas/EvidenceState"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/EmploymentTypeValue"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "state"
+        ],
+        "title": "EmploymentTypeEvidenceFact",
+        "type": "object"
+      },
+      "EmploymentTypeValue": {
+        "enum": [
+          "full_time",
+          "contract",
+          "intern"
+        ],
+        "title": "EmploymentTypeValue",
+        "type": "string"
+      },
+      "EvidenceState": {
+        "enum": [
+          "verified",
+          "inferred",
+          "unknown"
+        ],
+        "title": "EvidenceState",
         "type": "string"
       },
       "HTTPValidationError": {
@@ -1233,6 +1467,497 @@
         "title": "JobCriteria",
         "type": "object"
       },
+      "MatchAssessmentState": {
+        "enum": [
+          "assessed",
+          "not_assessed"
+        ],
+        "title": "MatchAssessmentState",
+        "type": "string"
+      },
+      "NotAssessedReason": {
+        "enum": [
+          "assessment_pending",
+          "resume_unavailable",
+          "description_unavailable",
+          "not_requested"
+        ],
+        "title": "NotAssessedReason",
+        "type": "string"
+      },
+      "OpportunityDecisionAction": {
+        "enum": [
+          "watch",
+          "dismiss",
+          "restore_to_inbox"
+        ],
+        "title": "OpportunityDecisionAction",
+        "type": "string"
+      },
+      "OpportunityDecisionEvent": {
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "$ref": "#/components/schemas/OpportunityDecisionAction"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "dismiss_reason": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DismissReason"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "id": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
+            "title": "Id",
+            "type": "string"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "maxLength": 500,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "opportunity_id": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
+            "title": "Opportunity Id",
+            "type": "string"
+          },
+          "previous_state": {
+            "$ref": "#/components/schemas/OpportunityDecisionState"
+          },
+          "restores_event_id": {
+            "anyOf": [
+              {
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Restores Event Id"
+          },
+          "state": {
+            "$ref": "#/components/schemas/OpportunityDecisionState"
+          }
+        },
+        "required": [
+          "id",
+          "opportunity_id",
+          "action",
+          "previous_state",
+          "state",
+          "created_at"
+        ],
+        "title": "OpportunityDecisionEvent",
+        "type": "object"
+      },
+      "OpportunityDecisionRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "$ref": "#/components/schemas/OpportunityDecisionAction"
+          },
+          "dismiss_reason": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DismissReason"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "note": {
+            "anyOf": [
+              {
+                "maxLength": 500,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "restore_decision_event_id": {
+            "anyOf": [
+              {
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Restore Decision Event Id"
+          }
+        },
+        "required": [
+          "action"
+        ],
+        "title": "OpportunityDecisionRequest",
+        "type": "object"
+      },
+      "OpportunityDecisionResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "event": {
+            "$ref": "#/components/schemas/OpportunityDecisionEvent"
+          },
+          "opportunity_id": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
+            "title": "Opportunity Id",
+            "type": "string"
+          },
+          "opportunity_version": {
+            "minimum": 1.0,
+            "title": "Opportunity Version",
+            "type": "integer"
+          },
+          "state": {
+            "$ref": "#/components/schemas/OpportunityDecisionState"
+          }
+        },
+        "required": [
+          "opportunity_id",
+          "opportunity_version",
+          "state",
+          "event"
+        ],
+        "title": "OpportunityDecisionResponse",
+        "type": "object"
+      },
+      "OpportunityDecisionState": {
+        "enum": [
+          "inbox",
+          "watch",
+          "dismiss"
+        ],
+        "title": "OpportunityDecisionState",
+        "type": "string"
+      },
+      "OpportunityDetailResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "apply_urls": {
+            "items": {
+              "maxLength": 2048,
+              "minLength": 1,
+              "type": "string"
+            },
+            "maxItems": 20,
+            "minItems": 1,
+            "title": "Apply Urls",
+            "type": "array"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "data_source": {
+            "const": "database",
+            "default": "database",
+            "title": "Data Source",
+            "type": "string"
+          },
+          "decision_history": {
+            "items": {
+              "$ref": "#/components/schemas/OpportunityDecisionEvent"
+            },
+            "maxItems": 500,
+            "title": "Decision History",
+            "type": "array"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "maxLength": 100000,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "discovered_by": {
+            "items": {
+              "$ref": "#/components/schemas/SavedSearchProvenance"
+            },
+            "maxItems": 100,
+            "minItems": 1,
+            "title": "Discovered By",
+            "type": "array"
+          },
+          "facts": {
+            "$ref": "#/components/schemas/OpportunityFacts"
+          },
+          "id": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
+            "title": "Id",
+            "type": "string"
+          },
+          "lane": {
+            "$ref": "#/components/schemas/OpportunityLane",
+            "default": "unassigned"
+          },
+          "latest_decision": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OpportunityDecisionEvent"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "match": {
+            "$ref": "#/components/schemas/TransparentMatchSummary"
+          },
+          "posting": {
+            "$ref": "#/components/schemas/OpportunityPosting"
+          },
+          "posting_versions": {
+            "items": {
+              "$ref": "#/components/schemas/PostingVersionSummary"
+            },
+            "maxItems": 500,
+            "minItems": 1,
+            "title": "Posting Versions",
+            "type": "array"
+          },
+          "state": {
+            "$ref": "#/components/schemas/OpportunityDecisionState",
+            "default": "inbox"
+          },
+          "unknowns": {
+            "items": {
+              "$ref": "#/components/schemas/OpportunityUnknown"
+            },
+            "maxItems": 4,
+            "title": "Unknowns",
+            "type": "array"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          },
+          "version": {
+            "minimum": 1.0,
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "version",
+          "posting",
+          "facts",
+          "discovered_by",
+          "match",
+          "created_at",
+          "updated_at",
+          "apply_urls",
+          "posting_versions"
+        ],
+        "title": "OpportunityDetailResponse",
+        "type": "object"
+      },
+      "OpportunityFactField": {
+        "enum": [
+          "location",
+          "employment_type",
+          "posted_date",
+          "compensation"
+        ],
+        "title": "OpportunityFactField",
+        "type": "string"
+      },
+      "OpportunityFacts": {
+        "additionalProperties": false,
+        "properties": {
+          "compensation": {
+            "$ref": "#/components/schemas/CompensationEvidenceFact"
+          },
+          "employment_type": {
+            "$ref": "#/components/schemas/EmploymentTypeEvidenceFact"
+          },
+          "location": {
+            "$ref": "#/components/schemas/TextEvidenceFact"
+          },
+          "posted_date": {
+            "$ref": "#/components/schemas/DateEvidenceFact"
+          }
+        },
+        "required": [
+          "location",
+          "employment_type",
+          "posted_date",
+          "compensation"
+        ],
+        "title": "OpportunityFacts",
+        "type": "object"
+      },
+      "OpportunityLane": {
+        "enum": [
+          "reach",
+          "core",
+          "hedge",
+          "unassigned"
+        ],
+        "title": "OpportunityLane",
+        "type": "string"
+      },
+      "OpportunityPosting": {
+        "additionalProperties": false,
+        "properties": {
+          "canonical_url": {
+            "maxLength": 2048,
+            "minLength": 1,
+            "title": "Canonical Url",
+            "type": "string"
+          },
+          "change_kind": {
+            "$ref": "#/components/schemas/PostingChangeKind"
+          },
+          "changed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Changed At"
+          },
+          "company": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Company",
+            "type": "string"
+          },
+          "company_slug": {
+            "maxLength": 120,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$",
+            "title": "Company Slug",
+            "type": "string"
+          },
+          "first_party": {
+            "title": "First Party",
+            "type": "boolean"
+          },
+          "first_seen_at": {
+            "format": "date-time",
+            "title": "First Seen At",
+            "type": "string"
+          },
+          "id": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
+            "title": "Id",
+            "type": "string"
+          },
+          "last_confirmed_at": {
+            "format": "date-time",
+            "title": "Last Confirmed At",
+            "type": "string"
+          },
+          "source": {
+            "$ref": "#/components/schemas/CompanySource"
+          },
+          "source_job_id": {
+            "anyOf": [
+              {
+                "maxLength": 512,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Job Id"
+          },
+          "state": {
+            "$ref": "#/components/schemas/PostingState"
+          },
+          "summary": {
+            "maxLength": 2000,
+            "minLength": 1,
+            "title": "Summary",
+            "type": "string"
+          },
+          "title": {
+            "maxLength": 300,
+            "minLength": 1,
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "company",
+          "company_slug",
+          "title",
+          "summary",
+          "canonical_url",
+          "source",
+          "first_party",
+          "state",
+          "change_kind",
+          "first_seen_at",
+          "last_confirmed_at"
+        ],
+        "title": "OpportunityPosting",
+        "type": "object"
+      },
+      "OpportunityUnknown": {
+        "additionalProperties": false,
+        "properties": {
+          "field": {
+            "$ref": "#/components/schemas/OpportunityFactField"
+          },
+          "message": {
+            "maxLength": 240,
+            "minLength": 1,
+            "title": "Message",
+            "type": "string"
+          },
+          "reason_code": {
+            "$ref": "#/components/schemas/UnknownReasonCode"
+          }
+        },
+        "required": [
+          "field",
+          "reason_code",
+          "message"
+        ],
+        "title": "OpportunityUnknown",
+        "type": "object"
+      },
       "OutcomeLog": {
         "description": "User-logged result for one drafted message.",
         "properties": {
@@ -1436,6 +2161,73 @@
           "why_relevant"
         ],
         "title": "Person",
+        "type": "object"
+      },
+      "PostingChangeKind": {
+        "enum": [
+          "new",
+          "changed",
+          "unchanged",
+          "closed",
+          "reopened"
+        ],
+        "title": "PostingChangeKind",
+        "type": "string"
+      },
+      "PostingChangedField": {
+        "enum": [
+          "title",
+          "description",
+          "location",
+          "employment_type",
+          "posted_date",
+          "compensation",
+          "canonical_url",
+          "state"
+        ],
+        "title": "PostingChangedField",
+        "type": "string"
+      },
+      "PostingState": {
+        "enum": [
+          "open",
+          "closed",
+          "unknown"
+        ],
+        "title": "PostingState",
+        "type": "string"
+      },
+      "PostingVersionSummary": {
+        "additionalProperties": false,
+        "properties": {
+          "change_kind": {
+            "$ref": "#/components/schemas/PostingChangeKind"
+          },
+          "changed_fields": {
+            "items": {
+              "$ref": "#/components/schemas/PostingChangedField"
+            },
+            "maxItems": 8,
+            "title": "Changed Fields",
+            "type": "array"
+          },
+          "observed_at": {
+            "format": "date-time",
+            "title": "Observed At",
+            "type": "string"
+          },
+          "version": {
+            "minimum": 1.0,
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "version",
+          "observed_at",
+          "change_kind"
+        ],
+        "title": "PostingVersionSummary",
         "type": "object"
       },
       "ProblemFieldError": {
@@ -2502,6 +3294,40 @@
         "title": "SavedSearchPatch",
         "type": "object"
       },
+      "SavedSearchProvenance": {
+        "additionalProperties": false,
+        "properties": {
+          "first_matched_at": {
+            "format": "date-time",
+            "title": "First Matched At",
+            "type": "string"
+          },
+          "last_matched_at": {
+            "format": "date-time",
+            "title": "Last Matched At",
+            "type": "string"
+          },
+          "saved_search_id": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
+            "title": "Saved Search Id",
+            "type": "string"
+          },
+          "saved_search_name": {
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Saved Search Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "saved_search_id",
+          "saved_search_name",
+          "first_matched_at",
+          "last_matched_at"
+        ],
+        "title": "SavedSearchProvenance",
+        "type": "object"
+      },
       "SavedSearchResponse": {
         "additionalProperties": false,
         "properties": {
@@ -2664,6 +3490,398 @@
         "title": "SavedSearchSchedule",
         "type": "object"
       },
+      "ScanCounts": {
+        "additionalProperties": false,
+        "properties": {
+          "changed_postings": {
+            "default": 0,
+            "maximum": 1000000.0,
+            "minimum": 0.0,
+            "title": "Changed Postings",
+            "type": "integer"
+          },
+          "matched_postings": {
+            "default": 0,
+            "maximum": 1000000.0,
+            "minimum": 0.0,
+            "title": "Matched Postings",
+            "type": "integer"
+          },
+          "new_opportunities": {
+            "default": 0,
+            "maximum": 1000000.0,
+            "minimum": 0.0,
+            "title": "New Opportunities",
+            "type": "integer"
+          },
+          "observed_postings": {
+            "default": 0,
+            "maximum": 1000000.0,
+            "minimum": 0.0,
+            "title": "Observed Postings",
+            "type": "integer"
+          },
+          "sources_completed": {
+            "default": 0,
+            "maximum": 10000.0,
+            "minimum": 0.0,
+            "title": "Sources Completed",
+            "type": "integer"
+          },
+          "sources_degraded": {
+            "default": 0,
+            "maximum": 10000.0,
+            "minimum": 0.0,
+            "title": "Sources Degraded",
+            "type": "integer"
+          },
+          "sources_failed": {
+            "default": 0,
+            "maximum": 10000.0,
+            "minimum": 0.0,
+            "title": "Sources Failed",
+            "type": "integer"
+          },
+          "sources_succeeded": {
+            "default": 0,
+            "maximum": 10000.0,
+            "minimum": 0.0,
+            "title": "Sources Succeeded",
+            "type": "integer"
+          },
+          "sources_total": {
+            "default": 0,
+            "maximum": 10000.0,
+            "minimum": 0.0,
+            "title": "Sources Total",
+            "type": "integer"
+          }
+        },
+        "title": "ScanCounts",
+        "type": "object"
+      },
+      "ScanCreateRequest": {
+        "additionalProperties": false,
+        "description": "Explicitly manual in this slice; automatic cadence is not implied.",
+        "properties": {
+          "trigger": {
+            "const": "manual",
+            "default": "manual",
+            "title": "Trigger",
+            "type": "string"
+          }
+        },
+        "title": "ScanCreateRequest",
+        "type": "object"
+      },
+      "ScanCreateResponse": {
+        "additionalProperties": false,
+        "description": "A created scan may be a replay of any already-persisted status.",
+        "properties": {
+          "completed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed At"
+          },
+          "counts": {
+            "$ref": "#/components/schemas/ScanCounts"
+          },
+          "id": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
+            "title": "Id",
+            "type": "string"
+          },
+          "queued_at": {
+            "format": "date-time",
+            "title": "Queued At",
+            "type": "string"
+          },
+          "saved_search_id": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
+            "title": "Saved Search Id",
+            "type": "string"
+          },
+          "saved_search_version": {
+            "minimum": 1.0,
+            "title": "Saved Search Version",
+            "type": "integer"
+          },
+          "stage": {
+            "$ref": "#/components/schemas/ScanStage"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At"
+          },
+          "status": {
+            "$ref": "#/components/schemas/ScanStatus"
+          },
+          "trigger": {
+            "$ref": "#/components/schemas/ScanTrigger",
+            "default": "manual"
+          },
+          "version": {
+            "minimum": 1.0,
+            "title": "Version",
+            "type": "integer"
+          },
+          "warnings": {
+            "items": {
+              "$ref": "#/components/schemas/ScanWarning"
+            },
+            "maxItems": 1000,
+            "title": "Warnings",
+            "type": "array"
+          }
+        },
+        "required": [
+          "id",
+          "version",
+          "saved_search_id",
+          "saved_search_version",
+          "status",
+          "stage",
+          "queued_at"
+        ],
+        "title": "ScanCreateResponse",
+        "type": "object"
+      },
+      "ScanHealthState": {
+        "enum": [
+          "never_run",
+          "healthy",
+          "degraded",
+          "running"
+        ],
+        "title": "ScanHealthState",
+        "type": "string"
+      },
+      "ScanStage": {
+        "enum": [
+          "queued",
+          "fetching",
+          "persisting",
+          "matching",
+          "finalizing",
+          "complete"
+        ],
+        "title": "ScanStage",
+        "type": "string"
+      },
+      "ScanStatus": {
+        "enum": [
+          "queued",
+          "running",
+          "succeeded",
+          "partial",
+          "failed",
+          "cancelled"
+        ],
+        "title": "ScanStatus",
+        "type": "string"
+      },
+      "ScanStatusResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "completed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed At"
+          },
+          "counts": {
+            "$ref": "#/components/schemas/ScanCounts"
+          },
+          "id": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
+            "title": "Id",
+            "type": "string"
+          },
+          "queued_at": {
+            "format": "date-time",
+            "title": "Queued At",
+            "type": "string"
+          },
+          "saved_search_id": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
+            "title": "Saved Search Id",
+            "type": "string"
+          },
+          "saved_search_version": {
+            "minimum": 1.0,
+            "title": "Saved Search Version",
+            "type": "integer"
+          },
+          "stage": {
+            "$ref": "#/components/schemas/ScanStage"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At"
+          },
+          "status": {
+            "$ref": "#/components/schemas/ScanStatus"
+          },
+          "trigger": {
+            "$ref": "#/components/schemas/ScanTrigger",
+            "default": "manual"
+          },
+          "version": {
+            "minimum": 1.0,
+            "title": "Version",
+            "type": "integer"
+          },
+          "warnings": {
+            "items": {
+              "$ref": "#/components/schemas/ScanWarning"
+            },
+            "maxItems": 1000,
+            "title": "Warnings",
+            "type": "array"
+          }
+        },
+        "required": [
+          "id",
+          "version",
+          "saved_search_id",
+          "saved_search_version",
+          "status",
+          "stage",
+          "queued_at"
+        ],
+        "title": "ScanStatusResponse",
+        "type": "object"
+      },
+      "ScanTrigger": {
+        "enum": [
+          "manual"
+        ],
+        "title": "ScanTrigger",
+        "type": "string"
+      },
+      "ScanWarning": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "$ref": "#/components/schemas/ScanWarningCode"
+          },
+          "company_slug": {
+            "anyOf": [
+              {
+                "maxLength": 120,
+                "minLength": 1,
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Company Slug"
+          },
+          "last_success_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Success At"
+          },
+          "message": {
+            "maxLength": 300,
+            "minLength": 1,
+            "title": "Message",
+            "type": "string"
+          },
+          "occurred_at": {
+            "format": "date-time",
+            "title": "Occurred At",
+            "type": "string"
+          },
+          "retryable": {
+            "default": false,
+            "title": "Retryable",
+            "type": "boolean"
+          },
+          "scope": {
+            "$ref": "#/components/schemas/ScanWarningScope"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CompanySource"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "scope",
+          "code",
+          "message",
+          "occurred_at"
+        ],
+        "title": "ScanWarning",
+        "type": "object"
+      },
+      "ScanWarningCode": {
+        "description": "Public codes that cannot contain raw provider or exception content.",
+        "enum": [
+          "source_timeout",
+          "source_unavailable",
+          "source_invalid_response",
+          "source_incomplete",
+          "source_rate_limited",
+          "source_fallback_used",
+          "scan_interrupted",
+          "scan_retrying"
+        ],
+        "title": "ScanWarningCode",
+        "type": "string"
+      },
+      "ScanWarningScope": {
+        "enum": [
+          "scan",
+          "source"
+        ],
+        "title": "ScanWarningScope",
+        "type": "string"
+      },
       "SessionCreateRequest": {
         "properties": {
           "owner_token": {
@@ -2715,6 +3933,382 @@
         ],
         "title": "SessionResponse",
         "type": "object"
+      },
+      "TextEvidenceFact": {
+        "additionalProperties": false,
+        "properties": {
+          "observed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Observed At"
+          },
+          "source_label": {
+            "anyOf": [
+              {
+                "maxLength": 120,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Label"
+          },
+          "state": {
+            "$ref": "#/components/schemas/EvidenceState"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "maxLength": 300,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value"
+          }
+        },
+        "required": [
+          "state"
+        ],
+        "title": "TextEvidenceFact",
+        "type": "object"
+      },
+      "TodayListResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "as_of": {
+            "format": "date-time",
+            "title": "As Of",
+            "type": "string"
+          },
+          "data_source": {
+            "const": "database",
+            "default": "database",
+            "title": "Data Source",
+            "type": "string"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/TodayOpportunityItem"
+            },
+            "maxItems": 50,
+            "title": "Items",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "maxLength": 512,
+                "minLength": 1,
+                "pattern": "^[A-Za-z0-9_-]+$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          },
+          "scan_health": {
+            "$ref": "#/components/schemas/TodayScanHealth"
+          },
+          "summary": {
+            "$ref": "#/components/schemas/TodaySummary"
+          }
+        },
+        "required": [
+          "as_of",
+          "summary",
+          "scan_health"
+        ],
+        "title": "TodayListResponse",
+        "type": "object"
+      },
+      "TodayOpportunityItem": {
+        "additionalProperties": false,
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "discovered_by": {
+            "items": {
+              "$ref": "#/components/schemas/SavedSearchProvenance"
+            },
+            "maxItems": 100,
+            "minItems": 1,
+            "title": "Discovered By",
+            "type": "array"
+          },
+          "facts": {
+            "$ref": "#/components/schemas/OpportunityFacts"
+          },
+          "id": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
+            "title": "Id",
+            "type": "string"
+          },
+          "lane": {
+            "$ref": "#/components/schemas/OpportunityLane",
+            "default": "unassigned"
+          },
+          "latest_decision": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OpportunityDecisionEvent"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "match": {
+            "$ref": "#/components/schemas/TransparentMatchSummary"
+          },
+          "posting": {
+            "$ref": "#/components/schemas/OpportunityPosting"
+          },
+          "state": {
+            "$ref": "#/components/schemas/OpportunityDecisionState",
+            "default": "inbox"
+          },
+          "unknowns": {
+            "items": {
+              "$ref": "#/components/schemas/OpportunityUnknown"
+            },
+            "maxItems": 4,
+            "title": "Unknowns",
+            "type": "array"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          },
+          "version": {
+            "minimum": 1.0,
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "version",
+          "posting",
+          "facts",
+          "discovered_by",
+          "match",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "TodayOpportunityItem",
+        "type": "object"
+      },
+      "TodayScanHealth": {
+        "additionalProperties": false,
+        "properties": {
+          "active_searches": {
+            "maximum": 10000.0,
+            "minimum": 0.0,
+            "title": "Active Searches",
+            "type": "integer"
+          },
+          "last_attempt_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Attempt At"
+          },
+          "last_success_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Success At"
+          },
+          "running_scan_id": {
+            "anyOf": [
+              {
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Running Scan Id"
+          },
+          "state": {
+            "$ref": "#/components/schemas/ScanHealthState"
+          },
+          "warnings": {
+            "items": {
+              "$ref": "#/components/schemas/ScanWarning"
+            },
+            "maxItems": 1000,
+            "title": "Warnings",
+            "type": "array"
+          }
+        },
+        "required": [
+          "state",
+          "active_searches"
+        ],
+        "title": "TodayScanHealth",
+        "type": "object"
+      },
+      "TodaySummary": {
+        "additionalProperties": false,
+        "properties": {
+          "dismissed": {
+            "minimum": 0.0,
+            "title": "Dismissed",
+            "type": "integer"
+          },
+          "needs_decision": {
+            "minimum": 0.0,
+            "title": "Needs Decision",
+            "type": "integer"
+          },
+          "watching": {
+            "minimum": 0.0,
+            "title": "Watching",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "needs_decision",
+          "watching",
+          "dismissed"
+        ],
+        "title": "TodaySummary",
+        "type": "object"
+      },
+      "TodayView": {
+        "enum": [
+          "inbox",
+          "watching",
+          "dismissed",
+          "all"
+        ],
+        "title": "TodayView",
+        "type": "string"
+      },
+      "TransparentMatchSummary": {
+        "additionalProperties": false,
+        "description": "A local, inspectable match result with no opaque fit percentage.",
+        "properties": {
+          "algorithm_version": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "minLength": 1,
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Algorithm Version"
+          },
+          "approved_evidence_ids": {
+            "items": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
+              "type": "string"
+            },
+            "maxItems": 20,
+            "title": "Approved Evidence Ids",
+            "type": "array"
+          },
+          "matched_terms": {
+            "items": {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            "maxItems": 20,
+            "title": "Matched Terms",
+            "type": "array"
+          },
+          "not_assessed_reason": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/NotAssessedReason"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "representative_requirement": {
+            "anyOf": [
+              {
+                "maxLength": 500,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Representative Requirement"
+          },
+          "resume_version_id": {
+            "anyOf": [
+              {
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resume Version Id"
+          },
+          "state": {
+            "$ref": "#/components/schemas/MatchAssessmentState"
+          }
+        },
+        "required": [
+          "state"
+        ],
+        "title": "TransparentMatchSummary",
+        "type": "object"
+      },
+      "UnknownReasonCode": {
+        "enum": [
+          "not_reported_by_source",
+          "source_field_ambiguous",
+          "source_refresh_degraded",
+          "not_supported_yet"
+        ],
+        "title": "UnknownReasonCode",
+        "type": "string"
       },
       "ValidationError": {
         "properties": {
@@ -2809,7 +4403,7 @@
   },
   "info": {
     "title": "Job Hunt Signal API",
-    "version": "0.2.0"
+    "version": "0.3.0"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -4699,6 +6293,284 @@
         ]
       }
     },
+    "/api/opportunities/{opportunity_id}": {
+      "get": {
+        "operationId": "get_opportunity_api_opportunities__opportunity_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "opportunity_id",
+            "required": true,
+            "schema": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
+              "title": "Opportunity Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpportunityDetailResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
+          "428": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Precondition Required"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "security": [
+          {
+            "OwnerSessionCookie": []
+          }
+        ],
+        "summary": "Get Opportunity",
+        "tags": [
+          "opportunity-radar"
+        ]
+      }
+    },
+    "/api/opportunities/{opportunity_id}/decision": {
+      "post": {
+        "operationId": "decide_opportunity_api_opportunities__opportunity_id__decision_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "opportunity_id",
+            "required": true,
+            "schema": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
+              "title": "Opportunity Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "If-Match",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OpportunityDecisionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpportunityDecisionResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
+          "428": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Precondition Required"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "security": [
+          {
+            "OwnerSessionCookie": []
+          }
+        ],
+        "summary": "Decide Opportunity",
+        "tags": [
+          "opportunity-radar"
+        ]
+      }
+    },
     "/api/runs/{run_id}": {
       "delete": {
         "description": "Delete a run, its encrypted request metadata, audit events, and outcomes.",
@@ -5690,6 +7562,284 @@
         ]
       }
     },
+    "/api/saved-searches/{saved_search_id}/scans": {
+      "post": {
+        "operationId": "create_scan_api_saved_searches__saved_search_id__scans_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "saved_search_id",
+            "required": true,
+            "schema": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
+              "title": "Saved Search Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "If-Match",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ScanCreateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanCreateResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
+          "428": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Precondition Required"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "security": [
+          {
+            "OwnerSessionCookie": []
+          }
+        ],
+        "summary": "Create Scan",
+        "tags": [
+          "opportunity-radar"
+        ]
+      }
+    },
+    "/api/scans/{scan_id}": {
+      "get": {
+        "operationId": "get_scan_api_scans__scan_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "scan_id",
+            "required": true,
+            "schema": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
+              "title": "Scan Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanStatusResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
+          "428": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Precondition Required"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "security": [
+          {
+            "OwnerSessionCookie": []
+          }
+        ],
+        "summary": "Get Scan",
+        "tags": [
+          "opportunity-radar"
+        ]
+      }
+    },
     "/api/session": {
       "delete": {
         "operationId": "delete_session_api_session_delete",
@@ -5776,6 +7926,187 @@
         "summary": "Create Session",
         "tags": [
           "owner-session"
+        ]
+      }
+    },
+    "/api/today": {
+      "get": {
+        "operationId": "list_today_api_today_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "view",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/TodayView",
+              "default": "inbox"
+            }
+          },
+          {
+            "in": "query",
+            "name": "saved_search_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Saved Search Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "lane",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/OpportunityLane"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Lane"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 512,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9_-]+$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "maximum": 50,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TodayListResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
+          "428": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Precondition Required"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "security": [
+          {
+            "OwnerSessionCookie": []
+          }
+        ],
+        "summary": "List Today",
+        "tags": [
+          "opportunity-radar"
         ]
       }
     },
