@@ -151,7 +151,7 @@ class ContactPlan(Base):
     )
     exhausted: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     retryable: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
-    shortfall_reasons: Mapped[list[str]] = mapped_column(
+    shortfall_reasons: Mapped[list[dict[str, Any]]] = mapped_column(
         JSON, nullable=False, default=list
     )
     error_code: Mapped[str | None] = mapped_column(String(100))

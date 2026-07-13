@@ -30,8 +30,8 @@ durable opportunity radar is documented in
 [`docs/PHASE_2_OPPORTUNITY_RADAR.md`](docs/PHASE_2_OPPORTUNITY_RADAR.md). The
 first practical application checkpoint is documented in
 [`docs/PHASE_3_APPLICATION_PIPELINE.md`](docs/PHASE_3_APPLICATION_PIPELINE.md).
-The verified-contact foundation and its remaining provider/UI checkpoints are
-documented in
+The verified-contact foundation, provider-backed worker, and remaining UI
+checkpoints are documented in
 [`docs/PHASE_4_CONTACT_BENCH.md`](docs/PHASE_4_CONTACT_BENCH.md).
 
 The delivered foundation includes migrated Postgres models, private owner
@@ -57,13 +57,14 @@ database-only Applications list and dossier. The only current application stage
 is `pursuing`; stage transitions, action updates, and application packs remain
 explicit follow-up work.
 
-Phase 4A adds the durable verified-contact bench foundation. Each application
-can retain a 12-person evidence-backed discovery pool and a deterministic,
-diverse bench of up to five. It preserves the exact public evidence used,
-deduplicates normalized profile identities, and reports honest shortfalls such
-as `3/5 verified`. Reads are database-only and no outreach is sent. The live
-provider-backed worker and dossier controls arrive in the next checkpoints, so
-the practical UI does not yet claim that it can start a contact search.
+Phase 4A–4B add the durable verified-contact bench and its provider-backed
+worker. Each pursued application can idempotently queue a public-profile search,
+retain a 12-person evidence-backed discovery pool, and atomically publish a
+deterministic, diverse bench of up to five. The stored result preserves the
+exact public evidence used, deduplicates normalized profile identities, and
+reports honest shortfalls such as `3/5 verified`. Reads remain database-only,
+explicit mock mode is network-free, and no outreach is sent. The application
+dossier controls and manual outreach workflow remain the next checkpoints.
 
 The separate **Legacy hunt** remains available when you explicitly want the
 current end-to-end flow with resume matching, at least five appropriate
@@ -190,6 +191,10 @@ GET    /api/applications            → database-only pursuing applications + ne
 GET    /api/applications/{id}       → application dossier + immutable activity
 GET    /api/applications/{id}/activity
                                     → database-only immutable activity stream
+GET    /api/applications/{id}/contacts
+                                    → database-only contact plan, progress, bench, and evidence
+POST   /api/applications/{id}/contact-searches
+                                    → 202 durable provider search (If-Match + idempotency)
 GET    /health                      → { ok: true }
 GET    /ready                       → DB migration + compatible worker readiness
 ```

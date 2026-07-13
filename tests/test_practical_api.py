@@ -140,6 +140,7 @@ def test_practical_mode_mounts_the_database_application_workspace(
     paths = client.get("/openapi.json").json()["paths"]
     assert "/api/applications" in paths
     assert "/api/applications/{application_id}/contacts" in paths
+    assert "/api/applications/{application_id}/contact-searches" in paths
 
 
 def test_owner_session_survives_requests_and_is_stored_only_as_a_hash(

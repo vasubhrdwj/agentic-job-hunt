@@ -152,6 +152,51 @@ def test_worker_once_processes_queued_run_and_clears_request(
     assert persistence.load_encrypted_request("worker-success") is None
 
 
+def test_production_worker_rejects_mock_mode_before_claiming_or_touching_database(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from job_hunt_agent import worker
+
+    database = _create_practical_database(tmp_path, monkeypatch)
+    try:
+        _run_id, job_id = _enqueue_practical(database, "production-mock-guard")
+        monkeypatch.setenv("ENVIRONMENT", "production")
+        monkeypatch.setattr(
+            worker.SerpAPIContactProvider,
+            "from_env",
+            classmethod(
+                lambda _cls: pytest.fail("production mock guard ran too late")
+            ),
+        )
+        monkeypatch.setattr(
+            worker,
+            "MockContactSearchProvider",
+            lambda: pytest.fail("production constructed the mock contact provider"),
+        )
+
+        with pytest.raises(
+            RuntimeError,
+            match="USE_MOCKS must be false when ENVIRONMENT=production",
+        ):
+            worker.run_worker_once(
+                worker_id="production-worker",
+                use_mocks=True,
+                enable_tracing=False,
+                durable_database=database,
+                practical_mode=True,
+            )
+
+        with database.session() as session:
+            job = session.get(BackgroundJob, job_id)
+            heartbeat = session.get(WorkerHeartbeat, "production-worker")
+            assert job is not None and job.status == "queued"
+            assert job.attempt_count == 0
+            assert heartbeat is None
+    finally:
+        database.dispose()
+
+
 def test_worker_failure_retries_then_dead_letters(monkeypatch: pytest.MonkeyPatch) -> None:
     from job_hunt_agent import worker
 
@@ -359,7 +404,11 @@ def test_practical_worker_processes_only_postgres_and_clears_current_job(
             assert "Built SCIM systems." not in hunt.encrypted_result
             assert job is not None and job.status == "succeeded"
             assert heartbeat is not None
-            assert heartbeat.supported_kinds == ["legacy_hunt", "scan_saved_search"]
+            assert set(heartbeat.supported_kinds) == {
+                "discover_contacts",
+                "legacy_hunt",
+                "scan_saved_search",
+            }
             assert heartbeat.current_job_id is None
     finally:
         database.dispose()

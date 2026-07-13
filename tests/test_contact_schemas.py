@@ -16,6 +16,11 @@ from job_hunt_agent.contact_schemas import (
 
 
 NOW = datetime(2026, 7, 14, 8, 0, tzinfo=timezone.utc)
+SHORTFALL = {
+    "code": "insufficient_verified_profiles",
+    "count": 2,
+    "detail": "Only three profiles had current-employer evidence above the threshold.",
+}
 
 
 def _contact(rank: int = 1, **updates: object) -> ContactBenchItem:
@@ -73,7 +78,7 @@ def _search(**updates: object) -> ContactSearchSnapshot:
         "coverage_status": "partial",
         "exhausted": True,
         "retryable": False,
-        "shortfall_reasons": ["insufficient_verified_profiles"],
+        "shortfall_reasons": [SHORTFALL],
         "error_code": None,
         "started_at": NOW - timedelta(minutes=2),
         "finalized_at": NOW,
@@ -93,7 +98,7 @@ def _result(**updates: object) -> ContactBenchResult:
         "verified_count": 3,
         "coverage_status": "partial",
         "exhausted": True,
-        "shortfall_reasons": ["insufficient_verified_profiles"],
+        "shortfall_reasons": [SHORTFALL],
         "contacts": contacts,
         "completed_at": NOW,
     }
@@ -205,3 +210,14 @@ def test_contract_rejects_untrusted_urls_extra_fields_and_invalid_progress() -> 
             shortfall_reasons=[],
             finalized_at=None,
         )
+
+
+def test_shortfall_reasons_are_strict_counted_and_distinct() -> None:
+    with pytest.raises(ValidationError, match="shortfall reasons must be distinct"):
+        _result(shortfall_reasons=[SHORTFALL, {**SHORTFALL, "count": 1}])
+    with pytest.raises(ValidationError):
+        _result(shortfall_reasons=[{**SHORTFALL, "count": 0}])
+    with pytest.raises(ValidationError):
+        _result(shortfall_reasons=[{**SHORTFALL, "detail": " "}])
+    with pytest.raises(ValidationError, match="extra_forbidden"):
+        _result(shortfall_reasons=[{**SHORTFALL, "provider_payload": "private"}])

@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import cast
 
+from pydantic import ValidationError
 from sqlalchemy import and_, select
 from sqlalchemy.orm import Session, aliased
 
@@ -15,6 +16,7 @@ from .contact_schemas import (
     ContactBenchResult,
     ContactBenchStatus,
     ContactSearchSnapshot,
+    ContactShortfallReason,
     EmployerEvidenceResponse,
     MIN_VERIFIED_CONFIDENCE,
     RelevanceEvidenceResponse,
@@ -73,8 +75,8 @@ def load_application_contact_bench(
             last_completed_result=None,
         )
 
-    _validate_current_search_job(session, current_plan, owner_id=owner_id)
-    current_search = _search_snapshot(current_plan)
+    job_stage = _validate_current_search_job(session, current_plan, owner_id=owner_id)
+    current_search = _search_snapshot(current_plan, job_stage=job_stage)
     completed_result = (
         _completed_result(
             session,
@@ -165,12 +167,17 @@ def _current_and_completed_plans(
     return row[0], row[1]
 
 
-def _search_snapshot(plan: ContactPlan) -> ContactSearchSnapshot:
+def _search_snapshot(
+    plan: ContactPlan,
+    *,
+    job_stage: str | None,
+) -> ContactSearchSnapshot:
     return ContactSearchSnapshot(
         id=plan.id,
         version=plan.version,
         plan_number=plan.plan_number,
         status=plan.status,
+        job_stage=job_stage,
         target_count=plan.target_count,
         candidate_limit=plan.candidate_limit,
         confidence_floor=plan.confidence_floor,
@@ -194,9 +201,9 @@ def _validate_current_search_job(
     plan: ContactPlan,
     *,
     owner_id: str,
-) -> None:
+) -> str | None:
     if plan.status not in {"queued", "running"}:
-        return
+        return None
     job = (
         session.scalar(
             select(BackgroundJob).where(
@@ -216,6 +223,7 @@ def _validate_current_search_job(
         or job.status not in {"queued", "running"}
     ):
         raise ContactRepositoryError("active contact search has no active queue job")
+    return job.stage
 
 
 def _completed_result(
@@ -367,12 +375,15 @@ def _optional_utc(value: datetime | None) -> datetime | None:
     return _as_utc(value) if value is not None else None
 
 
-def _shortfall_reasons(value: object) -> list[str]:
-    if not isinstance(value, list) or not all(
-        isinstance(item, str) for item in value
-    ):
+def _shortfall_reasons(value: object) -> list[ContactShortfallReason]:
+    if not isinstance(value, list):
         raise ContactRepositoryError("contact plan shortfall reasons are invalid")
-    return list(value)
+    try:
+        return [ContactShortfallReason.model_validate(item) for item in value]
+    except ValidationError as exc:
+        raise ContactRepositoryError(
+            "contact plan shortfall reasons are invalid"
+        ) from exc
 
 
 __all__ = ["ContactRepositoryError", "load_application_contact_bench"]

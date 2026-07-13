@@ -302,10 +302,12 @@ def test_mock_scan_retries_idempotently_and_persists_only_public_job_facts(
         heartbeat = session.get(WorkerHeartbeat, "scan-worker")
         assert heartbeat is not None
         assert set(heartbeat.supported_kinds) == {
+            "discover_contacts",
             "legacy_hunt",
             scan_worker.SCAN_JOB_KIND,
         }
         assert set(worker.PRACTICAL_JOB_KINDS) == {
+            "discover_contacts",
             "legacy_hunt",
             scan_worker.SCAN_JOB_KIND,
         }
@@ -597,6 +599,7 @@ def test_invalid_or_foreign_scan_claim_is_terminally_rejected(
         heartbeat = session.get(WorkerHeartbeat, f"{bad_reference}-worker")
         assert heartbeat is not None
         assert set(heartbeat.supported_kinds) == {
+            "discover_contacts",
             "legacy_hunt",
             scan_worker.SCAN_JOB_KIND,
         }

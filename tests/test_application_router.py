@@ -25,7 +25,7 @@ from job_hunt_agent.application_schemas import (
 )
 from job_hunt_agent.contact_schemas import ApplicationContactBenchResponse
 from job_hunt_agent.database import Database
-from job_hunt_agent.owner_workspace import WorkspaceUnavailable
+from job_hunt_agent.owner_workspace import WorkspaceConflict, WorkspaceUnavailable
 from job_hunt_agent.routers.applications import create_application_router
 from job_hunt_agent.routers.session import create_session_router
 from job_hunt_agent.routers.workspace import install_workspace_error_handler
@@ -89,7 +89,9 @@ def _activity() -> ApplicationActivityEventResponse:
 class FakeApplicationStore:
     calls: list[tuple[str, str]] = field(default_factory=list)
     last_list_query: tuple[int, str | None] | None = None
+    last_contact_search: tuple[str, int, str] | None = None
     unavailable: bool = False
+    conflict: WorkspaceConflict | None = None
 
     def list_applications(
         self,
@@ -147,6 +149,52 @@ class FakeApplicationStore:
             coverage_status="not_started",
         )
 
+    def create_application_contact_search(
+        self,
+        *,
+        owner_id: str,
+        application_id: str,
+        expected_application_version: int,
+        idempotency_key: str,
+    ) -> ApplicationContactBenchResponse | None:
+        self.calls.append(("create_application_contact_search", owner_id))
+        self.last_contact_search = (
+            application_id,
+            expected_application_version,
+            idempotency_key,
+        )
+        if self.unavailable:
+            raise WorkspaceUnavailable("PRIVATE_CONTACT_DATABASE_HOST")
+        if self.conflict is not None:
+            raise self.conflict
+        if application_id != "application1":
+            return None
+        return ApplicationContactBenchResponse(
+            application_id=application_id,
+            status="queued",
+            verified_count=0,
+            coverage_status="pending",
+            current_search={
+                "id": "contactplan1",
+                "version": 1,
+                "plan_number": 1,
+                "status": "queued",
+                "job_stage": "queued",
+                "target_count": 5,
+                "candidate_limit": 12,
+                "confidence_floor": 0.75,
+                "discovered_count": 0,
+                "evidence_verified_count": 0,
+                "selected_count": 0,
+                "coverage_status": "pending",
+                "exhausted": False,
+                "retryable": False,
+                "shortfall_reasons": [],
+                "created_at": NOW,
+                "updated_at": NOW,
+            },
+        )
+
 
 @pytest.fixture
 def application_client(
@@ -169,7 +217,14 @@ def application_client(
             production=False,
         )
     )
-    app.include_router(create_application_router(database, store))
+    app.include_router(
+        create_application_router(
+            database,
+            store,
+            allowed_origins=[ORIGIN],
+            production=False,
+        )
+    )
     install_workspace_error_handler(app)
     with TestClient(app, raise_server_exceptions=False) as client:
         yield client, store
@@ -296,6 +351,109 @@ def test_application_validation_and_storage_failures_use_safe_problem_responses(
     assert "PRIVATE_CONTACT_DATABASE_HOST" not in json.dumps(contact_body)
 
 
+def test_contact_search_requires_mutation_security_and_returns_queued_bench(
+    application_client: tuple[TestClient, FakeApplicationStore],
+) -> None:
+    client, store = application_client
+    path = "/api/applications/application1/contact-searches"
+    valid_headers = {
+        "Origin": ORIGIN,
+        "If-Match": '"1"',
+        "Idempotency-Key": "contacts-application1-v1",
+    }
+
+    _assert_problem(
+        client.post(path, headers=valid_headers),
+        status_code=401,
+        code="owner_session_required",
+    )
+    _login(client)
+    _assert_problem(
+        client.post(
+            path,
+            headers={**valid_headers, "Origin": "https://attacker.invalid"},
+        ),
+        status_code=403,
+        code="origin_forbidden",
+    )
+    _assert_problem(
+        client.post(
+            path,
+            headers={
+                "Origin": ORIGIN,
+                "Idempotency-Key": "contacts-application1-v1",
+            },
+        ),
+        status_code=428,
+        code="precondition_required",
+    )
+    _assert_problem(
+        client.post(
+            path,
+            headers={"Origin": ORIGIN, "If-Match": '"1"'},
+        ),
+        status_code=400,
+        code="idempotency_key_required",
+    )
+
+    queued = client.post(path, headers=valid_headers)
+    assert queued.status_code == 202, queued.text
+    assert queued.json()["status"] == "queued"
+    assert queued.json()["current_search"]["job_stage"] == "queued"
+    assert queued.json()["target_count"] == 5
+    assert queued.headers["cache-control"] == "no-store, max-age=0"
+    assert store.last_contact_search == (
+        "application1",
+        1,
+        "contacts-application1-v1",
+    )
+
+
+@pytest.mark.parametrize(
+    ("conflict", "code"),
+    [
+        (
+            WorkspaceConflict("application changed", code="version_conflict"),
+            "version_conflict",
+        ),
+        (WorkspaceConflict("posting closed"), "resource_conflict"),
+        (
+            WorkspaceConflict("key reused", code="idempotency_conflict"),
+            "idempotency_conflict",
+        ),
+    ],
+)
+def test_contact_search_masks_missing_applications_and_preserves_conflict_codes(
+    application_client: tuple[TestClient, FakeApplicationStore],
+    conflict: WorkspaceConflict,
+    code: str,
+) -> None:
+    client, store = application_client
+    _login(client)
+    headers = {
+        "Origin": ORIGIN,
+        "If-Match": '"1"',
+        "Idempotency-Key": f"contacts-{code}",
+    }
+    missing = client.post(
+        "/api/applications/foreignapplication/contact-searches",
+        headers=headers,
+    )
+    missing_body = _assert_problem(
+        missing,
+        status_code=404,
+        code="resource_not_found",
+    )
+    assert "foreignapplication" not in json.dumps(missing_body)
+
+    store.conflict = conflict
+    response = client.post(
+        "/api/applications/application1/contact-searches",
+        headers=headers,
+    )
+    _assert_problem(response, status_code=409, code=code)
+
+
 def test_application_openapi_declares_cookie_auth_and_problem_contracts(
     application_client: tuple[TestClient, FakeApplicationStore],
 ) -> None:
@@ -324,6 +482,13 @@ def test_application_openapi_declares_cookie_auth_and_problem_contracts(
             "get_owner_application_contacts_api_applications__application_id__"
             "contacts_get"
         ),
+        (
+            "/api/applications/{application_id}/contact-searches",
+            "post",
+        ): (
+            "create_owner_application_contact_search_api_applications__"
+            "application_id__contact_searches_post"
+        ),
     }
     for (path, method), operation_id in expected.items():
         operation = schema["paths"][path][method]
@@ -338,3 +503,11 @@ def test_application_openapi_declares_cookie_auth_and_problem_contracts(
         "/api/applications/{application_id}/contacts"
     ]["get"]["responses"]["200"]["content"]["application/json"]["schema"]
     assert contact_schema["$ref"].endswith("/ApplicationContactBenchResponse")
+
+    create_operation = schema["paths"][
+        "/api/applications/{application_id}/contact-searches"
+    ]["post"]
+    assert "requestBody" not in create_operation
+    assert create_operation["responses"]["202"]["content"]["application/json"][
+        "schema"
+    ]["$ref"].endswith("/ApplicationContactBenchResponse")

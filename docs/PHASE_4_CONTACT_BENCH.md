@@ -1,7 +1,7 @@
 # Phase 4 — Verified contact bench
 
-**Status:** Phase 4A is implemented. Provider-backed execution, dossier
-controls, and manual staged outreach remain the explicit 4B–4D checkpoints.
+**Status:** Phase 4A and 4B are implemented. The practical dossier experience
+and manual staged outreach remain the explicit 4C–4D checkpoints.
 
 ## Outcome
 
@@ -52,6 +52,12 @@ draft, send, or imply that outreach has happened.
 - Distinguish successful exhaustion, degraded partial results, retryable
   provider failure, configuration failure, and cancelled work.
 
+The worker uses the injected SerpAPI adapter only outside database
+transactions, bounds provider data before persistence, and publishes the pool,
+five-person bench, evidence snapshots, plan result, and queue completion in one
+transaction. Explicit mock mode is deterministic and never constructs the live
+provider.
+
 ### 4C — Practical dossier experience
 
 - Show `N/5 verified`, real progress, evidence links and checked dates,
@@ -79,3 +85,19 @@ draft, send, or imply that outreach has happened.
 - An exhausted partial plan requires structured shortfall reasons.
 - Contact-bench reads never invoke a provider or worker.
 - Upgrade, schema check, downgrade, and re-upgrade all succeed.
+
+## Phase 4B definition of done
+
+- Starting a search is owner-scoped, same-origin, optimistic-concurrency
+  protected, idempotent, and returns the stored plan for both new and replayed
+  requests.
+- The generic worker claims `discover_contacts`, keeps its lease alive, performs
+  provider work without an open database transaction, and atomically publishes
+  no more than 12 candidates and five verified reserves.
+- Cancellation, lease loss, posting closure, stale plan references, retries,
+  configuration failures, and provider exhaustion produce explicit durable
+  states without partial publication or private error leakage.
+- A malformed provider row cannot discard good leads or trigger deterministic
+  paid retries, and mock mode cannot call the live provider.
+- The application contact read exposes real queued/running/completed/failed
+  progress and structured shortfalls without making provider calls.

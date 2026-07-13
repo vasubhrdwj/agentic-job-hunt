@@ -9,7 +9,11 @@ import pytest
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 
-from job_hunt_agent.contact_search_repository import create_contact_search
+from job_hunt_agent.contact_repository import load_application_contact_bench
+from job_hunt_agent.contact_search_repository import (
+    ContactSearchRepositoryError,
+    create_contact_search,
+)
 from job_hunt_agent.database import Database
 from job_hunt_agent.models import (
     ActionItem,
@@ -226,7 +230,13 @@ def test_completed_search_allows_a_new_versioned_attempt(
         first.plan.coverage_status = "partial"
         first.plan.exhausted = True
         first.plan.retryable = False
-        first.plan.shortfall_reasons = ["insufficient_profiles"]
+        first.plan.shortfall_reasons = [
+            {
+                "code": "insufficient_profiles",
+                "count": 5,
+                "detail": "No public profiles passed the evidence threshold.",
+            }
+        ]
         first.plan.finalized_at = NOW
         first.plan.version += 1
 
@@ -246,7 +256,7 @@ def test_completed_search_allows_a_new_versioned_attempt(
         assert _count(session, BackgroundJob) == 2
 
 
-def test_active_plan_cannot_lose_its_job_and_recovers_a_terminal_job(
+def test_terminal_job_repair_persists_before_a_stale_request_can_retry(
     contact_search_db: Database,
 ) -> None:
     with contact_search_db.session() as session:
@@ -275,7 +285,36 @@ def test_active_plan_cannot_lose_its_job_and_recovers_a_terminal_job(
         job.dead_lettered_at = NOW
 
     with contact_search_db.session() as session:
-        recovered = create_contact_search(
+        repaired = create_contact_search(
+            session,
+            owner_id="owner-a",
+            application_id="application-a",
+            expected_application_version=99,
+            idempotency_key="repair-dead-job",
+            now=NOW,
+        )
+        assert repaired is not None and repaired.created is False
+        assert repaired.plan.id == first.plan.id
+        assert repaired.plan.plan_number == 1
+        assert repaired.plan.status == "failed"
+        assert repaired.plan.error_code == "search_job_unavailable"
+        assert repaired.plan.retryable is True
+
+    with contact_search_db.session() as session:
+        readable = load_application_contact_bench(
+            session,
+            owner_id="owner-a",
+            application_id="application-a",
+            now=NOW,
+        )
+        assert readable is not None
+        assert readable.status.value == "failed"
+        assert readable.current_search is not None
+        assert readable.current_search.error_code == "search_job_unavailable"
+        assert readable.current_search.retryable is True
+
+    with contact_search_db.session() as session:
+        retried = create_contact_search(
             session,
             owner_id="owner-a",
             application_id="application-a",
@@ -283,13 +322,170 @@ def test_active_plan_cannot_lose_its_job_and_recovers_a_terminal_job(
             idempotency_key="replace-dead-job",
             now=NOW,
         )
-        assert recovered is not None and recovered.created is True
-        assert recovered.plan.plan_number == 2
+        assert retried is not None and retried.created is True
+        assert retried.plan.plan_number == 2
         old_plan = session.get(ContactPlan, first.plan.id)
         assert old_plan is not None
         assert old_plan.status == "failed"
         assert old_plan.error_code == "search_job_unavailable"
         assert old_plan.retryable is True
+
+
+def test_terminal_job_repair_remains_readable_while_posting_is_closed(
+    contact_search_db: Database,
+) -> None:
+    with contact_search_db.session() as session:
+        first = create_contact_search(
+            session,
+            owner_id="owner-a",
+            application_id="application-a",
+            expected_application_version=1,
+            idempotency_key="active-before-close",
+            now=NOW,
+        )
+        assert first is not None and first.plan.background_job_id is not None
+        first_job_id = first.plan.background_job_id
+
+    with contact_search_db.session() as session:
+        job = session.get(BackgroundJob, first_job_id)
+        posting = session.get(JobPosting, "posting-a")
+        assert job is not None and posting is not None
+        job.status = "dead_letter"
+        job.stage = "dead_letter"
+        job.dead_lettered_at = NOW
+        posting.lifecycle_state = "closed"
+        posting.closure_reason = "explicit"
+        posting.closed_at = NOW
+
+    with contact_search_db.session() as session:
+        repaired = create_contact_search(
+            session,
+            owner_id="owner-a",
+            application_id="application-a",
+            expected_application_version=1,
+            idempotency_key="repair-after-close",
+            now=NOW,
+        )
+        assert repaired is not None and repaired.created is False
+        assert repaired.plan.status == "failed"
+
+    with contact_search_db.session() as session:
+        readable = load_application_contact_bench(
+            session,
+            owner_id="owner-a",
+            application_id="application-a",
+            now=NOW,
+        )
+        assert readable is not None
+        assert readable.status.value == "failed"
+        assert readable.current_search is not None
+        assert readable.current_search.retryable is True
+
+    with pytest.raises(ResourceConflict, match="closed postings"):
+        with contact_search_db.session() as session:
+            create_contact_search(
+                session,
+                owner_id="owner-a",
+                application_id="application-a",
+                expected_application_version=1,
+                idempotency_key="retry-after-close",
+                now=NOW,
+            )
+
+    with contact_search_db.session() as session:
+        posting = session.get(JobPosting, "posting-a")
+        assert posting is not None
+        posting.lifecycle_state = "open"
+        posting.closure_reason = None
+        posting.closed_at = None
+
+    with contact_search_db.session() as session:
+        retried = create_contact_search(
+            session,
+            owner_id="owner-a",
+            application_id="application-a",
+            expected_application_version=1,
+            idempotency_key="retry-after-reopen",
+            now=NOW,
+        )
+        assert retried is not None and retried.created is True
+        assert retried.plan.plan_number == 2
+
+
+@pytest.mark.parametrize(
+    ("deleted", "result_version"),
+    [
+        (True, 1),
+        (False, None),
+        (False, 0),
+        (False, 2),
+    ],
+)
+def test_contact_search_replay_rejects_inconsistent_receipt_metadata(
+    contact_search_db: Database,
+    deleted: bool,
+    result_version: int | None,
+) -> None:
+    with contact_search_db.session() as session:
+        created = create_contact_search(
+            session,
+            owner_id="owner-a",
+            application_id="application-a",
+            expected_application_version=1,
+            idempotency_key="receipt-metadata",
+            now=NOW,
+        )
+        assert created is not None
+
+    with contact_search_db.session() as session:
+        receipt = session.scalar(
+            select(OwnerMutationReceipt).where(
+                OwnerMutationReceipt.owner_id == "owner-a",
+                OwnerMutationReceipt.namespace == "contact_search.create:application-a",
+            )
+        )
+        assert receipt is not None
+        receipt.deleted = deleted
+        receipt.result_version = result_version
+
+    with contact_search_db.session() as session:
+        with pytest.raises(ContactSearchRepositoryError, match="result metadata|ahead"):
+            create_contact_search(
+                session,
+                owner_id="owner-a",
+                application_id="application-a",
+                expected_application_version=1,
+                idempotency_key="receipt-metadata",
+                now=NOW,
+            )
+
+
+def test_contact_search_replay_accepts_an_older_valid_result_version(
+    contact_search_db: Database,
+) -> None:
+    with contact_search_db.session() as session:
+        created = create_contact_search(
+            session,
+            owner_id="owner-a",
+            application_id="application-a",
+            expected_application_version=1,
+            idempotency_key="receipt-version",
+            now=NOW,
+        )
+        assert created is not None
+        created.plan.version += 1
+
+    with contact_search_db.session() as session:
+        replayed = create_contact_search(
+            session,
+            owner_id="owner-a",
+            application_id="application-a",
+            expected_application_version=99,
+            idempotency_key="receipt-version",
+            now=NOW,
+        )
+        assert replayed is not None and replayed.created is False
+        assert replayed.plan.version == 2
 
 
 def test_contact_search_masks_foreign_applications_and_checks_new_attempts(
@@ -307,7 +503,8 @@ def test_contact_search_masks_foreign_applications_and_checks_new_attempts(
             )
             is None
         )
-        with pytest.raises(VersionConflict):
+    with pytest.raises(VersionConflict):
+        with contact_search_db.session() as session:
             create_contact_search(
                 session,
                 owner_id="owner-a",
@@ -327,8 +524,8 @@ def test_contact_search_masks_foreign_applications_and_checks_new_attempts(
         posting.closure_reason = "explicit"
         posting.closed_at = NOW
 
-    with contact_search_db.session() as session:
-        with pytest.raises(ResourceConflict, match="closed postings"):
+    with pytest.raises(ResourceConflict, match="closed postings"):
+        with contact_search_db.session() as session:
             create_contact_search(
                 session,
                 owner_id="owner-a",

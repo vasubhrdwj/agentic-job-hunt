@@ -55,6 +55,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/applications/{application_id}/contact-searches": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create Owner Application Contact Search */
+        post: operations["create_owner_application_contact_search_api_applications__application_id__contact_searches_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/applications/{application_id}/contacts": {
         parameters: {
             query?: never;
@@ -1041,7 +1058,7 @@ export interface components {
             /** Plan Number */
             plan_number: number;
             /** Shortfall Reasons */
-            shortfall_reasons?: string[];
+            shortfall_reasons?: components["schemas"]["ContactShortfallReason"][];
             /**
              * Target Count
              * @default 5
@@ -1113,6 +1130,8 @@ export interface components {
             finalized_at?: string | null;
             /** Id */
             id: string;
+            /** Job Stage */
+            job_stage?: string | null;
             /** Plan Number */
             plan_number: number;
             /** Retryable */
@@ -1120,7 +1139,7 @@ export interface components {
             /** Selected Count */
             selected_count: number;
             /** Shortfall Reasons */
-            shortfall_reasons?: string[];
+            shortfall_reasons?: components["schemas"]["ContactShortfallReason"][];
             /** Started At */
             started_at?: string | null;
             status: components["schemas"]["ContactSearchStatus"];
@@ -1143,6 +1162,18 @@ export interface components {
          * @enum {string}
          */
         ContactSearchStatus: "queued" | "running" | "completed" | "failed" | "cancelled";
+        /**
+         * ContactShortfallReason
+         * @description One honest, countable explanation for returning fewer than five people.
+         */
+        ContactShortfallReason: {
+            /** Code */
+            code: string;
+            /** Count */
+            count: number;
+            /** Detail */
+            detail: string;
+        };
         /** DateEvidenceFact */
         DateEvidenceFact: {
             /** Observed At */
@@ -2689,6 +2720,103 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ApplicationActivityListResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Precondition Required */
+            428: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+        };
+    };
+    create_owner_application_contact_search_api_applications__application_id__contact_searches_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "If-Match"?: string | null;
+                "Idempotency-Key"?: string | null;
+            };
+            path: {
+                application_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApplicationContactBenchResponse"];
                 };
             };
             /** @description Bad Request */

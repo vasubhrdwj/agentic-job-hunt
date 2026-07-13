@@ -18,6 +18,14 @@ from sqlalchemy.orm import Session
 
 from . import persistence
 from .config import env_bool, is_production, practical_mode_enabled
+from .contact_discovery import ContactProviderConfigurationError
+from .contact_providers import MockContactSearchProvider, SerpAPIContactProvider
+from .contact_search_repository import CONTACT_SEARCH_JOB_KIND
+from .contact_search_worker import (
+    finish_contact_search_attempt_failure,
+    process_claimed_contact_search,
+    reconcile_terminal_contact_plans,
+)
 from .database import Database, database_from_env
 from .job_queue import (
     claim_next_job,
@@ -30,6 +38,7 @@ from .job_queue import (
 )
 from .models import (
     BackgroundJob,
+    ContactPlan,
     HuntRun,
     JobObservation,
     OpportunityScan,
@@ -48,7 +57,9 @@ DEFAULT_IDLE_SLEEP_SECONDS = 2.0
 DEFAULT_RETRY_DELAY_SECONDS = 0
 DEFAULT_WORKER_HEARTBEAT_MAX_AGE_SECONDS = 90.0
 DEFAULT_BUSY_HEARTBEAT_INTERVAL_SECONDS = 30.0
-PRACTICAL_JOB_KINDS = frozenset({"legacy_hunt", SCAN_JOB_KIND})
+PRACTICAL_JOB_KINDS = frozenset(
+    {"legacy_hunt", SCAN_JOB_KIND, CONTACT_SEARCH_JOB_KIND}
+)
 WORKER_STARTED_AT = datetime.now(timezone.utc)
 
 
@@ -78,6 +89,15 @@ class ClaimedPracticalHunt:
 @dataclass(frozen=True)
 class ClaimedPracticalScan:
     """Detached identifiers for one search-only opportunity scan claim."""
+
+    job_id: str
+    run_id: str
+    lease_token: str
+
+
+@dataclass(frozen=True)
+class ClaimedPracticalContact:
+    """Detached identifiers for one verified-contact discovery claim."""
 
     job_id: str
     run_id: str
@@ -121,6 +141,8 @@ def run_worker_once(
         _env_bool("USE_MOCKS", default=False) if use_mocks is None else use_mocks
     )
     resolved_tracing = _tracing_enabled() if enable_tracing is None else enable_tracing
+    if _is_production() and resolved_use_mocks:
+        raise RuntimeError("USE_MOCKS must be false when ENVIRONMENT=production")
 
     if practical:
         database = durable_database or database_from_env(required=True)
@@ -218,10 +240,12 @@ def _run_practical_worker_once(
     lease_token = uuid4().hex
     hunt_claim: ClaimedPracticalHunt | None = None
     scan_claim: ClaimedPracticalScan | None = None
+    contact_claim: ClaimedPracticalContact | None = None
     with database.session() as session:
         current = datetime.now(timezone.utc)
         recover_stale_jobs(session, now=current)
         _reconcile_terminal_opportunity_scans(session, now=current)
+        reconcile_terminal_contact_plans(session, now=current)
         job = claim_next_job(
             session,
             worker_id=worker_id,
@@ -287,6 +311,62 @@ def _run_practical_worker_once(
                 run_id=scan.id,
                 lease_token=lease_token,
             )
+        elif job.kind == CONTACT_SEARCH_JOB_KIND:
+            plan_id = _contact_plan_id(job)
+            plan = session.get(ContactPlan, plan_id) if plan_id is not None else None
+            if (
+                plan is None
+                or plan.background_job_id != job.id
+                or plan.owner_id != job.owner_id
+            ):
+                subject_plan = (
+                    session.scalar(
+                        select(ContactPlan)
+                        .where(
+                            ContactPlan.owner_id == job.owner_id,
+                            ContactPlan.id == job.subject_id,
+                            ContactPlan.background_job_id == job.id,
+                        )
+                        .with_for_update()
+                    )
+                    if job.subject_type == "contact_plan" and job.subject_id
+                    else None
+                )
+                if subject_plan is not None and subject_plan.status in {
+                    "queued",
+                    "running",
+                }:
+                    current = datetime.now(timezone.utc)
+                    subject_plan.status = "failed"
+                    subject_plan.coverage_status = "pending"
+                    subject_plan.exhausted = False
+                    subject_plan.retryable = False
+                    subject_plan.shortfall_reasons = []
+                    subject_plan.error_code = "invalid_contact_search_reference"
+                    subject_plan.started_at = subject_plan.started_at or current
+                    subject_plan.finalized_at = current
+                    subject_plan.updated_at = current
+                    subject_plan.version += 1
+                failed = fail_job_attempt(
+                    session,
+                    job.id,
+                    worker_id=worker_id,
+                    lease_token=lease_token,
+                    error_code="InvalidContactReference",
+                    terminal=True,
+                )
+                _record_worker_state(session, worker_id=worker_id, current_job_id=None)
+                return WorkerResult(
+                    claimed=True,
+                    run_id=job.subject_id,
+                    status=failed.status if failed is not None else None,
+                    stage=failed.stage if failed is not None else None,
+                )
+            contact_claim = ClaimedPracticalContact(
+                job_id=job.id,
+                run_id=plan.id,
+                lease_token=lease_token,
+            )
         else:
             run_id = _hunt_run_id(job)
             hunt = session.get(HuntRun, run_id) if run_id is not None else None
@@ -319,6 +399,15 @@ def _run_practical_worker_once(
     if scan_claim is not None:
         return process_claimed_practical_scan(
             scan_claim,
+            database=database,
+            worker_id=worker_id,
+            lease_seconds=lease_seconds,
+            retry_delay_seconds=retry_delay_seconds,
+            use_mocks=use_mocks,
+        )
+    if contact_claim is not None:
+        return process_claimed_practical_contact(
+            contact_claim,
             database=database,
             worker_id=worker_id,
             lease_seconds=lease_seconds,
@@ -669,6 +758,85 @@ def process_claimed_practical_scan(
         )
 
 
+def process_claimed_practical_contact(
+    claim: ClaimedPracticalContact,
+    *,
+    database: Database,
+    worker_id: str,
+    lease_seconds: int = DEFAULT_LEASE_SECONDS,
+    retry_delay_seconds: int = DEFAULT_RETRY_DELAY_SECONDS,
+    use_mocks: bool = False,
+) -> WorkerResult:
+    """Run public-profile discovery under a renewable durable queue lease."""
+
+    heartbeat = _PracticalLeaseHeartbeat(
+        database,
+        claim,
+        worker_id=worker_id,
+        lease_seconds=lease_seconds,
+    )
+    heartbeat.start()
+    fatal_error = False
+    try:
+        try:
+            provider = (
+                MockContactSearchProvider()
+                if use_mocks
+                else SerpAPIContactProvider.from_env()
+            )
+        except ContactProviderConfigurationError:
+            finish_contact_search_attempt_failure(
+                database,
+                claim,
+                worker_id=worker_id,
+                error_code="provider_configuration_failure",
+                retryable=False,
+                terminal=True,
+                retry_delay_seconds=retry_delay_seconds,
+            )
+        else:
+            process_claimed_contact_search(
+                claim,
+                database=database,
+                worker_id=worker_id,
+                provider=provider,
+                retry_delay_seconds=retry_delay_seconds,
+            )
+        return _practical_worker_result(database, claim)
+    except Exception as exc:  # noqa: BLE001 - persist only a fixed safe code.
+        LOGGER.warning(
+            "contact search worker attempt failed plan_id=%s error_type=%s",
+            claim.run_id,
+            type(exc).__name__,
+        )
+        try:
+            finish_contact_search_attempt_failure(
+                database,
+                claim,
+                worker_id=worker_id,
+                error_code="contact_search_processing_failed",
+                retryable=True,
+                terminal=False,
+                retry_delay_seconds=retry_delay_seconds,
+            )
+            return _practical_worker_result(database, claim)
+        except Exception as failure_exc:  # noqa: BLE001 - DB loss invalidates lease.
+            fatal_error = True
+            LOGGER.error(
+                "contact search failure transition failed plan_id=%s error_type=%s",
+                claim.run_id,
+                type(failure_exc).__name__,
+            )
+            raise PracticalWorkerError("practical contact worker failed") from None
+    finally:
+        heartbeat.stop()
+        _clear_practical_current_job(
+            database,
+            worker_id=worker_id,
+            available=not fatal_error,
+        )
+
+
 def _finish_practical_scan_attempt_failure(
     database: Database,
     claim: ClaimedPracticalScan,
@@ -776,6 +944,17 @@ def _opportunity_scan_id(job: BackgroundJob) -> str | None:
     return normalized
 
 
+def _contact_plan_id(job: BackgroundJob) -> str | None:
+    payload = job.payload if isinstance(job.payload, dict) else {}
+    plan_id = payload.get("contact_plan_id")
+    if not isinstance(plan_id, str) or not plan_id.strip() or len(plan_id) > 128:
+        return None
+    normalized = plan_id.strip()
+    if job.subject_type != "contact_plan" or job.subject_id != normalized:
+        return None
+    return normalized
+
+
 def _finish_practical_failure(
     database: Database,
     claim: ClaimedPracticalHunt,
@@ -846,7 +1025,7 @@ def _update_practical_stage(
 
 def _renew_practical_lease(
     database: Database,
-    claim: ClaimedPracticalHunt | ClaimedPracticalScan,
+    claim: ClaimedPracticalHunt | ClaimedPracticalScan | ClaimedPracticalContact,
     *,
     worker_id: str,
     lease_seconds: int,
@@ -886,7 +1065,7 @@ def _record_worker_state(
 
 def _practical_worker_result(
     database: Database,
-    claim: ClaimedPracticalHunt | ClaimedPracticalScan,
+    claim: ClaimedPracticalHunt | ClaimedPracticalScan | ClaimedPracticalContact,
 ) -> WorkerResult:
     with database.session() as session:
         return _result_from_job(
@@ -936,7 +1115,7 @@ class _PracticalLeaseHeartbeat:
     def __init__(
         self,
         database: Database,
-        claim: ClaimedPracticalHunt | ClaimedPracticalScan,
+        claim: ClaimedPracticalHunt | ClaimedPracticalScan | ClaimedPracticalContact,
         *,
         worker_id: str,
         lease_seconds: int,

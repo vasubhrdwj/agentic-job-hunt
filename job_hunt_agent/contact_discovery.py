@@ -41,6 +41,8 @@ DEFAULT_TARGET_COUNT = 5
 DEFAULT_CONFIDENCE_FLOOR = 0.75
 MAX_RESULT_TEXT_CHARS = 1_000
 MAX_RESULT_URL_CHARS = 2_048
+MAX_PUBLIC_NAME_CHARS = 200
+MAX_CURRENT_TITLE_CHARS = 300
 
 
 class DiscoveryCategory(str, Enum):
@@ -730,6 +732,8 @@ def _contact_from_result(
     )
     if not name or not _looks_like_person_name(name):
         return None, "invalid_person_name", normalized_url
+    if len(name) > MAX_PUBLIC_NAME_CHARS:
+        return None, "person_name_too_long", normalized_url
     if not current_title:
         return None, "missing_current_title", normalized_url
     if _former_target_employer(role.company, f"{result_title} {result_excerpt}"):
@@ -749,6 +753,8 @@ def _contact_from_result(
     current_title = _display_title(current_title)
     if not current_title or not _appropriate_title(current_title, role.title):
         return None, "role_relevance_unverified", normalized_url
+    if len(current_title) > MAX_CURRENT_TITLE_CHARS:
+        return None, "current_title_too_long", normalized_url
 
     confidence = _contact_confidence(result.confidence, profile_source)
     if confidence is None:

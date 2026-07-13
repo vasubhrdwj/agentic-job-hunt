@@ -148,7 +148,16 @@ def _add_completed_plan(
             coverage_status="partial",
             exhausted=True,
             retryable=False,
-            shortfall_reasons=["insufficient_verified_profiles"],
+            shortfall_reasons=[
+                {
+                    "code": "insufficient_verified_profiles",
+                    "count": 5 - selected_count,
+                    "detail": (
+                        "Fewer than five profiles had public current-employer "
+                        "evidence above the confidence threshold."
+                    ),
+                }
+            ],
             error_code=None,
             version=1,
             started_at=NOW - timedelta(minutes=2),
@@ -256,6 +265,7 @@ def test_completed_partial_bench_returns_exactly_the_verified_people(
         for item in response.last_completed_result.contacts
     )
     assert response.last_completed_result.shortfall_reasons
+    assert response.last_completed_result.shortfall_reasons[0].count == 2
 
 
 def test_new_retry_preserves_the_last_completed_result(
@@ -319,6 +329,7 @@ def test_new_retry_preserves_the_last_completed_result(
     assert response.status.value == "queued"
     assert response.current_search is not None
     assert response.current_search.plan_number == 2
+    assert response.current_search.job_stage == "queued"
     assert response.last_completed_result is not None
     assert response.last_completed_result.plan_number == 1
     assert response.verified_count == 3
@@ -344,6 +355,30 @@ def test_selected_contact_below_the_plan_floor_fails_closed(
 
     with contact_database.session() as session:
         with pytest.raises(ContactRepositoryError, match="evidence floor"):
+            load_application_contact_bench(session, "owner-a", "application1")
+
+
+@pytest.mark.parametrize(
+    "malformed",
+    [
+        ["insufficient_verified_profiles"],
+        [{"code": "bad-code", "count": 2, "detail": "Invalid code."}],
+        [{"code": "insufficient_profiles", "count": 0, "detail": "Invalid count."}],
+        [{"code": "insufficient_profiles", "count": 2}],
+    ],
+)
+def test_malformed_shortfall_reason_json_fails_closed(
+    contact_database: Database,
+    malformed: object,
+) -> None:
+    _add_completed_plan(contact_database)
+    with contact_database.session() as session:
+        plan = session.get(ContactPlan, "contactplan1")
+        assert plan is not None
+        plan.shortfall_reasons = malformed  # type: ignore[assignment]
+
+    with contact_database.session() as session:
+        with pytest.raises(ContactRepositoryError, match="shortfall reasons"):
             load_application_contact_bench(session, "owner-a", "application1")
 
 

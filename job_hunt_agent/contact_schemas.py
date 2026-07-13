@@ -30,7 +30,7 @@ MIN_VERIFIED_CONFIDENCE = 0.75
 MAX_SHORTFALL_REASONS = 12
 MAX_SCORE_COMPONENTS = 32
 
-ShortfallReason = Annotated[
+ShortfallReasonCode = Annotated[
     str,
     Field(
         min_length=1,
@@ -113,6 +113,14 @@ class ContactBenchState(str, Enum):
     stopped = "stopped"
 
 
+class ContactShortfallReason(ContactContractModel):
+    """One honest, countable explanation for returning fewer than five people."""
+
+    code: ShortfallReasonCode
+    count: StrictInt = Field(ge=1, le=MAX_CONTACT_CANDIDATES)
+    detail: str = Field(min_length=1, max_length=1_000)
+
+
 class EmployerEvidenceResponse(ContactContractModel):
     excerpt: str = Field(min_length=1, max_length=1_000)
     url: HttpsUrl
@@ -191,6 +199,7 @@ class ContactSearchSnapshot(ContactContractModel):
     version: int = Field(ge=1)
     plan_number: int = Field(ge=1)
     status: ContactSearchStatus
+    job_stage: str | None = Field(default=None, min_length=1, max_length=100)
     target_count: Literal[5] = TARGET_CONTACT_COUNT
     candidate_limit: int = Field(ge=TARGET_CONTACT_COUNT, le=MAX_CONTACT_CANDIDATES)
     confidence_floor: float = Field(ge=MIN_VERIFIED_CONFIDENCE, le=1.0)
@@ -200,7 +209,7 @@ class ContactSearchSnapshot(ContactContractModel):
     coverage_status: ContactCoverageStatus
     exhausted: bool
     retryable: bool
-    shortfall_reasons: list[ShortfallReason] = Field(
+    shortfall_reasons: list[ContactShortfallReason] = Field(
         default_factory=list,
         max_length=MAX_SHORTFALL_REASONS,
     )
@@ -217,7 +226,8 @@ class ContactSearchSnapshot(ContactContractModel):
 
     @model_validator(mode="after")
     def lifecycle_and_counts_are_consistent(self) -> Self:
-        if len(self.shortfall_reasons) != len(set(self.shortfall_reasons)):
+        reason_codes = [reason.code for reason in self.shortfall_reasons]
+        if len(reason_codes) != len(set(reason_codes)):
             raise ValueError("shortfall reasons must be distinct")
         if not (
             self.selected_count
@@ -283,7 +293,7 @@ class ContactBenchResult(ContactContractModel):
         ContactCoverageStatus.partial,
     ]
     exhausted: bool
-    shortfall_reasons: list[ShortfallReason] = Field(
+    shortfall_reasons: list[ContactShortfallReason] = Field(
         default_factory=list,
         max_length=MAX_SHORTFALL_REASONS,
     )
@@ -295,7 +305,8 @@ class ContactBenchResult(ContactContractModel):
 
     @model_validator(mode="after")
     def result_is_complete_without_padding(self) -> Self:
-        if len(self.shortfall_reasons) != len(set(self.shortfall_reasons)):
+        reason_codes = [reason.code for reason in self.shortfall_reasons]
+        if len(reason_codes) != len(set(reason_codes)):
             raise ValueError("shortfall reasons must be distinct")
         if self.verified_count != len(self.contacts):
             raise ValueError("verified_count must equal the returned contact count")
@@ -383,6 +394,7 @@ __all__ = [
     "ContactProfileSource",
     "ContactSearchSnapshot",
     "ContactSearchStatus",
+    "ContactShortfallReason",
     "EmployerEvidenceResponse",
     "MIN_VERIFIED_CONFIDENCE",
     "RelevanceEvidenceResponse",

@@ -8,13 +8,22 @@ from .contact_schemas import ApplicationContactBenchResponse
 
 
 class ContactWorkspaceStore(Protocol):
-    """Owner-scoped contact reads with no provider or worker side effects."""
+    """Owner-scoped contact state with no provider calls in request threads."""
 
     def get_application_contacts(
         self,
         *,
         owner_id: str,
         application_id: str,
+    ) -> ApplicationContactBenchResponse | None: ...
+
+    def create_application_contact_search(
+        self,
+        *,
+        owner_id: str,
+        application_id: str,
+        expected_application_version: int,
+        idempotency_key: str,
     ) -> ApplicationContactBenchResponse | None: ...
 
 

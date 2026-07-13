@@ -64,9 +64,16 @@ def create_contact_search(
         now=current,
     )
     if claim.replay is not None:
-        if claim.replay.resource_type != "contact_plan":
+        replay_version = claim.replay.result_version
+        if (
+            claim.replay.resource_type != "contact_plan"
+            or claim.replay.deleted
+            or isinstance(replay_version, bool)
+            or not isinstance(replay_version, int)
+            or replay_version < 1
+        ):
             raise ContactSearchRepositoryError(
-                "contact-search receipt has an inconsistent resource type"
+                "contact-search receipt has inconsistent result metadata"
             )
         plan = _owned_plan(
             session,
@@ -77,6 +84,10 @@ def create_contact_search(
         if plan is None:
             raise ContactSearchRepositoryError(
                 "contact-search receipt has no contact plan"
+            )
+        if replay_version > plan.version:
+            raise ContactSearchRepositoryError(
+                "contact-search receipt result version is ahead of its plan"
             )
         return ContactSearchCreateResult(plan=plan, created=False)
 
@@ -115,8 +126,9 @@ def create_contact_search(
             )
             return ContactSearchCreateResult(plan=active, created=False)
         # Never return an active-looking plan whose queue work has vanished or
-        # terminated. Preserve it as an auditable failed attempt and create a
-        # fresh version under the same application lock.
+        # terminated. Persist this attempt as an auditable failure and stop.
+        # A later request with a new idempotency key may create replacement
+        # work after the normal version, stage, and posting checks.
         active.status = "failed"
         active.coverage_status = "pending"
         active.exhausted = False
@@ -128,6 +140,16 @@ def create_contact_search(
         active.updated_at = current
         active.version += 1
         session.flush()
+        complete_owner_mutation(
+            session,
+            owner_id=owner_id,
+            receipt_id=claim.receipt_id,
+            resource_type="contact_plan",
+            resource_id=active.id,
+            result_version=active.version,
+            now=current,
+        )
+        return ContactSearchCreateResult(plan=active, created=False)
 
     require_version(
         "application",

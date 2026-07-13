@@ -5,6 +5,7 @@ from __future__ import annotations
 from fastapi import (
     APIRouter,
     Depends,
+    Header,
     HTTPException,
     Query,
     Request,
@@ -25,13 +26,15 @@ from ..application_workspace import ApplicationWorkspaceStore
 from ..auth import session_cookie_name
 from ..contact_schemas import ApplicationContactBenchResponse
 from ..database import Database
-from .session import AuthenticatedOwner, require_owner_session
+from .session import AuthenticatedOwner, require_owner_mutation, require_owner_session
 from .workspace import (
     COMMON_ERROR_RESPONSES,
     WorkspaceApiError,
+    _expected_version,
     _invoke,
     _not_found,
     _raise_auth_problem,
+    _required_idempotency_key,
     _set_etag,
 )
 
@@ -39,8 +42,11 @@ from .workspace import (
 def create_application_router(
     database: Database | None,
     store: ApplicationWorkspaceStore | None,
+    *,
+    allowed_origins: list[str],
+    production: bool,
 ) -> APIRouter:
-    """Build owner-scoped application reads with no provider side effects."""
+    """Build owner-scoped application reads and durable contact-search starts."""
 
     def prevent_private_caching(response: Response) -> None:
         response.headers["Cache-Control"] = "no-store, max-age=0"
@@ -63,6 +69,20 @@ def create_application_router(
     ) -> AuthenticatedOwner:
         try:
             return require_owner_session(database, request)
+        except HTTPException as exc:
+            _raise_auth_problem(exc)
+
+    def require_mutation_owner(
+        request: Request,
+        _session_cookie: str | None = Security(owner_cookie),
+    ) -> AuthenticatedOwner:
+        try:
+            return require_owner_mutation(
+                database,
+                request,
+                allowed_origins=allowed_origins,
+                production=production,
+            )
         except HTTPException as exc:
             _raise_auth_problem(exc)
 
@@ -134,6 +154,29 @@ def create_application_router(
             _store(store).get_application_contacts,
             owner_id=owner.owner_id,
             application_id=application_id,
+        )
+        if contacts is None:
+            _not_found("application")
+        return contacts
+
+    @router.post(
+        "/api/applications/{application_id}/contact-searches",
+        response_model=ApplicationContactBenchResponse,
+        status_code=status.HTTP_202_ACCEPTED,
+        responses=COMMON_ERROR_RESPONSES,
+    )
+    def create_owner_application_contact_search(
+        application_id: OpaqueId,
+        owner: AuthenticatedOwner = Security(require_mutation_owner),
+        if_match: str | None = Header(default=None, alias="If-Match"),
+        idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+    ) -> ApplicationContactBenchResponse:
+        contacts = _invoke(
+            _store(store).create_application_contact_search,
+            owner_id=owner.owner_id,
+            application_id=application_id,
+            expected_application_version=_expected_version(if_match),
+            idempotency_key=_required_idempotency_key(idempotency_key),
         )
         if contacts is None:
             _not_found("application")

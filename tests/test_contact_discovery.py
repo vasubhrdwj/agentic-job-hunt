@@ -272,6 +272,42 @@ def test_former_and_conflicting_current_employer_evidence_is_rejected() -> None:
     assert "conflicting_current_employer" in reasons
 
 
+def test_oversized_identity_fields_are_rejected_without_losing_good_results() -> None:
+    oversized_name = f"{'A' * 250} {'B' * 250}"
+    oversized_title = f"Staff Software Engineer {'Platform ' * 40}"
+    provider = FakeProvider(
+        {
+            DiscoveryCategory.peer: [
+                _result(
+                    oversized_name,
+                    "Staff Software Engineer",
+                    slug="oversized-name",
+                ),
+                _result(
+                    "Oversized Title",
+                    oversized_title,
+                    slug="oversized-title",
+                ),
+                _result(
+                    "Valid Person",
+                    "Staff Software Engineer",
+                    slug="valid-person",
+                ),
+            ]
+        }
+    )
+
+    discovery = discover_contacts(_role(), provider=provider, observed_at=OBSERVED_AT)
+
+    assert [candidate.public_name for candidate in discovery.candidates] == [
+        "Valid Person"
+    ]
+    assert {item.reason_code for item in discovery.rejected_results} == {
+        "current_title_too_long",
+        "person_name_too_long",
+    }
+
+
 def test_a_conflicting_duplicate_disqualifies_the_identity_fail_closed() -> None:
     current = _result(
         "Priya Rao",

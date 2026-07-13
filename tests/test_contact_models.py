@@ -126,9 +126,22 @@ def _plan(
     selected_count: int = 0,
     coverage_status: str = "partial",
     exhausted: bool = True,
-    shortfall_reasons: list[str] | None = None,
+    shortfall_reasons: list[dict[str, object]] | None = None,
 ) -> ContactPlan:
     terminal = status in {"completed", "failed", "cancelled"}
+    stored_shortfalls = shortfall_reasons
+    if stored_shortfalls is None:
+        stored_shortfalls = (
+            [
+                {
+                    "code": "fixture_shortfall",
+                    "count": max(1, target_count - selected_count),
+                    "detail": "The fixture did not verify the full contact target.",
+                }
+            ]
+            if coverage_status == "partial"
+            else []
+        )
     return ContactPlan(
         id=plan_id,
         owner_id=owner_id,
@@ -146,7 +159,7 @@ def _plan(
         coverage_status=coverage_status,
         exhausted=exhausted,
         retryable=False,
-        shortfall_reasons=shortfall_reasons or ["fixture_shortfall"],
+        shortfall_reasons=stored_shortfalls,
         error_code="discovery_failed" if status == "failed" else None,
         version=1,
         started_at=NOW if status == "running" else None,
@@ -317,7 +330,13 @@ def test_completed_partial_plan_truthfully_records_three_of_five(
                 coverage_status="partial",
                 exhausted=True,
                 shortfall_reasons=[
-                    "Only three public profiles had current-employer evidence."
+                    {
+                        "code": "verified_contacts_shortfall",
+                        "count": 2,
+                        "detail": (
+                            "Only three public profiles had current-employer evidence."
+                        ),
+                    }
                 ],
             )
         )

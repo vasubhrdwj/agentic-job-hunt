@@ -495,6 +495,8 @@ def create_app() -> FastAPI:
             create_application_router(
                 practical_database,
                 application_store,
+                allowed_origins=allowed_origins,
+                production=_is_production(),
             )
         )
         install_workspace_error_handler(app)
