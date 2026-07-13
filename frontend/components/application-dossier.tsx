@@ -5,6 +5,7 @@ import { useCallback, useEffect, useState } from "react";
 
 import { getApplication } from "@/lib/application-api";
 import type { ApplicationDetailResponse } from "@/lib/application-types";
+import { ApplicationPeople } from "./application-people";
 import { ApplicationStageBadge, DueDate } from "./applications-workspace";
 import {
   errorText,
@@ -139,41 +140,35 @@ export function ApplicationDossier({
         </p>
       </section>
 
-      <div className="grid min-w-0 gap-6 lg:grid-cols-2">
-        <section className="rounded-2xl border border-zinc-200 bg-white p-5 sm:p-6 dark:border-zinc-800 dark:bg-zinc-900/70">
-          <h2 className="font-semibold">Role record</h2>
-          <dl className="mt-4 space-y-3 text-sm">
-            <div>
-              <dt className="text-xs font-medium uppercase tracking-wide text-zinc-500">Company</dt>
-              <dd className="mt-1 break-words font-medium">{posting.company}</dd>
-            </div>
-            <div>
-              <dt className="text-xs font-medium uppercase tracking-wide text-zinc-500">Posting status</dt>
-              <dd className="mt-1 capitalize">{posting.state}</dd>
-            </div>
-            <div>
-              <dt className="text-xs font-medium uppercase tracking-wide text-zinc-500">Captured version</dt>
-              <dd className="mt-1 break-all font-mono text-xs">{application.pursued_posting_version_id}</dd>
-            </div>
-          </dl>
-          <Link
-            href={`/jobs/${encodeURIComponent(application.opportunity_id)}`}
-            className={`${secondaryButtonClasses} mt-5`}
-          >
-            Review saved opportunity
-          </Link>
-        </section>
+      <ApplicationPeople
+        applicationId={application.id}
+        applicationVersion={application.version}
+        postingState={posting.state}
+      />
 
-        <section className="rounded-2xl border border-zinc-200 bg-white p-5 sm:p-6 dark:border-zinc-800 dark:bg-zinc-900/70">
-          <h2 className="font-semibold">Coming next</h2>
-          <p className="mt-2 text-sm leading-6 text-zinc-600 dark:text-zinc-400">
-            This dossier currently records the application and its first task. The immediate
-            next checkpoint adds a bench of at least five distinct, appropriate, verified
-            people when the evidence supports five—and reports an honest shortfall otherwise.
-            Stage updates and tailored application material follow in later checkpoints.
-          </p>
-        </section>
-      </div>
+      <section className="rounded-2xl border border-zinc-200 bg-white p-5 sm:p-6 dark:border-zinc-800 dark:bg-zinc-900/70">
+        <h2 className="font-semibold">Role record</h2>
+        <dl className="mt-4 grid gap-4 text-sm sm:grid-cols-3">
+          <div>
+            <dt className="text-xs font-medium uppercase tracking-wide text-zinc-500">Company</dt>
+            <dd className="mt-1 break-words font-medium">{posting.company}</dd>
+          </div>
+          <div>
+            <dt className="text-xs font-medium uppercase tracking-wide text-zinc-500">Posting status</dt>
+            <dd className="mt-1 capitalize">{posting.state}</dd>
+          </div>
+          <div>
+            <dt className="text-xs font-medium uppercase tracking-wide text-zinc-500">Captured version</dt>
+            <dd className="mt-1 break-all font-mono text-xs">{application.pursued_posting_version_id}</dd>
+          </div>
+        </dl>
+        <Link
+          href={`/jobs/${encodeURIComponent(application.opportunity_id)}`}
+          className={`${secondaryButtonClasses} mt-5`}
+        >
+          Review saved opportunity
+        </Link>
+      </section>
 
       <section className="rounded-2xl border border-zinc-200 bg-white p-5 sm:p-7 dark:border-zinc-800 dark:bg-zinc-900/70">
         <h2 className="text-lg font-semibold">Activity</h2>

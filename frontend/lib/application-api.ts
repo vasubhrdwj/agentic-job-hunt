@@ -1,5 +1,6 @@
 import type {
   ApplicationActivityListResponse,
+  ApplicationContactBenchResponse,
   ApplicationDetailResponse,
   ApplicationListResponse,
 } from "./application-types";
@@ -54,6 +55,36 @@ export async function getApplicationActivity(
     await fetch(
       `/api/applications/${encodeURIComponent(id)}/activity`,
       { cache: "no-store" },
+    ),
+  );
+}
+
+export async function getApplicationContacts(
+  applicationId: string,
+): Promise<ApplicationContactBenchResponse> {
+  return json<ApplicationContactBenchResponse>(
+    await fetch(
+      `/api/applications/${encodeURIComponent(applicationId)}/contacts`,
+      { cache: "no-store" },
+    ),
+  );
+}
+
+export async function startApplicationContactSearch(
+  applicationId: string,
+  applicationVersion: number,
+  idempotencyKey: string,
+): Promise<ApplicationContactBenchResponse> {
+  return json<ApplicationContactBenchResponse>(
+    await fetch(
+      `/api/applications/${encodeURIComponent(applicationId)}/contact-searches`,
+      {
+        method: "POST",
+        headers: {
+          "If-Match": `"${applicationVersion}"`,
+          "Idempotency-Key": idempotencyKey,
+        },
+      },
     ),
   );
 }

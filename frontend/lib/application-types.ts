@@ -12,6 +12,15 @@ export type ActionItemStatus = ApiSchemas["ActionItemStatus"];
 export type ApplicationActivityEventType =
   ApiSchemas["ApplicationActivityEventType"];
 export type ApplicationPostingState = ApiSchemas["ApplicationPostingState"];
+export type ContactBenchCoverage = ApiSchemas["ContactBenchCoverage"];
+export type ContactBenchState = ApiSchemas["ContactBenchState"];
+export type ContactBenchStatus = ApiSchemas["ContactBenchStatus"];
+export type ContactCategory = ApiSchemas["ContactCategory"];
+export type ContactCoverageStatus = ApiSchemas["ContactCoverageStatus"];
+export type ContactEvidenceStatus = ApiSchemas["ContactEvidenceStatus"];
+export type ContactLifecycle = ApiSchemas["ContactLifecycle"];
+export type ContactProfileSource = ApiSchemas["ContactProfileSource"];
+export type ContactSearchStatus = ApiSchemas["ContactSearchStatus"];
 
 export type ApplicationPostingSummary = ApiSchemas["ApplicationPostingSummary"];
 
@@ -68,4 +77,60 @@ export type ApplicationActivityListResponse = Omit<
   "items"
 > & {
   items: ApplicationActivityEvent[];
+};
+
+export type ContactShortfallReason = ApiSchemas["ContactShortfallReason"];
+
+export type RelevanceEvidenceResponse = Omit<
+  ApiSchemas["RelevanceEvidenceResponse"],
+  "summary" | "url"
+> & {
+  summary: string | null;
+  url: string | null;
+};
+
+export type ContactBenchItem = Omit<
+  ApiSchemas["ContactBenchItem"],
+  | "cooldown_until"
+  | "relationship"
+  | "score_components"
+  | "team_proximity"
+  | "unlocked_at"
+> & {
+  cooldown_until: string | null;
+  relationship: RelevanceEvidenceResponse;
+  score_components: Record<string, number>;
+  team_proximity: RelevanceEvidenceResponse;
+  unlocked_at: string | null;
+};
+
+export type ContactSearchSnapshot = Omit<
+  ApiSchemas["ContactSearchSnapshot"],
+  | "error_code"
+  | "finalized_at"
+  | "job_stage"
+  | "shortfall_reasons"
+  | "started_at"
+> & {
+  error_code: string | null;
+  finalized_at: string | null;
+  job_stage: string | null;
+  shortfall_reasons: ContactShortfallReason[];
+  started_at: string | null;
+};
+
+export type ContactBenchResult = Omit<
+  ApiSchemas["ContactBenchResult"],
+  "contacts" | "shortfall_reasons"
+> & {
+  contacts: ContactBenchItem[];
+  shortfall_reasons: ContactShortfallReason[];
+};
+
+export type ApplicationContactBenchResponse = Omit<
+  ApiSchemas["ApplicationContactBenchResponse"],
+  "current_search" | "last_completed_result"
+> & {
+  current_search: ContactSearchSnapshot | null;
+  last_completed_result: ContactBenchResult | null;
 };

@@ -57,14 +57,16 @@ database-only Applications list and dossier. The only current application stage
 is `pursuing`; stage transitions, action updates, and application packs remain
 explicit follow-up work.
 
-Phase 4A–4B add the durable verified-contact bench and its provider-backed
-worker. Each pursued application can idempotently queue a public-profile search,
-retain a 12-person evidence-backed discovery pool, and atomically publish a
-deterministic, diverse bench of up to five. The stored result preserves the
-exact public evidence used, deduplicates normalized profile identities, and
-reports honest shortfalls such as `3/5 verified`. Reads remain database-only,
-explicit mock mode is network-free, and no outreach is sent. The application
-dossier controls and manual outreach workflow remain the next checkpoints.
+Phase 4A–4C add the durable verified-contact bench, its provider-backed worker,
+and the practical dossier experience. Each pursued application can explicitly
+and idempotently queue a public-profile search, retain a 12-person
+evidence-backed discovery pool, and atomically publish a deterministic, diverse
+bench of up to five. The dossier polls real progress, preserves the last good
+bench during refresh failures, shows public evidence and checked dates, and
+reports honest shortfalls such as `3/5 verified`. Restricted contacts and closed
+postings fail visibly closed. Reads remain database-only, explicit mock mode is
+network-free, and no outreach is drafted or sent. Manual staged outreach is the
+remaining Phase 4 checkpoint.
 
 The separate **Legacy hunt** remains available when you explicitly want the
 current end-to-end flow with resume matching, at least five appropriate

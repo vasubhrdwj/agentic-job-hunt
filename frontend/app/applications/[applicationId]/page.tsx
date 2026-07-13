@@ -23,6 +23,7 @@ export default async function ApplicationDetailPage({
         description="A practical record of the role you chose to pursue, the posting version you acted on, your dated next step, and immutable activity."
       />
       <ApplicationDossier
+        key={applicationId}
         applicationId={applicationId}
         ownerLocalDate={session.local_date}
       />

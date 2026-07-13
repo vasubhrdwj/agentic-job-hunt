@@ -1,7 +1,7 @@
 # Phase 4 — Verified contact bench
 
-**Status:** Phase 4A and 4B are implemented. The practical dossier experience
-and manual staged outreach remain the explicit 4C–4D checkpoints.
+**Status:** Phase 4A through 4C are implemented. Manual staged outreach remains
+the explicit 4D checkpoint.
 
 ## Outcome
 
@@ -66,6 +66,13 @@ provider.
 - Offer only profile/evidence review actions in this phase and state clearly
   that nothing has been sent.
 
+The application dossier now starts searches only from an explicit owner action,
+polls durable progress with bounded backoff, and retains the last completed
+bench through queued refreshes, provider failures, and polling interruptions.
+Each card exposes the public profile, preserved employer evidence, evidence
+confidence, relevance category, and any lifecycle restriction without exposing
+internal ranking components as candidate quality.
+
 ### 4D — Manual staged outreach
 
 - Persist exact message versions and manual copy/mark-sent events.
@@ -101,3 +108,18 @@ provider.
   paid retries, and mock mode cannot call the live provider.
 - The application contact read exposes real queued/running/completed/failed
   progress and structured shortfalls without making provider calls.
+
+## Phase 4C definition of done
+
+- A not-started dossier offers an explicit **Find 5 verified people** action;
+  merely opening the page never starts provider work.
+- Queued and running attempts poll without overlapping requests, back off after
+  transient failures, and never clear the last completed bench.
+- Complete, partial, failed, cancelled, restricted-contact, and closed-posting
+  states have honest, actionable copy and do not imply that outreach happened.
+- Every returned person shows rank, public role, relevance category, evidence
+  confidence, profile and employer-evidence links, source, and checked time.
+- Lost or ambiguous POST responses reconcile durable state and retain the same
+  idempotency key, so retrying cannot duplicate a paid search.
+- Desktop and mobile browser QA cover not-started, queued, `5/5`, `3/5`, failed
+  refresh with a prior result, do-not-contact restrictions, and posting closure.
