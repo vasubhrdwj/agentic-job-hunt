@@ -136,7 +136,10 @@ def test_practical_mode_mounts_the_database_application_workspace(
     store = client.app.state.application_workspace_store
     assert isinstance(store, SqlAlchemyApplicationWorkspaceStore)
     assert store.database is database
-    assert "/api/applications" in client.get("/openapi.json").json()["paths"]
+    assert client.app.state.contact_workspace_store is store
+    paths = client.get("/openapi.json").json()["paths"]
+    assert "/api/applications" in paths
+    assert "/api/applications/{application_id}/contacts" in paths
 
 
 def test_owner_session_survives_requests_and_is_stored_only_as_a_hash(

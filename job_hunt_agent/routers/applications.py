@@ -23,6 +23,7 @@ from ..application_schemas import (
 )
 from ..application_workspace import ApplicationWorkspaceStore
 from ..auth import session_cookie_name
+from ..contact_schemas import ApplicationContactBenchResponse
 from ..database import Database
 from .session import AuthenticatedOwner, require_owner_session
 from .workspace import (
@@ -119,6 +120,24 @@ def create_application_router(
         if activity is None:
             _not_found("application")
         return activity
+
+    @router.get(
+        "/api/applications/{application_id}/contacts",
+        response_model=ApplicationContactBenchResponse,
+        responses=COMMON_ERROR_RESPONSES,
+    )
+    def get_owner_application_contacts(
+        application_id: OpaqueId,
+        owner: AuthenticatedOwner = Security(require_read_owner),
+    ) -> ApplicationContactBenchResponse:
+        contacts = _invoke(
+            _store(store).get_application_contacts,
+            owner_id=owner.owner_id,
+            application_id=application_id,
+        )
+        if contacts is None:
+            _not_found("application")
+        return contacts
 
     return router
 

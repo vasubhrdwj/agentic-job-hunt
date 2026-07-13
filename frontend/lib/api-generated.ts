@@ -55,6 +55,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/applications/{application_id}/contacts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Owner Application Contacts */
+        get: operations["get_owner_application_contacts_api_applications__application_id__contacts_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/career-tracks": {
         parameters: {
             query?: never;
@@ -656,6 +673,32 @@ export interface components {
             /** Items */
             items?: components["schemas"]["ApplicationActivityEventResponse"][];
         };
+        /**
+         * ApplicationContactBenchResponse
+         * @description Database-only contact state for one owner-scoped application.
+         */
+        ApplicationContactBenchResponse: {
+            /** Application Id */
+            application_id: string;
+            coverage_status: components["schemas"]["ContactBenchCoverage"];
+            current_search?: components["schemas"]["ContactSearchSnapshot"] | null;
+            /**
+             * Data Source
+             * @default database
+             * @constant
+             */
+            data_source: "database";
+            last_completed_result?: components["schemas"]["ContactBenchResult"] | null;
+            status: components["schemas"]["ContactBenchStatus"];
+            /**
+             * Target Count
+             * @default 5
+             * @constant
+             */
+            target_count: 5;
+            /** Verified Count */
+            verified_count: number;
+        };
         /** ApplicationDetailResponse */
         ApplicationDetailResponse: {
             /** Activity */
@@ -917,6 +960,189 @@ export interface components {
             minimum?: number | null;
             period: components["schemas"]["CompensationPeriod"];
         };
+        /**
+         * ContactBenchCoverage
+         * @enum {string}
+         */
+        ContactBenchCoverage: "not_started" | "pending" | "met" | "partial";
+        /**
+         * ContactBenchItem
+         * @description One selected person with the evidence snapshot used for this role.
+         */
+        ContactBenchItem: {
+            /** Bench Rank */
+            bench_rank: number;
+            bench_state: components["schemas"]["ContactBenchState"];
+            category: components["schemas"]["ContactCategory"];
+            /** Confidence */
+            confidence: number;
+            /** Contact Id */
+            contact_id: string;
+            /** Cooldown Until */
+            cooldown_until?: string | null;
+            /** Current Company */
+            current_company: string;
+            /** Current Title */
+            current_title: string;
+            employer_evidence: components["schemas"]["EmployerEvidenceResponse"];
+            /** Id */
+            id: string;
+            lifecycle: components["schemas"]["ContactLifecycle"];
+            profile_source: components["schemas"]["ContactProfileSource"];
+            /** Profile Url */
+            profile_url: string;
+            /** Public Name */
+            public_name: string;
+            relationship: components["schemas"]["RelevanceEvidenceResponse"];
+            /** Score Components */
+            score_components?: {
+                [key: string]: number;
+            };
+            /** Score Total */
+            score_total: number;
+            /** Scoring Version */
+            scoring_version: string;
+            team_proximity: components["schemas"]["RelevanceEvidenceResponse"];
+            /** Unlocked At */
+            unlocked_at?: string | null;
+            /**
+             * Verified At
+             * Format: date-time
+             */
+            verified_at: string;
+            /** Version */
+            version: number;
+            /** Wave */
+            wave: number;
+            /** Why Relevant */
+            why_relevant: string;
+        };
+        /**
+         * ContactBenchResult
+         * @description The last successfully completed, evidence-backed selection.
+         */
+        ContactBenchResult: {
+            /**
+             * Completed At
+             * Format: date-time
+             */
+            completed_at: string;
+            /** Contact Plan Id */
+            contact_plan_id: string;
+            /** Contacts */
+            contacts?: components["schemas"]["ContactBenchItem"][];
+            /**
+             * Coverage Status
+             * @enum {string}
+             */
+            coverage_status: "met" | "partial";
+            /** Exhausted */
+            exhausted: boolean;
+            /** Plan Number */
+            plan_number: number;
+            /** Shortfall Reasons */
+            shortfall_reasons?: string[];
+            /**
+             * Target Count
+             * @default 5
+             * @constant
+             */
+            target_count: 5;
+            /** Verified Count */
+            verified_count: number;
+        };
+        /**
+         * ContactBenchState
+         * @enum {string}
+         */
+        ContactBenchState: "ready" | "reserve" | "paused" | "stopped";
+        /**
+         * ContactBenchStatus
+         * @enum {string}
+         */
+        ContactBenchStatus: "not_started" | "queued" | "running" | "completed" | "failed" | "cancelled";
+        /**
+         * ContactCategory
+         * @enum {string}
+         */
+        ContactCategory: "warm_path" | "team_peer" | "adjacent_peer" | "team_leader" | "recruiter" | "other";
+        /**
+         * ContactCoverageStatus
+         * @enum {string}
+         */
+        ContactCoverageStatus: "pending" | "met" | "partial";
+        /**
+         * ContactEvidenceStatus
+         * @enum {string}
+         */
+        ContactEvidenceStatus: "verified" | "inferred" | "unknown";
+        /**
+         * ContactLifecycle
+         * @enum {string}
+         */
+        ContactLifecycle: "active" | "do_not_contact" | "retired";
+        /**
+         * ContactProfileSource
+         * @enum {string}
+         */
+        ContactProfileSource: "linkedin" | "github" | "company_page" | "other";
+        /**
+         * ContactSearchSnapshot
+         * @description The newest persisted search attempt, including terminal failures.
+         */
+        ContactSearchSnapshot: {
+            /** Candidate Limit */
+            candidate_limit: number;
+            /** Confidence Floor */
+            confidence_floor: number;
+            coverage_status: components["schemas"]["ContactCoverageStatus"];
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Discovered Count */
+            discovered_count: number;
+            /** Error Code */
+            error_code?: string | null;
+            /** Evidence Verified Count */
+            evidence_verified_count: number;
+            /** Exhausted */
+            exhausted: boolean;
+            /** Finalized At */
+            finalized_at?: string | null;
+            /** Id */
+            id: string;
+            /** Plan Number */
+            plan_number: number;
+            /** Retryable */
+            retryable: boolean;
+            /** Selected Count */
+            selected_count: number;
+            /** Shortfall Reasons */
+            shortfall_reasons?: string[];
+            /** Started At */
+            started_at?: string | null;
+            status: components["schemas"]["ContactSearchStatus"];
+            /**
+             * Target Count
+             * @default 5
+             * @constant
+             */
+            target_count: 5;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+            /** Version */
+            version: number;
+        };
+        /**
+         * ContactSearchStatus
+         * @enum {string}
+         */
+        ContactSearchStatus: "queued" | "running" | "completed" | "failed" | "cancelled";
         /** DateEvidenceFact */
         DateEvidenceFact: {
             /** Observed At */
@@ -937,6 +1163,20 @@ export interface components {
          * @enum {string}
          */
         DismissReason: "not_relevant" | "seniority_mismatch" | "location_or_mode" | "compensation" | "not_a_better_move" | "company" | "already_applied" | "closed_or_invalid" | "duplicate" | "other";
+        /** EmployerEvidenceResponse */
+        EmployerEvidenceResponse: {
+            /** Excerpt */
+            excerpt: string;
+            /**
+             * Observed At
+             * Format: date-time
+             */
+            observed_at: string;
+            /** Source */
+            source: string;
+            /** Url */
+            url: string;
+        };
         /**
          * EmploymentType
          * @description Normalized employment types exposed by source adapters.
@@ -1467,6 +1707,14 @@ export interface components {
             application: components["schemas"]["ApplicationSummary"];
             /** Application Created */
             application_created: boolean;
+        };
+        /** RelevanceEvidenceResponse */
+        RelevanceEvidenceResponse: {
+            status: components["schemas"]["ContactEvidenceStatus"];
+            /** Summary */
+            summary?: string | null;
+            /** Url */
+            url?: string | null;
         };
         /** RequeueRequest */
         RequeueRequest: {
@@ -2441,6 +2689,100 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ApplicationActivityListResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Precondition Required */
+            428: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+        };
+    };
+    get_owner_application_contacts_api_applications__application_id__contacts_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                application_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApplicationContactBenchResponse"];
                 };
             };
             /** @description Bad Request */

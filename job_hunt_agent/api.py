@@ -473,6 +473,7 @@ def create_app() -> FastAPI:
     app.state.owner_workspace_store = workspace_store
     app.state.opportunity_workspace_store = opportunity_store
     app.state.application_workspace_store = application_store
+    app.state.contact_workspace_store = application_store
     if practical_mode:
         app.include_router(
             create_workspace_router(

@@ -174,6 +174,10 @@ def test_application_reads_are_owner_scoped_and_never_open_a_network_connection(
         owner_id="owner-a",
         application_id="application1",
     )
+    contacts = store.get_application_contacts(
+        owner_id="owner-a",
+        application_id="application1",
+    )
 
     assert listed.data_source == "database"
     assert listed.total == 1
@@ -182,6 +186,9 @@ def test_application_reads_are_owner_scoped_and_never_open_a_network_connection(
     assert detail is not None and detail.application.id == "application1"
     assert activity is not None
     assert [event.id for event in activity.items] == ["activity1"]
+    assert contacts is not None
+    assert contacts.status.value == "not_started"
+    assert contacts.verified_count == 0
 
     assert store.list_applications(owner_id="owner-b").total == 0
     assert store.get_application(
@@ -189,6 +196,10 @@ def test_application_reads_are_owner_scoped_and_never_open_a_network_connection(
         application_id="application1",
     ) is None
     assert store.list_activity(
+        owner_id="owner-b",
+        application_id="application1",
+    ) is None
+    assert store.get_application_contacts(
         owner_id="owner-b",
         application_id="application1",
     ) is None

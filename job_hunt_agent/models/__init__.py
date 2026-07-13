@@ -2,6 +2,7 @@
 
 from .base import Base
 from .application import ActionItem, Application, ApplicationActivityEvent
+from .contact import ApplicationContact, Contact, ContactPlan
 from .foundation import (
     BackgroundJob,
     BackgroundJobEvent,
@@ -36,11 +37,14 @@ __all__ = [
     "ActionItem",
     "Application",
     "ApplicationActivityEvent",
+    "ApplicationContact",
     "BackgroundJob",
     "BackgroundJobEvent",
     "AchievementEvidence",
     "CandidateProfile",
     "CareerTrack",
+    "Contact",
+    "ContactPlan",
     "HuntOutcome",
     "HuntRun",
     "JobObservation",

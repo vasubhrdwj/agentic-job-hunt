@@ -22,9 +22,10 @@ from .application_schemas import (
 )
 from .database import Database
 from .owner_workspace import WorkspaceUnavailable
+from .sqlalchemy_contact_workspace import SqlAlchemyContactWorkspaceStore
 
 
-class SqlAlchemyApplicationWorkspaceStore:
+class SqlAlchemyApplicationWorkspaceStore(SqlAlchemyContactWorkspaceStore):
     """Serve application projections without invoking providers or workers."""
 
     def __init__(self, database: Database) -> None:

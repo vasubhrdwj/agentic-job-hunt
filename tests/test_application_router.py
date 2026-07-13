@@ -23,6 +23,7 @@ from job_hunt_agent.application_schemas import (
     ApplicationPostingSummary,
     ApplicationSummary,
 )
+from job_hunt_agent.contact_schemas import ApplicationContactBenchResponse
 from job_hunt_agent.database import Database
 from job_hunt_agent.owner_workspace import WorkspaceUnavailable
 from job_hunt_agent.routers.applications import create_application_router
@@ -128,6 +129,24 @@ class FakeApplicationStore:
             return None
         return ApplicationActivityListResponse(items=[_activity()])
 
+    def get_application_contacts(
+        self,
+        *,
+        owner_id: str,
+        application_id: str,
+    ) -> ApplicationContactBenchResponse | None:
+        self.calls.append(("get_application_contacts", owner_id))
+        if self.unavailable:
+            raise WorkspaceUnavailable("PRIVATE_CONTACT_DATABASE_HOST")
+        if application_id != "application1":
+            return None
+        return ApplicationContactBenchResponse(
+            application_id=application_id,
+            status="not_started",
+            verified_count=0,
+            coverage_status="not_started",
+        )
+
 
 @pytest.fixture
 def application_client(
@@ -187,6 +206,11 @@ def test_application_reads_require_auth_and_forward_only_the_session_owner(
         status_code=401,
         code="owner_session_required",
     )
+    _assert_problem(
+        client.get("/api/applications/application1/contacts"),
+        status_code=401,
+        code="owner_session_required",
+    )
 
     _login(client)
     listed = client.get(
@@ -195,19 +219,24 @@ def test_application_reads_require_auth_and_forward_only_the_session_owner(
     )
     detail = client.get("/api/applications/application1")
     activity = client.get("/api/applications/application1/activity")
+    contacts = client.get("/api/applications/application1/contacts")
 
     assert listed.status_code == 200, listed.text
     assert listed.json()["data_source"] == "database"
     assert detail.status_code == 200, detail.text
     assert detail.headers["etag"] == '"1"'
     assert activity.status_code == 200, activity.text
-    for response in (listed, detail, activity):
+    assert contacts.status_code == 200, contacts.text
+    assert contacts.json()["status"] == "not_started"
+    assert contacts.json()["verified_count"] == 0
+    for response in (listed, detail, activity, contacts):
         assert response.headers["cache-control"] == "no-store, max-age=0"
         assert response.headers["pragma"] == "no-cache"
     assert store.calls == [
         ("list_applications", "owner"),
         ("get_application", "owner"),
         ("list_activity", "owner"),
+        ("get_application_contacts", "owner"),
     ]
     assert store.last_list_query == (7, "abc_123")
 
@@ -221,6 +250,7 @@ def test_application_reads_mask_missing_or_foreign_ids(
     for path in (
         "/api/applications/foreignapplication",
         "/api/applications/foreignapplication/activity",
+        "/api/applications/foreignapplication/contacts",
     ):
         body = _assert_problem(
             client.get(path),
@@ -256,6 +286,15 @@ def test_application_validation_and_storage_failures_use_safe_problem_responses(
     assert body["retryable"] is True
     assert "PRIVATE_APPLICATION_DATABASE_HOST" not in json.dumps(body)
 
+    unavailable_contacts = client.get("/api/applications/application1/contacts")
+    contact_body = _assert_problem(
+        unavailable_contacts,
+        status_code=503,
+        code="workspace_unavailable",
+    )
+    assert contact_body["retryable"] is True
+    assert "PRIVATE_CONTACT_DATABASE_HOST" not in json.dumps(contact_body)
+
 
 def test_application_openapi_declares_cookie_auth_and_problem_contracts(
     application_client: tuple[TestClient, FakeApplicationStore],
@@ -278,6 +317,13 @@ def test_application_openapi_declares_cookie_auth_and_problem_contracts(
             "list_owner_application_activity_api_applications__application_id__"
             "activity_get"
         ),
+        (
+            "/api/applications/{application_id}/contacts",
+            "get",
+        ): (
+            "get_owner_application_contacts_api_applications__application_id__"
+            "contacts_get"
+        ),
     }
     for (path, method), operation_id in expected.items():
         operation = schema["paths"][path][method]
@@ -287,3 +333,8 @@ def test_application_openapi_declares_cookie_auth_and_problem_contracts(
             "application/json"
         ]["schema"]
         assert validation_schema["$ref"].endswith("/ProblemResponse")
+
+    contact_schema = schema["paths"][
+        "/api/applications/{application_id}/contacts"
+    ]["get"]["responses"]["200"]["content"]["application/json"]["schema"]
+    assert contact_schema["$ref"].endswith("/ApplicationContactBenchResponse")

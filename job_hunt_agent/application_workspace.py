@@ -10,9 +10,10 @@ from .application_schemas import (
     ApplicationListResponse,
     CursorToken,
 )
+from .contact_workspace import ContactWorkspaceStore
 
 
-class ApplicationWorkspaceStore(Protocol):
+class ApplicationWorkspaceStore(ContactWorkspaceStore, Protocol):
     """Owner-scoped, database-only reads for the application workspace."""
 
     def list_applications(

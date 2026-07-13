@@ -473,6 +473,69 @@
         "title": "ApplicationActivityListResponse",
         "type": "object"
       },
+      "ApplicationContactBenchResponse": {
+        "additionalProperties": false,
+        "description": "Database-only contact state for one owner-scoped application.",
+        "properties": {
+          "application_id": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
+            "title": "Application Id",
+            "type": "string"
+          },
+          "coverage_status": {
+            "$ref": "#/components/schemas/ContactBenchCoverage"
+          },
+          "current_search": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ContactSearchSnapshot"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "data_source": {
+            "const": "database",
+            "default": "database",
+            "title": "Data Source",
+            "type": "string"
+          },
+          "last_completed_result": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ContactBenchResult"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "status": {
+            "$ref": "#/components/schemas/ContactBenchStatus"
+          },
+          "target_count": {
+            "const": 5,
+            "default": 5,
+            "title": "Target Count",
+            "type": "integer"
+          },
+          "verified_count": {
+            "maximum": 5.0,
+            "minimum": 0.0,
+            "title": "Verified Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "application_id",
+          "status",
+          "verified_count",
+          "coverage_status"
+        ],
+        "title": "ApplicationContactBenchResponse",
+        "type": "object"
+      },
       "ApplicationDetailResponse": {
         "additionalProperties": false,
         "properties": {
@@ -1341,6 +1404,495 @@
         "title": "CompensationValue",
         "type": "object"
       },
+      "ContactBenchCoverage": {
+        "enum": [
+          "not_started",
+          "pending",
+          "met",
+          "partial"
+        ],
+        "title": "ContactBenchCoverage",
+        "type": "string"
+      },
+      "ContactBenchItem": {
+        "additionalProperties": false,
+        "description": "One selected person with the evidence snapshot used for this role.",
+        "properties": {
+          "bench_rank": {
+            "maximum": 5.0,
+            "minimum": 1.0,
+            "title": "Bench Rank",
+            "type": "integer"
+          },
+          "bench_state": {
+            "$ref": "#/components/schemas/ContactBenchState"
+          },
+          "category": {
+            "$ref": "#/components/schemas/ContactCategory"
+          },
+          "confidence": {
+            "maximum": 1.0,
+            "minimum": 0.75,
+            "title": "Confidence",
+            "type": "number"
+          },
+          "contact_id": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
+            "title": "Contact Id",
+            "type": "string"
+          },
+          "cooldown_until": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cooldown Until"
+          },
+          "current_company": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Current Company",
+            "type": "string"
+          },
+          "current_title": {
+            "maxLength": 300,
+            "minLength": 1,
+            "title": "Current Title",
+            "type": "string"
+          },
+          "employer_evidence": {
+            "$ref": "#/components/schemas/EmployerEvidenceResponse"
+          },
+          "id": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
+            "title": "Id",
+            "type": "string"
+          },
+          "lifecycle": {
+            "$ref": "#/components/schemas/ContactLifecycle"
+          },
+          "profile_source": {
+            "$ref": "#/components/schemas/ContactProfileSource"
+          },
+          "profile_url": {
+            "maxLength": 2048,
+            "minLength": 1,
+            "title": "Profile Url",
+            "type": "string"
+          },
+          "public_name": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Public Name",
+            "type": "string"
+          },
+          "relationship": {
+            "$ref": "#/components/schemas/RelevanceEvidenceResponse"
+          },
+          "score_components": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "number"
+                }
+              ]
+            },
+            "maxProperties": 32,
+            "propertyNames": {
+              "maxLength": 100,
+              "minLength": 1
+            },
+            "title": "Score Components",
+            "type": "object"
+          },
+          "score_total": {
+            "maximum": 1000.0,
+            "minimum": 0.0,
+            "title": "Score Total",
+            "type": "integer"
+          },
+          "scoring_version": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Scoring Version",
+            "type": "string"
+          },
+          "team_proximity": {
+            "$ref": "#/components/schemas/RelevanceEvidenceResponse"
+          },
+          "unlocked_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unlocked At"
+          },
+          "verified_at": {
+            "format": "date-time",
+            "title": "Verified At",
+            "type": "string"
+          },
+          "version": {
+            "minimum": 1.0,
+            "title": "Version",
+            "type": "integer"
+          },
+          "wave": {
+            "maximum": 5.0,
+            "minimum": 1.0,
+            "title": "Wave",
+            "type": "integer"
+          },
+          "why_relevant": {
+            "maxLength": 2000,
+            "minLength": 1,
+            "title": "Why Relevant",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "contact_id",
+          "version",
+          "public_name",
+          "profile_url",
+          "profile_source",
+          "lifecycle",
+          "current_title",
+          "current_company",
+          "category",
+          "confidence",
+          "verified_at",
+          "employer_evidence",
+          "why_relevant",
+          "relationship",
+          "team_proximity",
+          "score_total",
+          "scoring_version",
+          "bench_rank",
+          "wave",
+          "bench_state"
+        ],
+        "title": "ContactBenchItem",
+        "type": "object"
+      },
+      "ContactBenchResult": {
+        "additionalProperties": false,
+        "description": "The last successfully completed, evidence-backed selection.",
+        "properties": {
+          "completed_at": {
+            "format": "date-time",
+            "title": "Completed At",
+            "type": "string"
+          },
+          "contact_plan_id": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
+            "title": "Contact Plan Id",
+            "type": "string"
+          },
+          "contacts": {
+            "items": {
+              "$ref": "#/components/schemas/ContactBenchItem"
+            },
+            "maxItems": 5,
+            "title": "Contacts",
+            "type": "array"
+          },
+          "coverage_status": {
+            "enum": [
+              "met",
+              "partial"
+            ],
+            "title": "Coverage Status",
+            "type": "string"
+          },
+          "exhausted": {
+            "title": "Exhausted",
+            "type": "boolean"
+          },
+          "plan_number": {
+            "minimum": 1.0,
+            "title": "Plan Number",
+            "type": "integer"
+          },
+          "shortfall_reasons": {
+            "items": {
+              "maxLength": 100,
+              "minLength": 1,
+              "pattern": "^[a-z][a-z0-9_]*$",
+              "type": "string"
+            },
+            "maxItems": 12,
+            "title": "Shortfall Reasons",
+            "type": "array"
+          },
+          "target_count": {
+            "const": 5,
+            "default": 5,
+            "title": "Target Count",
+            "type": "integer"
+          },
+          "verified_count": {
+            "maximum": 5.0,
+            "minimum": 0.0,
+            "title": "Verified Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "contact_plan_id",
+          "plan_number",
+          "verified_count",
+          "coverage_status",
+          "exhausted",
+          "completed_at"
+        ],
+        "title": "ContactBenchResult",
+        "type": "object"
+      },
+      "ContactBenchState": {
+        "enum": [
+          "ready",
+          "reserve",
+          "paused",
+          "stopped"
+        ],
+        "title": "ContactBenchState",
+        "type": "string"
+      },
+      "ContactBenchStatus": {
+        "enum": [
+          "not_started",
+          "queued",
+          "running",
+          "completed",
+          "failed",
+          "cancelled"
+        ],
+        "title": "ContactBenchStatus",
+        "type": "string"
+      },
+      "ContactCategory": {
+        "enum": [
+          "warm_path",
+          "team_peer",
+          "adjacent_peer",
+          "team_leader",
+          "recruiter",
+          "other"
+        ],
+        "title": "ContactCategory",
+        "type": "string"
+      },
+      "ContactCoverageStatus": {
+        "enum": [
+          "pending",
+          "met",
+          "partial"
+        ],
+        "title": "ContactCoverageStatus",
+        "type": "string"
+      },
+      "ContactEvidenceStatus": {
+        "enum": [
+          "verified",
+          "inferred",
+          "unknown"
+        ],
+        "title": "ContactEvidenceStatus",
+        "type": "string"
+      },
+      "ContactLifecycle": {
+        "enum": [
+          "active",
+          "do_not_contact",
+          "retired"
+        ],
+        "title": "ContactLifecycle",
+        "type": "string"
+      },
+      "ContactProfileSource": {
+        "enum": [
+          "linkedin",
+          "github",
+          "company_page",
+          "other"
+        ],
+        "title": "ContactProfileSource",
+        "type": "string"
+      },
+      "ContactSearchSnapshot": {
+        "additionalProperties": false,
+        "description": "The newest persisted search attempt, including terminal failures.",
+        "properties": {
+          "candidate_limit": {
+            "maximum": 12.0,
+            "minimum": 5.0,
+            "title": "Candidate Limit",
+            "type": "integer"
+          },
+          "confidence_floor": {
+            "maximum": 1.0,
+            "minimum": 0.75,
+            "title": "Confidence Floor",
+            "type": "number"
+          },
+          "coverage_status": {
+            "$ref": "#/components/schemas/ContactCoverageStatus"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "discovered_count": {
+            "maximum": 12.0,
+            "minimum": 0.0,
+            "title": "Discovered Count",
+            "type": "integer"
+          },
+          "error_code": {
+            "anyOf": [
+              {
+                "maxLength": 100,
+                "minLength": 1,
+                "pattern": "^[a-z][a-z0-9_.-]*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Code"
+          },
+          "evidence_verified_count": {
+            "maximum": 12.0,
+            "minimum": 0.0,
+            "title": "Evidence Verified Count",
+            "type": "integer"
+          },
+          "exhausted": {
+            "title": "Exhausted",
+            "type": "boolean"
+          },
+          "finalized_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finalized At"
+          },
+          "id": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
+            "title": "Id",
+            "type": "string"
+          },
+          "plan_number": {
+            "minimum": 1.0,
+            "title": "Plan Number",
+            "type": "integer"
+          },
+          "retryable": {
+            "title": "Retryable",
+            "type": "boolean"
+          },
+          "selected_count": {
+            "maximum": 5.0,
+            "minimum": 0.0,
+            "title": "Selected Count",
+            "type": "integer"
+          },
+          "shortfall_reasons": {
+            "items": {
+              "maxLength": 100,
+              "minLength": 1,
+              "pattern": "^[a-z][a-z0-9_]*$",
+              "type": "string"
+            },
+            "maxItems": 12,
+            "title": "Shortfall Reasons",
+            "type": "array"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At"
+          },
+          "status": {
+            "$ref": "#/components/schemas/ContactSearchStatus"
+          },
+          "target_count": {
+            "const": 5,
+            "default": 5,
+            "title": "Target Count",
+            "type": "integer"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          },
+          "version": {
+            "minimum": 1.0,
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "version",
+          "plan_number",
+          "status",
+          "candidate_limit",
+          "confidence_floor",
+          "discovered_count",
+          "evidence_verified_count",
+          "selected_count",
+          "coverage_status",
+          "exhausted",
+          "retryable",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "ContactSearchSnapshot",
+        "type": "object"
+      },
+      "ContactSearchStatus": {
+        "enum": [
+          "queued",
+          "running",
+          "completed",
+          "failed",
+          "cancelled"
+        ],
+        "title": "ContactSearchStatus",
+        "type": "string"
+      },
       "DateEvidenceFact": {
         "additionalProperties": false,
         "properties": {
@@ -1419,6 +1971,42 @@
         ],
         "title": "DismissReason",
         "type": "string"
+      },
+      "EmployerEvidenceResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "excerpt": {
+            "maxLength": 1000,
+            "minLength": 1,
+            "title": "Excerpt",
+            "type": "string"
+          },
+          "observed_at": {
+            "format": "date-time",
+            "title": "Observed At",
+            "type": "string"
+          },
+          "source": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Source",
+            "type": "string"
+          },
+          "url": {
+            "maxLength": 2048,
+            "minLength": 1,
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "excerpt",
+          "url",
+          "source",
+          "observed_at"
+        ],
+        "title": "EmployerEvidenceResponse",
+        "type": "object"
       },
       "EmploymentType": {
         "description": "Normalized employment types exposed by source adapters.",
@@ -2723,6 +3311,45 @@
           "application_created"
         ],
         "title": "PursuitBundle",
+        "type": "object"
+      },
+      "RelevanceEvidenceResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "status": {
+            "$ref": "#/components/schemas/ContactEvidenceStatus"
+          },
+          "summary": {
+            "anyOf": [
+              {
+                "maxLength": 1000,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Summary"
+          },
+          "url": {
+            "anyOf": [
+              {
+                "maxLength": 2048,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Url"
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "title": "RelevanceEvidenceResponse",
         "type": "object"
       },
       "RequeueRequest": {
@@ -5221,6 +5848,124 @@
           }
         ],
         "summary": "List Owner Application Activity",
+        "tags": [
+          "applications"
+        ]
+      }
+    },
+    "/api/applications/{application_id}/contacts": {
+      "get": {
+        "operationId": "get_owner_application_contacts_api_applications__application_id__contacts_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "application_id",
+            "required": true,
+            "schema": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
+              "title": "Application Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApplicationContactBenchResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
+          "428": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Precondition Required"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "security": [
+          {
+            "OwnerSessionCookie": []
+          }
+        ],
+        "summary": "Get Owner Application Contacts",
         "tags": [
           "applications"
         ]

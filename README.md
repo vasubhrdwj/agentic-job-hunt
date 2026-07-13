@@ -30,6 +30,9 @@ durable opportunity radar is documented in
 [`docs/PHASE_2_OPPORTUNITY_RADAR.md`](docs/PHASE_2_OPPORTUNITY_RADAR.md). The
 first practical application checkpoint is documented in
 [`docs/PHASE_3_APPLICATION_PIPELINE.md`](docs/PHASE_3_APPLICATION_PIPELINE.md).
+The verified-contact foundation and its remaining provider/UI checkpoints are
+documented in
+[`docs/PHASE_4_CONTACT_BENCH.md`](docs/PHASE_4_CONTACT_BENCH.md).
 
 The delivered foundation includes migrated Postgres models, private owner
 sessions, owner-scoped generic jobs, lease/cancellation safety, capability-aware
@@ -51,8 +54,16 @@ or calls a model merely because the page was opened.
 Phase 3A adds an atomic **Pursue** decision. It creates exactly one application,
 one open dated next action, and one immutable creation activity, then exposes a
 database-only Applications list and dossier. The only current application stage
-is `pursuing`; stage transitions, action updates, application packs, and contact
-discovery remain explicit follow-up work.
+is `pursuing`; stage transitions, action updates, and application packs remain
+explicit follow-up work.
+
+Phase 4A adds the durable verified-contact bench foundation. Each application
+can retain a 12-person evidence-backed discovery pool and a deterministic,
+diverse bench of up to five. It preserves the exact public evidence used,
+deduplicates normalized profile identities, and reports honest shortfalls such
+as `3/5 verified`. Reads are database-only and no outreach is sent. The live
+provider-backed worker and dossier controls arrive in the next checkpoints, so
+the practical UI does not yet claim that it can start a contact search.
 
 The separate **Legacy hunt** remains available when you explicitly want the
 current end-to-end flow with resume matching, at least five appropriate
