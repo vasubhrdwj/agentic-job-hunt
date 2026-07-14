@@ -8162,6 +8162,155 @@
         "title": "TextEvidenceFact",
         "type": "object"
       },
+      "TodayApplicationActionApplication": {
+        "additionalProperties": false,
+        "description": "Stable application identity attached to one Today action.",
+        "properties": {
+          "id": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
+            "title": "Id",
+            "type": "string"
+          },
+          "job_posting_id": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
+            "title": "Job Posting Id",
+            "type": "string"
+          },
+          "opportunity_id": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
+            "title": "Opportunity Id",
+            "type": "string"
+          },
+          "pursued_posting_version_id": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
+            "title": "Pursued Posting Version Id",
+            "type": "string"
+          },
+          "stage": {
+            "$ref": "#/components/schemas/ApplicationStage"
+          },
+          "version": {
+            "minimum": 1.0,
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "version",
+          "opportunity_id",
+          "job_posting_id",
+          "pursued_posting_version_id",
+          "stage"
+        ],
+        "title": "TodayApplicationActionApplication",
+        "type": "object"
+      },
+      "TodayApplicationActionGroup": {
+        "additionalProperties": false,
+        "description": "A bounded Today action bucket with its complete owner-local count.",
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/TodayApplicationActionItem"
+            },
+            "maxItems": 50,
+            "title": "Items",
+            "type": "array"
+          },
+          "total": {
+            "minimum": 0.0,
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "total"
+        ],
+        "title": "TodayApplicationActionGroup",
+        "type": "object"
+      },
+      "TodayApplicationActionItem": {
+        "additionalProperties": false,
+        "description": "One exact open application action and its pinned posting context.",
+        "properties": {
+          "action": {
+            "$ref": "#/components/schemas/ActionItemResponse"
+          },
+          "application": {
+            "$ref": "#/components/schemas/TodayApplicationActionApplication"
+          },
+          "posting": {
+            "$ref": "#/components/schemas/ApplicationPostingSummary"
+          },
+          "source": {
+            "const": "application",
+            "default": "application",
+            "title": "Source",
+            "type": "string"
+          }
+        },
+        "required": [
+          "application",
+          "posting",
+          "action"
+        ],
+        "title": "TodayApplicationActionItem",
+        "type": "object"
+      },
+      "TodayApplicationActionsResponse": {
+        "additionalProperties": false,
+        "description": "Owner-local, database-only application actions for the Today workspace.",
+        "properties": {
+          "as_of": {
+            "format": "date-time",
+            "title": "As Of",
+            "type": "string"
+          },
+          "data_source": {
+            "const": "database",
+            "default": "database",
+            "title": "Data Source",
+            "type": "string"
+          },
+          "next_7_days": {
+            "$ref": "#/components/schemas/TodayApplicationActionGroup"
+          },
+          "overdue": {
+            "$ref": "#/components/schemas/TodayApplicationActionGroup"
+          },
+          "owner_local_date": {
+            "format": "date",
+            "title": "Owner Local Date",
+            "type": "string"
+          },
+          "owner_timezone": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Owner Timezone",
+            "type": "string"
+          },
+          "today": {
+            "$ref": "#/components/schemas/TodayApplicationActionGroup"
+          },
+          "window_ends_on": {
+            "format": "date",
+            "title": "Window Ends On",
+            "type": "string"
+          }
+        },
+        "required": [
+          "as_of",
+          "owner_timezone",
+          "owner_local_date",
+          "window_ends_on",
+          "overdue",
+          "today",
+          "next_7_days"
+        ],
+        "title": "TodayApplicationActionsResponse",
+        "type": "object"
+      },
       "TodayListResponse": {
         "additionalProperties": false,
         "properties": {
@@ -14951,6 +15100,126 @@
         "summary": "List Today",
         "tags": [
           "opportunity-radar"
+        ]
+      }
+    },
+    "/api/today/application-actions": {
+      "get": {
+        "operationId": "list_today_application_action_items_api_today_application_actions_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "maximum": 50,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TodayApplicationActionsResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
+          "428": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Precondition Required"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "security": [
+          {
+            "OwnerSessionCookie": []
+          }
+        ],
+        "summary": "List Today Application Action Items",
+        "tags": [
+          "applications"
         ]
       }
     },

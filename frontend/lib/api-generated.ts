@@ -731,6 +731,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/today/application-actions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Today Application Action Items */
+        get: operations["list_today_application_action_items_api_today_application_actions_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/health": {
         parameters: {
             query?: never;
@@ -3761,6 +3778,80 @@ export interface components {
             state: components["schemas"]["EvidenceState"];
             /** Value */
             value?: string | null;
+        };
+        /**
+         * TodayApplicationActionApplication
+         * @description Stable application identity attached to one Today action.
+         */
+        TodayApplicationActionApplication: {
+            /** Id */
+            id: string;
+            /** Job Posting Id */
+            job_posting_id: string;
+            /** Opportunity Id */
+            opportunity_id: string;
+            /** Pursued Posting Version Id */
+            pursued_posting_version_id: string;
+            stage: components["schemas"]["ApplicationStage"];
+            /** Version */
+            version: number;
+        };
+        /**
+         * TodayApplicationActionGroup
+         * @description A bounded Today action bucket with its complete owner-local count.
+         */
+        TodayApplicationActionGroup: {
+            /** Items */
+            items?: components["schemas"]["TodayApplicationActionItem"][];
+            /** Total */
+            total: number;
+        };
+        /**
+         * TodayApplicationActionItem
+         * @description One exact open application action and its pinned posting context.
+         */
+        TodayApplicationActionItem: {
+            action: components["schemas"]["ActionItemResponse"];
+            application: components["schemas"]["TodayApplicationActionApplication"];
+            posting: components["schemas"]["ApplicationPostingSummary"];
+            /**
+             * Source
+             * @default application
+             * @constant
+             */
+            source: "application";
+        };
+        /**
+         * TodayApplicationActionsResponse
+         * @description Owner-local, database-only application actions for the Today workspace.
+         */
+        TodayApplicationActionsResponse: {
+            /**
+             * As Of
+             * Format: date-time
+             */
+            as_of: string;
+            /**
+             * Data Source
+             * @default database
+             * @constant
+             */
+            data_source: "database";
+            next_7_days: components["schemas"]["TodayApplicationActionGroup"];
+            overdue: components["schemas"]["TodayApplicationActionGroup"];
+            /**
+             * Owner Local Date
+             * Format: date
+             */
+            owner_local_date: string;
+            /** Owner Timezone */
+            owner_timezone: string;
+            today: components["schemas"]["TodayApplicationActionGroup"];
+            /**
+             * Window Ends On
+             * Format: date
+             */
+            window_ends_on: string;
         };
         /** TodayListResponse */
         TodayListResponse: {
@@ -8287,6 +8378,100 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TodayListResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Precondition Required */
+            428: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+        };
+    };
+    list_today_application_action_items_api_today_application_actions_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TodayApplicationActionsResponse"];
                 };
             };
             /** @description Bad Request */

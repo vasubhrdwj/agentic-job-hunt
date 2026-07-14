@@ -408,6 +408,7 @@ def create_app() -> FastAPI:
             or request.url.path.startswith("/api/saved-searches")
             or request.url.path.startswith("/api/scans")
             or request.url.path == "/api/today"
+            or request.url.path.startswith("/api/today/")
             or request.url.path.startswith("/api/opportunities")
             or request.url.path.startswith("/api/applications")
         ):

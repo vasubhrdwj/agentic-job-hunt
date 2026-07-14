@@ -35,6 +35,9 @@ The verified-contact bench and manual outreach workflow are documented in
 provider-free grounding, application-material, and exact manual-submission
 checkpoints are documented in
 [`docs/PHASE_5_APPLICATION_PACK.md`](docs/PHASE_5_APPLICATION_PACK.md).
+Hiring progress, terminal outcomes, and the owner-local Today action center are
+documented in
+[`docs/PHASE_6_OUTCOME_LEARNING.md`](docs/PHASE_6_OUTCOME_LEARNING.md).
 
 The delivered foundation includes migrated Postgres models, private owner
 sessions, owner-scoped generic jobs, lease/cancellation safety, capability-aware
@@ -91,6 +94,13 @@ manual-application checklist records `ready_to_apply` and `applied` only against
 those exact reviewed materials, a persisted verified first-party destination,
 the owner-local applied date, and the next follow-up. Nothing fills or submits
 an employer form, and reads never generate or call a model/provider.
+
+Phase 6A records confirmed recruiter screens, interviews, offers, and explicit
+terminal outcomes without rewriting the exact submission. Every active role
+retains one dated task, while a closed role has a durable outcome and no phantom
+next action. Today now loads a separate owner-local action center before the
+opportunity inbox, grouping overdue, due-today, and next-seven-day application
+work with direct dossier links and complete bucket counts.
 
 The separate **Legacy hunt** remains available when you explicitly want the
 current end-to-end flow with resume matching, at least five appropriate
@@ -210,6 +220,8 @@ POST   /api/saved-searches/{id}/scans
                                     → 202 durable search-only scan (If-Match + idempotency)
 GET    /api/scans/{id}              → persisted progress, counts, and safe source warnings
 GET    /api/today                   → database-only deduplicated opportunity inbox
+GET    /api/today/application-actions
+                                    → owner-local overdue, today, and next-7-day application work
 GET    /api/opportunities/{id}      → posting facts, versions, provenance, decision history
 POST   /api/opportunities/{id}/decision
                                     → pursue, watch, dismiss, or restore (If-Match + idempotency)

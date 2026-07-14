@@ -16,7 +16,7 @@ from datetime import date, datetime, timedelta, timezone
 from uuid import uuid4
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from sqlalchemy import func, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.orm import Session
 
 from .application_schemas import (
@@ -31,6 +31,10 @@ from .application_schemas import (
     ApplicationSummary,
     CursorToken,
     PursuitBundle,
+    TodayApplicationActionApplication,
+    TodayApplicationActionGroup,
+    TodayApplicationActionItem,
+    TodayApplicationActionsResponse,
 )
 from .job_queue import utcnow
 from .models import (
@@ -60,6 +64,14 @@ from .repository_errors import ResourceConflict, require_version
 _INITIAL_ACTION_TITLE = "Review role and prepare application"
 _MAX_APPLICATION_PAGE_SIZE = 50
 _MAX_ACTIVITY_ITEMS = 500
+_ACTIVE_ACTION_KIND_BY_STAGE = {
+    "pursuing": "review_and_prepare_application",
+    "ready_to_apply": "submit_application",
+    "applied": "follow_up_application",
+    "screening": "prepare_recruiter_screen",
+    "interviewing": "prepare_interview",
+    "offer": "review_offer",
+}
 
 
 class ApplicationRepositoryError(RuntimeError):
@@ -414,6 +426,60 @@ def list_applications(
     )
 
 
+def list_today_application_actions(
+    session: Session,
+    owner_id: str,
+    limit: int = 20,
+    now: datetime | None = None,
+) -> TodayApplicationActionsResponse:
+    """Project bounded, owner-local open application actions for Today."""
+
+    if limit < 1 or limit > _MAX_APPLICATION_PAGE_SIZE:
+        raise ValueError("Today application action limit must be 1-50")
+    current = _as_utc(now or utcnow())
+    owner_timezone = session.scalar(
+        select(Owner.timezone).where(Owner.id == owner_id)
+    )
+    if owner_timezone is None:
+        raise ApplicationRepositoryError("application action owner is missing")
+    try:
+        owner_zone = ZoneInfo(owner_timezone)
+    except (ValueError, ZoneInfoNotFoundError) as exc:
+        raise ApplicationRepositoryError(
+            "application action owner timezone is invalid"
+        ) from exc
+
+    owner_local_date = current.astimezone(owner_zone).date()
+    window_ends_on = owner_local_date + timedelta(days=7)
+    _validate_today_action_graph(session, owner_id=owner_id)
+    return TodayApplicationActionsResponse(
+        data_source="database",
+        as_of=current,
+        owner_timezone=owner_timezone,
+        owner_local_date=owner_local_date,
+        window_ends_on=window_ends_on,
+        overdue=_today_application_action_group(
+            session,
+            owner_id=owner_id,
+            limit=limit,
+            due_before=owner_local_date,
+        ),
+        today=_today_application_action_group(
+            session,
+            owner_id=owner_id,
+            limit=limit,
+            due_on=owner_local_date,
+        ),
+        next_7_days=_today_application_action_group(
+            session,
+            owner_id=owner_id,
+            limit=limit,
+            due_after=owner_local_date,
+            due_through=window_ends_on,
+        ),
+    )
+
+
 def load_application_detail(
     session: Session,
     owner_id: str,
@@ -554,6 +620,141 @@ def _application_summary(
         first_party=verified,
         outcome=outcome,
     )
+
+
+def _validate_today_action_graph(session: Session, *, owner_id: str) -> None:
+    """Refuse to hide an active application whose current action is malformed."""
+
+    open_action_exists = (
+        select(ActionItem.id)
+        .where(
+            ActionItem.owner_id == Application.owner_id,
+            ActionItem.application_id == Application.id,
+            ActionItem.status == "open",
+        )
+        .exists()
+    )
+    missing_action = session.scalar(
+        select(Application.id)
+        .where(
+            Application.owner_id == owner_id,
+            Application.stage != "closed",
+            ~open_action_exists,
+        )
+        .limit(1)
+    )
+    if missing_action is not None:
+        raise ApplicationRepositoryError(
+            "an active application has no open current action"
+        )
+
+    application_join = and_(
+        Application.owner_id == ActionItem.owner_id,
+        Application.id == ActionItem.application_id,
+    )
+    wrong_action = session.scalar(
+        select(ActionItem.id)
+        .select_from(ActionItem)
+        .join(Application, application_join)
+        .where(
+            ActionItem.owner_id == owner_id,
+            Application.owner_id == owner_id,
+            ActionItem.status == "open",
+            or_(
+                Application.stage == "closed",
+                *(
+                    and_(
+                        Application.stage == stage,
+                        ActionItem.kind != expected_kind,
+                    )
+                    for stage, expected_kind in _ACTIVE_ACTION_KIND_BY_STAGE.items()
+                ),
+            ),
+        )
+        .limit(1)
+    )
+    if wrong_action is not None:
+        raise ApplicationRepositoryError(
+            "an application has an invalid open current action"
+        )
+
+
+def _today_application_action_group(
+    session: Session,
+    *,
+    owner_id: str,
+    limit: int,
+    due_on: date | None = None,
+    due_before: date | None = None,
+    due_after: date | None = None,
+    due_through: date | None = None,
+) -> TodayApplicationActionGroup:
+    application_join = and_(
+        Application.owner_id == ActionItem.owner_id,
+        Application.id == ActionItem.application_id,
+    )
+    predicates = [
+        ActionItem.owner_id == owner_id,
+        Application.owner_id == owner_id,
+        ActionItem.status == "open",
+        Application.stage != "closed",
+    ]
+    if due_on is not None:
+        predicates.append(ActionItem.due_on == due_on)
+    if due_before is not None:
+        predicates.append(ActionItem.due_on < due_before)
+    if due_after is not None:
+        predicates.append(ActionItem.due_on > due_after)
+    if due_through is not None:
+        predicates.append(ActionItem.due_on <= due_through)
+
+    total = int(
+        session.scalar(
+            select(func.count(ActionItem.id))
+            .select_from(ActionItem)
+            .join(Application, application_join)
+            .where(*predicates)
+        )
+        or 0
+    )
+    applications = list(
+        session.scalars(
+            select(Application)
+            .join(ActionItem, application_join)
+            .where(*predicates)
+            .order_by(
+                ActionItem.due_on,
+                ActionItem.created_at,
+                ActionItem.id,
+            )
+            .limit(limit)
+        )
+    )
+    summaries = _application_summaries(session, applications)
+    items: list[TodayApplicationActionItem] = []
+    for application, summary in zip(applications, summaries, strict=True):
+        if summary.current_action is None:
+            raise ApplicationRepositoryError(
+                "Today application action projection has no current action"
+            )
+        items.append(
+            TodayApplicationActionItem(
+                source="application",
+                application=TodayApplicationActionApplication(
+                    id=application.id,
+                    version=application.version,
+                    opportunity_id=application.owner_opportunity_id,
+                    job_posting_id=application.job_posting_id,
+                    pursued_posting_version_id=(
+                        application.pursued_posting_version_id
+                    ),
+                    stage=application.stage,
+                ),
+                posting=summary.posting,
+                action=summary.current_action,
+            )
+        )
+    return TodayApplicationActionGroup(total=total, items=items)
 
 
 def _application_summaries(
@@ -912,6 +1113,7 @@ __all__ = [
     "ApplicationRepositoryError",
     "list_application_activity",
     "list_applications",
+    "list_today_application_actions",
     "load_application_detail",
     "pursue_owner_opportunity",
 ]

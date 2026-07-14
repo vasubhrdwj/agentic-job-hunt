@@ -579,6 +579,7 @@ def is_workspace_api_path(path: str) -> bool:
         or path == "/api/scans"
         or path.startswith("/api/scans/")
         or path == "/api/today"
+        or path.startswith("/api/today/")
         or path == "/api/opportunities"
         or path.startswith("/api/opportunities/")
         or path == "/api/applications"

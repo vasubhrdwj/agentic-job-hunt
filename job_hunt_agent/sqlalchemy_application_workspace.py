@@ -36,6 +36,7 @@ from .application_repository import (
     ApplicationRepositoryError,
     list_application_activity,
     list_applications,
+    list_today_application_actions,
     load_application_detail,
 )
 from .application_schemas import (
@@ -43,6 +44,7 @@ from .application_schemas import (
     ApplicationDetailResponse,
     ApplicationListResponse,
     CursorToken,
+    TodayApplicationActionsResponse,
 )
 from .application_submission_repository import (
     ApplicationSubmissionRepositoryError,
@@ -99,6 +101,19 @@ class SqlAlchemyApplicationWorkspaceStore(SqlAlchemyContactWorkspaceStore):
                 owner_id=owner_id,
                 limit=limit,
                 cursor=cursor,
+            )
+
+    def list_today_application_actions(
+        self,
+        *,
+        owner_id: str,
+        limit: int = 20,
+    ) -> TodayApplicationActionsResponse:
+        with _application_errors(), self.database.session() as session:
+            return list_today_application_actions(
+                session,
+                owner_id=owner_id,
+                limit=limit,
             )
 
     def get_application(

@@ -3,6 +3,7 @@ import type {
   ApplicationContactBenchResponse,
   ApplicationDetailResponse,
   ApplicationListResponse,
+  TodayApplicationActionsResponse,
 } from "./application-types";
 import type {
   ApplicationPackCreate,
@@ -90,6 +91,17 @@ export async function listApplications(
   if (cursor) params.set("cursor", cursor);
   return json<ApplicationListResponse>(
     await fetch(`/api/applications?${params.toString()}`, { cache: "no-store" }),
+  );
+}
+
+export async function getTodayApplicationActions(
+  limit = 50,
+): Promise<TodayApplicationActionsResponse> {
+  const params = new URLSearchParams({ limit: String(limit) });
+  return json<TodayApplicationActionsResponse>(
+    await fetch(`/api/today/application-actions?${params.toString()}`, {
+      cache: "no-store",
+    }),
   );
 }
 

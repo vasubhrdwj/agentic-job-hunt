@@ -11,7 +11,7 @@ contracts may embed a :class:`PursuitBundle` without creating a circular import.
 
 from __future__ import annotations
 
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from enum import Enum
 from typing import Annotated, Literal, Self
 from urllib.parse import urlsplit
@@ -104,6 +104,16 @@ class ActionItemKind(str, Enum):
     prepare_recruiter_screen = "prepare_recruiter_screen"
     prepare_interview = "prepare_interview"
     review_offer = "review_offer"
+
+
+_ACTIVE_ACTION_KIND_BY_STAGE: dict[ApplicationStage, ActionItemKind] = {
+    ApplicationStage.pursuing: ActionItemKind.review_and_prepare_application,
+    ApplicationStage.ready_to_apply: ActionItemKind.submit_application,
+    ApplicationStage.applied: ActionItemKind.follow_up_application,
+    ApplicationStage.screening: ActionItemKind.prepare_recruiter_screen,
+    ApplicationStage.interviewing: ActionItemKind.prepare_interview,
+    ApplicationStage.offer: ActionItemKind.review_offer,
+}
 
 
 class ActionItemStatus(str, Enum):
@@ -391,18 +401,137 @@ class ApplicationSummary(ContractModel):
             raise ValueError("current_action must belong to the application")
         if self.current_action.status is not ActionItemStatus.open:
             raise ValueError("an active application requires one open current_action")
-        expected_kind = {
-            ApplicationStage.pursuing: ActionItemKind.review_and_prepare_application,
-            ApplicationStage.ready_to_apply: ActionItemKind.submit_application,
-            ApplicationStage.applied: ActionItemKind.follow_up_application,
-            ApplicationStage.screening: ActionItemKind.prepare_recruiter_screen,
-            ApplicationStage.interviewing: ActionItemKind.prepare_interview,
-            ApplicationStage.offer: ActionItemKind.review_offer,
-        }[self.stage]
+        expected_kind = _ACTIVE_ACTION_KIND_BY_STAGE[self.stage]
         if self.current_action.kind is not expected_kind:
             raise ValueError(
                 f"{self.stage.value} applications require a {expected_kind.value} "
                 "current_action"
+            )
+        return self
+
+
+class TodayApplicationActionApplication(ContractModel):
+    """Stable application identity attached to one Today action."""
+
+    id: OpaqueId
+    version: int = Field(ge=1)
+    opportunity_id: OpaqueId
+    job_posting_id: OpaqueId
+    pursued_posting_version_id: OpaqueId
+    stage: ApplicationStage
+
+    @model_validator(mode="after")
+    def application_is_active(self) -> Self:
+        if self.stage is ApplicationStage.closed:
+            raise ValueError(
+                "Today application actions cannot use a closed application"
+            )
+        return self
+
+
+class TodayApplicationActionItem(ContractModel):
+    """One exact open application action and its pinned posting context."""
+
+    source: Literal["application"] = "application"
+    application: TodayApplicationActionApplication
+    posting: ApplicationPostingSummary
+    action: ActionItemResponse
+
+    @model_validator(mode="after")
+    def resources_form_one_current_action(self) -> Self:
+        if self.action.application_id != self.application.id:
+            raise ValueError("Today action must belong to its application")
+        if self.posting.id != self.application.job_posting_id:
+            raise ValueError("Today action posting must belong to its application")
+        if self.action.status is not ActionItemStatus.open:
+            raise ValueError("Today application actions must be open")
+        expected_kind = _ACTIVE_ACTION_KIND_BY_STAGE[self.application.stage]
+        if self.action.kind is not expected_kind:
+            raise ValueError(
+                f"{self.application.stage.value} applications require action kind "
+                f"{expected_kind.value}"
+            )
+        return self
+
+
+class TodayApplicationActionGroup(ContractModel):
+    """A bounded Today action bucket with its complete owner-local count."""
+
+    total: int = Field(ge=0)
+    items: list[TodayApplicationActionItem] = Field(default_factory=list, max_length=50)
+
+    @model_validator(mode="after")
+    def total_covers_returned_items(self) -> Self:
+        if self.total < len(self.items):
+            raise ValueError("action group total cannot be smaller than returned items")
+        action_ids = [item.action.id for item in self.items]
+        application_ids = [item.application.id for item in self.items]
+        if len(action_ids) != len(set(action_ids)) or len(application_ids) != len(
+            set(application_ids)
+        ):
+            raise ValueError("action group cannot contain duplicate resources")
+        return self
+
+
+class TodayApplicationActionsResponse(ContractModel):
+    """Owner-local, database-only application actions for the Today workspace."""
+
+    data_source: Literal["database"] = "database"
+    as_of: UTCDateTime
+    owner_timezone: str = Field(min_length=1, max_length=64)
+    owner_local_date: date
+    window_ends_on: date
+    overdue: TodayApplicationActionGroup
+    today: TodayApplicationActionGroup
+    next_7_days: TodayApplicationActionGroup
+
+    @model_validator(mode="after")
+    def groups_are_complete_disjoint_and_ordered(self) -> Self:
+        if self.window_ends_on != self.owner_local_date + timedelta(days=7):
+            raise ValueError(
+                "window_ends_on must be seven owner-local days after owner_local_date"
+            )
+
+        groups = (
+            ("overdue", self.overdue),
+            ("today", self.today),
+            ("next_7_days", self.next_7_days),
+        )
+        action_ids: list[str] = []
+        application_ids: list[str] = []
+        for bucket, group in groups:
+            if group.total < len(group.items):
+                raise ValueError(
+                    f"{bucket} total cannot be smaller than returned items"
+                )
+            sort_keys = [
+                (item.action.due_on, item.action.created_at, item.action.id)
+                for item in group.items
+            ]
+            if sort_keys != sorted(sort_keys):
+                raise ValueError(f"{bucket} actions must be stably sorted")
+            for item in group.items:
+                due_on = item.action.due_on
+                if bucket == "overdue" and due_on >= self.owner_local_date:
+                    raise ValueError(
+                        "overdue actions must precede the owner-local date"
+                    )
+                if bucket == "today" and due_on != self.owner_local_date:
+                    raise ValueError("today actions must match the owner-local date")
+                if bucket == "next_7_days" and not (
+                    self.owner_local_date < due_on <= self.window_ends_on
+                ):
+                    raise ValueError(
+                        "next_7_days actions must fall inside the owner-local window"
+                    )
+                action_ids.append(item.action.id)
+                application_ids.append(item.application.id)
+
+        if len(action_ids) != len(set(action_ids)):
+            raise ValueError("Today action groups cannot contain a duplicate action")
+        if len(application_ids) != len(set(application_ids)):
+            raise ValueError(
+                "Today action groups cannot contain a duplicate application"
             )
         return self
 
@@ -511,5 +640,9 @@ __all__ = [
     "HttpsUrl",
     "OpaqueId",
     "PursuitBundle",
+    "TodayApplicationActionApplication",
+    "TodayApplicationActionGroup",
+    "TodayApplicationActionItem",
+    "TodayApplicationActionsResponse",
     "UTCDateTime",
 ]

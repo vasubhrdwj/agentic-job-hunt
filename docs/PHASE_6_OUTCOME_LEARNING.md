@@ -53,12 +53,36 @@ private interview notes, or corrections. It also does not claim causal lift
 from referrals. Those require additional immutable provenance before they can
 be presented honestly.
 
-## Next checkpoints
+## Phase 6A2 — Daily application operations
 
-### Phase 6A2 — Daily application actions and interview rounds
+### Phase 6A2a — Today application actions
 
-- Put overdue, today, and next-seven-day application actions at the top of
-  Today using a dedicated server projection.
+The Today workspace now starts with application work that is overdue, due on
+the owner's local date, or due within the next seven local calendar days. It
+comes from the dedicated read-only `GET /api/today/application-actions`
+projection and loads independently from the opportunity-review inbox.
+
+- The server derives the local date from the persisted owner timezone. The
+  browser does not decide whether an action is overdue.
+- Every item names the exact open action, active application and stage, pinned
+  posting version, and current posting lifecycle state.
+- Results are ordered by due date, action creation time, and stable action ID.
+- Each urgency bucket returns its complete count and up to the requested safe
+  limit, so a large overdue backlog cannot hide actions due today.
+- A posting that closes after pursuit does not hide its application action;
+  the owner still needs to resolve that application deliberately.
+- Closed applications, completed actions, and cancelled actions cannot enter
+  the queue. Malformed active action graphs fail closed instead of silently
+  disappearing.
+- The UI links to the dossier rather than offering unsafe inline completion.
+  Application tasks and opportunity discovery also keep independent loading,
+  empty, retry, and stale-data states.
+
+No migration was required. The existing open-action invariant and owner/due
+index are the durable source for this projection.
+
+### Remaining Phase 6A2 checkpoints
+
 - Add repeatable scheduled/completed interview rounds with stable identifiers.
 - Add append-only corrections that supersede an incorrect milestone without
   rewriting history.

@@ -59,6 +59,37 @@ export type ActionItem = Omit<
   kind: ActionItemKind;
 };
 
+export type TodayApplicationActionApplication = Omit<
+  ApiSchemas["TodayApplicationActionApplication"],
+  "stage"
+> & {
+  stage: ApplicationStage;
+};
+
+export type TodayApplicationActionItem = Omit<
+  ApiSchemas["TodayApplicationActionItem"],
+  "action" | "application"
+> & {
+  application: TodayApplicationActionApplication;
+  action: ActionItem;
+};
+
+export type TodayApplicationActionGroup = Omit<
+  ApiSchemas["TodayApplicationActionGroup"],
+  "items"
+> & {
+  items: TodayApplicationActionItem[];
+};
+
+export type TodayApplicationActionsResponse = Omit<
+  ApiSchemas["TodayApplicationActionsResponse"],
+  "next_7_days" | "overdue" | "today"
+> & {
+  overdue: TodayApplicationActionGroup;
+  today: TodayApplicationActionGroup;
+  next_7_days: TodayApplicationActionGroup;
+};
+
 export interface ApplicationOutcome {
   id: string;
   application_id: string;

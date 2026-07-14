@@ -32,6 +32,7 @@ from ..application_schemas import (
     ApplicationListResponse,
     CursorToken,
     OpaqueId,
+    TodayApplicationActionsResponse,
 )
 from ..application_submission_schemas import (
     ApplicationSubmissionProjection,
@@ -106,6 +107,21 @@ def create_application_router(
             )
         except HTTPException as exc:
             _raise_auth_problem(exc)
+
+    @router.get(
+        "/api/today/application-actions",
+        response_model=TodayApplicationActionsResponse,
+        responses=COMMON_ERROR_RESPONSES,
+    )
+    def list_today_application_action_items(
+        limit: int = Query(default=20, ge=1, le=50),
+        owner: AuthenticatedOwner = Security(require_read_owner),
+    ) -> TodayApplicationActionsResponse:
+        return _invoke(
+            _store(store).list_today_application_actions,
+            owner_id=owner.owner_id,
+            limit=limit,
+        )
 
     @router.get(
         "/api/applications",

@@ -11,6 +11,7 @@ from .application_schemas import (
     ApplicationDetailResponse,
     ApplicationListResponse,
     CursorToken,
+    TodayApplicationActionsResponse,
 )
 from .application_submission_schemas import (
     ApplicationSubmissionProjection,
@@ -37,6 +38,13 @@ class ApplicationWorkspaceStore(
         limit: int = 50,
         cursor: CursorToken | None = None,
     ) -> ApplicationListResponse: ...
+
+    def list_today_application_actions(
+        self,
+        *,
+        owner_id: str,
+        limit: int = 20,
+    ) -> TodayApplicationActionsResponse: ...
 
     def get_application(
         self,

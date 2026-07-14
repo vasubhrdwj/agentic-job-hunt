@@ -846,6 +846,8 @@ Full Slice 5 definition of done:
 - [x] Keep exactly one dated task for each active application, no fabricated
       task after closure, and stop new contact/outreach work after confirmed
       hiring progress.
+- [x] Put owner-local overdue, due-today, and next-seven-day application
+      actions at the top of Today from a dedicated database projection.
 - [ ] Add weekly funnel and next-action review.
 - [ ] Measure results by career track, source, assessment band, contact type, and sequence position.
 - [ ] Show the incremental value of contacts two through five.
@@ -866,8 +868,19 @@ Full Slice 5 definition of done:
       terminal outcome, and exhaustive activity copy in the dossier.
 - [x] Refuse a destructive migration downgrade once Phase 6A data exists.
 
-Next: Phase 6A2 adds the Today due-action projection, repeatable interview
-rounds, append-only corrections, and exact outreach-response attribution.
+#### Phase 6A2 — Daily operations and richer hiring history
+
+- [x] Add an independently loaded Today action center with complete bucket
+      totals, bounded rows, stable ordering, and direct dossier links.
+- [x] Derive urgency on the server from the persisted owner timezone and the
+      exact open action; never from the browser clock or a fabricated score.
+- [ ] Add repeatable scheduled/completed interview rounds with stable IDs.
+- [ ] Add append-only corrections that supersede inaccurate milestones.
+- [ ] Attribute each outreach response to the exact marked-sent event and
+      message version.
+
+Next: Phase 6A2b adds repeatable interview rounds and appointments, followed
+by append-only corrections and exact outreach-response attribution.
 
 Definition of done:
 
