@@ -21,7 +21,7 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from .application_schemas import ACTIVE_APPLICATION_STAGE_VALUES
+from .application_schemas import CONTACTABLE_APPLICATION_STAGE_VALUES
 from .contact_discovery import (
     BenchCoverageStatus,
     ContactBenchSelection,
@@ -465,7 +465,7 @@ def _start_contact_search(
 
         if (
             owned.cancel_requested_at is not None
-            or application.stage not in ACTIVE_APPLICATION_STAGE_VALUES
+            or application.stage not in CONTACTABLE_APPLICATION_STAGE_VALUES
             or posting.lifecycle_state != "open"
         ):
             _cancel_running_plan(
@@ -580,7 +580,7 @@ def _publish_contact_search(
             raise ContactSearchWorkerError("pinned posting changed before publication")
         if (
             owned.cancel_requested_at is not None
-            or application.stage not in ACTIVE_APPLICATION_STAGE_VALUES
+            or application.stage not in CONTACTABLE_APPLICATION_STAGE_VALUES
             or posting.lifecycle_state != "open"
         ):
             _cancel_running_plan(

@@ -700,7 +700,7 @@ export function ApplicationPack({
         ) : null}
         {stageLocked ? (
           <StatusMessage kind="info">
-            This fit review is read-only because the application is {applicationStage === "applied" ? "already applied" : "ready to apply"}. Its exact evidence record stays frozen.
+            This fit review is read-only because the application has left preparation. Its exact evidence record stays frozen.
           </StatusMessage>
         ) : null}
 

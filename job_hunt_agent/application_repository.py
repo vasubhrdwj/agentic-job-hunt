@@ -25,6 +25,7 @@ from .application_schemas import (
     ApplicationActivityListResponse,
     ApplicationDetailResponse,
     ApplicationListResponse,
+    ApplicationOutcomeResponse,
     ApplicationPostingState,
     ApplicationPostingSummary,
     ApplicationSummary,
@@ -36,6 +37,7 @@ from .models import (
     ActionItem,
     Application,
     ApplicationActivityEvent,
+    ApplicationOutcome,
     JobObservation,
     JobPosting,
     JobPostingVersion,
@@ -499,6 +501,17 @@ def _application_summary(
             ActionItem.status == "open",
         )
     )
+    outcome = (
+        session.scalar(
+            select(ApplicationOutcome).where(
+                ApplicationOutcome.owner_id == application.owner_id,
+                ApplicationOutcome.application_id == application.id,
+                ApplicationOutcome.id == application.outcome_id,
+            )
+        )
+        if application.outcome_id is not None
+        else None
+    )
     posting = session.scalar(
         select(JobPosting).where(
             JobPosting.owner_id == application.owner_id,
@@ -512,8 +525,14 @@ def _application_summary(
             JobPostingVersion.id == application.pursued_posting_version_id,
         )
     )
-    if action is None or posting is None or version is None:
+    if posting is None or version is None:
         raise ApplicationRepositoryError("application graph is incomplete")
+    if (application.stage == "closed") != (action is None):
+        raise ApplicationRepositoryError(
+            "closed applications must have no open action and active applications one"
+        )
+    if (application.outcome_id is None) != (outcome is None):
+        raise ApplicationRepositoryError("application outcome graph is incomplete")
     verified = (
         session.scalar(
             select(JobObservation.id)
@@ -533,6 +552,7 @@ def _application_summary(
         posting=posting,
         version=version,
         first_party=verified,
+        outcome=outcome,
     )
 
 
@@ -591,13 +611,42 @@ def _application_summaries(
             .distinct()
         )
     )
+    outcome_ids = {
+        application.outcome_id
+        for application in applications
+        if application.outcome_id is not None
+    }
+    outcomes = (
+        {
+            row.id: row
+            for row in session.scalars(
+                select(ApplicationOutcome).where(
+                    ApplicationOutcome.owner_id == owner_id,
+                    ApplicationOutcome.id.in_(outcome_ids),
+                )
+            )
+        }
+        if outcome_ids
+        else {}
+    )
     summaries: list[ApplicationSummary] = []
     for application in applications:
         action = actions.get(application.id)
         posting = postings.get(application.job_posting_id)
         version = versions.get(application.pursued_posting_version_id)
-        if action is None or posting is None or version is None:
+        outcome = (
+            outcomes.get(application.outcome_id)
+            if application.outcome_id is not None
+            else None
+        )
+        if posting is None or version is None:
             raise ApplicationRepositoryError("application graph is incomplete")
+        if (application.stage == "closed") != (action is None):
+            raise ApplicationRepositoryError(
+                "closed applications must have no open action and active applications one"
+            )
+        if (application.outcome_id is None) != (outcome is None):
+            raise ApplicationRepositoryError("application outcome graph is incomplete")
         if version.job_posting_id != posting.id:
             raise ApplicationRepositoryError(
                 "application posting version is inconsistent"
@@ -609,6 +658,7 @@ def _application_summaries(
                 posting=posting,
                 version=version,
                 first_party=version.id in verified_version_ids,
+                outcome=outcome,
             )
         )
     return summaries
@@ -617,10 +667,11 @@ def _application_summaries(
 def _application_summary_from_rows(
     application: Application,
     *,
-    action: ActionItem,
+    action: ActionItem | None,
     posting: JobPosting,
     version: JobPostingVersion,
     first_party: bool,
+    outcome: ApplicationOutcome | None = None,
 ) -> ApplicationSummary:
     return ApplicationSummary(
         id=application.id,
@@ -636,7 +687,8 @@ def _application_summary_from_rows(
             first_party=first_party,
             state=ApplicationPostingState(posting.lifecycle_state),
         ),
-        current_action=_action_response(action),
+        current_action=_action_response(action) if action is not None else None,
+        outcome=_outcome_response(outcome) if outcome is not None else None,
         created_at=_as_utc(application.created_at),
         updated_at=_as_utc(application.updated_at),
     )
@@ -671,7 +723,23 @@ def _activity_response(
         action_item_id=row.action_item_id,
         previous_action_item_id=row.previous_action_item_id,
         submission_id=row.submission_id,
+        effective_on=row.effective_on,
+        outcome_id=row.outcome_id,
         occurred_at=_as_utc(row.occurred_at),
+    )
+
+
+def _outcome_response(row: ApplicationOutcome) -> ApplicationOutcomeResponse:
+    return ApplicationOutcomeResponse(
+        id=row.id,
+        application_id=row.application_id,
+        application_submission_id=row.application_submission_id,
+        stage_at_outcome=row.stage_at_outcome,
+        outcome=row.outcome,
+        outcome_on=row.outcome_on,
+        recording_method="manual",
+        recorded_at=_as_utc(row.recorded_at),
+        created_at=_as_utc(row.created_at),
     )
 
 

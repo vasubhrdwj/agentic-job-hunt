@@ -13,6 +13,7 @@ import type {
 import { ApplicationMaterials } from "./application-materials";
 import { ApplicationPack } from "./application-pack";
 import { ApplicationPeople } from "./application-people";
+import { ApplicationProgress } from "./application-progress";
 import { ApplicationSubmission } from "./application-submission";
 import { ApplicationStageBadge, DueDate } from "./applications-workspace";
 import {
@@ -94,7 +95,7 @@ export function ApplicationDossier({
         <div className="flex min-w-0 flex-col gap-5 sm:flex-row sm:items-start sm:justify-between">
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
-              <ApplicationStageBadge stage={application.stage} />
+              <ApplicationStageBadge stage={application.stage} outcome={application.outcome} />
               <span className="text-xs text-zinc-500">{posting.company}</span>
             </div>
             <h2
@@ -128,25 +129,40 @@ export function ApplicationDossier({
         ) : null}
       </article>
 
-      <section
-        aria-labelledby="next-action-title"
-        className="rounded-2xl border border-indigo-200 bg-indigo-50 p-5 sm:p-7 dark:border-indigo-900 dark:bg-indigo-950/25"
-      >
-        <p className="text-xs font-semibold uppercase tracking-[0.14em] text-indigo-700 dark:text-indigo-300">
-          Do next
-        </p>
-        <h2 id="next-action-title" className="mt-2 text-xl font-semibold text-indigo-950 dark:text-indigo-100">
-          {application.current_action.title}
-        </h2>
-        <DueDate
-          action={application.current_action}
-          ownerLocalDate={ownerLocalDate}
-          className="mt-3"
-        />
-        <p className="mt-4 max-w-2xl text-sm leading-6 text-indigo-900 dark:text-indigo-200">
-          {nextActionGuidance(application.stage)}
-        </p>
-      </section>
+      {application.current_action ? (
+        <section
+          aria-labelledby="next-action-title"
+          className="rounded-2xl border border-indigo-200 bg-indigo-50 p-5 sm:p-7 dark:border-indigo-900 dark:bg-indigo-950/25"
+        >
+          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-indigo-700 dark:text-indigo-300">
+            Do next
+          </p>
+          <h2 id="next-action-title" className="mt-2 text-xl font-semibold text-indigo-950 dark:text-indigo-100">
+            {application.current_action.title}
+          </h2>
+          <DueDate
+            action={application.current_action}
+            ownerLocalDate={ownerLocalDate}
+            className="mt-3"
+          />
+          <p className="mt-4 max-w-2xl text-sm leading-6 text-indigo-900 dark:text-indigo-200">
+            {nextActionGuidance(application.stage)}
+          </p>
+        </section>
+      ) : application.stage !== "closed" ? (
+        <StatusMessage kind="error">
+          This active application has no next action. Refresh before recording more progress.
+        </StatusMessage>
+      ) : null}
+
+      <ApplicationProgress
+        applicationId={application.id}
+        applicationVersion={application.version}
+        stage={application.stage}
+        outcome={application.outcome}
+        ownerLocalDate={ownerLocalDate}
+        onApplicationChanged={load}
+      />
 
       <ApplicationPack
         key={`pack:${application.id}`}
@@ -177,6 +193,7 @@ export function ApplicationDossier({
         key={`people:${application.id}`}
         applicationId={application.id}
         applicationVersion={application.version}
+        applicationStage={application.stage}
         postingState={posting.state}
       />
 
@@ -230,7 +247,16 @@ function nextActionGuidance(stage: ApplicationStage): string {
     return "Open the verified employer destination, submit the reviewed materials yourself, then record exactly what you used.";
   }
   if (stage === "applied") {
-    return "Follow up on schedule, keep useful referral conversations moving, and preserve the exact submission record.";
+    return "Follow up on schedule, keep useful referral conversations moving, and record only confirmed hiring progress.";
+  }
+  if (stage === "screening") {
+    return "Complete the recruiter follow-up, then record an interview only when the employer confirms that progress.";
+  }
+  if (stage === "interviewing") {
+    return "Complete the interview follow-up and keep the next dated task current while you wait for a confirmed decision.";
+  }
+  if (stage === "offer") {
+    return "Review the offer carefully and record the final decision by the saved response deadline.";
   }
   return "Review the role, ground every claim in approved evidence, and prepare the exact materials you will submit.";
 }
@@ -251,8 +277,50 @@ function activityCopy(event: ApplicationActivityEvent): {
       detail: "Entered Applied",
     };
   }
+  if (event.event_type === "application_screening") {
+    return {
+      title: "Recruiter screen completed",
+      detail: effectiveDateDetail("Entered Screening", event.effective_on),
+    };
+  }
+  if (event.event_type === "application_interviewing") {
+    return {
+      title: "Interview completed",
+      detail: effectiveDateDetail("Entered Interviewing", event.effective_on),
+    };
+  }
+  if (event.event_type === "application_offer") {
+    return {
+      title: "Offer received",
+      detail: effectiveDateDetail("Entered Offer", event.effective_on),
+    };
+  }
+  if (event.event_type === "application_closed") {
+    return {
+      title: "Application closed",
+      detail: effectiveDateDetail("Recorded a terminal outcome", event.effective_on),
+    };
+  }
+  if (event.event_type !== "application_created") {
+    return {
+      title: "Application updated",
+      detail: "Recorded a durable application change",
+    };
+  }
   return {
     title: "Application started",
     detail: "Entered Pursuing",
   };
+}
+
+function effectiveDateDetail(prefix: string, value: string | null): string {
+  return value ? `${prefix} on ${formatDateOnly(value)}` : prefix;
+}
+
+function formatDateOnly(value: string): string {
+  const [year, month, day] = value.split("-").map(Number);
+  const date = new Date(year, month - 1, day, 12);
+  return Number.isNaN(date.getTime())
+    ? value
+    : new Intl.DateTimeFormat(undefined, { dateStyle: "medium" }).format(date);
 }

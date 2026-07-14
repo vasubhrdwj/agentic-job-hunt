@@ -1,8 +1,10 @@
 import type {
   ApplicationActivityEvent,
+  ApplicationOutcome,
   ApplicationStage,
   ApplicationSummary,
 } from "./application-types";
+import type { ApplicationProgressTransitionCreate } from "./application-progress-types";
 
 export interface ExactApplicationMaterials {
   application_pack_id: string;
@@ -30,7 +32,8 @@ export interface AppliedTransitionCreate extends ExactApplicationMaterials {
 
 export type ApplicationTransitionCreate =
   | ReadyToApplyTransitionCreate
-  | AppliedTransitionCreate;
+  | AppliedTransitionCreate
+  | ApplicationProgressTransitionCreate;
 
 export interface ApplicationSubmissionRecord extends ExactApplicationMaterials {
   id: string;
@@ -46,6 +49,7 @@ export interface ApplicationTransitionResponse {
   data_source: "database";
   application: ApplicationSummary;
   activity_event: ApplicationActivityEvent;
+  outcome: ApplicationOutcome | null;
   submission: ApplicationSubmissionRecord | null;
   transition_created: boolean;
 }

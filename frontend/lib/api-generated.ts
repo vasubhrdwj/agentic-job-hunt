@@ -838,7 +838,7 @@ export interface components {
          * ActionItemKind
          * @enum {string}
          */
-        ActionItemKind: "review_and_prepare_application" | "submit_application" | "follow_up_application";
+        ActionItemKind: "review_and_prepare_application" | "submit_application" | "follow_up_application" | "prepare_recruiter_screen" | "prepare_interview" | "review_offer";
         /** ActionItemResponse */
         ActionItemResponse: {
             /** Application Id */
@@ -882,6 +882,8 @@ export interface components {
             action_item_id?: string | null;
             /** Application Id */
             application_id: string;
+            /** Effective On */
+            effective_on?: string | null;
             event_type: components["schemas"]["ApplicationActivityEventType"];
             from_stage?: components["schemas"]["ApplicationStage"] | null;
             /** Id */
@@ -891,6 +893,8 @@ export interface components {
              * Format: date-time
              */
             occurred_at: string;
+            /** Outcome Id */
+            outcome_id?: string | null;
             /** Previous Action Item Id */
             previous_action_item_id?: string | null;
             /** Sequence Number */
@@ -903,7 +907,7 @@ export interface components {
          * ApplicationActivityEventType
          * @enum {string}
          */
-        ApplicationActivityEventType: "application_created" | "application_ready_to_apply" | "application_applied";
+        ApplicationActivityEventType: "application_created" | "application_ready_to_apply" | "application_applied" | "application_screening" | "application_interviewing" | "application_offer" | "application_closed";
         /** ApplicationActivityListResponse */
         ApplicationActivityListResponse: {
             /**
@@ -1244,6 +1248,42 @@ export interface components {
             total: number;
         };
         /**
+         * ApplicationOutcome
+         * @enum {string}
+         */
+        ApplicationOutcome: "rejected" | "withdrawn" | "offer_accepted" | "offer_declined" | "no_response" | "posting_closed";
+        /** ApplicationOutcomeResponse */
+        ApplicationOutcomeResponse: {
+            /** Application Id */
+            application_id: string;
+            /** Application Submission Id */
+            application_submission_id?: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Id */
+            id: string;
+            outcome: components["schemas"]["ApplicationOutcome"];
+            /**
+             * Outcome On
+             * Format: date
+             */
+            outcome_on: string;
+            /**
+             * Recorded At
+             * Format: date-time
+             */
+            recorded_at: string;
+            /**
+             * Recording Method
+             * @constant
+             */
+            recording_method: "manual";
+            stage_at_outcome: components["schemas"]["ApplicationStage"];
+        };
+        /**
          * ApplicationOutreachResponse
          * @description Database-only state for an application's one manual outreach sequence.
          */
@@ -1505,7 +1545,7 @@ export interface components {
          * ApplicationStage
          * @enum {string}
          */
-        ApplicationStage: "pursuing" | "ready_to_apply" | "applied";
+        ApplicationStage: "pursuing" | "ready_to_apply" | "applied" | "screening" | "interviewing" | "offer" | "closed";
         /** ApplicationSubmissionProjection */
         ApplicationSubmissionProjection: {
             /** Application Id */
@@ -1571,11 +1611,12 @@ export interface components {
              * Format: date-time
              */
             created_at: string;
-            current_action: components["schemas"]["ActionItemResponse"];
+            current_action?: components["schemas"]["ActionItemResponse"] | null;
             /** Id */
             id: string;
             /** Opportunity Id */
             opportunity_id: string;
+            outcome?: components["schemas"]["ApplicationOutcomeResponse"] | null;
             posting: components["schemas"]["ApplicationPostingSummary"];
             /** Pursued Posting Version Id */
             pursued_posting_version_id: string;
@@ -1598,6 +1639,7 @@ export interface components {
              * @constant
              */
             data_source: "database";
+            outcome?: components["schemas"]["ApplicationOutcomeResponse"] | null;
             submission?: components["schemas"]["ApplicationSubmissionResponse"] | null;
             /** Transition Created */
             transition_created: boolean;
@@ -1794,6 +1836,25 @@ export interface components {
             updated_at: string;
             /** Version */
             version: number;
+        };
+        /** ClosedTransitionCreate */
+        ClosedTransitionCreate: {
+            /**
+             * Confirm Close
+             * @constant
+             */
+            confirm_close: true;
+            outcome: components["schemas"]["ApplicationOutcome"];
+            /**
+             * Outcome On
+             * Format: date
+             */
+            outcome_on: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            to_stage: "closed";
         };
         /**
          * CompanySource
@@ -2200,6 +2261,29 @@ export interface components {
              */
             run_id: string;
         };
+        /** InterviewingTransitionCreate */
+        InterviewingTransitionCreate: {
+            /**
+             * Confirm Progress
+             * @constant
+             */
+            confirm_progress: true;
+            /**
+             * Next Action Due On
+             * Format: date
+             */
+            next_action_due_on: string;
+            /**
+             * Reached On
+             * Format: date
+             */
+            reached_on: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            to_stage: "interviewing";
+        };
         /**
          * JobCriteria
          * @description User-supplied filters that constrain which jobs we go fetch.
@@ -2259,6 +2343,29 @@ export interface components {
          * @enum {string}
          */
         NotAssessedReason: "assessment_pending" | "resume_unavailable" | "description_unavailable" | "not_requested";
+        /** OfferTransitionCreate */
+        OfferTransitionCreate: {
+            /**
+             * Confirm Offer
+             * @constant
+             */
+            confirm_offer: true;
+            /**
+             * Next Action Due On
+             * Format: date
+             */
+            next_action_due_on: string;
+            /**
+             * Received On
+             * Format: date
+             */
+            received_on: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            to_stage: "offer";
+        };
         /**
          * OpportunityDecisionAction
          * @enum {string}
@@ -3593,6 +3700,29 @@ export interface components {
          * @enum {string}
          */
         ScanWarningScope: "scan" | "source";
+        /** ScreeningTransitionCreate */
+        ScreeningTransitionCreate: {
+            /**
+             * Confirm Progress
+             * @constant
+             */
+            confirm_progress: true;
+            /**
+             * Next Action Due On
+             * Format: date
+             */
+            next_action_due_on: string;
+            /**
+             * Reached On
+             * Format: date
+             */
+            reached_on: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            to_stage: "screening";
+        };
         /** SessionCreateRequest */
         SessionCreateRequest: {
             /** Owner Token */
@@ -5447,7 +5577,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["ReadyToApplyTransitionCreate"] | components["schemas"]["AppliedTransitionCreate"];
+                "application/json": components["schemas"]["ReadyToApplyTransitionCreate"] | components["schemas"]["AppliedTransitionCreate"] | components["schemas"]["ScreeningTransitionCreate"] | components["schemas"]["InterviewingTransitionCreate"] | components["schemas"]["OfferTransitionCreate"] | components["schemas"]["ClosedTransitionCreate"];
             };
         };
         responses: {

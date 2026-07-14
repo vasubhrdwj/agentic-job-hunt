@@ -621,7 +621,7 @@ export function ApplicationMaterials({
         ) : null}
         {stageLocked ? (
           <StatusMessage kind="info">
-            These materials are read-only because the application is {applicationStage === "applied" ? "already applied" : "ready to apply"}. The approved résumé and answers remain frozen for an exact submission record.
+            These materials are read-only because the application has left preparation. The approved résumé and answers remain frozen for an exact submission record.
           </StatusMessage>
         ) : null}
 

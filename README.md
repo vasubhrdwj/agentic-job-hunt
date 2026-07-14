@@ -450,7 +450,7 @@ job_hunt_agent/        ADK agent, schemas, pipeline runner, tracing
   saved_search_repository.py Saved criteria and timezone projections
   sqlalchemy_owner_workspace.py Transaction-owning profile/search API adapter
   job_queue.py         Generic Postgres jobs, leases, events, and heartbeats
-  models/              Owner, profile, radar, application, contact, outreach, and pack tables
+  models/              Owner, profile, radar, application/outcome, contact, outreach, and pack tables
   evals.py             LLM-as-judge draft scoring (V9)
   mcp_client.py        Phoenix past-draft retrieval (self-RAG)
   persistence.py       Explicit practical-mode-off SQLite compatibility path

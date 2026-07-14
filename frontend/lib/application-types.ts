@@ -6,16 +6,37 @@ import type { components } from "./api-generated";
 
 type ApiSchemas = components["schemas"];
 
-export type ApplicationStage = "pursuing" | "ready_to_apply" | "applied";
+export type ApplicationStage =
+  | "pursuing"
+  | "ready_to_apply"
+  | "applied"
+  | "screening"
+  | "interviewing"
+  | "offer"
+  | "closed";
 export type ActionItemKind =
   | "review_and_prepare_application"
   | "submit_application"
-  | "follow_up_application";
+  | "follow_up_application"
+  | "prepare_recruiter_screen"
+  | "prepare_interview"
+  | "review_offer";
 export type ActionItemStatus = ApiSchemas["ActionItemStatus"];
 export type ApplicationActivityEventType =
   | "application_created"
   | "application_ready_to_apply"
-  | "application_applied";
+  | "application_applied"
+  | "application_screening"
+  | "application_interviewing"
+  | "application_offer"
+  | "application_closed";
+export type ApplicationOutcomeKind =
+  | "rejected"
+  | "withdrawn"
+  | "offer_accepted"
+  | "offer_declined"
+  | "no_response"
+  | "posting_closed";
 export type ApplicationPostingState = ApiSchemas["ApplicationPostingState"];
 export type ContactBenchCoverage = ApiSchemas["ContactBenchCoverage"];
 export type ContactBenchState = ApiSchemas["ContactBenchState"];
@@ -38,6 +59,18 @@ export type ActionItem = Omit<
   kind: ActionItemKind;
 };
 
+export interface ApplicationOutcome {
+  id: string;
+  application_id: string;
+  application_submission_id: string | null;
+  stage_at_outcome: ApplicationStage;
+  outcome: ApplicationOutcomeKind;
+  outcome_on: string;
+  recording_method: "manual";
+  recorded_at: string;
+  created_at: string;
+}
+
 export type ApplicationActivityEvent = Omit<
   ApiSchemas["ApplicationActivityEventResponse"],
   | "action_item_id"
@@ -47,7 +80,9 @@ export type ApplicationActivityEvent = Omit<
 > & {
   action_item_id: string | null;
   event_type: ApplicationActivityEventType;
+  effective_on: string | null;
   from_stage: ApplicationStage | null;
+  outcome_id: string | null;
   to_stage: ApplicationStage | null;
   previous_action_item_id: string | null;
   submission_id: string | null;
@@ -55,9 +90,10 @@ export type ApplicationActivityEvent = Omit<
 
 export type ApplicationSummary = Omit<
   ApiSchemas["ApplicationSummary"],
-  "current_action" | "stage"
+  "current_action" | "outcome" | "stage"
 > & {
-  current_action: ActionItem;
+  current_action: ActionItem | null;
+  outcome: ApplicationOutcome | null;
   stage: ApplicationStage;
 };
 

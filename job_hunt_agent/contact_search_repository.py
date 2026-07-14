@@ -9,7 +9,7 @@ from uuid import uuid4
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from .application_schemas import ACTIVE_APPLICATION_STAGE_VALUES
+from .application_schemas import CONTACTABLE_APPLICATION_STAGE_VALUES
 from .job_queue import enqueue_job, utcnow
 from .models import Application, BackgroundJob, ContactPlan, JobPosting
 from .mutation_receipts import claim_owner_mutation, complete_owner_mutation
@@ -158,7 +158,7 @@ def create_contact_search(
         expected=expected_application_version,
         actual=application.version,
     )
-    if application.stage not in ACTIVE_APPLICATION_STAGE_VALUES:
+    if application.stage not in CONTACTABLE_APPLICATION_STAGE_VALUES:
         raise ResourceConflict("only active applications can search for contacts")
     posting_state = session.scalar(
         select(JobPosting.lifecycle_state).where(

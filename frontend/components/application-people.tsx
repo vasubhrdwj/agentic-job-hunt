@@ -9,6 +9,7 @@ import {
 import type {
   ApplicationContactBenchResponse,
   ApplicationPostingState,
+  ApplicationStage,
   ContactBenchItem,
   ContactSearchSnapshot,
   RelevanceEvidenceResponse,
@@ -44,10 +45,12 @@ interface PendingStart {
 export function ApplicationPeople({
   applicationId,
   applicationVersion,
+  applicationStage,
   postingState,
 }: {
   applicationId: string;
   applicationVersion: number;
+  applicationStage: ApplicationStage;
   postingState: ApplicationPostingState;
 }) {
   const [bench, setBench] = useState<ApplicationContactBenchResponse | null>(null);
@@ -287,7 +290,10 @@ export function ApplicationPeople({
   const activeSearch = Boolean(
     current && ACTIVE_SEARCH_STATES.has(current.status),
   );
-  const canStart = postingState === "open" && !activeSearch && !starting;
+  const applicationContactable = ["pursuing", "ready_to_apply", "applied"].includes(
+    applicationStage,
+  );
+  const canStart = applicationContactable && postingState === "open" && !activeSearch && !starting;
 
   return (
     <>
@@ -344,7 +350,9 @@ export function ApplicationPeople({
           </StatusMessage>
         ) : null}
 
-        {bench ? <SearchStatus bench={bench} /> : null}
+        {bench ? (
+          <SearchStatus bench={bench} searchAllowed={applicationContactable} />
+        ) : null}
 
         {startError ? <StatusMessage kind="error">{startError}</StatusMessage> : null}
         {loadError && bench ? (
@@ -373,6 +381,12 @@ export function ApplicationPeople({
           <StatusMessage kind="info">
             A new people search is unavailable because this posting is {postingState}.
             Any previously verified contacts remain visible for review.
+          </StatusMessage>
+        ) : null}
+        {!applicationContactable ? (
+          <StatusMessage kind="info">
+            New contact searches are closed after confirmed hiring progress.
+            Any previously verified people remain available for review.
           </StatusMessage>
         ) : null}
 
@@ -410,6 +424,7 @@ export function ApplicationPeople({
       key={applicationId}
       applicationId={applicationId}
       applicationVersion={applicationVersion}
+      applicationStage={applicationStage}
       postingState={postingState}
       benchReady={Boolean(result && result.verified_count > 0)}
       contactSearchRunning={activeSearch}
@@ -418,13 +433,20 @@ export function ApplicationPeople({
   );
 }
 
-function SearchStatus({ bench }: { bench: ApplicationContactBenchResponse }) {
+function SearchStatus({
+  bench,
+  searchAllowed,
+}: {
+  bench: ApplicationContactBenchResponse;
+  searchAllowed: boolean;
+}) {
   const search = bench.current_search;
   if (bench.status === "not_started") {
     return (
       <StatusMessage kind="info">
-        No people search has been started for this application. Starting one makes
-        public provider requests and saves only evidence-backed results.
+        {searchAllowed
+          ? "No people search has been started for this application. Starting one makes public provider requests and saves only evidence-backed results."
+          : "No people search was started before this application reached confirmed hiring progress."}
       </StatusMessage>
     );
   }

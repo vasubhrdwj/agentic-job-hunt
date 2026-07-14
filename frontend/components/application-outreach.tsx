@@ -14,7 +14,10 @@ import {
   saveApplicationOutreachMessage,
   startApplicationOutreachSequence,
 } from "@/lib/application-api";
-import type { ApplicationPostingState } from "@/lib/application-types";
+import type {
+  ApplicationPostingState,
+  ApplicationStage,
+} from "@/lib/application-types";
 import type {
   ApplicationOutreachResponse,
   OutreachChannel,
@@ -66,12 +69,14 @@ type RecipientDeadline = OutreachRecipient;
 export function ApplicationOutreach({
   applicationId,
   applicationVersion,
+  applicationStage,
   postingState,
   benchReady,
   contactSearchRunning,
 }: {
   applicationId: string;
   applicationVersion: number;
+  applicationStage: ApplicationStage;
   postingState: ApplicationPostingState;
   benchReady: boolean;
   contactSearchRunning: boolean;
@@ -642,13 +647,21 @@ export function ApplicationOutreach({
     currentResolvedCount ? `${currentResolvedCount} resolved` : null,
     currentUnavailableCount ? `${currentUnavailableCount} unavailable` : null,
   ].filter(Boolean).join(" · ");
-  const startBlockedReason = postingState !== "open"
-    ? `This posting is ${postingState}.`
-    : contactSearchRunning
-      ? "Wait for the contact refresh to finish."
-      : !benchReady
-        ? "Build a verified contact bench above first."
-        : null;
+  const applicationContactable = ["pursuing", "ready_to_apply", "applied"].includes(
+    applicationStage,
+  );
+  const actionPostingState: ApplicationPostingState = applicationContactable
+    ? postingState
+    : "closed";
+  const startBlockedReason = !applicationContactable
+    ? "Hiring progress is already recorded; new outreach is closed for this role."
+    : postingState !== "open"
+      ? `This posting is ${postingState}.`
+      : contactSearchRunning
+        ? "Wait for the contact refresh to finish."
+        : !benchReady
+          ? "Build a verified contact bench above first."
+          : null;
 
   return (
     <section
@@ -746,6 +759,7 @@ export function ApplicationOutreach({
           <SequenceSummary
             outreach={outreach!}
             postingState={postingState}
+            applicationContactable={applicationContactable}
             onRefresh={() => void refresh(false)}
             busy={Boolean(busy)}
           />
@@ -779,7 +793,7 @@ export function ApplicationOutreach({
                     key={recipient.application_contact_id}
                     recipient={recipient}
                     sequenceStatus={sequence.status}
-                    postingState={postingState}
+                    postingState={actionPostingState}
                     draftInitial={drafts[draftKey(recipient.application_contact_id, "initial")] ?? ""}
                     draftFollowUp={drafts[draftKey(recipient.application_contact_id, "follow_up")] ?? ""}
                     initialDirty={Boolean(dirtyFlags[draftKey(recipient.application_contact_id, "initial")])}
@@ -854,7 +868,8 @@ export function ApplicationOutreach({
           <SequenceControls
             status={sequence.status}
             reason={sequence.reason}
-            postingState={postingState}
+            postingState={actionPostingState}
+            applicationContactable={applicationContactable}
             mode={controlMode}
             draftReason={controlReason}
             busy={Boolean(busy)}
@@ -882,11 +897,13 @@ export function ApplicationOutreach({
 function SequenceSummary({
   outreach,
   postingState,
+  applicationContactable,
   onRefresh,
   busy,
 }: {
   outreach: ApplicationOutreachResponse;
   postingState: ApplicationPostingState;
+  applicationContactable: boolean;
   onRefresh: () => void;
   busy: boolean;
 }) {
@@ -940,7 +957,12 @@ function SequenceSummary({
           Refresh saved state
         </button>
       </div>
-      {postingState !== "open" ? (
+      {!applicationContactable ? (
+        <p className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-100">
+          Confirmed hiring progress closes new message actions. Saved messages
+          and outcomes remain readable.
+        </p>
+      ) : postingState !== "open" ? (
         <p className="mt-3 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-900 dark:border-red-900 dark:bg-red-950/30 dark:text-red-100">
           This posting is {postingState}. New message actions are disabled; refresh or stop this plan after reviewing it.
         </p>
@@ -1470,6 +1492,7 @@ function SequenceControls({
   status,
   reason,
   postingState,
+  applicationContactable,
   mode,
   draftReason,
   busy,
@@ -1482,6 +1505,7 @@ function SequenceControls({
   status: "active" | "paused" | "stopped" | "completed";
   reason: string | null;
   postingState: ApplicationPostingState;
+  applicationContactable: boolean;
   mode: ControlMode | null;
   draftReason: string;
   busy: boolean;
@@ -1514,17 +1538,19 @@ function SequenceControls({
         </p>
       ) : (
         <p className="mt-1 text-sm text-zinc-500">
-          {postingState === "open"
+          {!applicationContactable
+            ? "Confirmed hiring progress closes new message actions; only an explicit stop remains available."
+            : postingState === "open"
             ? "Pause when you need time; stop only when this plan should end permanently."
             : `This posting is ${postingState}; only an explicit stop remains available.`}
         </p>
       )}
       <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:flex-wrap">
-        {postingState === "open" && status === "active" ? (
+        {applicationContactable && postingState === "open" && status === "active" ? (
           <button type="button" disabled={busy || Boolean(unresolvedIntent)} onClick={() => onChoose("pause")} className={secondaryButtonClasses}>
             Pause outreach
           </button>
-        ) : postingState === "open" ? (
+        ) : applicationContactable && postingState === "open" ? (
           <button type="button" disabled={busy || Boolean(unresolvedIntent)} onClick={() => onChoose("resume")} className={primaryButtonClasses}>
             Resume outreach
           </button>

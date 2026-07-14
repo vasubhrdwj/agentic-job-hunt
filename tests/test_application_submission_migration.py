@@ -23,7 +23,7 @@ def test_application_submission_migration_round_trip_and_composite_edges(
 
     database = Database(url)
     try:
-        assert database.current_migration_revision() == "20260714_0011"
+        assert database.current_migration_revision() == "20260715_0012"
         inspector = inspect(database.engine)
         assert "application_submissions" in inspector.get_table_names()
         columns = {
@@ -97,7 +97,7 @@ def test_application_submission_migration_round_trip_and_composite_edges(
     command.upgrade(config, "head")
     upgraded = Database(url)
     try:
-        assert upgraded.current_migration_revision() == "20260714_0011"
+        assert upgraded.current_migration_revision() == "20260715_0012"
         assert "application_submissions" in inspect(upgraded.engine).get_table_names()
     finally:
         upgraded.dispose()

@@ -280,7 +280,10 @@
         "enum": [
           "review_and_prepare_application",
           "submit_application",
-          "follow_up_application"
+          "follow_up_application",
+          "prepare_recruiter_screen",
+          "prepare_interview",
+          "review_offer"
         ],
         "title": "ActionItemKind",
         "type": "string"
@@ -398,6 +401,18 @@
             "title": "Application Id",
             "type": "string"
           },
+          "effective_on": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Effective On"
+          },
           "event_type": {
             "$ref": "#/components/schemas/ApplicationActivityEventType"
           },
@@ -420,6 +435,18 @@
             "format": "date-time",
             "title": "Occurred At",
             "type": "string"
+          },
+          "outcome_id": {
+            "anyOf": [
+              {
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Outcome Id"
           },
           "previous_action_item_id": {
             "anyOf": [
@@ -475,7 +502,11 @@
         "enum": [
           "application_created",
           "application_ready_to_apply",
-          "application_applied"
+          "application_applied",
+          "application_screening",
+          "application_interviewing",
+          "application_offer",
+          "application_closed"
         ],
         "title": "ApplicationActivityEventType",
         "type": "string"
@@ -1461,6 +1492,83 @@
         "title": "ApplicationListResponse",
         "type": "object"
       },
+      "ApplicationOutcome": {
+        "enum": [
+          "rejected",
+          "withdrawn",
+          "offer_accepted",
+          "offer_declined",
+          "no_response",
+          "posting_closed"
+        ],
+        "title": "ApplicationOutcome",
+        "type": "string"
+      },
+      "ApplicationOutcomeResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "application_id": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
+            "title": "Application Id",
+            "type": "string"
+          },
+          "application_submission_id": {
+            "anyOf": [
+              {
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Application Submission Id"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
+            "title": "Id",
+            "type": "string"
+          },
+          "outcome": {
+            "$ref": "#/components/schemas/ApplicationOutcome"
+          },
+          "outcome_on": {
+            "format": "date",
+            "title": "Outcome On",
+            "type": "string"
+          },
+          "recorded_at": {
+            "format": "date-time",
+            "title": "Recorded At",
+            "type": "string"
+          },
+          "recording_method": {
+            "const": "manual",
+            "title": "Recording Method",
+            "type": "string"
+          },
+          "stage_at_outcome": {
+            "$ref": "#/components/schemas/ApplicationStage"
+          }
+        },
+        "required": [
+          "id",
+          "application_id",
+          "stage_at_outcome",
+          "outcome",
+          "outcome_on",
+          "recording_method",
+          "recorded_at",
+          "created_at"
+        ],
+        "title": "ApplicationOutcomeResponse",
+        "type": "object"
+      },
       "ApplicationOutreachResponse": {
         "additionalProperties": false,
         "description": "Database-only state for an application's one manual outreach sequence.",
@@ -2219,7 +2327,11 @@
         "enum": [
           "pursuing",
           "ready_to_apply",
-          "applied"
+          "applied",
+          "screening",
+          "interviewing",
+          "offer",
+          "closed"
         ],
         "title": "ApplicationStage",
         "type": "string"
@@ -2371,7 +2483,14 @@
             "type": "string"
           },
           "current_action": {
-            "$ref": "#/components/schemas/ActionItemResponse"
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ActionItemResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "id": {
             "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
@@ -2382,6 +2501,16 @@
             "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
             "title": "Opportunity Id",
             "type": "string"
+          },
+          "outcome": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ApplicationOutcomeResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "posting": {
             "$ref": "#/components/schemas/ApplicationPostingSummary"
@@ -2412,7 +2541,6 @@
           "pursued_posting_version_id",
           "stage",
           "posting",
-          "current_action",
           "created_at",
           "updated_at"
         ],
@@ -2433,6 +2561,16 @@
             "default": "database",
             "title": "Data Source",
             "type": "string"
+          },
+          "outcome": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ApplicationOutcomeResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "submission": {
             "anyOf": [
@@ -3091,6 +3229,37 @@
           "updated_at"
         ],
         "title": "CareerTrackResponse",
+        "type": "object"
+      },
+      "ClosedTransitionCreate": {
+        "additionalProperties": false,
+        "properties": {
+          "confirm_close": {
+            "const": true,
+            "title": "Confirm Close",
+            "type": "boolean"
+          },
+          "outcome": {
+            "$ref": "#/components/schemas/ApplicationOutcome"
+          },
+          "outcome_on": {
+            "format": "date",
+            "title": "Outcome On",
+            "type": "string"
+          },
+          "to_stage": {
+            "const": "closed",
+            "title": "To Stage",
+            "type": "string"
+          }
+        },
+        "required": [
+          "to_stage",
+          "outcome",
+          "outcome_on",
+          "confirm_close"
+        ],
+        "title": "ClosedTransitionCreate",
         "type": "object"
       },
       "CompanySource": {
@@ -4198,6 +4367,39 @@
         "title": "HuntResult",
         "type": "object"
       },
+      "InterviewingTransitionCreate": {
+        "additionalProperties": false,
+        "properties": {
+          "confirm_progress": {
+            "const": true,
+            "title": "Confirm Progress",
+            "type": "boolean"
+          },
+          "next_action_due_on": {
+            "format": "date",
+            "title": "Next Action Due On",
+            "type": "string"
+          },
+          "reached_on": {
+            "format": "date",
+            "title": "Reached On",
+            "type": "string"
+          },
+          "to_stage": {
+            "const": "interviewing",
+            "title": "To Stage",
+            "type": "string"
+          }
+        },
+        "required": [
+          "to_stage",
+          "reached_on",
+          "next_action_due_on",
+          "confirm_progress"
+        ],
+        "title": "InterviewingTransitionCreate",
+        "type": "object"
+      },
       "JobCriteria": {
         "description": "User-supplied filters that constrain which jobs we go fetch.",
         "properties": {
@@ -4305,6 +4507,39 @@
         ],
         "title": "NotAssessedReason",
         "type": "string"
+      },
+      "OfferTransitionCreate": {
+        "additionalProperties": false,
+        "properties": {
+          "confirm_offer": {
+            "const": true,
+            "title": "Confirm Offer",
+            "type": "boolean"
+          },
+          "next_action_due_on": {
+            "format": "date",
+            "title": "Next Action Due On",
+            "type": "string"
+          },
+          "received_on": {
+            "format": "date",
+            "title": "Received On",
+            "type": "string"
+          },
+          "to_stage": {
+            "const": "offer",
+            "title": "To Stage",
+            "type": "string"
+          }
+        },
+        "required": [
+          "to_stage",
+          "received_on",
+          "next_action_due_on",
+          "confirm_offer"
+        ],
+        "title": "OfferTransitionCreate",
+        "type": "object"
       },
       "OpportunityDecisionAction": {
         "enum": [
@@ -7780,6 +8015,39 @@
         "title": "ScanWarningScope",
         "type": "string"
       },
+      "ScreeningTransitionCreate": {
+        "additionalProperties": false,
+        "properties": {
+          "confirm_progress": {
+            "const": true,
+            "title": "Confirm Progress",
+            "type": "boolean"
+          },
+          "next_action_due_on": {
+            "format": "date",
+            "title": "Next Action Due On",
+            "type": "string"
+          },
+          "reached_on": {
+            "format": "date",
+            "title": "Reached On",
+            "type": "string"
+          },
+          "to_stage": {
+            "const": "screening",
+            "title": "To Stage",
+            "type": "string"
+          }
+        },
+        "required": [
+          "to_stage",
+          "reached_on",
+          "next_action_due_on",
+          "confirm_progress"
+        ],
+        "title": "ScreeningTransitionCreate",
+        "type": "object"
+      },
       "SessionCreateRequest": {
         "properties": {
           "owner_token": {
@@ -10846,7 +11114,11 @@
                 "discriminator": {
                   "mapping": {
                     "applied": "#/components/schemas/AppliedTransitionCreate",
-                    "ready_to_apply": "#/components/schemas/ReadyToApplyTransitionCreate"
+                    "closed": "#/components/schemas/ClosedTransitionCreate",
+                    "interviewing": "#/components/schemas/InterviewingTransitionCreate",
+                    "offer": "#/components/schemas/OfferTransitionCreate",
+                    "ready_to_apply": "#/components/schemas/ReadyToApplyTransitionCreate",
+                    "screening": "#/components/schemas/ScreeningTransitionCreate"
                   },
                   "propertyName": "to_stage"
                 },
@@ -10856,6 +11128,18 @@
                   },
                   {
                     "$ref": "#/components/schemas/AppliedTransitionCreate"
+                  },
+                  {
+                    "$ref": "#/components/schemas/ScreeningTransitionCreate"
+                  },
+                  {
+                    "$ref": "#/components/schemas/InterviewingTransitionCreate"
+                  },
+                  {
+                    "$ref": "#/components/schemas/OfferTransitionCreate"
+                  },
+                  {
+                    "$ref": "#/components/schemas/ClosedTransitionCreate"
                   }
                 ],
                 "title": "Payload"

@@ -518,6 +518,27 @@ def test_outreach_remains_mutable_in_later_active_application_stages(
     assert saved.body == f"Exact message while {stage}"
 
 
+@pytest.mark.parametrize("stage", ["screening", "interviewing", "offer"])
+def test_new_outreach_stops_after_confirmed_hiring_progress(
+    outreach_db: Database,
+    keyring: DataKeyring,
+    stage: str,
+) -> None:
+    with outreach_db.session() as session:
+        application = session.get(Application, APPLICATION_ID)
+        assert application is not None
+        application.stage = stage
+        application.version = 2
+
+    with pytest.raises(ResourceConflict, match="actively pursued"):
+        _start(
+            outreach_db,
+            keyring,
+            key=f"start-after-{stage}",
+            expected_application_version=2,
+        )
+
+
 def test_exact_v1_v2_are_encrypted_and_latest_body_survives_fresh_reload(
     outreach_db: Database,
     keyring: DataKeyring,

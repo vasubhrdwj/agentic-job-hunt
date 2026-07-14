@@ -192,6 +192,29 @@ def test_contact_search_remains_available_in_later_active_stages(
         assert _count(session, BackgroundJob) == 1
 
 
+@pytest.mark.parametrize("stage", ["screening", "interviewing", "offer"])
+def test_contact_search_stops_after_confirmed_hiring_progress(
+    contact_search_db: Database,
+    stage: str,
+) -> None:
+    with contact_search_db.session() as session:
+        application = session.get(Application, "application-a")
+        assert application is not None
+        application.stage = stage
+        application.version = 2
+
+    with pytest.raises(ResourceConflict, match="only active applications"):
+        with contact_search_db.session() as session:
+            create_contact_search(
+                session,
+                owner_id="owner-a",
+                application_id="application-a",
+                expected_application_version=2,
+                idempotency_key=f"search-after-{stage}",
+                now=NOW,
+            )
+
+
 @pytest.mark.parametrize(
     ("stage", "application_version"),
     [("ready_to_apply", 2), ("applied", 3)],

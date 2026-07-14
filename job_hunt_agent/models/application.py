@@ -59,8 +59,27 @@ class Application(Base):
             deferrable=True,
             initially="DEFERRED",
         ),
+        ForeignKeyConstraint(
+            ["owner_id", "id", "outcome_id"],
+            [
+                "application_outcomes.owner_id",
+                "application_outcomes.application_id",
+                "application_outcomes.id",
+            ],
+            name="fk_applications_owner_outcome",
+            deferrable=True,
+            initially="DEFERRED",
+            use_alter=True,
+        ),
         CheckConstraint(
-            "stage IN ('pursuing', 'ready_to_apply', 'applied')", name="stage"
+            "stage IN ('pursuing', 'ready_to_apply', 'applied', 'screening', "
+            "'interviewing', 'offer', 'closed')",
+            name="stage",
+        ),
+        CheckConstraint(
+            "(stage = 'closed' AND outcome_id IS NOT NULL) OR "
+            "(stage <> 'closed' AND outcome_id IS NULL)",
+            name="outcome_shape",
         ),
         CheckConstraint("version >= 1", name="version_positive"),
         Index("ix_applications_owner_stage", "owner_id", "stage", "updated_at"),
@@ -73,6 +92,7 @@ class Application(Base):
     owner_opportunity_id: Mapped[str] = mapped_column(String(32), nullable=False)
     job_posting_id: Mapped[str] = mapped_column(String(32), nullable=False)
     pursued_posting_version_id: Mapped[str] = mapped_column(String(32), nullable=False)
+    outcome_id: Mapped[str | None] = mapped_column(String(32))
     stage: Mapped[str] = mapped_column(String(24), nullable=False, default="pursuing")
     version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     created_at: Mapped[datetime] = mapped_column(
@@ -103,7 +123,8 @@ class ActionItem(Base):
         ),
         CheckConstraint(
             "kind IN ('review_and_prepare_application', 'submit_application', "
-            "'follow_up_application')",
+            "'follow_up_application', 'prepare_recruiter_screen', "
+            "'prepare_interview', 'review_offer')",
             name="kind",
         ),
         CheckConstraint(
@@ -199,26 +220,72 @@ class ApplicationActivityEvent(Base):
             deferrable=True,
             initially="DEFERRED",
         ),
+        ForeignKeyConstraint(
+            ["owner_id", "application_id", "outcome_id"],
+            [
+                "application_outcomes.owner_id",
+                "application_outcomes.application_id",
+                "application_outcomes.id",
+            ],
+            name="fk_application_activity_events_owner_outcome",
+            deferrable=True,
+            initially="DEFERRED",
+        ),
         CheckConstraint("sequence_number >= 1", name="sequence_positive"),
         CheckConstraint(
             "event_type IN ('application_created', 'application_ready_to_apply', "
-            "'application_applied')",
+            "'application_applied', 'application_screening', "
+            "'application_interviewing', 'application_offer', "
+            "'application_closed')",
             name="event_type",
         ),
         CheckConstraint(
             "(event_type = 'application_created' AND sequence_number = 1 "
             "AND from_stage IS NULL AND to_stage = 'pursuing' "
-            "AND previous_action_item_id IS NULL AND submission_id IS NULL) OR "
+            "AND action_item_id IS NOT NULL "
+            "AND previous_action_item_id IS NULL AND submission_id IS NULL "
+            "AND effective_on IS NULL AND outcome_id IS NULL) OR "
             "(event_type = 'application_ready_to_apply' AND sequence_number = 2 "
             "AND from_stage = 'pursuing' AND to_stage = 'ready_to_apply' "
+            "AND action_item_id IS NOT NULL "
             "AND previous_action_item_id IS NOT NULL "
             "AND previous_action_item_id <> action_item_id "
-            "AND submission_id IS NULL) OR "
+            "AND submission_id IS NULL AND effective_on IS NULL "
+            "AND outcome_id IS NULL) OR "
             "(event_type = 'application_applied' AND sequence_number = 3 "
             "AND from_stage = 'ready_to_apply' AND to_stage = 'applied' "
+            "AND action_item_id IS NOT NULL "
             "AND previous_action_item_id IS NOT NULL "
             "AND previous_action_item_id <> action_item_id "
-            "AND submission_id IS NOT NULL)",
+            "AND submission_id IS NOT NULL AND effective_on IS NULL "
+            "AND outcome_id IS NULL) OR "
+            "(event_type = 'application_screening' AND sequence_number >= 4 "
+            "AND from_stage = 'applied' AND to_stage = 'screening' "
+            "AND action_item_id IS NOT NULL "
+            "AND previous_action_item_id IS NOT NULL "
+            "AND previous_action_item_id <> action_item_id "
+            "AND submission_id IS NULL AND effective_on IS NOT NULL "
+            "AND outcome_id IS NULL) OR "
+            "(event_type = 'application_interviewing' AND sequence_number >= 4 "
+            "AND from_stage IN ('applied', 'screening') "
+            "AND to_stage = 'interviewing' AND action_item_id IS NOT NULL "
+            "AND previous_action_item_id IS NOT NULL "
+            "AND previous_action_item_id <> action_item_id "
+            "AND submission_id IS NULL AND effective_on IS NOT NULL "
+            "AND outcome_id IS NULL) OR "
+            "(event_type = 'application_offer' AND sequence_number >= 4 "
+            "AND from_stage IN ('applied', 'screening', 'interviewing') "
+            "AND to_stage = 'offer' AND action_item_id IS NOT NULL "
+            "AND previous_action_item_id IS NOT NULL "
+            "AND previous_action_item_id <> action_item_id "
+            "AND submission_id IS NULL AND effective_on IS NOT NULL "
+            "AND outcome_id IS NULL) OR "
+            "(event_type = 'application_closed' AND sequence_number >= 2 "
+            "AND from_stage IN ('pursuing', 'ready_to_apply', 'applied', "
+            "'screening', 'interviewing', 'offer') AND to_stage = 'closed' "
+            "AND action_item_id IS NULL AND previous_action_item_id IS NOT NULL "
+            "AND submission_id IS NULL AND effective_on IS NOT NULL "
+            "AND outcome_id IS NOT NULL)",
             name="event_shape",
         ),
         Index(
@@ -254,6 +321,46 @@ class ApplicationActivityEvent(Base):
             postgresql_where=text("submission_id IS NOT NULL"),
         ),
         Index(
+            "uq_application_activity_events_owner_screening",
+            "owner_id",
+            "application_id",
+            unique=True,
+            sqlite_where=text("event_type = 'application_screening'"),
+            postgresql_where=text("event_type = 'application_screening'"),
+        ),
+        Index(
+            "uq_application_activity_events_owner_interviewing",
+            "owner_id",
+            "application_id",
+            unique=True,
+            sqlite_where=text("event_type = 'application_interviewing'"),
+            postgresql_where=text("event_type = 'application_interviewing'"),
+        ),
+        Index(
+            "uq_application_activity_events_owner_offer",
+            "owner_id",
+            "application_id",
+            unique=True,
+            sqlite_where=text("event_type = 'application_offer'"),
+            postgresql_where=text("event_type = 'application_offer'"),
+        ),
+        Index(
+            "uq_application_activity_events_owner_closed",
+            "owner_id",
+            "application_id",
+            unique=True,
+            sqlite_where=text("event_type = 'application_closed'"),
+            postgresql_where=text("event_type = 'application_closed'"),
+        ),
+        Index(
+            "uq_application_activity_events_owner_outcome",
+            "owner_id",
+            "outcome_id",
+            unique=True,
+            sqlite_where=text("outcome_id IS NOT NULL"),
+            postgresql_where=text("outcome_id IS NOT NULL"),
+        ),
+        Index(
             "ix_application_activity_events_timeline",
             "application_id",
             "occurred_at",
@@ -270,9 +377,11 @@ class ApplicationActivityEvent(Base):
     event_type: Mapped[str] = mapped_column(String(64), nullable=False)
     from_stage: Mapped[str | None] = mapped_column(String(24))
     to_stage: Mapped[str] = mapped_column(String(24), nullable=False)
-    action_item_id: Mapped[str] = mapped_column(String(32), nullable=False)
+    action_item_id: Mapped[str | None] = mapped_column(String(32))
     previous_action_item_id: Mapped[str | None] = mapped_column(String(32))
     submission_id: Mapped[str | None] = mapped_column(String(32))
+    effective_on: Mapped[date | None] = mapped_column(Date)
+    outcome_id: Mapped[str | None] = mapped_column(String(32))
     occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()

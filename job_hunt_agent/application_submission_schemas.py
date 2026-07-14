@@ -12,6 +12,8 @@ from .application_schemas import (
     ApplicationActivityEventType,
     ApplicationStage,
     ApplicationSummary,
+    ApplicationOutcome,
+    ApplicationOutcomeResponse,
     HttpsUrl,
     OpaqueId,
     UTCDateTime,
@@ -59,8 +61,69 @@ class AppliedTransitionCreate(_ExactApplicationMaterials):
         return value
 
 
+class ScreeningTransitionCreate(ApplicationSubmissionContract):
+    to_stage: Literal["screening"]
+    reached_on: date
+    next_action_due_on: date
+    confirm_progress: Literal[True]
+
+    @field_validator("confirm_progress", mode="before")
+    @classmethod
+    def confirmation_is_boolean_true(cls, value: object) -> object:
+        if value is not True:
+            raise ValueError("confirm_progress must be the boolean true")
+        return value
+
+
+class InterviewingTransitionCreate(ApplicationSubmissionContract):
+    to_stage: Literal["interviewing"]
+    reached_on: date
+    next_action_due_on: date
+    confirm_progress: Literal[True]
+
+    @field_validator("confirm_progress", mode="before")
+    @classmethod
+    def confirmation_is_boolean_true(cls, value: object) -> object:
+        if value is not True:
+            raise ValueError("confirm_progress must be the boolean true")
+        return value
+
+
+class OfferTransitionCreate(ApplicationSubmissionContract):
+    to_stage: Literal["offer"]
+    received_on: date
+    next_action_due_on: date
+    confirm_offer: Literal[True]
+
+    @field_validator("confirm_offer", mode="before")
+    @classmethod
+    def confirmation_is_boolean_true(cls, value: object) -> object:
+        if value is not True:
+            raise ValueError("confirm_offer must be the boolean true")
+        return value
+
+
+class ClosedTransitionCreate(ApplicationSubmissionContract):
+    to_stage: Literal["closed"]
+    outcome: ApplicationOutcome
+    outcome_on: date
+    confirm_close: Literal[True]
+
+    @field_validator("confirm_close", mode="before")
+    @classmethod
+    def confirmation_is_boolean_true(cls, value: object) -> object:
+        if value is not True:
+            raise ValueError("confirm_close must be the boolean true")
+        return value
+
+
 ApplicationTransitionCreate = Annotated[
-    ReadyToApplyTransitionCreate | AppliedTransitionCreate,
+    ReadyToApplyTransitionCreate
+    | AppliedTransitionCreate
+    | ScreeningTransitionCreate
+    | InterviewingTransitionCreate
+    | OfferTransitionCreate
+    | ClosedTransitionCreate,
     Field(discriminator="to_stage"),
 ]
 
@@ -113,10 +176,21 @@ class ApplicationSubmissionProjection(ApplicationSubmissionContract):
             and self.submission.application_id != self.application_id
         ):
             raise ValueError("submission must belong to the requested application")
-        if self.stage is ApplicationStage.applied and self.submission is None:
-            raise ValueError("an applied application must expose its submission")
-        if self.stage is not ApplicationStage.applied and self.submission is not None:
-            raise ValueError("only an applied application can expose a submission")
+        post_submission = {
+            ApplicationStage.applied,
+            ApplicationStage.screening,
+            ApplicationStage.interviewing,
+            ApplicationStage.offer,
+        }
+        if self.stage in post_submission and self.submission is None:
+            raise ValueError("a post-application stage must expose its submission")
+        if self.stage in {
+            ApplicationStage.pursuing,
+            ApplicationStage.ready_to_apply,
+        } and self.submission is not None:
+            raise ValueError(
+                "only an applied application or later stage can expose a submission"
+            )
         return self
 
 
@@ -125,6 +199,7 @@ class ApplicationTransitionResponse(ApplicationSubmissionContract):
     application: ApplicationSummary
     activity_event: ApplicationActivityEventResponse
     submission: ApplicationSubmissionResponse | None = None
+    outcome: ApplicationOutcomeResponse | None = None
     transition_created: bool
 
     @model_validator(mode="after")
@@ -132,10 +207,35 @@ class ApplicationTransitionResponse(ApplicationSubmissionContract):
         event = self.activity_event
         if event.application_id != self.application.id:
             raise ValueError("transition activity must belong to the application")
-        if event.action_item_id != self.application.current_action.id:
-            raise ValueError("transition activity must name the current action")
         if event.to_stage is not self.application.stage:
             raise ValueError("transition activity must enter the current stage")
+        if self.application.stage is ApplicationStage.closed:
+            if (
+                self.application.current_action is not None
+                or event.action_item_id is not None
+                or event.event_type is not ApplicationActivityEventType.application_closed
+                or event.outcome_id is None
+                or self.outcome is None
+                or self.application.outcome is None
+                or event.outcome_id != self.outcome.id
+                or self.application.outcome.id != self.outcome.id
+            ):
+                raise ValueError("closed must expose the exact terminal outcome")
+            if self.outcome.application_submission_id is None:
+                if self.submission is not None:
+                    raise ValueError("pre-submission closure cannot expose a submission")
+            elif (
+                self.submission is None
+                or self.submission.id != self.outcome.application_submission_id
+            ):
+                raise ValueError("post-submission closure must expose its submission")
+            return self
+        if self.application.current_action is None or (
+            event.action_item_id != self.application.current_action.id
+        ):
+            raise ValueError("transition activity must name the current action")
+        if self.outcome is not None or self.application.outcome is not None:
+            raise ValueError("active transitions cannot expose an outcome")
         if self.application.stage is ApplicationStage.ready_to_apply:
             if (
                 event.event_type
@@ -153,8 +253,32 @@ class ApplicationTransitionResponse(ApplicationSubmissionContract):
                 or self.submission.application_id != self.application.id
             ):
                 raise ValueError("applied must expose the exact activity submission")
+        elif self.application.stage in {
+            ApplicationStage.screening,
+            ApplicationStage.interviewing,
+            ApplicationStage.offer,
+        }:
+            expected_event = {
+                ApplicationStage.screening: (
+                    ApplicationActivityEventType.application_screening
+                ),
+                ApplicationStage.interviewing: (
+                    ApplicationActivityEventType.application_interviewing
+                ),
+                ApplicationStage.offer: ApplicationActivityEventType.application_offer,
+            }[self.application.stage]
+            if (
+                event.event_type is not expected_event
+                or event.effective_on is None
+                or event.submission_id is not None
+                or self.submission is None
+                or self.submission.application_id != self.application.id
+            ):
+                raise ValueError(
+                    "post-application progress must expose its immutable submission"
+                )
         else:
-            raise ValueError("a transition response must be ready_to_apply or applied")
+            raise ValueError("unsupported application transition response")
         return self
 
 
@@ -164,5 +288,9 @@ __all__ = [
     "ApplicationSubmissionResponse",
     "ApplicationTransitionCreate",
     "ApplicationTransitionResponse",
+    "ClosedTransitionCreate",
+    "InterviewingTransitionCreate",
+    "OfferTransitionCreate",
     "ReadyToApplyTransitionCreate",
+    "ScreeningTransitionCreate",
 ]

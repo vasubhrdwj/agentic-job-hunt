@@ -841,6 +841,11 @@ Full Slice 5 definition of done:
 
 **Goal:** learn what produces interviews and make the workflow trustworthy over weeks.
 
+- [x] Record forward-only recruiter-screen, qualified-interview, offer, and
+      explicit terminal outcomes against the exact immutable submission.
+- [x] Keep exactly one dated task for each active application, no fabricated
+      task after closure, and stop new contact/outreach work after confirmed
+      hiring progress.
 - [ ] Add weekly funnel and next-action review.
 - [ ] Measure results by career track, source, assessment band, contact type, and sequence position.
 - [ ] Show the incremental value of contacts two through five.
@@ -848,6 +853,21 @@ Full Slice 5 definition of done:
 - [ ] Add privacy export/delete and retention controls.
 - [ ] Complete legacy import/deprecation, backup/restore drill, deployment smoke tests, and runbooks.
 - [ ] Add cross-browser, mobile, accessibility, concurrency, restart, source-failure, and migration gates.
+
+#### Phase 6A1 — Durable hiring progress
+
+- [x] Add `screening`, `interviewing`, `offer`, and `closed` stages with
+      forward-only real-world skips.
+- [x] Append milestone dates and immutable terminal outcomes without rewriting
+      the exact application submission.
+- [x] Require explicit manual confirmations, current versions, idempotency
+      keys, owner isolation, and nondecreasing owner-local dates.
+- [x] Show a compact Hiring progress workflow, later-stage submission receipt,
+      terminal outcome, and exhaustive activity copy in the dossier.
+- [x] Refuse a destructive migration downgrade once Phase 6A data exists.
+
+Next: Phase 6A2 adds the Today due-action projection, repeatable interview
+rounds, append-only corrections, and exact outreach-response attribution.
 
 Definition of done:
 

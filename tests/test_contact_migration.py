@@ -39,7 +39,7 @@ def test_contact_bench_migration_round_trip_and_metadata_parity(
     database = Database(url)
     try:
         inspector = inspect(database.engine)
-        assert MIGRATION_HEAD == "20260714_0011"
+        assert MIGRATION_HEAD == "20260715_0012"
         assert database.current_migration_revision() == MIGRATION_HEAD
         assert CONTACT_TABLES.issubset(inspector.get_table_names())
 

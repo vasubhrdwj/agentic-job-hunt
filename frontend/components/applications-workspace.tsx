@@ -6,6 +6,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { listApplications } from "@/lib/application-api";
 import type {
   ActionItem,
+  ApplicationOutcome,
   ApplicationListResponse,
   ApplicationStage,
 } from "@/lib/application-types";
@@ -106,7 +107,7 @@ export function ApplicationsWorkspace({ ownerLocalDate }: { ownerLocalDate: stri
             One next action per role
           </p>
           <p className="mt-1 text-sm leading-6 text-indigo-900 dark:text-indigo-200">
-            Every application below has a dated task, so a promising role cannot quietly disappear.
+            Every active application below has a dated task, so a promising role cannot quietly disappear.
           </p>
         </div>
       </section>
@@ -139,7 +140,7 @@ export function ApplicationsWorkspace({ ownerLocalDate }: { ownerLocalDate: stri
               <div className="flex min-w-0 flex-col gap-5 sm:flex-row sm:items-start sm:justify-between">
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-2">
-                    <ApplicationStageBadge stage={application.stage} />
+                    <ApplicationStageBadge stage={application.stage} outcome={application.outcome} />
                     <span className="text-xs text-zinc-500">
                       {application.posting.company}
                     </span>
@@ -155,19 +156,33 @@ export function ApplicationsWorkspace({ ownerLocalDate }: { ownerLocalDate: stri
                       Posting is {application.posting.state}. Verify availability before spending more time on it.
                     </p>
                   ) : null}
-                  <div className="mt-4 rounded-xl bg-zinc-50 p-4 dark:bg-zinc-950/60">
-                    <p className="text-xs font-semibold uppercase tracking-[0.12em] text-zinc-500">
-                      Next action
-                    </p>
-                    <p className="mt-1 break-words text-sm font-medium">
-                      {application.current_action.title}
-                    </p>
-                    <DueDate
-                      action={application.current_action}
-                      ownerLocalDate={ownerLocalDate}
-                      className="mt-2"
-                    />
-                  </div>
+                  {application.current_action ? (
+                    <div className="mt-4 rounded-xl bg-zinc-50 p-4 dark:bg-zinc-950/60">
+                      <p className="text-xs font-semibold uppercase tracking-[0.12em] text-zinc-500">
+                        Next action
+                      </p>
+                      <p className="mt-1 break-words text-sm font-medium">
+                        {application.current_action.title}
+                      </p>
+                      <DueDate
+                        action={application.current_action}
+                        ownerLocalDate={ownerLocalDate}
+                        className="mt-2"
+                      />
+                    </div>
+                  ) : application.outcome ? (
+                    <div className="mt-4 rounded-xl bg-zinc-50 p-4 dark:bg-zinc-950/60">
+                      <p className="text-xs font-semibold uppercase tracking-[0.12em] text-zinc-500">
+                        Final outcome
+                      </p>
+                      <p className="mt-1 break-words text-sm font-medium">
+                        {applicationOutcomeLabel(application.outcome.outcome)}
+                      </p>
+                      <p className="mt-2 text-xs text-zinc-500">
+                        Closed {formatDateOnly(application.outcome.outcome_on)}
+                      </p>
+                    </div>
+                  ) : null}
                 </div>
                 <Link
                   href={`/applications/${encodeURIComponent(application.id)}`}
@@ -209,11 +224,21 @@ export function ApplicationsWorkspace({ ownerLocalDate }: { ownerLocalDate: stri
   );
 }
 
-export function ApplicationStageBadge({ stage }: { stage: ApplicationStage }) {
+export function ApplicationStageBadge({
+  stage,
+  outcome,
+}: {
+  stage: ApplicationStage;
+  outcome?: ApplicationOutcome | null;
+}) {
   const labels: Record<ApplicationStage, string> = {
     pursuing: "Pursuing",
     ready_to_apply: "Ready to apply",
     applied: "Applied",
+    screening: "Recruiter screen",
+    interviewing: "Interviewing",
+    offer: "Offer received",
+    closed: outcome ? applicationOutcomeLabel(outcome.outcome) : "Closed",
   };
   const tones: Record<ApplicationStage, string> = {
     pursuing:
@@ -222,6 +247,14 @@ export function ApplicationStageBadge({ stage }: { stage: ApplicationStage }) {
       "bg-amber-100 text-amber-900 dark:bg-amber-950 dark:text-amber-200",
     applied:
       "bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-200",
+    screening:
+      "bg-sky-100 text-sky-900 dark:bg-sky-950 dark:text-sky-200",
+    interviewing:
+      "bg-violet-100 text-violet-900 dark:bg-violet-950 dark:text-violet-200",
+    offer:
+      "bg-teal-100 text-teal-900 dark:bg-teal-950 dark:text-teal-200",
+    closed:
+      "bg-zinc-200 text-zinc-800 dark:bg-zinc-800 dark:text-zinc-200",
   };
   return (
     <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${tones[stage]}`}>
@@ -284,4 +317,15 @@ function formatDateOnly(value: string): string {
   return Number.isNaN(date.getTime())
     ? "on an unknown date"
     : new Intl.DateTimeFormat(undefined, { dateStyle: "medium" }).format(date);
+}
+
+function applicationOutcomeLabel(outcome: ApplicationOutcome["outcome"]): string {
+  return ({
+    rejected: "Rejected",
+    withdrawn: "Withdrawn",
+    offer_accepted: "Offer accepted",
+    offer_declined: "Offer declined",
+    no_response: "No response",
+    posting_closed: "Posting closed",
+  } as const)[outcome];
 }

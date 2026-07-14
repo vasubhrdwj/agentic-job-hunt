@@ -2,6 +2,7 @@
 
 from .base import Base
 from .application import ActionItem, Application, ApplicationActivityEvent
+from .application_outcome import ApplicationOutcome
 from .application_artifact import ApplicationArtifactEvent, ApplicationArtifactRevision
 from .application_pack import ApplicationPack, ApplicationPackEvent, ApplicationPackRevision
 from .application_submission import ApplicationSubmission
@@ -41,6 +42,7 @@ __all__ = [
     "ActionItem",
     "Application",
     "ApplicationActivityEvent",
+    "ApplicationOutcome",
     "ApplicationArtifactEvent",
     "ApplicationArtifactRevision",
     "ApplicationPack",

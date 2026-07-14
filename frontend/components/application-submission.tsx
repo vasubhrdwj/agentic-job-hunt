@@ -170,7 +170,7 @@ export function ApplicationSubmission({
         setHasPending(false);
         await onApplicationChanged();
         setNotice("The saved transition was confirmed after checking the durable record.");
-      } else if (saved?.stage === "applied") {
+      } else if (saved?.submission) {
         pending.current = null;
         setHasPending(false);
         await onApplicationChanged();
@@ -205,7 +205,7 @@ export function ApplicationSubmission({
         setHasPending(false);
         await onApplicationChanged();
         setNotice("The exact transition was confirmed from the durable record.");
-      } else if (saved?.stage === "applied") {
+      } else if (saved?.submission) {
         pending.current = null;
         setHasPending(false);
         await onApplicationChanged();
@@ -263,7 +263,7 @@ export function ApplicationSubmission({
       {error ? <div className="mt-4"><StatusMessage kind="error">{error}</StatusMessage></div> : null}
       {notice ? <div className="mt-4"><StatusMessage kind="success">{notice}</StatusMessage></div> : null}
 
-      {durableStage === "applied" && receipt ? (
+      {receipt ? (
         <div className="mt-6 rounded-xl border border-emerald-200 bg-emerald-50 p-4 dark:border-emerald-900 dark:bg-emerald-950/25">
           <h3 className="font-semibold text-emerald-950 dark:text-emerald-100">Application recorded</h3>
           <p className="mt-1 text-sm text-emerald-900 dark:text-emerald-200">
@@ -551,9 +551,9 @@ function transitionMatches(
     // that an ambiguous ready mutation was this request.
     return false;
   }
+  if (payload.to_stage !== "applied") return false;
   const submission = projection.submission;
   return Boolean(
-    projection.stage === "applied" &&
     submission &&
     submission.application_pack_id === payload.application_pack_id &&
     submission.application_pack_revision_id === payload.application_pack_revision_id &&

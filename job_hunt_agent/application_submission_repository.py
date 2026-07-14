@@ -20,13 +20,18 @@ from .application_pack_schemas import (
     ApplicationPackStatus,
 )
 from .application_repository import _activity_response, _application_summary
+from .application_schemas import ApplicationOutcomeResponse
 from .application_submission_schemas import (
     AppliedTransitionCreate,
     ApplicationSubmissionProjection,
     ApplicationSubmissionResponse,
     ApplicationTransitionCreate,
     ApplicationTransitionResponse,
+    ClosedTransitionCreate,
+    InterviewingTransitionCreate,
+    OfferTransitionCreate,
     ReadyToApplyTransitionCreate,
+    ScreeningTransitionCreate,
 )
 from .job_queue import utcnow
 from .models.application import ActionItem, Application, ApplicationActivityEvent
@@ -40,6 +45,7 @@ from .models.application_pack import (
     ApplicationPackRevision,
 )
 from .models.application_submission import ApplicationSubmission
+from .models.application_outcome import ApplicationOutcome
 from .models.foundation import Owner
 from .models.opportunity import JobObservation, JobPosting, JobPostingVersion
 from .models.profile import ResumeVersion
@@ -51,6 +57,9 @@ from .security import DataKeyring
 
 _READY_ACTION_TITLE = "Submit application"
 _APPLIED_ACTION_TITLE = "Follow up on application"
+_SCREENING_ACTION_TITLE = "Follow up after recruiter screen"
+_INTERVIEWING_ACTION_TITLE = "Follow up after interview"
+_OFFER_ACTION_TITLE = "Review and respond to offer"
 _MAX_DATE_WINDOW_DAYS = 365
 _CURRENT_GROUNDING_BLOCKERS = frozenset(
     {
@@ -160,25 +169,31 @@ def transition_application(
     if owner is None:
         raise ApplicationSubmissionRepositoryError("application owner is unavailable")
     local_today = _owner_local_date(current, owner.timezone)
-    posting, _version, destinations, first_party_verified = _posting_state(
-        session,
-        application=application,
-        lock=True,
-    )
-    if not first_party_verified or not destinations:
-        raise ResourceConflict(
-            "the pinned posting has no verified first-party application destination"
+    posting: JobPosting | None = None
+    destinations: list[str] = []
+    if isinstance(payload, (ReadyToApplyTransitionCreate, AppliedTransitionCreate)):
+        posting, _version, destinations, first_party_verified = _posting_state(
+            session,
+            application=application,
+            lock=True,
         )
-
-    _require_exact_reviewed_materials(
-        session,
-        application=application,
-        payload=payload,
-        keyring=keyring,
-    )
+        if not first_party_verified or not destinations:
+            raise ResourceConflict(
+                "the pinned posting has no verified first-party application destination"
+            )
+        _require_exact_reviewed_materials(
+            session,
+            application=application,
+            payload=payload,
+            keyring=keyring,
+        )
+    if application.stage == "closed":
+        raise ResourceConflict("this application is already closed")
     current_action = _current_action(session, application, lock=True)
 
     if isinstance(payload, ReadyToApplyTransitionCreate):
+        if posting is None:  # pragma: no cover - guarded by payload type.
+            raise ApplicationSubmissionRepositoryError("posting state was not loaded")
         if application.stage != "pursuing":
             raise ResourceConflict(
                 "only a pursuing application can become ready to apply"
@@ -203,7 +218,66 @@ def transition_application(
             submission=None,
             now=current,
         )
+    elif isinstance(payload, ScreeningTransitionCreate):
+        event = _record_progress_stage(
+            session,
+            application=application,
+            current_action=current_action,
+            allowed_from={"applied"},
+            to_stage="screening",
+            event_type="application_screening",
+            effective_on=payload.reached_on,
+            action_kind="prepare_recruiter_screen",
+            action_title=_SCREENING_ACTION_TITLE,
+            action_due_on=payload.next_action_due_on,
+            local_today=local_today,
+            now=current,
+        )
+    elif isinstance(payload, InterviewingTransitionCreate):
+        event = _record_progress_stage(
+            session,
+            application=application,
+            current_action=current_action,
+            allowed_from={"applied", "screening"},
+            to_stage="interviewing",
+            event_type="application_interviewing",
+            effective_on=payload.reached_on,
+            action_kind="prepare_interview",
+            action_title=_INTERVIEWING_ACTION_TITLE,
+            action_due_on=payload.next_action_due_on,
+            local_today=local_today,
+            now=current,
+        )
+    elif isinstance(payload, OfferTransitionCreate):
+        event = _record_progress_stage(
+            session,
+            application=application,
+            current_action=current_action,
+            allowed_from={"applied", "screening", "interviewing"},
+            to_stage="offer",
+            event_type="application_offer",
+            effective_on=payload.received_on,
+            action_kind="review_offer",
+            action_title=_OFFER_ACTION_TITLE,
+            action_due_on=payload.next_action_due_on,
+            local_today=local_today,
+            now=current,
+        )
+    elif isinstance(payload, ClosedTransitionCreate):
+        event = _record_terminal_outcome(
+            session,
+            application=application,
+            current_action=current_action,
+            payload=payload,
+            local_today=local_today,
+            application_created_on=_owner_local_date(
+                _as_utc(application.created_at), owner.timezone
+            ),
+            now=current,
+        )
     elif isinstance(payload, AppliedTransitionCreate):
+        if posting is None:  # pragma: no cover - guarded by payload type.
+            raise ApplicationSubmissionRepositoryError("posting state was not loaded")
         if application.stage != "ready_to_apply":
             raise ResourceConflict(
                 "only a ready-to-apply application can be marked applied"
@@ -487,8 +561,9 @@ def _replace_action_and_stage(
     action_title: str,
     action_due_on: date,
     event_type: str,
-    sequence_number: int,
+    sequence_number: int | None,
     submission: ApplicationSubmission | None,
+    effective_on: date | None = None,
     now: datetime,
 ) -> ApplicationActivityEvent:
     previous_stage = application.stage
@@ -527,7 +602,8 @@ def _replace_action_and_stage(
         )
         or 0
     )
-    if existing_sequence + 1 != sequence_number:
+    next_sequence = existing_sequence + 1
+    if sequence_number is not None and next_sequence != sequence_number:
         raise ApplicationSubmissionRepositoryError(
             "application activity sequence is inconsistent with its stage"
         )
@@ -535,19 +611,261 @@ def _replace_action_and_stage(
         id=uuid4().hex,
         owner_id=application.owner_id,
         application_id=application.id,
-        sequence_number=sequence_number,
+        sequence_number=next_sequence,
         event_type=event_type,
         from_stage=previous_stage,
         to_stage=to_stage,
         action_item_id=next_action.id,
         previous_action_item_id=previous_action.id,
         submission_id=submission.id if submission is not None else None,
+        effective_on=effective_on,
+        outcome_id=None,
         occurred_at=now,
         created_at=now,
     )
     session.add(event)
     session.flush()
     return event
+
+
+def _record_progress_stage(
+    session: Session,
+    *,
+    application: Application,
+    current_action: ActionItem,
+    allowed_from: set[str],
+    to_stage: str,
+    event_type: str,
+    effective_on: date,
+    action_kind: str,
+    action_title: str,
+    action_due_on: date,
+    local_today: date,
+    now: datetime,
+) -> ApplicationActivityEvent:
+    if application.stage not in allowed_from:
+        raise ResourceConflict(
+            f"an application in {application.stage} cannot move to {to_stage}"
+        )
+    _require_current_action_kind(application, current_action)
+    submission = _owned_submission(
+        session,
+        application.owner_id,
+        application.id,
+        lock=True,
+    )
+    if submission is None:
+        raise ApplicationSubmissionRepositoryError(
+            "post-application progress requires the immutable submission"
+        )
+    _require_milestone_date(
+        session,
+        application=application,
+        submission=submission,
+        value=effective_on,
+        local_today=local_today,
+    )
+    _require_due_date(action_due_on, local_today=local_today)
+    return _replace_action_and_stage(
+        session,
+        application=application,
+        previous_action=current_action,
+        to_stage=to_stage,
+        action_kind=action_kind,
+        action_title=action_title,
+        action_due_on=action_due_on,
+        event_type=event_type,
+        sequence_number=None,
+        submission=None,
+        effective_on=effective_on,
+        now=now,
+    )
+
+
+def _record_terminal_outcome(
+    session: Session,
+    *,
+    application: Application,
+    current_action: ActionItem,
+    payload: ClosedTransitionCreate,
+    local_today: date,
+    application_created_on: date,
+    now: datetime,
+) -> ApplicationActivityEvent:
+    if application.stage == "closed":
+        raise ResourceConflict("this application is already closed")
+    _require_current_action_kind(application, current_action)
+    outcome_value = payload.outcome.value
+    if outcome_value in {"offer_accepted", "offer_declined"}:
+        if application.stage != "offer":
+            raise ResourceConflict(
+                "an offer can be accepted or declined only after recording the offer"
+            )
+    elif outcome_value in {"rejected", "no_response"}:
+        if application.stage not in {"applied", "screening", "interviewing", "offer"}:
+            raise ResourceConflict(
+                "rejection or no response can be recorded only after applying"
+            )
+    elif outcome_value not in {"withdrawn", "posting_closed"}:
+        raise ValueError("unsupported terminal outcome")
+
+    submission = _owned_submission(
+        session,
+        application.owner_id,
+        application.id,
+        lock=True,
+    )
+    if application.stage in {"applied", "screening", "interviewing", "offer"}:
+        if submission is None:
+            raise ApplicationSubmissionRepositoryError(
+                "post-application closure requires the immutable submission"
+            )
+        lower_bound = max(
+            submission.applied_on,
+            _latest_effective_on(session, application) or submission.applied_on,
+        )
+    else:
+        if submission is not None:
+            raise ApplicationSubmissionRepositoryError(
+                "pre-submission application unexpectedly has a submission"
+            )
+        lower_bound = application_created_on
+    _require_recorded_date(
+        payload.outcome_on,
+        local_today=local_today,
+        not_before=lower_bound,
+        field_name="outcome_on",
+    )
+    if _owned_outcome(
+        session,
+        application.owner_id,
+        application.id,
+        lock=True,
+    ) is not None:
+        raise ResourceConflict("this application already has a terminal outcome")
+
+    previous_stage = application.stage
+    outcome = ApplicationOutcome(
+        id=uuid4().hex,
+        owner_id=application.owner_id,
+        application_id=application.id,
+        application_submission_id=submission.id if submission is not None else None,
+        stage_at_outcome=previous_stage,
+        outcome=outcome_value,
+        outcome_on=payload.outcome_on,
+        recording_method="manual",
+        recorded_at=now,
+        created_at=now,
+    )
+    session.add(outcome)
+    session.flush()
+
+    current_action.status = "cancelled"
+    current_action.completed_at = None
+    current_action.cancelled_at = now
+    current_action.version += 1
+    current_action.updated_at = now
+    application.stage = "closed"
+    application.outcome_id = outcome.id
+    application.version += 1
+    application.updated_at = now
+    session.flush()
+
+    event = ApplicationActivityEvent(
+        id=uuid4().hex,
+        owner_id=application.owner_id,
+        application_id=application.id,
+        sequence_number=_next_activity_sequence(session, application),
+        event_type="application_closed",
+        from_stage=previous_stage,
+        to_stage="closed",
+        action_item_id=None,
+        previous_action_item_id=current_action.id,
+        submission_id=None,
+        effective_on=payload.outcome_on,
+        outcome_id=outcome.id,
+        occurred_at=now,
+        created_at=now,
+    )
+    session.add(event)
+    session.flush()
+    return event
+
+
+def _require_current_action_kind(
+    application: Application,
+    current_action: ActionItem,
+) -> None:
+    expected_kind = {
+        "pursuing": "review_and_prepare_application",
+        "ready_to_apply": "submit_application",
+        "applied": "follow_up_application",
+        "screening": "prepare_recruiter_screen",
+        "interviewing": "prepare_interview",
+        "offer": "review_offer",
+    }.get(application.stage)
+    if expected_kind is None or current_action.kind != expected_kind:
+        raise ApplicationSubmissionRepositoryError(
+            f"{application.stage} application has the wrong current action"
+        )
+
+
+def _next_activity_sequence(session: Session, application: Application) -> int:
+    return int(
+        session.scalar(
+            select(func.max(ApplicationActivityEvent.sequence_number)).where(
+                ApplicationActivityEvent.owner_id == application.owner_id,
+                ApplicationActivityEvent.application_id == application.id,
+            )
+        )
+        or 0
+    ) + 1
+
+
+def _latest_effective_on(
+    session: Session,
+    application: Application,
+) -> date | None:
+    return session.scalar(
+        select(func.max(ApplicationActivityEvent.effective_on)).where(
+            ApplicationActivityEvent.owner_id == application.owner_id,
+            ApplicationActivityEvent.application_id == application.id,
+            ApplicationActivityEvent.effective_on.is_not(None),
+        )
+    )
+
+
+def _require_milestone_date(
+    session: Session,
+    *,
+    application: Application,
+    submission: ApplicationSubmission,
+    value: date,
+    local_today: date,
+) -> None:
+    lower_bound = max(
+        submission.applied_on,
+        _latest_effective_on(session, application) or submission.applied_on,
+    )
+    _require_recorded_date(
+        value,
+        local_today=local_today,
+        not_before=lower_bound,
+        field_name="milestone date",
+    )
+
+
+def _require_recorded_date(
+    value: date,
+    *,
+    local_today: date,
+    not_before: date,
+    field_name: str,
+) -> None:
+    if value < not_before or value > local_today:
+        raise ValueError(
+            f"{field_name} must be on or after the prior milestone and not in the future"
+        )
 
 
 def _replayed_transition_response(
@@ -565,7 +883,14 @@ def _replayed_transition_response(
             ApplicationActivityEvent.application_id == application.id,
             ApplicationActivityEvent.id == event_id,
             ApplicationActivityEvent.event_type.in_(
-                ("application_ready_to_apply", "application_applied")
+                (
+                    "application_ready_to_apply",
+                    "application_applied",
+                    "application_screening",
+                    "application_interviewing",
+                    "application_offer",
+                    "application_closed",
+                )
             ),
         )
     )
@@ -592,16 +917,16 @@ def _transition_response(
     event: ApplicationActivityEvent,
     transition_created: bool,
 ) -> ApplicationTransitionResponse:
-    submission = (
-        _owned_submission(session, application.owner_id, application.id)
-        if application.stage == "applied"
-        else None
-    )
+    submission = _owned_submission(session, application.owner_id, application.id)
+    outcome = _owned_outcome(session, application.owner_id, application.id)
     return ApplicationTransitionResponse(
         application=_application_summary(session, application),
         activity_event=_activity_response(event),
         submission=(
             _submission_response(submission) if submission is not None else None
+        ),
+        outcome=(
+            _outcome_response(outcome) if outcome is not None else None
         ),
         transition_created=transition_created,
     )
@@ -711,6 +1036,22 @@ def _owned_submission(
     return session.scalar(statement)
 
 
+def _owned_outcome(
+    session: Session,
+    owner_id: str,
+    application_id: str,
+    *,
+    lock: bool = False,
+) -> ApplicationOutcome | None:
+    statement = select(ApplicationOutcome).where(
+        ApplicationOutcome.owner_id == owner_id,
+        ApplicationOutcome.application_id == application_id,
+    )
+    if lock:
+        statement = statement.with_for_update()
+    return session.scalar(statement)
+
+
 def _submission_response(row: ApplicationSubmission) -> ApplicationSubmissionResponse:
     return ApplicationSubmissionResponse(
         id=row.id,
@@ -726,6 +1067,20 @@ def _submission_response(row: ApplicationSubmission) -> ApplicationSubmissionRes
         destination_url=row.destination_url,
         applied_on=row.applied_on,
         submission_method="manual",
+        recorded_at=_as_utc(row.recorded_at),
+        created_at=_as_utc(row.created_at),
+    )
+
+
+def _outcome_response(row: ApplicationOutcome) -> ApplicationOutcomeResponse:
+    return ApplicationOutcomeResponse(
+        id=row.id,
+        application_id=row.application_id,
+        application_submission_id=row.application_submission_id,
+        stage_at_outcome=row.stage_at_outcome,
+        outcome=row.outcome,
+        outcome_on=row.outcome_on,
+        recording_method="manual",
         recorded_at=_as_utc(row.recorded_at),
         created_at=_as_utc(row.created_at),
     )
