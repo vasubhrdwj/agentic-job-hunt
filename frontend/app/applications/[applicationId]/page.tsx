@@ -26,6 +26,7 @@ export default async function ApplicationDetailPage({
         key={applicationId}
         applicationId={applicationId}
         ownerLocalDate={session.local_date}
+        ownerTimezone={session.timezone}
       />
     </main>
   );

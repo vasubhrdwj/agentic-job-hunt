@@ -874,13 +874,14 @@ Full Slice 5 definition of done:
       totals, bounded rows, stable ordering, and direct dossier links.
 - [x] Derive urgency on the server from the persisted owner timezone and the
       exact open action; never from the browser clock or a fabricated score.
-- [ ] Add repeatable scheduled/completed interview rounds with stable IDs.
+- [x] Add repeatable scheduled/completed interview rounds with stable IDs,
+      immutable lifecycle events, and an exact Today preparation task.
 - [ ] Add append-only corrections that supersede inaccurate milestones.
 - [ ] Attribute each outreach response to the exact marked-sent event and
       message version.
 
-Next: Phase 6A2b adds repeatable interview rounds and appointments, followed
-by append-only corrections and exact outreach-response attribution.
+Next: Phase 6A2c adds append-only corrections, followed by exact
+outreach-response attribution.
 
 Definition of done:
 

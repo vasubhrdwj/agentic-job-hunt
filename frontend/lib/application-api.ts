@@ -6,6 +6,12 @@ import type {
   TodayApplicationActionsResponse,
 } from "./application-types";
 import type {
+  ApplicationInterviewRoundsResponse,
+  InterviewRoundCreate,
+  InterviewRoundEventCreate,
+  InterviewRoundMutationResponse,
+} from "./application-interview-types";
+import type {
   ApplicationPackCreate,
   ApplicationPackEventCreate,
   ApplicationPackRevisionCreate,
@@ -118,6 +124,64 @@ export async function getApplicationActivity(
     await fetch(
       `/api/applications/${encodeURIComponent(id)}/activity`,
       { cache: "no-store" },
+    ),
+  );
+}
+
+export async function getApplicationInterviewRounds(
+  applicationId: string,
+): Promise<ApplicationInterviewRoundsResponse> {
+  return json<ApplicationInterviewRoundsResponse>(
+    await fetch(
+      `/api/applications/${encodeURIComponent(applicationId)}/interview-rounds`,
+      { cache: "no-store", credentials: "same-origin" },
+    ),
+  );
+}
+
+export async function createApplicationInterviewRound(
+  applicationId: string,
+  applicationVersion: number,
+  idempotencyKey: string,
+  payload: InterviewRoundCreate,
+): Promise<InterviewRoundMutationResponse> {
+  return json<InterviewRoundMutationResponse>(
+    await fetch(
+      `/api/applications/${encodeURIComponent(applicationId)}/interview-rounds`,
+      {
+        method: "POST",
+        credentials: "same-origin",
+        headers: {
+          "Content-Type": "application/json",
+          "If-Match": `"${applicationVersion}"`,
+          "Idempotency-Key": idempotencyKey,
+        },
+        body: JSON.stringify(payload),
+      },
+    ),
+  );
+}
+
+export async function recordApplicationInterviewRoundEvent(
+  applicationId: string,
+  roundId: string,
+  roundVersion: number,
+  idempotencyKey: string,
+  payload: InterviewRoundEventCreate,
+): Promise<InterviewRoundMutationResponse> {
+  return json<InterviewRoundMutationResponse>(
+    await fetch(
+      `/api/applications/${encodeURIComponent(applicationId)}/interview-rounds/${encodeURIComponent(roundId)}/events`,
+      {
+        method: "POST",
+        credentials: "same-origin",
+        headers: {
+          "Content-Type": "application/json",
+          "If-Match": `"${roundVersion}"`,
+          "Idempotency-Key": idempotencyKey,
+        },
+        body: JSON.stringify(payload),
+      },
     ),
   );
 }

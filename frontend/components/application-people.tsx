@@ -6,6 +6,7 @@ import {
   getApplicationContacts,
   startApplicationContactSearch,
 } from "@/lib/application-api";
+import type { InterviewHistoryState } from "@/lib/application-interview-types";
 import type {
   ApplicationContactBenchResponse,
   ApplicationPostingState,
@@ -47,11 +48,13 @@ export function ApplicationPeople({
   applicationVersion,
   applicationStage,
   postingState,
+  interviewHistoryState,
 }: {
   applicationId: string;
   applicationVersion: number;
   applicationStage: ApplicationStage;
   postingState: ApplicationPostingState;
+  interviewHistoryState: InterviewHistoryState;
 }) {
   const [bench, setBench] = useState<ApplicationContactBenchResponse | null>(null);
   const [loading, setLoading] = useState(true);
@@ -290,9 +293,11 @@ export function ApplicationPeople({
   const activeSearch = Boolean(
     current && ACTIVE_SEARCH_STATES.has(current.status),
   );
-  const applicationContactable = ["pursuing", "ready_to_apply", "applied"].includes(
+  const contactSearchBlockedCopy = applicationContactBlockCopy(
+    interviewHistoryState,
     applicationStage,
   );
+  const applicationContactable = contactSearchBlockedCopy === null;
   const canStart = applicationContactable && postingState === "open" && !activeSearch && !starting;
 
   return (
@@ -351,7 +356,11 @@ export function ApplicationPeople({
         ) : null}
 
         {bench ? (
-          <SearchStatus bench={bench} searchAllowed={applicationContactable} />
+          <SearchStatus
+            bench={bench}
+            searchAllowed={applicationContactable}
+            searchBlockedCopy={contactSearchBlockedCopy}
+          />
         ) : null}
 
         {startError ? <StatusMessage kind="error">{startError}</StatusMessage> : null}
@@ -385,8 +394,8 @@ export function ApplicationPeople({
         ) : null}
         {!applicationContactable ? (
           <StatusMessage kind="info">
-            New contact searches are closed after confirmed hiring progress.
-            Any previously verified people remain available for review.
+            {contactSearchBlockedCopy} Any previously verified people remain
+            available for review.
           </StatusMessage>
         ) : null}
 
@@ -428,6 +437,7 @@ export function ApplicationPeople({
       postingState={postingState}
       benchReady={Boolean(result && result.verified_count > 0)}
       contactSearchRunning={activeSearch}
+      interviewHistoryState={interviewHistoryState}
     />
     </>
   );
@@ -436,9 +446,11 @@ export function ApplicationPeople({
 function SearchStatus({
   bench,
   searchAllowed,
+  searchBlockedCopy,
 }: {
   bench: ApplicationContactBenchResponse;
   searchAllowed: boolean;
+  searchBlockedCopy: string | null;
 }) {
   const search = bench.current_search;
   if (bench.status === "not_started") {
@@ -446,7 +458,7 @@ function SearchStatus({
       <StatusMessage kind="info">
         {searchAllowed
           ? "No people search has been started for this application. Starting one makes public provider requests and saves only evidence-backed results."
-          : "No people search was started before this application reached confirmed hiring progress."}
+          : searchBlockedCopy ?? "A new people search is not available for this application."}
       </StatusMessage>
     );
   }
@@ -712,6 +724,25 @@ function runningLabel(search: ContactSearchSnapshot): string {
     return "Finalizing the verified contact bench…";
   }
   return "Building the verified contact bench…";
+}
+
+function applicationContactBlockCopy(
+  interviewHistoryState: InterviewHistoryState,
+  applicationStage: ApplicationStage,
+): string | null {
+  if (interviewHistoryState === "checking") {
+    return "Interview progress is still being checked, so new contact searches are temporarily paused.";
+  }
+  if (interviewHistoryState === "unavailable") {
+    return "Interview progress could not be verified, so new contact searches are temporarily paused. Retry Interview rounds above.";
+  }
+  if (interviewHistoryState === "recorded") {
+    return "An interview round is already recorded, so new contact searches are closed for this role.";
+  }
+  if (!["pursuing", "ready_to_apply", "applied"].includes(applicationStage)) {
+    return "New contact searches are closed after confirmed hiring progress.";
+  }
+  return null;
 }
 
 function searchButtonLabel(status: ApplicationContactBenchResponse["status"]): string {

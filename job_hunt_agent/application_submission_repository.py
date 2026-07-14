@@ -45,6 +45,7 @@ from .models.application_pack import (
     ApplicationPackRevision,
 )
 from .models.application_submission import ApplicationSubmission
+from .models.application_interview import ApplicationInterviewRound
 from .models.application_outcome import ApplicationOutcome
 from .models.foundation import Owner
 from .models.opportunity import JobObservation, JobPosting, JobPostingVersion
@@ -189,6 +190,20 @@ def transition_application(
         )
     if application.stage == "closed":
         raise ResourceConflict("this application is already closed")
+    scheduled_round = session.scalar(
+        select(ApplicationInterviewRound.id)
+        .where(
+            ApplicationInterviewRound.owner_id == owner_id,
+            ApplicationInterviewRound.application_id == application.id,
+            ApplicationInterviewRound.status == "scheduled",
+        )
+        .with_for_update()
+    )
+    if scheduled_round is not None:
+        raise ResourceConflict(
+            "complete or cancel the scheduled interview round before changing "
+            "the application stage"
+        )
     current_action = _current_action(session, application, lock=True)
 
     if isinstance(payload, ReadyToApplyTransitionCreate):
@@ -826,13 +841,23 @@ def _latest_effective_on(
     session: Session,
     application: Application,
 ) -> date | None:
-    return session.scalar(
+    activity_date = session.scalar(
         select(func.max(ApplicationActivityEvent.effective_on)).where(
             ApplicationActivityEvent.owner_id == application.owner_id,
             ApplicationActivityEvent.application_id == application.id,
             ApplicationActivityEvent.effective_on.is_not(None),
         )
     )
+    completed_round_date = session.scalar(
+        select(func.max(ApplicationInterviewRound.completed_on)).where(
+            ApplicationInterviewRound.owner_id == application.owner_id,
+            ApplicationInterviewRound.application_id == application.id,
+            ApplicationInterviewRound.status == "completed",
+            ApplicationInterviewRound.completed_on.is_not(None),
+        )
+    )
+    values = [value for value in (activity_date, completed_round_date) if value is not None]
+    return max(values) if values else None
 
 
 def _require_milestone_date(

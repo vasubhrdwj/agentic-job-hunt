@@ -41,6 +41,7 @@ from .models import (
     ActionItem,
     Application,
     ApplicationActivityEvent,
+    ApplicationInterviewRound,
     ApplicationOutcome,
     JobObservation,
     JobPosting,
@@ -599,6 +600,7 @@ def _application_summary(
         )
     if (application.outcome_id is None) != (outcome is None):
         raise ApplicationRepositoryError("application outcome graph is incomplete")
+    _require_action_round_consistency(session, application=application, action=action)
     verified = (
         session.scalar(
             select(JobObservation.id)
@@ -652,6 +654,21 @@ def _validate_today_action_graph(session: Session, *, owner_id: str) -> None:
         Application.owner_id == ActionItem.owner_id,
         Application.id == ActionItem.application_id,
     )
+    default_action_matches = or_(
+        *(
+            and_(
+                Application.stage == stage,
+                ActionItem.interview_round_id.is_(None),
+                ActionItem.kind == expected_kind,
+            )
+            for stage, expected_kind in _ACTIVE_ACTION_KIND_BY_STAGE.items()
+        )
+    )
+    scheduled_round_action_matches = and_(
+        Application.stage.in_(("applied", "screening", "interviewing")),
+        ActionItem.interview_round_id.is_not(None),
+        ActionItem.kind == "prepare_interview",
+    )
     wrong_action = session.scalar(
         select(ActionItem.id)
         .select_from(ActionItem)
@@ -662,13 +679,7 @@ def _validate_today_action_graph(session: Session, *, owner_id: str) -> None:
             ActionItem.status == "open",
             or_(
                 Application.stage == "closed",
-                *(
-                    and_(
-                        Application.stage == stage,
-                        ActionItem.kind != expected_kind,
-                    )
-                    for stage, expected_kind in _ACTIVE_ACTION_KIND_BY_STAGE.items()
-                ),
+                ~or_(default_action_matches, scheduled_round_action_matches),
             ),
         )
         .limit(1)
@@ -676,6 +687,56 @@ def _validate_today_action_graph(session: Session, *, owner_id: str) -> None:
     if wrong_action is not None:
         raise ApplicationRepositoryError(
             "an application has an invalid open current action"
+        )
+
+    scheduled_round_exists = (
+        select(ApplicationInterviewRound.id)
+        .where(
+            ApplicationInterviewRound.owner_id == ActionItem.owner_id,
+            ApplicationInterviewRound.application_id == ActionItem.application_id,
+            ApplicationInterviewRound.id == ActionItem.interview_round_id,
+            ApplicationInterviewRound.status == "scheduled",
+        )
+        .exists()
+    )
+    orphaned_round_action = session.scalar(
+        select(ActionItem.id)
+        .where(
+            ActionItem.owner_id == owner_id,
+            ActionItem.status == "open",
+            ActionItem.interview_round_id.is_not(None),
+            ~scheduled_round_exists,
+        )
+        .limit(1)
+    )
+    if orphaned_round_action is not None:
+        raise ApplicationRepositoryError(
+            "an interview preparation action has no scheduled round"
+        )
+
+    open_round_action_exists = (
+        select(ActionItem.id)
+        .where(
+            ActionItem.owner_id == ApplicationInterviewRound.owner_id,
+            ActionItem.application_id == ApplicationInterviewRound.application_id,
+            ActionItem.interview_round_id == ApplicationInterviewRound.id,
+            ActionItem.status == "open",
+            ActionItem.kind == "prepare_interview",
+        )
+        .exists()
+    )
+    round_without_action = session.scalar(
+        select(ApplicationInterviewRound.id)
+        .where(
+            ApplicationInterviewRound.owner_id == owner_id,
+            ApplicationInterviewRound.status == "scheduled",
+            ~open_round_action_exists,
+        )
+        .limit(1)
+    )
+    if round_without_action is not None:
+        raise ApplicationRepositoryError(
+            "a scheduled interview round does not own the current action"
         )
 
 
@@ -783,6 +844,16 @@ def _application_summaries(
             )
         )
     }
+    scheduled_rounds = {
+        row.application_id: row
+        for row in session.scalars(
+            select(ApplicationInterviewRound).where(
+                ApplicationInterviewRound.owner_id == owner_id,
+                ApplicationInterviewRound.application_id.in_(application_ids),
+                ApplicationInterviewRound.status == "scheduled",
+            )
+        )
+    }
     postings = {
         row.id: row
         for row in session.scalars(
@@ -848,6 +919,16 @@ def _application_summaries(
             )
         if (application.outcome_id is None) != (outcome is None):
             raise ApplicationRepositoryError("application outcome graph is incomplete")
+        scheduled_round = scheduled_rounds.get(application.id)
+        if action is not None and action.interview_round_id is not None:
+            if scheduled_round is None or scheduled_round.id != action.interview_round_id:
+                raise ApplicationRepositoryError(
+                    "an interview preparation action has no scheduled round"
+                )
+        elif scheduled_round is not None:
+            raise ApplicationRepositoryError(
+                "a scheduled interview round does not own the current action"
+            )
         if version.job_posting_id != posting.id:
             raise ApplicationRepositoryError(
                 "application posting version is inconsistent"
@@ -900,6 +981,7 @@ def _action_response(row: ActionItem) -> ActionItemResponse:
         id=row.id,
         version=row.version,
         application_id=row.application_id,
+        interview_round_id=row.interview_round_id,
         kind=row.kind,
         status=row.status,
         title=row.title,
@@ -926,8 +1008,33 @@ def _activity_response(
         submission_id=row.submission_id,
         effective_on=row.effective_on,
         outcome_id=row.outcome_id,
+        interview_round_id=row.interview_round_id,
         occurred_at=_as_utc(row.occurred_at),
     )
+
+
+def _require_action_round_consistency(
+    session: Session,
+    *,
+    application: Application,
+    action: ActionItem | None,
+) -> None:
+    scheduled_round = session.scalar(
+        select(ApplicationInterviewRound).where(
+            ApplicationInterviewRound.owner_id == application.owner_id,
+            ApplicationInterviewRound.application_id == application.id,
+            ApplicationInterviewRound.status == "scheduled",
+        )
+    )
+    if action is not None and action.interview_round_id is not None:
+        if scheduled_round is None or scheduled_round.id != action.interview_round_id:
+            raise ApplicationRepositoryError(
+                "an interview preparation action has no scheduled round"
+            )
+    elif scheduled_round is not None:
+        raise ApplicationRepositoryError(
+            "a scheduled interview round does not own the current action"
+        )
 
 
 def _outcome_response(row: ApplicationOutcome) -> ApplicationOutcomeResponse:

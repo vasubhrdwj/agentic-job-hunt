@@ -224,6 +224,9 @@ function ActionRow({
   item: TodayApplicationActionItem;
   ownerLocalDate: string;
 }) {
+  const taskHref = item.action.interview_round_id
+    ? `/applications/${encodeURIComponent(item.application.id)}#interview-rounds`
+    : `/applications/${encodeURIComponent(item.application.id)}`;
   return (
     <li className="flex min-w-0 flex-col gap-3 py-3 sm:flex-row sm:items-center sm:justify-between">
       <div className="min-w-0">
@@ -237,7 +240,7 @@ function ActionRow({
         </p>
       </div>
       <Link
-        href={`/applications/${encodeURIComponent(item.application.id)}`}
+        href={taskHref}
         className={`${secondaryButtonClasses} shrink-0`}
         aria-label={`Open ${item.action.title} for ${item.posting.title} at ${item.posting.company}`}
       >

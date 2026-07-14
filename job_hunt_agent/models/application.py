@@ -121,6 +121,18 @@ class ActionItem(Base):
             name="fk_action_items_owner_application",
             ondelete="CASCADE",
         ),
+        ForeignKeyConstraint(
+            ["owner_id", "application_id", "interview_round_id"],
+            [
+                "application_interview_rounds.owner_id",
+                "application_interview_rounds.application_id",
+                "application_interview_rounds.id",
+            ],
+            name="fk_action_items_owner_interview_round",
+            deferrable=True,
+            initially="DEFERRED",
+            use_alter=True,
+        ),
         CheckConstraint(
             "kind IN ('review_and_prepare_application', 'submit_application', "
             "'follow_up_application', 'prepare_recruiter_screen', "
@@ -141,6 +153,10 @@ class ActionItem(Base):
             "AND completed_at IS NULL)",
             name="status_timestamps",
         ),
+        CheckConstraint(
+            "interview_round_id IS NULL OR kind = 'prepare_interview'",
+            name="interview_round_kind",
+        ),
         CheckConstraint("version >= 1", name="version_positive"),
         Index(
             "uq_action_items_owner_application_open",
@@ -158,6 +174,7 @@ class ActionItem(Base):
         ForeignKey("owners.id", ondelete="CASCADE"), nullable=False
     )
     application_id: Mapped[str] = mapped_column(String(32), nullable=False)
+    interview_round_id: Mapped[str | None] = mapped_column(String(32))
     kind: Mapped[str] = mapped_column(
         String(64), nullable=False, default="review_and_prepare_application"
     )
@@ -231,6 +248,18 @@ class ApplicationActivityEvent(Base):
             deferrable=True,
             initially="DEFERRED",
         ),
+        ForeignKeyConstraint(
+            ["owner_id", "application_id", "interview_round_id"],
+            [
+                "application_interview_rounds.owner_id",
+                "application_interview_rounds.application_id",
+                "application_interview_rounds.id",
+            ],
+            name="fk_application_activity_events_owner_interview_round",
+            deferrable=True,
+            initially="DEFERRED",
+            use_alter=True,
+        ),
         CheckConstraint("sequence_number >= 1", name="sequence_positive"),
         CheckConstraint(
             "event_type IN ('application_created', 'application_ready_to_apply', "
@@ -244,28 +273,29 @@ class ApplicationActivityEvent(Base):
             "AND from_stage IS NULL AND to_stage = 'pursuing' "
             "AND action_item_id IS NOT NULL "
             "AND previous_action_item_id IS NULL AND submission_id IS NULL "
-            "AND effective_on IS NULL AND outcome_id IS NULL) OR "
+            "AND effective_on IS NULL AND outcome_id IS NULL "
+            "AND interview_round_id IS NULL) OR "
             "(event_type = 'application_ready_to_apply' AND sequence_number = 2 "
             "AND from_stage = 'pursuing' AND to_stage = 'ready_to_apply' "
             "AND action_item_id IS NOT NULL "
             "AND previous_action_item_id IS NOT NULL "
             "AND previous_action_item_id <> action_item_id "
             "AND submission_id IS NULL AND effective_on IS NULL "
-            "AND outcome_id IS NULL) OR "
+            "AND outcome_id IS NULL AND interview_round_id IS NULL) OR "
             "(event_type = 'application_applied' AND sequence_number = 3 "
             "AND from_stage = 'ready_to_apply' AND to_stage = 'applied' "
             "AND action_item_id IS NOT NULL "
             "AND previous_action_item_id IS NOT NULL "
             "AND previous_action_item_id <> action_item_id "
             "AND submission_id IS NOT NULL AND effective_on IS NULL "
-            "AND outcome_id IS NULL) OR "
+            "AND outcome_id IS NULL AND interview_round_id IS NULL) OR "
             "(event_type = 'application_screening' AND sequence_number >= 4 "
             "AND from_stage = 'applied' AND to_stage = 'screening' "
             "AND action_item_id IS NOT NULL "
             "AND previous_action_item_id IS NOT NULL "
             "AND previous_action_item_id <> action_item_id "
             "AND submission_id IS NULL AND effective_on IS NOT NULL "
-            "AND outcome_id IS NULL) OR "
+            "AND outcome_id IS NULL AND interview_round_id IS NULL) OR "
             "(event_type = 'application_interviewing' AND sequence_number >= 4 "
             "AND from_stage IN ('applied', 'screening') "
             "AND to_stage = 'interviewing' AND action_item_id IS NOT NULL "
@@ -279,13 +309,13 @@ class ApplicationActivityEvent(Base):
             "AND previous_action_item_id IS NOT NULL "
             "AND previous_action_item_id <> action_item_id "
             "AND submission_id IS NULL AND effective_on IS NOT NULL "
-            "AND outcome_id IS NULL) OR "
+            "AND outcome_id IS NULL AND interview_round_id IS NULL) OR "
             "(event_type = 'application_closed' AND sequence_number >= 2 "
             "AND from_stage IN ('pursuing', 'ready_to_apply', 'applied', "
             "'screening', 'interviewing', 'offer') AND to_stage = 'closed' "
             "AND action_item_id IS NULL AND previous_action_item_id IS NOT NULL "
             "AND submission_id IS NULL AND effective_on IS NOT NULL "
-            "AND outcome_id IS NOT NULL)",
+            "AND outcome_id IS NOT NULL AND interview_round_id IS NULL)",
             name="event_shape",
         ),
         Index(
@@ -382,6 +412,7 @@ class ApplicationActivityEvent(Base):
     submission_id: Mapped[str | None] = mapped_column(String(32))
     effective_on: Mapped[date | None] = mapped_column(Date)
     outcome_id: Mapped[str | None] = mapped_column(String(32))
+    interview_round_id: Mapped[str | None] = mapped_column(String(32))
     occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()

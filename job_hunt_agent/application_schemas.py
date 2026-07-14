@@ -160,6 +160,7 @@ class ActionItemResponse(ContractModel):
     id: OpaqueId
     version: int = Field(ge=1)
     application_id: OpaqueId
+    interview_round_id: OpaqueId | None = None
     kind: ActionItemKind
     status: ActionItemStatus
     title: str = Field(min_length=1, max_length=240)
@@ -205,10 +206,19 @@ class ApplicationActivityEventResponse(ContractModel):
     submission_id: OpaqueId | None = None
     effective_on: date | None = None
     outcome_id: OpaqueId | None = None
+    interview_round_id: OpaqueId | None = None
     occurred_at: UTCDateTime
 
     @model_validator(mode="after")
     def event_shape_is_immutable_and_complete(self) -> Self:
+        if (
+            self.interview_round_id is not None
+            and self.event_type
+            is not ApplicationActivityEventType.application_interviewing
+        ):
+            raise ValueError(
+                "only application_interviewing may name an interview round"
+            )
         if self.event_type is ApplicationActivityEventType.application_created:
             if (
                 self.sequence_number != 1
@@ -401,6 +411,21 @@ class ApplicationSummary(ContractModel):
             raise ValueError("current_action must belong to the application")
         if self.current_action.status is not ActionItemStatus.open:
             raise ValueError("an active application requires one open current_action")
+        if self.current_action.interview_round_id is not None:
+            if (
+                self.stage
+                not in {
+                    ApplicationStage.applied,
+                    ApplicationStage.screening,
+                    ApplicationStage.interviewing,
+                }
+                or self.current_action.kind is not ActionItemKind.prepare_interview
+            ):
+                raise ValueError(
+                    "a round-linked action must prepare an interview for an "
+                    "active post-application stage"
+                )
+            return self
         expected_kind = _ACTIVE_ACTION_KIND_BY_STAGE[self.stage]
         if self.current_action.kind is not expected_kind:
             raise ValueError(
@@ -445,6 +470,21 @@ class TodayApplicationActionItem(ContractModel):
             raise ValueError("Today action posting must belong to its application")
         if self.action.status is not ActionItemStatus.open:
             raise ValueError("Today application actions must be open")
+        if self.action.interview_round_id is not None:
+            if (
+                self.application.stage
+                not in {
+                    ApplicationStage.applied,
+                    ApplicationStage.screening,
+                    ApplicationStage.interviewing,
+                }
+                or self.action.kind is not ActionItemKind.prepare_interview
+            ):
+                raise ValueError(
+                    "a Today round action must prepare an interview for an "
+                    "active post-application stage"
+                )
+            return self
         expected_kind = _ACTIVE_ACTION_KIND_BY_STAGE[self.application.stage]
         if self.action.kind is not expected_kind:
             raise ValueError(

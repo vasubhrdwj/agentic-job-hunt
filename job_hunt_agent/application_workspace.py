@@ -19,6 +19,7 @@ from .application_submission_schemas import (
     ApplicationTransitionResponse,
 )
 from .contact_workspace import ContactWorkspaceStore
+from .interview_round_workspace import InterviewRoundWorkspaceStore
 from .outreach_workspace import OutreachWorkspaceStore
 
 
@@ -26,6 +27,7 @@ class ApplicationWorkspaceStore(
     ApplicationArtifactWorkspaceStore,
     ApplicationPackWorkspaceStore,
     ContactWorkspaceStore,
+    InterviewRoundWorkspaceStore,
     OutreachWorkspaceStore,
     Protocol,
 ):

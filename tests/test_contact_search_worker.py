@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
@@ -18,6 +18,8 @@ from job_hunt_agent.contact_discovery import (
     ProviderSearchResult,
 )
 from job_hunt_agent.database import Database
+from job_hunt_agent.interview_round_repository import schedule_interview_round
+from job_hunt_agent.interview_round_schemas import InterviewRoundCreate
 from job_hunt_agent.job_queue import cancel_job, claim_next_job
 from job_hunt_agent.models import (
     Application,
@@ -32,6 +34,7 @@ from job_hunt_agent.models import (
     OwnerOpportunity,
     WorkerHeartbeat,
 )
+from tests.test_application_submission_models import submission_db
 
 
 NOW = datetime(2026, 7, 14, 8, 30, tzinfo=timezone.utc)
@@ -42,6 +45,11 @@ PLAN_ID = "contact-plan-a"
 JOB_ID = "contact-job-a"
 WORKER_ID = "contact-worker"
 LEASE_TOKEN = "contact-lease-token"
+INTERVIEW_OWNER_ID = "owner1"
+INTERVIEW_APPLICATION_ID = "application1"
+INTERVIEW_PLAN_ID = "contact-plan-before-interview"
+INTERVIEW_JOB_ID = "contact-job-before-interview"
+INTERVIEW_LEASE_TOKEN = "contact-lease-before-interview"
 
 
 @dataclass(frozen=True)
@@ -254,6 +262,107 @@ def _claim(database: Database) -> Claim:
     return Claim()
 
 
+def _seed_interview_contact_plan(session) -> None:
+    posting_version = session.get(JobPostingVersion, "postingversion1")
+    assert posting_version is not None
+    posting_version.source = "greenhouse"
+    session.add(
+        BackgroundJob(
+            id=INTERVIEW_JOB_ID,
+            kind=contact_worker.CONTACT_SEARCH_JOB_KIND,
+            owner_id=INTERVIEW_OWNER_ID,
+            dedupe_scope=f"owner:{INTERVIEW_OWNER_ID}",
+            subject_type="contact_plan",
+            subject_id=INTERVIEW_PLAN_ID,
+            payload={
+                "contact_plan_id": INTERVIEW_PLAN_ID,
+                "candidate_limit": 12,
+                "target_count": 5,
+            },
+            dedupe_key=f"contacts:{INTERVIEW_PLAN_ID}",
+            status="queued",
+            priority=75,
+            attempt_count=0,
+            max_attempts=3,
+            run_after=NOW,
+            stage="queued",
+            version=1,
+            created_at=NOW,
+            updated_at=NOW,
+        )
+    )
+    session.flush()
+    session.add(
+        ContactPlan(
+            id=INTERVIEW_PLAN_ID,
+            owner_id=INTERVIEW_OWNER_ID,
+            application_id=INTERVIEW_APPLICATION_ID,
+            plan_number=1,
+            status="queued",
+            target_count=5,
+            candidate_limit=12,
+            confidence_floor=0.75,
+            policy_version="contact-bench-v1",
+            scoring_version="contact-score-v1",
+            background_job_id=INTERVIEW_JOB_ID,
+            discovered_count=0,
+            verified_count=0,
+            selected_count=0,
+            coverage_status="pending",
+            exhausted=False,
+            retryable=False,
+            shortfall_reasons=[],
+            error_code=None,
+            version=1,
+            started_at=None,
+            finalized_at=None,
+            created_at=NOW,
+            updated_at=NOW,
+        )
+    )
+
+
+def _claim_interview_contact_plan(database: Database) -> Claim:
+    with database.session() as session:
+        job = claim_next_job(
+            session,
+            worker_id=WORKER_ID,
+            lease_token=INTERVIEW_LEASE_TOKEN,
+            lease_seconds=3_600,
+            kinds={contact_worker.CONTACT_SEARCH_JOB_KIND},
+            now=PROCESS_NOW,
+        )
+        assert job is not None and job.id == INTERVIEW_JOB_ID
+    return Claim(
+        job_id=INTERVIEW_JOB_ID,
+        run_id=INTERVIEW_PLAN_ID,
+        lease_token=INTERVIEW_LEASE_TOKEN,
+    )
+
+
+def _schedule_interview_progress(database: Database, *, key: str) -> None:
+    with database.session() as session:
+        mutation = schedule_interview_round(
+            session,
+            owner_id=INTERVIEW_OWNER_ID,
+            application_id=INTERVIEW_APPLICATION_ID,
+            payload=InterviewRoundCreate(
+                kind="technical",
+                title="Technical interview",
+                scheduled_local=datetime(2026, 7, 15, 15, 0),
+                scheduled_timezone="Asia/Kolkata",
+                duration_minutes=60,
+                meeting_format="video",
+                next_action_due_on=date(2026, 7, 14),
+                confirm_schedule=True,
+            ),
+            expected_application_version=3,
+            idempotency_key=key,
+            now=PROCESS_NOW,
+        )
+        assert mutation is not None
+
+
 def _result(name: str, title: str, slug: str) -> ProviderSearchResult:
     return ProviderSearchResult(
         result_title=f"{name} - {title} - Twilio | LinkedIn",
@@ -417,6 +526,80 @@ def test_contact_worker_start_and_publish_accept_later_active_stages(
         assert plan.selected_count == 5
         assert job.status == "succeeded"
         assert _count(session, ApplicationContact) == 6
+
+
+def test_queued_contact_search_cancels_before_provider_work_after_interview_progress(
+    submission_db: Database,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(contact_worker, "_utcnow", lambda: PROCESS_NOW)
+    with submission_db.session() as session:
+        _seed_interview_contact_plan(session)
+    _schedule_interview_progress(submission_db, key="interview-before-contact-start")
+    claim = _claim_interview_contact_plan(submission_db)
+    provider = FakeProvider(_full_responses())
+
+    contact_worker.process_claimed_contact_search(
+        claim,
+        database=submission_db,
+        worker_id=WORKER_ID,
+        provider=provider,
+    )
+
+    assert provider.calls == []
+    with submission_db.session() as session:
+        plan = session.get(ContactPlan, INTERVIEW_PLAN_ID)
+        job = session.get(BackgroundJob, INTERVIEW_JOB_ID)
+        assert plan is not None and job is not None
+        assert plan.status == "cancelled"
+        assert plan.coverage_status == "pending"
+        assert plan.selected_count == 0
+        assert plan.finalized_at is not None
+        assert job.status == "cancelled"
+        assert job.cancelled_at is not None
+        assert _count(session, Contact) == 0
+        assert _count(session, ApplicationContact) == 0
+
+
+def test_in_flight_contact_search_cancels_before_publication_after_interview_progress(
+    submission_db: Database,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(contact_worker, "_utcnow", lambda: PROCESS_NOW)
+    with submission_db.session() as session:
+        _seed_interview_contact_plan(session)
+    claim = _claim_interview_contact_plan(submission_db)
+
+    def schedule_during_provider_work() -> None:
+        _schedule_interview_progress(
+            submission_db,
+            key="interview-during-contact-provider",
+        )
+
+    provider = FakeProvider(
+        _full_responses(),
+        on_first_call=schedule_during_provider_work,
+    )
+    contact_worker.process_claimed_contact_search(
+        claim,
+        database=submission_db,
+        worker_id=WORKER_ID,
+        provider=provider,
+    )
+
+    assert len(provider.calls) == 3
+    with submission_db.session() as session:
+        plan = session.get(ContactPlan, INTERVIEW_PLAN_ID)
+        job = session.get(BackgroundJob, INTERVIEW_JOB_ID)
+        assert plan is not None and job is not None
+        assert plan.status == "cancelled"
+        assert plan.coverage_status == "pending"
+        assert plan.selected_count == 0
+        assert plan.finalized_at is not None
+        assert job.status == "cancelled"
+        assert job.cancelled_at is not None
+        assert _count(session, Contact) == 0
+        assert _count(session, ApplicationContact) == 0
 
 
 def test_oversized_provider_row_is_skipped_without_retrying_or_losing_good_leads(

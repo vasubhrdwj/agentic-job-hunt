@@ -5,12 +5,14 @@ import { useCallback, useEffect, useState } from "react";
 
 import { getApplication } from "@/lib/application-api";
 import type { ApplicationArtifactsResponse } from "@/lib/application-artifact-types";
+import type { InterviewHistoryState } from "@/lib/application-interview-types";
 import type {
   ApplicationActivityEvent,
   ApplicationDetailResponse,
   ApplicationStage,
 } from "@/lib/application-types";
 import { ApplicationMaterials } from "./application-materials";
+import { ApplicationInterviewRounds } from "./application-interview-rounds";
 import { ApplicationPack } from "./application-pack";
 import { ApplicationPeople } from "./application-people";
 import { ApplicationProgress } from "./application-progress";
@@ -26,25 +28,35 @@ import {
 export function ApplicationDossier({
   applicationId,
   ownerLocalDate,
+  ownerTimezone,
 }: {
   applicationId: string;
   ownerLocalDate: string;
+  ownerTimezone: string;
 }) {
   const [detail, setDetail] = useState<ApplicationDetailResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [currentArtifacts, setCurrentArtifacts] = useState<ApplicationArtifactsResponse | null>(null);
+  const [interviewHistoryState, setInterviewHistoryState] =
+    useState<InterviewHistoryState>("checking");
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (): Promise<boolean> => {
     setError(null);
     try {
       setDetail(await getApplication(applicationId));
+      return true;
     } catch (reason) {
       setError(errorText(reason, "Unable to load this application."));
+      return false;
     } finally {
       setLoading(false);
     }
   }, [applicationId]);
+
+  const refreshApplication = useCallback(async (): Promise<void> => {
+    await load();
+  }, [load]);
 
   useEffect(() => {
     const timer = setTimeout(() => void load(), 0);
@@ -155,13 +167,24 @@ export function ApplicationDossier({
         </StatusMessage>
       ) : null}
 
+      <ApplicationInterviewRounds
+        applicationId={application.id}
+        applicationVersion={application.version}
+        applicationStage={application.stage}
+        ownerLocalDate={ownerLocalDate}
+        ownerTimezone={ownerTimezone}
+        onApplicationChanged={load}
+        onHistoryChanged={setInterviewHistoryState}
+      />
+
       <ApplicationProgress
         applicationId={application.id}
         applicationVersion={application.version}
         stage={application.stage}
         outcome={application.outcome}
+        scheduledInterviewRoundId={application.current_action?.interview_round_id ?? null}
         ownerLocalDate={ownerLocalDate}
-        onApplicationChanged={load}
+        onApplicationChanged={refreshApplication}
       />
 
       <ApplicationPack
@@ -186,7 +209,7 @@ export function ApplicationDossier({
         postingState={posting.state}
         ownerLocalDate={ownerLocalDate}
         currentArtifacts={currentArtifacts}
-        onApplicationChanged={load}
+        onApplicationChanged={refreshApplication}
       />
 
       <ApplicationPeople
@@ -195,6 +218,7 @@ export function ApplicationDossier({
         applicationVersion={application.version}
         applicationStage={application.stage}
         postingState={posting.state}
+        interviewHistoryState={interviewHistoryState}
       />
 
       <section className="rounded-2xl border border-zinc-200 bg-white p-5 sm:p-6 dark:border-zinc-800 dark:bg-zinc-900/70">
@@ -247,10 +271,10 @@ function nextActionGuidance(stage: ApplicationStage): string {
     return "Open the verified employer destination, submit the reviewed materials yourself, then record exactly what you used.";
   }
   if (stage === "applied") {
-    return "Follow up on schedule, keep useful referral conversations moving, and record only confirmed hiring progress.";
+    return "Follow up on schedule. When an employer confirms an interview appointment, record it in Interview rounds below.";
   }
   if (stage === "screening") {
-    return "Complete the recruiter follow-up, then record an interview only when the employer confirms that progress.";
+    return "Complete the recruiter follow-up, then schedule the exact interview round only after the employer confirms it.";
   }
   if (stage === "interviewing") {
     return "Complete the interview follow-up and keep the next dated task current while you wait for a confirmed decision.";
@@ -284,6 +308,12 @@ function activityCopy(event: ApplicationActivityEvent): {
     };
   }
   if (event.event_type === "application_interviewing") {
+    if (event.interview_round_id) {
+      return {
+        title: "Interview round completed",
+        detail: effectiveDateDetail("Entered Interviewing after the completed round", event.effective_on),
+      };
+    }
     return {
       title: "Interview completed",
       detail: effectiveDateDetail("Entered Interviewing", event.effective_on),

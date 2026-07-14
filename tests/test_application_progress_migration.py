@@ -13,6 +13,7 @@ from job_hunt_agent.database import MIGRATION_HEAD, Database
 
 
 PROGRESS_REVISION = "20260715_0012"
+CURRENT_REVISION = "20260715_0013"
 PREVIOUS_REVISION = "20260714_0011"
 
 
@@ -29,8 +30,8 @@ def test_application_progress_migration_schema_and_metadata_parity(
 
     database = Database(url)
     try:
-        assert MIGRATION_HEAD == PROGRESS_REVISION
-        assert database.current_migration_revision() == PROGRESS_REVISION
+        assert MIGRATION_HEAD == CURRENT_REVISION
+        assert database.current_migration_revision() == CURRENT_REVISION
 
         inspector = inspect(database.engine)
         assert "application_outcomes" in inspector.get_table_names()
@@ -249,7 +250,7 @@ def test_application_progress_migration_empty_round_trip(
     command.check(config)
     upgraded = Database(url)
     try:
-        assert upgraded.current_migration_revision() == PROGRESS_REVISION
+        assert upgraded.current_migration_revision() == CURRENT_REVISION
         assert "application_outcomes" in inspect(
             upgraded.engine
         ).get_table_names()

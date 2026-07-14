@@ -21,6 +21,7 @@ from .job_queue import utcnow
 from .models import (
     Application,
     ApplicationContact,
+    ApplicationInterviewRound,
     Contact,
     ContactPlan,
     JobPosting,
@@ -352,6 +353,16 @@ def start_outreach_sequence(
     )
     if application.stage not in CONTACTABLE_APPLICATION_STAGE_VALUES:
         raise ResourceConflict("outreach requires an actively pursued application")
+    interview_progress = session.scalar(
+        select(ApplicationInterviewRound.id)
+        .where(
+            ApplicationInterviewRound.owner_id == owner_id,
+            ApplicationInterviewRound.application_id == application.id,
+        )
+        .limit(1)
+    )
+    if interview_progress is not None:
+        raise ResourceConflict("outreach stops after an interview round is recorded")
     if not _posting_is_open(session, application):
         raise ResourceConflict("the posting is closed; outreach cannot start")
 
@@ -1910,6 +1921,16 @@ def _sequence_stop_reason(
         raise OutreachRepositoryError("outreach application is missing")
     if application.stage not in CONTACTABLE_APPLICATION_STAGE_VALUES:
         return "application_terminal"
+    interview_progress = session.scalar(
+        select(ApplicationInterviewRound.id)
+        .where(
+            ApplicationInterviewRound.owner_id == sequence.owner_id,
+            ApplicationInterviewRound.application_id == sequence.application_id,
+        )
+        .limit(1)
+    )
+    if interview_progress is not None:
+        return "hiring_progress"
     if not _posting_is_open(session, application):
         return "posting_closed"
     return None

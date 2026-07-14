@@ -52,10 +52,11 @@ export type ApplicationPostingSummary = ApiSchemas["ApplicationPostingSummary"];
 
 export type ActionItem = Omit<
   ApiSchemas["ActionItemResponse"],
-  "completed_at" | "cancelled_at" | "kind"
+  "completed_at" | "cancelled_at" | "interview_round_id" | "kind"
 > & {
   completed_at: string | null;
   cancelled_at: string | null;
+  interview_round_id: string | null;
   kind: ActionItemKind;
 };
 
@@ -107,12 +108,14 @@ export type ApplicationActivityEvent = Omit<
   | "action_item_id"
   | "event_type"
   | "from_stage"
+  | "interview_round_id"
   | "to_stage"
 > & {
   action_item_id: string | null;
   event_type: ApplicationActivityEventType;
   effective_on: string | null;
   from_stage: ApplicationStage | null;
+  interview_round_id: string | null;
   outcome_id: string | null;
   to_stage: ApplicationStage | null;
   previous_action_item_id: string | null;

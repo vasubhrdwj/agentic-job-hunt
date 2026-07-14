@@ -14,6 +14,7 @@ import {
   saveApplicationOutreachMessage,
   startApplicationOutreachSequence,
 } from "@/lib/application-api";
+import type { InterviewHistoryState } from "@/lib/application-interview-types";
 import type {
   ApplicationPostingState,
   ApplicationStage,
@@ -73,6 +74,7 @@ export function ApplicationOutreach({
   postingState,
   benchReady,
   contactSearchRunning,
+  interviewHistoryState,
 }: {
   applicationId: string;
   applicationVersion: number;
@@ -80,6 +82,7 @@ export function ApplicationOutreach({
   postingState: ApplicationPostingState;
   benchReady: boolean;
   contactSearchRunning: boolean;
+  interviewHistoryState: InterviewHistoryState;
 }) {
   const [outreach, setOutreach] = useState<ApplicationOutreachResponse | null>(null);
   const [loading, setLoading] = useState(true);
@@ -647,21 +650,23 @@ export function ApplicationOutreach({
     currentResolvedCount ? `${currentResolvedCount} resolved` : null,
     currentUnavailableCount ? `${currentUnavailableCount} unavailable` : null,
   ].filter(Boolean).join(" · ");
-  const applicationContactable = ["pursuing", "ready_to_apply", "applied"].includes(
+  const contactabilityIssue = applicationContactBlockCopy(
+    interviewHistoryState,
     applicationStage,
   );
+  const applicationContactable = contactabilityIssue === null;
   const actionPostingState: ApplicationPostingState = applicationContactable
     ? postingState
     : "closed";
-  const startBlockedReason = !applicationContactable
-    ? "Hiring progress is already recorded; new outreach is closed for this role."
-    : postingState !== "open"
+  const startBlockedReason = contactabilityIssue ?? (
+    postingState !== "open"
       ? `This posting is ${postingState}.`
       : contactSearchRunning
         ? "Wait for the contact refresh to finish."
         : !benchReady
           ? "Build a verified contact bench above first."
-          : null;
+          : null
+  );
 
   return (
     <section
@@ -760,6 +765,7 @@ export function ApplicationOutreach({
             outreach={outreach!}
             postingState={postingState}
             applicationContactable={applicationContactable}
+            contactabilityIssue={contactabilityIssue}
             onRefresh={() => void refresh(false)}
             busy={Boolean(busy)}
           />
@@ -870,6 +876,7 @@ export function ApplicationOutreach({
             reason={sequence.reason}
             postingState={actionPostingState}
             applicationContactable={applicationContactable}
+            contactabilityIssue={contactabilityIssue}
             mode={controlMode}
             draftReason={controlReason}
             busy={Boolean(busy)}
@@ -898,12 +905,14 @@ function SequenceSummary({
   outreach,
   postingState,
   applicationContactable,
+  contactabilityIssue,
   onRefresh,
   busy,
 }: {
   outreach: ApplicationOutreachResponse;
   postingState: ApplicationPostingState;
   applicationContactable: boolean;
+  contactabilityIssue: string | null;
   onRefresh: () => void;
   busy: boolean;
 }) {
@@ -959,8 +968,7 @@ function SequenceSummary({
       </div>
       {!applicationContactable ? (
         <p className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-100">
-          Confirmed hiring progress closes new message actions. Saved messages
-          and outcomes remain readable.
+          {contactabilityIssue} Saved messages and outcomes remain readable.
         </p>
       ) : postingState !== "open" ? (
         <p className="mt-3 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-900 dark:border-red-900 dark:bg-red-950/30 dark:text-red-100">
@@ -1493,6 +1501,7 @@ function SequenceControls({
   reason,
   postingState,
   applicationContactable,
+  contactabilityIssue,
   mode,
   draftReason,
   busy,
@@ -1506,6 +1515,7 @@ function SequenceControls({
   reason: string | null;
   postingState: ApplicationPostingState;
   applicationContactable: boolean;
+  contactabilityIssue: string | null;
   mode: ControlMode | null;
   draftReason: string;
   busy: boolean;
@@ -1532,19 +1542,15 @@ function SequenceControls({
   return (
     <div className="rounded-xl border border-zinc-200 p-4 dark:border-zinc-800">
       <h3 className="font-semibold">Plan controls</h3>
-      {status === "paused" ? (
-        <p className="mt-1 text-sm text-zinc-500">
-          Paused{reason ? `: ${sequenceReasonLabel(reason)}` : "."}
-        </p>
-      ) : (
-        <p className="mt-1 text-sm text-zinc-500">
-          {!applicationContactable
-            ? "Confirmed hiring progress closes new message actions; only an explicit stop remains available."
+      <p className="mt-1 text-sm text-zinc-500">
+        {contactabilityIssue
+          ? `${contactabilityIssue} Only an explicit stop remains available.`
+          : status === "paused"
+            ? `Paused${reason ? `: ${sequenceReasonLabel(reason)}` : "."}`
             : postingState === "open"
-            ? "Pause when you need time; stop only when this plan should end permanently."
-            : `This posting is ${postingState}; only an explicit stop remains available.`}
-        </p>
-      )}
+              ? "Pause when you need time; stop only when this plan should end permanently."
+              : `This posting is ${postingState}; only an explicit stop remains available.`}
+      </p>
       <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:flex-wrap">
         {applicationContactable && postingState === "open" && status === "active" ? (
           <button type="button" disabled={busy || Boolean(unresolvedIntent)} onClick={() => onChoose("pause")} className={secondaryButtonClasses}>
@@ -1674,6 +1680,25 @@ function deadlineReached(value: string | null | undefined) {
   if (!value) return false;
   const date = new Date(value);
   return !Number.isNaN(date.getTime()) && date.getTime() <= Date.now();
+}
+
+function applicationContactBlockCopy(
+  interviewHistoryState: InterviewHistoryState,
+  applicationStage: ApplicationStage,
+): string | null {
+  if (interviewHistoryState === "checking") {
+    return "Interview progress is still being checked, so new outreach is temporarily paused.";
+  }
+  if (interviewHistoryState === "unavailable") {
+    return "Interview progress could not be verified, so new outreach is temporarily paused. Retry Interview rounds above.";
+  }
+  if (interviewHistoryState === "recorded") {
+    return "An interview round is already recorded, so new outreach is closed for this role.";
+  }
+  if (!["pursuing", "ready_to_apply", "applied"].includes(applicationStage)) {
+    return "Hiring progress is already recorded, so new outreach is closed for this role.";
+  }
+  return null;
 }
 
 function definitiveNonApplyMessage(response: ApplicationOutreachResponse) {

@@ -57,6 +57,18 @@ from .application_submission_schemas import (
     ApplicationTransitionResponse,
 )
 from .database import Database
+from .interview_round_repository import (
+    InterviewRoundRepositoryError,
+    load_application_interview_rounds,
+    record_interview_round_event,
+    schedule_interview_round,
+)
+from .interview_round_schemas import (
+    ApplicationInterviewRoundsResponse,
+    InterviewRoundCreate,
+    InterviewRoundEventCreate,
+    InterviewRoundMutationResponse,
+)
 from .mutation_receipts import MutationIdempotencyConflict, MutationPending
 from .outreach_repository import (
     OutreachRepositoryError,
@@ -173,6 +185,59 @@ class SqlAlchemyApplicationWorkspaceStore(SqlAlchemyContactWorkspaceStore):
                 expected_application_version=expected_application_version,
                 idempotency_key=idempotency_key,
                 keyring=self.keyring,
+            )
+
+    def get_application_interview_rounds(
+        self,
+        *,
+        owner_id: str,
+        application_id: str,
+    ) -> ApplicationInterviewRoundsResponse | None:
+        with _interview_round_errors(), self.database.session() as session:
+            return load_application_interview_rounds(
+                session,
+                owner_id=owner_id,
+                application_id=application_id,
+            )
+
+    def schedule_interview_round(
+        self,
+        *,
+        owner_id: str,
+        application_id: str,
+        payload: InterviewRoundCreate,
+        expected_application_version: int,
+        idempotency_key: str,
+    ) -> InterviewRoundMutationResponse | None:
+        with _interview_round_errors(), self.database.session() as session:
+            return schedule_interview_round(
+                session,
+                owner_id=owner_id,
+                application_id=application_id,
+                payload=payload,
+                expected_application_version=expected_application_version,
+                idempotency_key=idempotency_key,
+            )
+
+    def record_interview_round_event(
+        self,
+        *,
+        owner_id: str,
+        application_id: str,
+        interview_round_id: str,
+        payload: InterviewRoundEventCreate,
+        expected_round_version: int,
+        idempotency_key: str,
+    ) -> InterviewRoundMutationResponse | None:
+        with _interview_round_errors(), self.database.session() as session:
+            return record_interview_round_event(
+                session,
+                owner_id=owner_id,
+                application_id=application_id,
+                interview_round_id=interview_round_id,
+                payload=payload,
+                expected_round_version=expected_round_version,
+                idempotency_key=idempotency_key,
             )
 
     def get_application_pack(
@@ -505,6 +570,42 @@ def _application_submission_errors() -> Iterator[None]:
     except SQLAlchemyError as exc:
         raise WorkspaceUnavailable(
             "application-submission database is unavailable"
+        ) from exc
+
+
+@contextmanager
+def _interview_round_errors() -> Iterator[None]:
+    try:
+        yield
+    except WorkspaceUnavailable:
+        raise
+    except WorkspaceConflict:
+        raise
+    except WorkspaceInputError:
+        raise
+    except VersionConflict as exc:
+        raise WorkspaceConflict(str(exc), code="version_conflict") from exc
+    except MutationIdempotencyConflict as exc:
+        raise WorkspaceConflict(str(exc), code="idempotency_conflict") from exc
+    except MutationPending as exc:
+        raise WorkspaceConflict(str(exc), code="mutation_pending") from exc
+    except ResourceConflict as exc:
+        raise WorkspaceConflict(str(exc)) from exc
+    except InterviewRoundRepositoryError as exc:
+        raise WorkspaceUnavailable("interview-round data is inconsistent") from exc
+    except ValidationError as exc:
+        raise WorkspaceUnavailable(
+            "stored interview-round data failed contract validation"
+        ) from exc
+    except ValueError as exc:
+        raise WorkspaceInputError(str(exc)) from exc
+    except IntegrityError as exc:
+        raise WorkspaceConflict(
+            "interview round conflicts with existing state"
+        ) from exc
+    except SQLAlchemyError as exc:
+        raise WorkspaceUnavailable(
+            "interview-round database is unavailable"
         ) from exc
 
 

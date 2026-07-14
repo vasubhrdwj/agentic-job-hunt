@@ -335,6 +335,18 @@
             "title": "Id",
             "type": "string"
           },
+          "interview_round_id": {
+            "anyOf": [
+              {
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Interview Round Id"
+          },
           "kind": {
             "$ref": "#/components/schemas/ActionItemKind"
           },
@@ -430,6 +442,18 @@
             "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
             "title": "Id",
             "type": "string"
+          },
+          "interview_round_id": {
+            "anyOf": [
+              {
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Interview Round Id"
           },
           "occurred_at": {
             "format": "date-time",
@@ -1447,6 +1471,33 @@
           "activity"
         ],
         "title": "ApplicationDetailResponse",
+        "type": "object"
+      },
+      "ApplicationInterviewRoundsResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "application": {
+            "$ref": "#/components/schemas/ApplicationSummary"
+          },
+          "data_source": {
+            "const": "database",
+            "default": "database",
+            "title": "Data Source",
+            "type": "string"
+          },
+          "rounds": {
+            "items": {
+              "$ref": "#/components/schemas/InterviewRoundResponse"
+            },
+            "maxItems": 100,
+            "title": "Rounds",
+            "type": "array"
+          }
+        },
+        "required": [
+          "application"
+        ],
+        "title": "ApplicationInterviewRoundsResponse",
         "type": "object"
       },
       "ApplicationListResponse": {
@@ -4366,6 +4417,529 @@
         ],
         "title": "HuntResult",
         "type": "object"
+      },
+      "InterviewCancellationParty": {
+        "enum": [
+          "employer",
+          "candidate",
+          "mutual",
+          "unknown"
+        ],
+        "title": "InterviewCancellationParty",
+        "type": "string"
+      },
+      "InterviewMeetingFormat": {
+        "enum": [
+          "video",
+          "phone",
+          "onsite",
+          "unspecified"
+        ],
+        "title": "InterviewMeetingFormat",
+        "type": "string"
+      },
+      "InterviewRoundCancelledCreate": {
+        "additionalProperties": false,
+        "properties": {
+          "cancelled_by": {
+            "$ref": "#/components/schemas/InterviewCancellationParty"
+          },
+          "cancelled_on": {
+            "format": "date",
+            "title": "Cancelled On",
+            "type": "string"
+          },
+          "confirm_cancel": {
+            "const": true,
+            "title": "Confirm Cancel",
+            "type": "boolean"
+          },
+          "event_type": {
+            "const": "cancelled",
+            "title": "Event Type",
+            "type": "string"
+          },
+          "next_action_due_on": {
+            "format": "date",
+            "title": "Next Action Due On",
+            "type": "string"
+          }
+        },
+        "required": [
+          "event_type",
+          "cancelled_on",
+          "cancelled_by",
+          "next_action_due_on",
+          "confirm_cancel"
+        ],
+        "title": "InterviewRoundCancelledCreate",
+        "type": "object"
+      },
+      "InterviewRoundCompletedCreate": {
+        "additionalProperties": false,
+        "properties": {
+          "completed_on": {
+            "format": "date",
+            "title": "Completed On",
+            "type": "string"
+          },
+          "confirm_complete": {
+            "const": true,
+            "title": "Confirm Complete",
+            "type": "boolean"
+          },
+          "event_type": {
+            "const": "completed",
+            "title": "Event Type",
+            "type": "string"
+          },
+          "next_action_due_on": {
+            "format": "date",
+            "title": "Next Action Due On",
+            "type": "string"
+          }
+        },
+        "required": [
+          "event_type",
+          "completed_on",
+          "next_action_due_on",
+          "confirm_complete"
+        ],
+        "title": "InterviewRoundCompletedCreate",
+        "type": "object"
+      },
+      "InterviewRoundCreate": {
+        "additionalProperties": false,
+        "properties": {
+          "confirm_schedule": {
+            "const": true,
+            "title": "Confirm Schedule",
+            "type": "boolean"
+          },
+          "duration_minutes": {
+            "maximum": 480.0,
+            "minimum": 15.0,
+            "title": "Duration Minutes",
+            "type": "integer"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/InterviewRoundKind"
+          },
+          "meeting_format": {
+            "$ref": "#/components/schemas/InterviewMeetingFormat",
+            "default": "unspecified"
+          },
+          "next_action_due_on": {
+            "format": "date",
+            "title": "Next Action Due On",
+            "type": "string"
+          },
+          "scheduled_local": {
+            "format": "date-time",
+            "title": "Scheduled Local",
+            "type": "string"
+          },
+          "scheduled_timezone": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Scheduled Timezone",
+            "type": "string"
+          },
+          "title": {
+            "maxLength": 160,
+            "minLength": 1,
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "scheduled_local",
+          "scheduled_timezone",
+          "duration_minutes",
+          "next_action_due_on",
+          "kind",
+          "title",
+          "confirm_schedule"
+        ],
+        "title": "InterviewRoundCreate",
+        "type": "object"
+      },
+      "InterviewRoundEventResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "action_item_id": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
+            "title": "Action Item Id",
+            "type": "string"
+          },
+          "application_id": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
+            "title": "Application Id",
+            "type": "string"
+          },
+          "cancelled_by": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/InterviewCancellationParty"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "duration_minutes": {
+            "maximum": 480.0,
+            "minimum": 15.0,
+            "title": "Duration Minutes",
+            "type": "integer"
+          },
+          "effective_on": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Effective On"
+          },
+          "event_type": {
+            "$ref": "#/components/schemas/InterviewRoundEventType"
+          },
+          "from_status": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/InterviewRoundStatus"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "id": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
+            "title": "Id",
+            "type": "string"
+          },
+          "interview_round_id": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
+            "title": "Interview Round Id",
+            "type": "string"
+          },
+          "meeting_format": {
+            "$ref": "#/components/schemas/InterviewMeetingFormat"
+          },
+          "occurred_at": {
+            "format": "date-time",
+            "title": "Occurred At",
+            "type": "string"
+          },
+          "previous_action_item_id": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
+            "title": "Previous Action Item Id",
+            "type": "string"
+          },
+          "recording_method": {
+            "const": "manual",
+            "title": "Recording Method",
+            "type": "string"
+          },
+          "scheduled_start_at": {
+            "format": "date-time",
+            "title": "Scheduled Start At",
+            "type": "string"
+          },
+          "scheduled_timezone": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Scheduled Timezone",
+            "type": "string"
+          },
+          "sequence_number": {
+            "minimum": 1.0,
+            "title": "Sequence Number",
+            "type": "integer"
+          },
+          "to_status": {
+            "$ref": "#/components/schemas/InterviewRoundStatus"
+          }
+        },
+        "required": [
+          "id",
+          "application_id",
+          "interview_round_id",
+          "sequence_number",
+          "event_type",
+          "to_status",
+          "scheduled_start_at",
+          "scheduled_timezone",
+          "duration_minutes",
+          "meeting_format",
+          "previous_action_item_id",
+          "action_item_id",
+          "recording_method",
+          "occurred_at",
+          "created_at"
+        ],
+        "title": "InterviewRoundEventResponse",
+        "type": "object"
+      },
+      "InterviewRoundEventType": {
+        "enum": [
+          "scheduled",
+          "rescheduled",
+          "completed",
+          "cancelled"
+        ],
+        "title": "InterviewRoundEventType",
+        "type": "string"
+      },
+      "InterviewRoundKind": {
+        "enum": [
+          "hiring_manager",
+          "technical",
+          "system_design",
+          "behavioral",
+          "case_study",
+          "panel",
+          "final",
+          "other"
+        ],
+        "title": "InterviewRoundKind",
+        "type": "string"
+      },
+      "InterviewRoundMutationResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "application": {
+            "$ref": "#/components/schemas/ApplicationSummary"
+          },
+          "data_source": {
+            "const": "database",
+            "default": "database",
+            "title": "Data Source",
+            "type": "string"
+          },
+          "event": {
+            "$ref": "#/components/schemas/InterviewRoundEventResponse"
+          },
+          "mutation_created": {
+            "title": "Mutation Created",
+            "type": "boolean"
+          },
+          "round": {
+            "$ref": "#/components/schemas/InterviewRoundResponse"
+          }
+        },
+        "required": [
+          "application",
+          "round",
+          "event",
+          "mutation_created"
+        ],
+        "title": "InterviewRoundMutationResponse",
+        "type": "object"
+      },
+      "InterviewRoundRescheduledCreate": {
+        "additionalProperties": false,
+        "properties": {
+          "confirm_reschedule": {
+            "const": true,
+            "title": "Confirm Reschedule",
+            "type": "boolean"
+          },
+          "duration_minutes": {
+            "maximum": 480.0,
+            "minimum": 15.0,
+            "title": "Duration Minutes",
+            "type": "integer"
+          },
+          "event_type": {
+            "const": "rescheduled",
+            "title": "Event Type",
+            "type": "string"
+          },
+          "meeting_format": {
+            "$ref": "#/components/schemas/InterviewMeetingFormat",
+            "default": "unspecified"
+          },
+          "next_action_due_on": {
+            "format": "date",
+            "title": "Next Action Due On",
+            "type": "string"
+          },
+          "scheduled_local": {
+            "format": "date-time",
+            "title": "Scheduled Local",
+            "type": "string"
+          },
+          "scheduled_timezone": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Scheduled Timezone",
+            "type": "string"
+          }
+        },
+        "required": [
+          "scheduled_local",
+          "scheduled_timezone",
+          "duration_minutes",
+          "next_action_due_on",
+          "event_type",
+          "confirm_reschedule"
+        ],
+        "title": "InterviewRoundRescheduledCreate",
+        "type": "object"
+      },
+      "InterviewRoundResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "application_id": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
+            "title": "Application Id",
+            "type": "string"
+          },
+          "application_submission_id": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
+            "title": "Application Submission Id",
+            "type": "string"
+          },
+          "cancelled_by": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/InterviewCancellationParty"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "cancelled_on": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cancelled On"
+          },
+          "completed_on": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed On"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "duration_minutes": {
+            "maximum": 480.0,
+            "minimum": 15.0,
+            "title": "Duration Minutes",
+            "type": "integer"
+          },
+          "events": {
+            "items": {
+              "$ref": "#/components/schemas/InterviewRoundEventResponse"
+            },
+            "maxItems": 500,
+            "minItems": 1,
+            "title": "Events",
+            "type": "array"
+          },
+          "id": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/InterviewRoundKind"
+          },
+          "meeting_format": {
+            "$ref": "#/components/schemas/InterviewMeetingFormat"
+          },
+          "round_number": {
+            "minimum": 1.0,
+            "title": "Round Number",
+            "type": "integer"
+          },
+          "scheduled_start_at": {
+            "format": "date-time",
+            "title": "Scheduled Start At",
+            "type": "string"
+          },
+          "scheduled_timezone": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Scheduled Timezone",
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/InterviewRoundStatus"
+          },
+          "title": {
+            "maxLength": 160,
+            "minLength": 1,
+            "title": "Title",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          },
+          "version": {
+            "minimum": 1.0,
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "version",
+          "application_id",
+          "application_submission_id",
+          "round_number",
+          "kind",
+          "title",
+          "status",
+          "scheduled_start_at",
+          "scheduled_timezone",
+          "duration_minutes",
+          "meeting_format",
+          "created_at",
+          "updated_at",
+          "events"
+        ],
+        "title": "InterviewRoundResponse",
+        "type": "object"
+      },
+      "InterviewRoundStatus": {
+        "enum": [
+          "scheduled",
+          "completed",
+          "cancelled"
+        ],
+        "title": "InterviewRoundStatus",
+        "type": "string"
       },
       "InterviewingTransitionCreate": {
         "additionalProperties": false,
@@ -10447,6 +11021,482 @@
           }
         ],
         "summary": "Get Owner Application Contacts",
+        "tags": [
+          "applications"
+        ]
+      }
+    },
+    "/api/applications/{application_id}/interview-rounds": {
+      "get": {
+        "description": "Load the saved interview-round timeline. The response ETag names the current application version used when scheduling a new round.",
+        "operationId": "get_owner_application_interview_rounds_api_applications__application_id__interview_rounds_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "application_id",
+            "required": true,
+            "schema": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
+              "title": "Application Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApplicationInterviewRoundsResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
+          "428": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Precondition Required"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "security": [
+          {
+            "OwnerSessionCookie": []
+          }
+        ],
+        "summary": "Get Owner Application Interview Rounds",
+        "tags": [
+          "applications"
+        ]
+      },
+      "post": {
+        "description": "Schedule one interview round. If-Match must contain the application ETag; the response ETag names the created round version.",
+        "operationId": "schedule_owner_application_interview_round_api_applications__application_id__interview_rounds_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "application_id",
+            "required": true,
+            "schema": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
+              "title": "Application Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Required strong ETag for the application being updated.",
+            "in": "header",
+            "name": "If-Match",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Required strong ETag for the application being updated.",
+              "title": "If-Match"
+            }
+          },
+          {
+            "description": "Required retry key for this scheduling attempt.",
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Required retry key for this scheduling attempt.",
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InterviewRoundCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InterviewRoundMutationResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
+          "428": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Precondition Required"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "security": [
+          {
+            "OwnerSessionCookie": []
+          }
+        ],
+        "summary": "Schedule Owner Application Interview Round",
+        "tags": [
+          "applications"
+        ]
+      }
+    },
+    "/api/applications/{application_id}/interview-rounds/{interview_round_id}/events": {
+      "post": {
+        "description": "Reschedule, complete, or cancel one scheduled round. If-Match must contain that round's ETag; the response ETag names its new version.",
+        "operationId": "record_owner_application_interview_round_event_api_applications__application_id__interview_rounds__interview_round_id__events_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "application_id",
+            "required": true,
+            "schema": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
+              "title": "Application Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "interview_round_id",
+            "required": true,
+            "schema": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
+              "title": "Interview Round Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Required strong ETag for the interview round being updated.",
+            "in": "header",
+            "name": "If-Match",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Required strong ETag for the interview round being updated.",
+              "title": "If-Match"
+            }
+          },
+          {
+            "description": "Required retry key for this round update.",
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Required retry key for this round update.",
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "discriminator": {
+                  "mapping": {
+                    "cancelled": "#/components/schemas/InterviewRoundCancelledCreate",
+                    "completed": "#/components/schemas/InterviewRoundCompletedCreate",
+                    "rescheduled": "#/components/schemas/InterviewRoundRescheduledCreate"
+                  },
+                  "propertyName": "event_type"
+                },
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/InterviewRoundRescheduledCreate"
+                  },
+                  {
+                    "$ref": "#/components/schemas/InterviewRoundCompletedCreate"
+                  },
+                  {
+                    "$ref": "#/components/schemas/InterviewRoundCancelledCreate"
+                  }
+                ],
+                "title": "Payload"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InterviewRoundMutationResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
+          "428": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Precondition Required"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "security": [
+          {
+            "OwnerSessionCookie": []
+          }
+        ],
+        "summary": "Record Owner Application Interview Round Event",
         "tags": [
           "applications"
         ]

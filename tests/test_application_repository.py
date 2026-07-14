@@ -363,7 +363,9 @@ def test_application_list_batches_one_page_without_n_plus_one_queries(
         )
 
     assert len(page.items) == 1
-    assert len(statements) == 5
+    # Applications, actions, outcomes, scheduled rounds, postings/versions,
+    # and first-party observations are each loaded once for the page.
+    assert len(statements) == 6
 
 
 def test_pursuit_enforces_owner_version_and_local_due_date_bounds(

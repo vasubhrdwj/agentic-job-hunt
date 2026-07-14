@@ -46,6 +46,7 @@ from .job_queue import (
 from .models import (
     Application,
     ApplicationContact,
+    ApplicationInterviewRound,
     BackgroundJob,
     Contact,
     ContactPlan,
@@ -463,10 +464,15 @@ def _start_contact_search(
         plan.updated_at = current
         plan.version += 1
 
+        interview_progress = _has_interview_progress(
+            session,
+            application=application,
+        )
         if (
             owned.cancel_requested_at is not None
             or application.stage not in CONTACTABLE_APPLICATION_STAGE_VALUES
             or posting.lifecycle_state != "open"
+            or interview_progress
         ):
             _cancel_running_plan(
                 session,
@@ -478,7 +484,11 @@ def _start_contact_search(
                 reason=(
                     "cancel_requested"
                     if owned.cancel_requested_at is not None
-                    else "application_or_posting_inactive"
+                    else (
+                        "hiring_progress"
+                        if interview_progress
+                        else "application_or_posting_inactive"
+                    )
                 ),
             )
             return None
@@ -578,10 +588,15 @@ def _publish_contact_search(
             or version_exists is None
         ):
             raise ContactSearchWorkerError("pinned posting changed before publication")
+        interview_progress = _has_interview_progress(
+            session,
+            application=application,
+        )
         if (
             owned.cancel_requested_at is not None
             or application.stage not in CONTACTABLE_APPLICATION_STAGE_VALUES
             or posting.lifecycle_state != "open"
+            or interview_progress
         ):
             _cancel_running_plan(
                 session,
@@ -593,7 +608,11 @@ def _publish_contact_search(
                 reason=(
                     "cancel_requested"
                     if owned.cancel_requested_at is not None
-                    else "application_or_posting_inactive"
+                    else (
+                        "hiring_progress"
+                        if interview_progress
+                        else "application_or_posting_inactive"
+                    )
                 ),
             )
             return
@@ -1102,6 +1121,26 @@ def _role_from_pinned_version(version: JobPostingVersion) -> Role:
         employment_type=EmploymentType(version.employment_type),
         raw_description=version.description,
         confidence=version.source_confidence,
+    )
+
+
+def _has_interview_progress(
+    session: Session,
+    *,
+    application: Application,
+) -> bool:
+    """Fail closed once any durable interview round exists for the application."""
+
+    return (
+        session.scalar(
+            select(ApplicationInterviewRound.id)
+            .where(
+                ApplicationInterviewRound.owner_id == application.owner_id,
+                ApplicationInterviewRound.application_id == application.id,
+            )
+            .limit(1)
+        )
+        is not None
     )
 
 

@@ -100,7 +100,10 @@ terminal outcomes without rewriting the exact submission. Every active role
 retains one dated task, while a closed role has a durable outcome and no phantom
 next action. Today now loads a separate owner-local action center before the
 opportunity inbox, grouping overdue, due-today, and next-seven-day application
-work with direct dossier links and complete bucket counts.
+work with direct dossier links and complete bucket counts. Interview
+appointments now have stable round IDs and immutable reschedule/completion/
+cancellation history; the current appointment owns the Today preparation task,
+and only a completed first round advances the hiring funnel.
 
 The separate **Legacy hunt** remains available when you explicitly want the
 current end-to-end flow with resume matching, at least five appropriate
@@ -229,6 +232,12 @@ GET    /api/applications            → database-only pursuing applications + ne
 GET    /api/applications/{id}       → application dossier + immutable activity
 GET    /api/applications/{id}/activity
                                     → database-only immutable activity stream
+GET    /api/applications/{id}/interview-rounds
+                                    → saved round timeline + application ETag for scheduling
+POST   /api/applications/{id}/interview-rounds
+                                    → schedule one round (application If-Match; returns round ETag)
+POST   /api/applications/{id}/interview-rounds/{round_id}/events
+                                    → reschedule, complete, or cancel (round If-Match + idempotency)
 GET    /api/applications/{id}/application-pack
                                     → database-only current + latest-reviewed grounding projection
 POST   /api/applications/{id}/application-packs

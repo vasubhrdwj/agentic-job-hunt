@@ -81,9 +81,42 @@ projection and loads independently from the opportunity-review inbox.
 No migration was required. The existing open-action invariant and owner/due
 index are the durable source for this projection.
 
+### Phase 6A2b — Repeatable interview rounds
+
+Implemented in migration `20260715_0013`.
+
+An applied, screening, or interviewing application can now schedule one
+confirmed interview appointment at a time. Each round has a stable identifier,
+monotonic round number, exact immutable application-submission reference, and
+append-only schedule, reschedule, completion, or cancellation events. A later
+round gets a new identifier instead of overwriting the earlier history.
+
+- Scheduling and every later round event atomically replace the prior task.
+  The scheduled round owns one dated `prepare_interview` task, so Today always
+  reflects the current appointment rather than a stale follow-up date.
+- Scheduling does not claim that an interview happened. Completing the first
+  round advances an applied or screening application to `interviewing` and
+  links the coarse milestone to that exact round. Later completions stay in the
+  same stage while preserving their own round history.
+- Cancelling a round creates a next-decision task; it never fabricates a
+  rejection or closes the application. Offers and closure cannot be recorded
+  while an appointment is unresolved.
+- The API accepts a timezone-free wall time plus an explicit IANA timezone.
+  The server resolves the instant, rejects daylight-saving gaps or ambiguous
+  wall times, and bounds preparation dates using the persisted owner timezone.
+- Scheduling uses the current application version. Later events use the round
+  version. Every mutation is idempotent and increments the application version
+  because the current task changes.
+
+The dossier exposes the scheduled appointment, accessible inline reschedule,
+complete, and cancel flows, plus completed/cancelled history. It deliberately
+does not store meeting URLs, interviewer identities, private notes, or feedback
+in this checkpoint. Multiple simultaneous appointments also remain deferred;
+truthfully prioritizing them requires a multi-action design rather than hiding
+several commitments behind one task.
+
 ### Remaining Phase 6A2 checkpoints
 
-- Add repeatable scheduled/completed interview rounds with stable identifiers.
 - Add append-only corrections that supersede an incorrect milestone without
   rewriting history.
 - Attribute an outreach response to the exact marked-sent event and message

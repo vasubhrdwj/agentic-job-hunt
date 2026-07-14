@@ -54,6 +54,7 @@ export function ApplicationProgress({
   applicationVersion,
   stage,
   outcome,
+  scheduledInterviewRoundId,
   ownerLocalDate,
   onApplicationChanged,
 }: {
@@ -61,6 +62,7 @@ export function ApplicationProgress({
   applicationVersion: number;
   stage: ApplicationStage;
   outcome: ApplicationOutcome | null;
+  scheduledInterviewRoundId: string | null;
   ownerLocalDate: string;
   onApplicationChanged: () => Promise<void>;
 }) {
@@ -100,6 +102,25 @@ export function ApplicationProgress({
             This application is closed. Its durable outcome is being refreshed.
           </StatusMessage>
         )}
+      </section>
+    );
+  }
+
+  if (scheduledInterviewRoundId) {
+    return (
+      <section
+        aria-labelledby="hiring-progress-title"
+        className="min-w-0 rounded-2xl border border-sky-200 bg-white p-5 shadow-sm sm:p-7 dark:border-sky-900 dark:bg-zinc-900/70"
+      >
+        <ProgressHeading />
+        <div className="mt-4">
+          <StatusMessage kind="info">
+            Complete or cancel the scheduled interview round before recording another hiring milestone or closing this application. This keeps the round outcome and hiring progress in the right order.
+          </StatusMessage>
+        </div>
+        <a href="#interview-rounds" className={`${secondaryButtonClasses} mt-4`}>
+          Manage scheduled round
+        </a>
       </section>
     );
   }
@@ -222,7 +243,7 @@ export function ApplicationProgress({
     >
       <ProgressHeading />
       <p className="mt-2 max-w-3xl text-sm leading-6 text-zinc-600 dark:text-zinc-400">
-        Record confirmed milestones only. Each update completes the current task and creates the next dated task while this application remains active.
+        Record confirmed hiring milestones and final outcomes only. Schedule and complete appointments in Interview rounds so every round keeps its own durable history.
       </p>
 
       {error ? <div className="mt-4"><StatusMessage kind="error">{error}</StatusMessage></div> : null}
@@ -344,14 +365,12 @@ function choicesForStage(stage: ApplicationStage): ChoiceOption[] {
   if (stage === "applied") {
     return [
       { value: "screening", label: "Recruiter screen completed" },
-      { value: "interviewing", label: "Interview completed" },
       { value: "offer", label: "Offer received" },
       ...terminal,
     ];
   }
   if (stage === "screening") {
     return [
-      { value: "interviewing", label: "Interview completed" },
       { value: "offer", label: "Offer received" },
       ...terminal,
     ];

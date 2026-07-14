@@ -43,6 +43,12 @@ from ..application_workspace import ApplicationWorkspaceStore
 from ..auth import session_cookie_name
 from ..contact_schemas import ApplicationContactBenchResponse
 from ..database import Database
+from ..interview_round_schemas import (
+    ApplicationInterviewRoundsResponse,
+    InterviewRoundCreate,
+    InterviewRoundEventCreate,
+    InterviewRoundMutationResponse,
+)
 from ..outreach_schemas import (
     ApplicationOutreachResponse,
     OutreachEventCreate,
@@ -221,6 +227,110 @@ def create_application_router(
             _not_found("application")
         _set_etag(response, transition.application.version)
         return transition
+
+    @router.get(
+        "/api/applications/{application_id}/interview-rounds",
+        response_model=ApplicationInterviewRoundsResponse,
+        description=(
+            "Load the saved interview-round timeline. The response ETag names the "
+            "current application version used when scheduling a new round."
+        ),
+        responses=COMMON_ERROR_RESPONSES,
+    )
+    def get_owner_application_interview_rounds(
+        application_id: OpaqueId,
+        response: Response,
+        owner: AuthenticatedOwner = Security(require_read_owner),
+    ) -> ApplicationInterviewRoundsResponse:
+        interview_rounds = _invoke(
+            _store(store).get_application_interview_rounds,
+            owner_id=owner.owner_id,
+            application_id=application_id,
+        )
+        if interview_rounds is None:
+            _not_found("application")
+        _set_etag(response, interview_rounds.application.version)
+        return interview_rounds
+
+    @router.post(
+        "/api/applications/{application_id}/interview-rounds",
+        response_model=InterviewRoundMutationResponse,
+        status_code=status.HTTP_201_CREATED,
+        description=(
+            "Schedule one interview round. If-Match must contain the application "
+            "ETag; the response ETag names the created round version."
+        ),
+        responses=COMMON_ERROR_RESPONSES,
+    )
+    def schedule_owner_application_interview_round(
+        application_id: OpaqueId,
+        payload: InterviewRoundCreate,
+        response: Response,
+        owner: AuthenticatedOwner = Security(require_mutation_owner),
+        if_match: str | None = Header(
+            default=None,
+            alias="If-Match",
+            description="Required strong ETag for the application being updated.",
+        ),
+        idempotency_key: str | None = Header(
+            default=None,
+            alias="Idempotency-Key",
+            description="Required retry key for this scheduling attempt.",
+        ),
+    ) -> InterviewRoundMutationResponse:
+        mutation = _invoke(
+            _store(store).schedule_interview_round,
+            owner_id=owner.owner_id,
+            application_id=application_id,
+            payload=payload,
+            expected_application_version=_expected_version(if_match),
+            idempotency_key=_required_idempotency_key(idempotency_key),
+        )
+        if mutation is None:
+            _not_found("application")
+        _set_etag(response, mutation.round.version)
+        return mutation
+
+    @router.post(
+        "/api/applications/{application_id}/interview-rounds/"
+        "{interview_round_id}/events",
+        response_model=InterviewRoundMutationResponse,
+        description=(
+            "Reschedule, complete, or cancel one scheduled round. If-Match must "
+            "contain that round's ETag; the response ETag names its new version."
+        ),
+        responses=COMMON_ERROR_RESPONSES,
+    )
+    def record_owner_application_interview_round_event(
+        application_id: OpaqueId,
+        interview_round_id: OpaqueId,
+        payload: InterviewRoundEventCreate,
+        response: Response,
+        owner: AuthenticatedOwner = Security(require_mutation_owner),
+        if_match: str | None = Header(
+            default=None,
+            alias="If-Match",
+            description="Required strong ETag for the interview round being updated.",
+        ),
+        idempotency_key: str | None = Header(
+            default=None,
+            alias="Idempotency-Key",
+            description="Required retry key for this round update.",
+        ),
+    ) -> InterviewRoundMutationResponse:
+        mutation = _invoke(
+            _store(store).record_interview_round_event,
+            owner_id=owner.owner_id,
+            application_id=application_id,
+            interview_round_id=interview_round_id,
+            payload=payload,
+            expected_round_version=_expected_version(if_match),
+            idempotency_key=_required_idempotency_key(idempotency_key),
+        )
+        if mutation is None:
+            _not_found("interview round")
+        _set_etag(response, mutation.round.version)
+        return mutation
 
     @router.get(
         "/api/applications/{application_id}/application-pack",

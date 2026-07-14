@@ -208,6 +208,50 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/applications/{application_id}/interview-rounds": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Owner Application Interview Rounds
+         * @description Load the saved interview-round timeline. The response ETag names the current application version used when scheduling a new round.
+         */
+        get: operations["get_owner_application_interview_rounds_api_applications__application_id__interview_rounds_get"];
+        put?: never;
+        /**
+         * Schedule Owner Application Interview Round
+         * @description Schedule one interview round. If-Match must contain the application ETag; the response ETag names the created round version.
+         */
+        post: operations["schedule_owner_application_interview_round_api_applications__application_id__interview_rounds_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/applications/{application_id}/interview-rounds/{interview_round_id}/events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Record Owner Application Interview Round Event
+         * @description Reschedule, complete, or cancel one scheduled round. If-Match must contain that round's ETag; the response ETag names its new version.
+         */
+        post: operations["record_owner_application_interview_round_event_api_applications__application_id__interview_rounds__interview_round_id__events_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/applications/{application_id}/outreach": {
         parameters: {
             query?: never;
@@ -876,6 +920,8 @@ export interface components {
             due_on: string;
             /** Id */
             id: string;
+            /** Interview Round Id */
+            interview_round_id?: string | null;
             kind: components["schemas"]["ActionItemKind"];
             status: components["schemas"]["ActionItemStatus"];
             /** Title */
@@ -905,6 +951,8 @@ export interface components {
             from_stage?: components["schemas"]["ApplicationStage"] | null;
             /** Id */
             id: string;
+            /** Interview Round Id */
+            interview_round_id?: string | null;
             /**
              * Occurred At
              * Format: date-time
@@ -1248,6 +1296,18 @@ export interface components {
              * @constant
              */
             data_source: "database";
+        };
+        /** ApplicationInterviewRoundsResponse */
+        ApplicationInterviewRoundsResponse: {
+            application: components["schemas"]["ApplicationSummary"];
+            /**
+             * Data Source
+             * @default database
+             * @constant
+             */
+            data_source: "database";
+            /** Rounds */
+            rounds?: components["schemas"]["InterviewRoundResponse"][];
         };
         /** ApplicationListResponse */
         ApplicationListResponse: {
@@ -2278,6 +2338,238 @@ export interface components {
              */
             run_id: string;
         };
+        /**
+         * InterviewCancellationParty
+         * @enum {string}
+         */
+        InterviewCancellationParty: "employer" | "candidate" | "mutual" | "unknown";
+        /**
+         * InterviewMeetingFormat
+         * @enum {string}
+         */
+        InterviewMeetingFormat: "video" | "phone" | "onsite" | "unspecified";
+        /** InterviewRoundCancelledCreate */
+        InterviewRoundCancelledCreate: {
+            cancelled_by: components["schemas"]["InterviewCancellationParty"];
+            /**
+             * Cancelled On
+             * Format: date
+             */
+            cancelled_on: string;
+            /**
+             * Confirm Cancel
+             * @constant
+             */
+            confirm_cancel: true;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            event_type: "cancelled";
+            /**
+             * Next Action Due On
+             * Format: date
+             */
+            next_action_due_on: string;
+        };
+        /** InterviewRoundCompletedCreate */
+        InterviewRoundCompletedCreate: {
+            /**
+             * Completed On
+             * Format: date
+             */
+            completed_on: string;
+            /**
+             * Confirm Complete
+             * @constant
+             */
+            confirm_complete: true;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            event_type: "completed";
+            /**
+             * Next Action Due On
+             * Format: date
+             */
+            next_action_due_on: string;
+        };
+        /** InterviewRoundCreate */
+        InterviewRoundCreate: {
+            /**
+             * Confirm Schedule
+             * @constant
+             */
+            confirm_schedule: true;
+            /** Duration Minutes */
+            duration_minutes: number;
+            kind: components["schemas"]["InterviewRoundKind"];
+            /** @default unspecified */
+            meeting_format: components["schemas"]["InterviewMeetingFormat"];
+            /**
+             * Next Action Due On
+             * Format: date
+             */
+            next_action_due_on: string;
+            /**
+             * Scheduled Local
+             * Format: date-time
+             */
+            scheduled_local: string;
+            /** Scheduled Timezone */
+            scheduled_timezone: string;
+            /** Title */
+            title: string;
+        };
+        /** InterviewRoundEventResponse */
+        InterviewRoundEventResponse: {
+            /** Action Item Id */
+            action_item_id: string;
+            /** Application Id */
+            application_id: string;
+            cancelled_by?: components["schemas"]["InterviewCancellationParty"] | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Duration Minutes */
+            duration_minutes: number;
+            /** Effective On */
+            effective_on?: string | null;
+            event_type: components["schemas"]["InterviewRoundEventType"];
+            from_status?: components["schemas"]["InterviewRoundStatus"] | null;
+            /** Id */
+            id: string;
+            /** Interview Round Id */
+            interview_round_id: string;
+            meeting_format: components["schemas"]["InterviewMeetingFormat"];
+            /**
+             * Occurred At
+             * Format: date-time
+             */
+            occurred_at: string;
+            /** Previous Action Item Id */
+            previous_action_item_id: string;
+            /**
+             * Recording Method
+             * @constant
+             */
+            recording_method: "manual";
+            /**
+             * Scheduled Start At
+             * Format: date-time
+             */
+            scheduled_start_at: string;
+            /** Scheduled Timezone */
+            scheduled_timezone: string;
+            /** Sequence Number */
+            sequence_number: number;
+            to_status: components["schemas"]["InterviewRoundStatus"];
+        };
+        /**
+         * InterviewRoundEventType
+         * @enum {string}
+         */
+        InterviewRoundEventType: "scheduled" | "rescheduled" | "completed" | "cancelled";
+        /**
+         * InterviewRoundKind
+         * @enum {string}
+         */
+        InterviewRoundKind: "hiring_manager" | "technical" | "system_design" | "behavioral" | "case_study" | "panel" | "final" | "other";
+        /** InterviewRoundMutationResponse */
+        InterviewRoundMutationResponse: {
+            application: components["schemas"]["ApplicationSummary"];
+            /**
+             * Data Source
+             * @default database
+             * @constant
+             */
+            data_source: "database";
+            event: components["schemas"]["InterviewRoundEventResponse"];
+            /** Mutation Created */
+            mutation_created: boolean;
+            round: components["schemas"]["InterviewRoundResponse"];
+        };
+        /** InterviewRoundRescheduledCreate */
+        InterviewRoundRescheduledCreate: {
+            /**
+             * Confirm Reschedule
+             * @constant
+             */
+            confirm_reschedule: true;
+            /** Duration Minutes */
+            duration_minutes: number;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            event_type: "rescheduled";
+            /** @default unspecified */
+            meeting_format: components["schemas"]["InterviewMeetingFormat"];
+            /**
+             * Next Action Due On
+             * Format: date
+             */
+            next_action_due_on: string;
+            /**
+             * Scheduled Local
+             * Format: date-time
+             */
+            scheduled_local: string;
+            /** Scheduled Timezone */
+            scheduled_timezone: string;
+        };
+        /** InterviewRoundResponse */
+        InterviewRoundResponse: {
+            /** Application Id */
+            application_id: string;
+            /** Application Submission Id */
+            application_submission_id: string;
+            cancelled_by?: components["schemas"]["InterviewCancellationParty"] | null;
+            /** Cancelled On */
+            cancelled_on?: string | null;
+            /** Completed On */
+            completed_on?: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Duration Minutes */
+            duration_minutes: number;
+            /** Events */
+            events: components["schemas"]["InterviewRoundEventResponse"][];
+            /** Id */
+            id: string;
+            kind: components["schemas"]["InterviewRoundKind"];
+            meeting_format: components["schemas"]["InterviewMeetingFormat"];
+            /** Round Number */
+            round_number: number;
+            /**
+             * Scheduled Start At
+             * Format: date-time
+             */
+            scheduled_start_at: string;
+            /** Scheduled Timezone */
+            scheduled_timezone: string;
+            status: components["schemas"]["InterviewRoundStatus"];
+            /** Title */
+            title: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+            /** Version */
+            version: number;
+        };
+        /**
+         * InterviewRoundStatus
+         * @enum {string}
+         */
+        InterviewRoundStatus: "scheduled" | "completed" | "cancelled";
         /** InterviewingTransitionCreate */
         InterviewingTransitionCreate: {
             /**
@@ -5089,6 +5381,307 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ApplicationContactBenchResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Precondition Required */
+            428: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+        };
+    };
+    get_owner_application_interview_rounds_api_applications__application_id__interview_rounds_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                application_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApplicationInterviewRoundsResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Precondition Required */
+            428: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+        };
+    };
+    schedule_owner_application_interview_round_api_applications__application_id__interview_rounds_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Required strong ETag for the application being updated. */
+                "If-Match"?: string | null;
+                /** @description Required retry key for this scheduling attempt. */
+                "Idempotency-Key"?: string | null;
+            };
+            path: {
+                application_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["InterviewRoundCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InterviewRoundMutationResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Precondition Required */
+            428: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+        };
+    };
+    record_owner_application_interview_round_event_api_applications__application_id__interview_rounds__interview_round_id__events_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Required strong ETag for the interview round being updated. */
+                "If-Match"?: string | null;
+                /** @description Required retry key for this round update. */
+                "Idempotency-Key"?: string | null;
+            };
+            path: {
+                application_id: string;
+                interview_round_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["InterviewRoundRescheduledCreate"] | components["schemas"]["InterviewRoundCompletedCreate"] | components["schemas"]["InterviewRoundCancelledCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InterviewRoundMutationResponse"];
                 };
             };
             /** @description Bad Request */

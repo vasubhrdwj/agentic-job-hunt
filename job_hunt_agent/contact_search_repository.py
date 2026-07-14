@@ -11,7 +11,13 @@ from sqlalchemy.orm import Session
 
 from .application_schemas import CONTACTABLE_APPLICATION_STAGE_VALUES
 from .job_queue import enqueue_job, utcnow
-from .models import Application, BackgroundJob, ContactPlan, JobPosting
+from .models import (
+    Application,
+    ApplicationInterviewRound,
+    BackgroundJob,
+    ContactPlan,
+    JobPosting,
+)
 from .mutation_receipts import claim_owner_mutation, complete_owner_mutation
 from .repository_errors import ResourceConflict, require_version
 
@@ -160,6 +166,18 @@ def create_contact_search(
     )
     if application.stage not in CONTACTABLE_APPLICATION_STAGE_VALUES:
         raise ResourceConflict("only active applications can search for contacts")
+    interview_progress = session.scalar(
+        select(ApplicationInterviewRound.id)
+        .where(
+            ApplicationInterviewRound.owner_id == owner_id,
+            ApplicationInterviewRound.application_id == application.id,
+        )
+        .limit(1)
+    )
+    if interview_progress is not None:
+        raise ResourceConflict(
+            "contact discovery stops after an interview round is recorded"
+        )
     posting_state = session.scalar(
         select(JobPosting.lifecycle_state).where(
             JobPosting.owner_id == owner_id,
