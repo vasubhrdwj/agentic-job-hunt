@@ -303,7 +303,7 @@ def _make_claimable_now(database: Database) -> None:
     with database.session() as session:
         job = session.get(BackgroundJob, JOB_ID)
         assert job is not None
-        job.run_after = datetime.now(timezone.utc) - timedelta(minutes=1)
+        job.run_after = PROCESS_NOW - timedelta(minutes=1)
 
 
 class _FixedWorkerDateTime(datetime):
