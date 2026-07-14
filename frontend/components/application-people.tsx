@@ -14,6 +14,7 @@ import type {
   RelevanceEvidenceResponse,
 } from "@/lib/application-types";
 import { createIdempotencyKey, WorkspaceApiError } from "@/lib/workspace-api";
+import { ApplicationOutreach } from "./application-outreach";
 import {
   errorText,
   formatDate,
@@ -59,10 +60,12 @@ export function ApplicationPeople({
   const [pollNonce, setPollNonce] = useState(0);
   const pendingStart = useRef<PendingStart | null>(null);
   const requestGeneration = useRef(0);
+  const benchRef = useRef<ApplicationContactBenchResponse | null>(null);
 
   useEffect(() => {
     requestGeneration.current += 1;
     pendingStart.current = null;
+    benchRef.current = null;
   }, [applicationId]);
 
   const acceptResponse = useCallback((
@@ -70,6 +73,44 @@ export function ApplicationPeople({
     expectedApplicationId: string,
   ) => {
     if (next.application_id !== expectedApplicationId) return false;
+    const previous = benchRef.current;
+    if (previous) {
+      const previousPlan = Math.max(
+        previous.current_search?.plan_number ?? 0,
+        previous.last_completed_result?.plan_number ?? 0,
+      );
+      const nextPlan = Math.max(
+        next.current_search?.plan_number ?? 0,
+        next.last_completed_result?.plan_number ?? 0,
+      );
+      if (nextPlan < previousPlan) return false;
+      if (
+        previous.current_search &&
+        next.current_search &&
+        previous.current_search.id === next.current_search.id
+      ) {
+        const order: Record<ContactSearchSnapshot["status"], number> = {
+          queued: 0,
+          running: 1,
+          completed: 2,
+          failed: 2,
+          cancelled: 2,
+        };
+        if (order[next.current_search.status] < order[previous.current_search.status]) {
+          return false;
+        }
+        if (
+          order[previous.current_search.status] === 2 &&
+          next.current_search.status !== previous.current_search.status
+        ) return false;
+      }
+      if (previous.last_completed_result && !next.last_completed_result) return false;
+      if (
+        previous.last_completed_result &&
+        next.last_completed_result &&
+        next.last_completed_result.plan_number < previous.last_completed_result.plan_number
+      ) return false;
+    }
     const pending = pendingStart.current;
     if (
       pending &&
@@ -80,6 +121,7 @@ export function ApplicationPeople({
       // create a newer plan. Future retries must use a fresh receipt key.
       pendingStart.current = null;
     }
+    benchRef.current = next;
     setBench(next);
     return true;
   }, []);
@@ -248,6 +290,7 @@ export function ApplicationPeople({
   const canStart = postingState === "open" && !activeSearch && !starting;
 
   return (
+    <>
     <section
       aria-labelledby="application-people-title"
       aria-busy={loading || starting}
@@ -358,11 +401,20 @@ export function ApplicationPeople({
         {result ? <ContactResult result={result} /> : null}
 
         <p className="border-t border-zinc-200 pt-4 text-xs leading-5 text-zinc-500 dark:border-zinc-800 dark:text-zinc-400">
-          No messages have been drafted or sent. Profile and evidence links are
-          provided for your review only.
+          This search only finds profiles and preserves evidence. Any message work
+          is an explicit, separately tracked manual action below.
         </p>
       </div>
     </section>
+    <ApplicationOutreach
+      key={applicationId}
+      applicationId={applicationId}
+      applicationVersion={applicationVersion}
+      postingState={postingState}
+      benchReady={Boolean(result && result.verified_count > 0)}
+      contactSearchRunning={activeSearch}
+    />
+    </>
   );
 }
 

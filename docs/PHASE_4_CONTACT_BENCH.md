@@ -1,7 +1,6 @@
 # Phase 4 — Verified contact bench
 
-**Status:** Phase 4A through 4D1 are implemented. The practical outreach UI is
-the explicit 4D2 checkpoint.
+**Status:** Phase 4A through 4D2 are implemented.
 
 ## Outcome
 
@@ -10,9 +9,9 @@ appropriate people from a larger discovery pool. Five is the target, never a
 padding requirement: if only three people have sufficient evidence, the
 product must persist and display `3/5 verified` with structured reasons.
 
-The contact search finds and verifies public professional profiles. The 4D1
-backend can now preserve owner-written message versions and explicit manual
-actions, but it does **not** generate or send a message.
+The contact search finds and verifies public professional profiles. The 4D
+workspace preserves owner-written message versions and explicit manual actions,
+but it does **not** generate or send a message.
 
 ## Product rules
 
@@ -103,6 +102,8 @@ internal ranking components as candidate quality.
 - Keep Clipboard success separate from the server-side manual-send assertion.
 - Reconcile ambiguous mutations with the same idempotency key and preserve the
   last known sequence through transient failures.
+- Derive follow-up and no-reply eligibility on the server from the owner's
+  business-day policy instead of duplicating cadence rules in the browser.
 
 ## Phase 4A definition of done
 
@@ -165,3 +166,26 @@ internal ranking components as candidate quality.
   after posting closure stops the sequence rather than saving or sending.
 - Migration upgrade, schema parity, downgrade/re-upgrade, contracts, repository
   transitions, router security, and the full backend suite pass.
+
+## Phase 4D2 definition of done
+
+- The dossier starts outreach only after a completed verified bench exists and
+  clearly separates ready recipients from later reserves.
+- Unsaved owner text survives refreshes and conflicts. Saving creates a new
+  immutable version without changing the text or implying that it was sent.
+- Copy writes the exact saved body to the Clipboard before recording a copy
+  event. Mark-sent is a separate confirmation bound to that same version and a
+  selected channel.
+- Initial and follow-up controls use server-projected business-day deadlines;
+  premature send and no-reply actions remain unavailable or fail with honest
+  policy feedback.
+- Useful reply, introduction, referral, decline, unreachable, no reply, and do
+  not contact outcomes expose their sequence effects before they are recorded.
+- Pause, resume, permanent stop, closed posting, stopped, and completed states
+  remain useful and read-only where appropriate. Nothing is sent automatically.
+- Retryable or lost mutation responses reconcile durable state before a retry,
+  reuse one idempotency key for the same intent, and never optimistically claim
+  that a save, copy, send, or outcome succeeded.
+- Desktop and mobile browser QA cover start, ready/reserve waves, save/copy/send,
+  follow-up timing, outcomes, pause/resume/stop, refresh preservation, and
+  terminal role states without console errors.

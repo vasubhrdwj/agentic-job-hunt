@@ -141,6 +141,7 @@ export function ApplicationDossier({
       </section>
 
       <ApplicationPeople
+        key={application.id}
         applicationId={application.id}
         applicationVersion={application.version}
         postingState={posting.state}

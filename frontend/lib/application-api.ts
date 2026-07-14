@@ -4,6 +4,11 @@ import type {
   ApplicationDetailResponse,
   ApplicationListResponse,
 } from "./application-types";
+import type {
+  ApplicationOutreachResponse,
+  OutreachEventCreate,
+  OutreachMessageCreate,
+} from "./outreach-types";
 import { WorkspaceApiError } from "./workspace-api";
 
 async function responseError(response: Response): Promise<WorkspaceApiError> {
@@ -16,13 +21,43 @@ async function responseError(response: Response): Promise<WorkspaceApiError> {
   const body = value && typeof value === "object"
     ? value as Record<string, unknown>
     : {};
+  let message = typeof body.message === "string"
+    ? body.message
+    : response.statusText || "The application request failed.";
+  const fieldErrors: Array<{ field: string; message: string }> = [];
+  if (Array.isArray(body.field_errors)) {
+    for (const item of body.field_errors) {
+      if (
+        item &&
+        typeof item === "object" &&
+        typeof (item as Record<string, unknown>).field === "string" &&
+        typeof (item as Record<string, unknown>).message === "string"
+      ) {
+        fieldErrors.push(item as { field: string; message: string });
+      }
+    }
+  }
+  if (Array.isArray(body.detail) && body.detail.length > 0) {
+    const first = body.detail[0];
+    if (first && typeof first === "object") {
+      const detail = first as Record<string, unknown>;
+      if (typeof detail.msg === "string") message = detail.msg;
+      if (Array.isArray(detail.loc)) {
+        fieldErrors.push({
+          field: detail.loc.filter((part) => part !== "body").join("."),
+          message,
+        });
+      }
+    }
+  }
   return new WorkspaceApiError(
     response.status,
     typeof body.code === "string" ? body.code : `http_${response.status}`,
-    typeof body.message === "string"
-      ? body.message
-      : response.statusText || "The application request failed.",
-    typeof body.retryable === "boolean" ? body.retryable : response.status >= 500,
+    message,
+    typeof body.retryable === "boolean"
+      ? body.retryable
+      : response.status === 429 || response.status >= 500,
+    fieldErrors,
   );
 }
 
@@ -84,6 +119,88 @@ export async function startApplicationContactSearch(
           "If-Match": `"${applicationVersion}"`,
           "Idempotency-Key": idempotencyKey,
         },
+      },
+    ),
+  );
+}
+
+export async function getApplicationOutreach(
+  applicationId: string,
+): Promise<ApplicationOutreachResponse> {
+  return json<ApplicationOutreachResponse>(
+    await fetch(
+      `/api/applications/${encodeURIComponent(applicationId)}/outreach`,
+      {
+        cache: "no-store",
+        credentials: "same-origin",
+      },
+    ),
+  );
+}
+
+export async function startApplicationOutreachSequence(
+  applicationId: string,
+  applicationVersion: number,
+  idempotencyKey: string,
+): Promise<ApplicationOutreachResponse> {
+  return json<ApplicationOutreachResponse>(
+    await fetch(
+      `/api/applications/${encodeURIComponent(applicationId)}/outreach-sequences`,
+      {
+        method: "POST",
+        credentials: "same-origin",
+        headers: {
+          "If-Match": `"${applicationVersion}"`,
+          "Idempotency-Key": idempotencyKey,
+        },
+      },
+    ),
+  );
+}
+
+export async function saveApplicationOutreachMessage(
+  applicationId: string,
+  sequenceId: string,
+  sequenceVersion: number,
+  idempotencyKey: string,
+  payload: OutreachMessageCreate,
+): Promise<ApplicationOutreachResponse> {
+  return json<ApplicationOutreachResponse>(
+    await fetch(
+      `/api/applications/${encodeURIComponent(applicationId)}/outreach-sequences/${encodeURIComponent(sequenceId)}/messages`,
+      {
+        method: "POST",
+        credentials: "same-origin",
+        headers: {
+          "Content-Type": "application/json",
+          "If-Match": `"${sequenceVersion}"`,
+          "Idempotency-Key": idempotencyKey,
+        },
+        body: JSON.stringify(payload),
+      },
+    ),
+  );
+}
+
+export async function recordApplicationOutreachEvent(
+  applicationId: string,
+  sequenceId: string,
+  sequenceVersion: number,
+  idempotencyKey: string,
+  payload: OutreachEventCreate,
+): Promise<ApplicationOutreachResponse> {
+  return json<ApplicationOutreachResponse>(
+    await fetch(
+      `/api/applications/${encodeURIComponent(applicationId)}/outreach-sequences/${encodeURIComponent(sequenceId)}/events`,
+      {
+        method: "POST",
+        credentials: "same-origin",
+        headers: {
+          "Content-Type": "application/json",
+          "If-Match": `"${sequenceVersion}"`,
+          "Idempotency-Key": idempotencyKey,
+        },
+        body: JSON.stringify(payload),
       },
     ),
   );

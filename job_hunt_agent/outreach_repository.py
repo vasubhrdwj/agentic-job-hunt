@@ -102,6 +102,11 @@ def load_application_outreach(
             application_id=application_id,
             status="not_started",
         )
+    owner_timezone = session.scalar(
+        select(Owner.timezone).where(Owner.id == sequence.owner_id)
+    )
+    if owner_timezone is None:
+        raise OutreachRepositoryError("outreach owner timezone is missing")
 
     recipient_rows = list(
         session.execute(
@@ -175,12 +180,12 @@ def load_application_outreach(
 
     sent_by_message: dict[str, OutreachEvent] = {}
     latest_outcomes: dict[str, OutreachEvent] = {}
-    initial_send_by_contact: dict[str, OutreachEvent] = {}
+    sent_by_contact_and_kind: dict[tuple[str, str], OutreachEvent] = {}
     for event in state_events:
         if event.event_type == "marked_sent" and event.message_version_id is not None:
             sent_by_message[event.message_version_id] = event
-            if event.kind == "initial" and event.application_contact_id is not None:
-                initial_send_by_contact[event.application_contact_id] = event
+            if event.kind is not None and event.application_contact_id is not None:
+                sent_by_contact_and_kind[(event.application_contact_id, event.kind)] = event
         elif event.event_type == "outcome_recorded" and event.application_contact_id:
             latest_outcomes[event.application_contact_id] = event
 
@@ -189,7 +194,10 @@ def load_application_outreach(
         initial = latest_messages.get((application_contact.id, "initial"))
         follow_up = latest_messages.get((application_contact.id, "follow_up"))
         outcome_event = latest_outcomes.get(application_contact.id)
-        initial_send = initial_send_by_contact.get(application_contact.id)
+        initial_send = sent_by_contact_and_kind.get((application_contact.id, "initial"))
+        follow_up_send = sent_by_contact_and_kind.get(
+            (application_contact.id, "follow_up")
+        )
         recipients.append(
             OutreachRecipientResponse(
                 sequence_id=sequence.id,
@@ -229,6 +237,17 @@ def load_application_outreach(
                     if initial_send is not None
                     and initial_send.follow_up_due_at is not None
                     else None
+                ),
+                no_reply_eligible_at=_no_reply_eligible_at(
+                    initial_sent_at=(
+                        initial_send.occurred_at if initial_send is not None else None
+                    ),
+                    follow_up_sent_at=(
+                        follow_up_send.occurred_at
+                        if follow_up_send is not None
+                        else None
+                    ),
+                    timezone_name=owner_timezone,
                 ),
                 outcome=(outcome_event.outcome if outcome_event is not None else None),
                 outcome_at=(
@@ -892,6 +911,29 @@ def add_business_days(
     return candidate.astimezone(timezone.utc)
 
 
+def _no_reply_eligible_at(
+    *,
+    initial_sent_at: datetime | None,
+    follow_up_sent_at: datetime | None,
+    timezone_name: str,
+) -> datetime | None:
+    """Project the policy deadline from the latest completed cadence step."""
+
+    if initial_sent_at is None:
+        return None
+    if follow_up_sent_at is not None:
+        return add_business_days(
+            follow_up_sent_at,
+            FOLLOW_UP_BUSINESS_DAYS,
+            timezone_name=timezone_name,
+        )
+    return add_business_days(
+        initial_sent_at,
+        NO_REPLY_WITHOUT_FOLLOW_UP_BUSINESS_DAYS,
+        timezone_name=timezone_name,
+    )
+
+
 def _record_copy(
     session: Session,
     *,
@@ -1111,15 +1153,15 @@ def _record_outcome(
         )
         if owner_timezone is None or initial_sent is None:
             raise OutreachRepositoryError("outreach cadence context is missing")
-        eligible_at = add_business_days(
-            follow_up_sent.occurred_at if follow_up_sent is not None else initial_sent.occurred_at,
-            (
-                FOLLOW_UP_BUSINESS_DAYS
-                if follow_up_sent is not None
-                else NO_REPLY_WITHOUT_FOLLOW_UP_BUSINESS_DAYS
+        eligible_at = _no_reply_eligible_at(
+            initial_sent_at=initial_sent.occurred_at,
+            follow_up_sent_at=(
+                follow_up_sent.occurred_at if follow_up_sent is not None else None
             ),
             timezone_name=owner_timezone,
         )
+        if eligible_at is None:  # pragma: no cover - initial_sent was required above.
+            raise OutreachRepositoryError("outreach cadence context is missing")
         if now < eligible_at:
             raise ResourceConflict("the no-reply waiting window is not complete")
 

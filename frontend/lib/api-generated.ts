@@ -1943,6 +1943,8 @@ export interface components {
             follow_up_message?: components["schemas"]["OutreachMessageVersionResponse"] | null;
             initial_message?: components["schemas"]["OutreachMessageVersionResponse"] | null;
             lifecycle: components["schemas"]["ContactLifecycle"];
+            /** No Reply Eligible At */
+            no_reply_eligible_at: string | null;
             outcome?: components["schemas"]["OutreachOutcome"] | null;
             /** Outcome At */
             outcome_at?: string | null;

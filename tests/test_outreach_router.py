@@ -63,6 +63,7 @@ def _outreach(*, version: int) -> ApplicationOutreachResponse:
                 "bench_rank": 1,
                 "wave": 1,
                 "bench_state": "ready",
+                "no_reply_eligible_at": None,
             }
         ],
         timeline=[],

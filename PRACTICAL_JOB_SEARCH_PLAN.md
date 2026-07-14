@@ -394,14 +394,11 @@ POST       /api/applications/{id}/pursuit-pack
 
 ```text
 POST       /api/applications/{id}/contact-searches
-GET        /api/contact-searches/{id}
 GET        /api/applications/{id}/contacts
-PATCH      /api/application-contacts/{id}
-POST       /api/application-contacts/{id}/outreach/draft
-PATCH      /api/outreach/{id}
-POST       /api/outreach/{id}/mark-sent
-POST       /api/outreach/{id}/events
-POST       /api/applications/{id}/outreach/stop
+GET        /api/applications/{id}/outreach
+POST       /api/applications/{id}/outreach-sequences
+POST       /api/applications/{id}/outreach-sequences/{sequence_id}/messages
+POST       /api/applications/{id}/outreach-sequences/{sequence_id}/events
 ```
 
 The contact-search response includes `target_count`, `verified_count`, `coverage_status: met | partial`, `exhausted`, and structured shortfall reasons.
@@ -671,11 +668,11 @@ API/UI contract and deferred scope are documented in
 The current `pursuing` application always has one visible dated action; the
 remaining definition-of-done items apply to later Phase 3 checkpoints.
 
-Slice 4A–4D1 now discovers a larger pool, retains up to five distinct verified
+Slice 4A–4D2 now discovers a larger pool, retains up to five distinct verified
 people without padding evidence shortfalls, and persists a server-enforced
-manual outreach sequence with encrypted exact message versions. The immediate
-next checkpoint is the practical composer and outcome controls for that safe
-backend; AI drafting and messaging integrations remain deferred.
+manual outreach sequence with encrypted exact message versions. The practical
+composer and outcome controls now make that boundary usable without automating
+external messages; AI drafting and messaging integrations remain deferred.
 
 ### Slice 4 — Five-person contact bench and staged outreach
 
@@ -695,8 +692,8 @@ Backend tasks:
 Frontend tasks:
 
 - [x] Build contact-search progress and honest `N/5 verified` coverage.
-- [ ] Build ranked evidence-rich contact cards and wave/cooldown states.
-- [ ] Build persistent message composer, copy-and-mark-sent, follow-up, outcome, and stop controls.
+- [x] Build ranked evidence-rich contact cards and wave/cooldown states.
+- [x] Build persistent message composer, copy-and-mark-sent, follow-up, outcome, and stop controls.
 - [x] Show partial coverage and structured exhaustion reasons without placeholders.
 
 Definition of done:

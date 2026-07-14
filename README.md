@@ -57,8 +57,8 @@ database-only Applications list and dossier. The only current application stage
 is `pursuing`; stage transitions, action updates, and application packs remain
 explicit follow-up work.
 
-Phase 4A–4D1 add the durable verified-contact bench, its provider-backed worker,
-the practical dossier experience, and a safe manual-outreach backend. Each pursued application can explicitly
+Phase 4A–4D2 add the durable verified-contact bench, its provider-backed worker,
+the practical dossier experience, and a safe manual-outreach workspace. Each pursued application can explicitly
 and idempotently queue a public-profile search, retain a 12-person
 evidence-backed discovery pool, and atomically publish a deterministic, diverse
 bench of up to five. The dossier polls real progress, preserves the last good
@@ -70,8 +70,10 @@ distinct purpose, encrypts every exact message revision, and records copy and
 manual send assertions separately. It persists the five-business-day follow-up
 date, enforces one follow-up, 30-day person cooldowns, company volume limits,
 idempotency, and reply-driven pause/stop rules. Reads remain database-only and
-nothing sends automatically. The practical composer and controls are the next
-Phase 4 checkpoint.
+nothing sends automatically. The dossier adds an exact-message composer,
+clipboard-first copy tracking, separate send confirmation, follow-up timing,
+outcome logging, and pause/resume/stop controls while preserving unsaved text
+through refresh and ambiguous network failures.
 
 The separate **Legacy hunt** remains available when you explicitly want the
 current end-to-end flow with resume matching, at least five appropriate
@@ -202,6 +204,14 @@ GET    /api/applications/{id}/contacts
                                     → database-only contact plan, progress, bench, and evidence
 POST   /api/applications/{id}/contact-searches
                                     → 202 durable provider search (If-Match + idempotency)
+GET    /api/applications/{id}/outreach
+                                    → database-only manual sequence, recipients, and timeline
+POST   /api/applications/{id}/outreach-sequences
+                                    → pin the completed bench and start wave 1
+POST   /api/applications/{id}/outreach-sequences/{sequence_id}/messages
+                                    → save one exact immutable message version
+POST   /api/applications/{id}/outreach-sequences/{sequence_id}/events
+                                    → record copy, manual send, outcome, pause/resume, or stop
 GET    /health                      → { ok: true }
 GET    /ready                       → DB migration + compatible worker readiness
 ```

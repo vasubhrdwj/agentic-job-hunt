@@ -201,6 +201,7 @@ class OutreachRecipientResponse(OutreachContractModel):
     initial_message: OutreachMessageVersionResponse | None = None
     follow_up_message: OutreachMessageVersionResponse | None = None
     follow_up_due_at: UTCDateTime | None = None
+    no_reply_eligible_at: UTCDateTime | None
     outcome: OutreachOutcome | None = None
     outcome_at: UTCDateTime | None = None
 
@@ -226,6 +227,22 @@ class OutreachRecipientResponse(OutreachContractModel):
                 raise ValueError("follow_up_due_at requires a sent initial message")
             if self.follow_up_due_at < self.initial_message.sent_at:
                 raise ValueError("follow_up_due_at cannot precede the initial send")
+        initial_sent_at = (
+            self.initial_message.sent_at if self.initial_message is not None else None
+        )
+        follow_up_sent_at = (
+            self.follow_up_message.sent_at
+            if self.follow_up_message is not None
+            else None
+        )
+        latest_sent_at = follow_up_sent_at or initial_sent_at
+        if latest_sent_at is None:
+            if self.no_reply_eligible_at is not None:
+                raise ValueError("no_reply_eligible_at requires a sent initial message")
+        elif self.no_reply_eligible_at is None:
+            raise ValueError("a sent initial message requires no_reply_eligible_at")
+        elif self.no_reply_eligible_at < latest_sent_at:
+            raise ValueError("no_reply_eligible_at cannot precede the latest send")
         if (self.outcome is None) != (self.outcome_at is None):
             raise ValueError("outcome and outcome_at must be recorded together")
         return self

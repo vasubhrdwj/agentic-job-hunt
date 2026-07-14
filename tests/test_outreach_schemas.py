@@ -66,7 +66,15 @@ def _recipient(
     wave: int | None = None,
     initial: OutreachMessageVersionResponse | None = None,
     follow_up: OutreachMessageVersionResponse | None = None,
+    no_reply_eligible_at: datetime | None = None,
 ) -> OutreachRecipientResponse:
+    latest_sent_at = (
+        follow_up.sent_at
+        if follow_up is not None and follow_up.sent_at is not None
+        else initial.sent_at
+        if initial is not None
+        else None
+    )
     return OutreachRecipientResponse(
         sequence_id="sequence1",
         application_contact_id=f"applicationcontact{rank}",
@@ -85,6 +93,13 @@ def _recipient(
         follow_up_due_at=(
             initial.sent_at + timedelta(days=4)
             if initial is not None and initial.sent_at is not None
+            else None
+        ),
+        no_reply_eligible_at=(
+            no_reply_eligible_at
+            if no_reply_eligible_at is not None
+            else latest_sent_at + timedelta(days=7)
+            if latest_sent_at is not None
             else None
         ),
     )
@@ -251,6 +266,18 @@ def test_recipient_allows_only_one_follow_up_after_a_sent_initial() -> None:
         _recipient(initial=_message(sent=False), follow_up=follow_up)
     with pytest.raises(ValidationError):
         _recipient(initial=sent_initial, follow_up=_message(kind="initial"))
+
+
+def test_recipient_no_reply_deadline_requires_and_follows_a_send() -> None:
+    sent_initial = _message(sent=True)
+
+    with pytest.raises(ValidationError):
+        _recipient(no_reply_eligible_at=NOW + timedelta(days=7))
+    with pytest.raises(ValidationError):
+        _recipient(
+            initial=sent_initial,
+            no_reply_eligible_at=sent_initial.sent_at - timedelta(seconds=1),
+        )
 
 
 @pytest.mark.parametrize(

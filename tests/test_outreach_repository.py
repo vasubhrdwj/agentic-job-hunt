@@ -24,7 +24,6 @@ from job_hunt_agent.models import (
     OwnerOpportunity,
 )
 from job_hunt_agent.outreach_repository import (
-    add_business_days,
     load_application_outreach,
     record_outreach_event,
     save_outreach_message,
@@ -470,6 +469,7 @@ def test_start_unlocks_strongest_non_recruiter_and_top_recruiter_then_replays(
         ("application-contact-3", 3, "reserve"),
         ("application-contact-5", 4, "reserve"),
     ]
+    assert all(item.no_reply_eligible_at is None for item in first.recipients)
 
     replay = _start(outreach_db, keyring, now=NOW + timedelta(minutes=1))
     assert _sequence(replay).id == _sequence(first).id
@@ -670,6 +670,9 @@ def test_send_requires_copied_exact_latest_version_and_persists_five_business_da
     assert recipient.follow_up_due_at == datetime(
         2026, 7, 20, 4, 35, tzinfo=timezone.utc
     )
+    assert recipient.no_reply_eligible_at == datetime(
+        2026, 7, 22, 4, 35, tzinfo=timezone.utc
+    )
     with outreach_db.session() as session:
         sent = session.scalar(
             select(OutreachEvent).where(OutreachEvent.event_type == "marked_sent")
@@ -691,6 +694,13 @@ def test_follow_up_cannot_send_early_and_no_reply_obeys_manual_cadence(
     )
     due = _recipient(response, "application-contact-1").follow_up_due_at
     assert due is not None
+    initial_no_reply_at = datetime(
+        2026, 7, 22, 4, 33, tzinfo=timezone.utc
+    )
+    assert (
+        _recipient(response, "application-contact-1").no_reply_eligible_at
+        == initial_no_reply_at
+    )
     response = _save(
         outreach_db,
         keyring,
@@ -703,6 +713,10 @@ def test_follow_up_cannot_send_early_and_no_reply_obeys_manual_cadence(
     )
     follow_up = _recipient(response, "application-contact-1").follow_up_message
     assert follow_up is not None
+    assert (
+        _recipient(response, "application-contact-1").no_reply_eligible_at
+        == initial_no_reply_at
+    )
     response = _record(
         outreach_db,
         keyring,
@@ -741,7 +755,11 @@ def test_follow_up_cannot_send_early_and_no_reply_obeys_manual_cadence(
         key="follow-due-send",
         now=due,
     )
-    no_reply_at = add_business_days(due, 5, timezone_name="Asia/Kolkata")
+    no_reply_at = datetime(2026, 7, 27, 4, 33, tzinfo=timezone.utc)
+    assert (
+        _recipient(response, "application-contact-1").no_reply_eligible_at
+        == no_reply_at
+    )
     with pytest.raises(ResourceConflict):
         _record(
             outreach_db,
