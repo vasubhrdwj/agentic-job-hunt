@@ -10,12 +10,14 @@ from .application_schemas import (
     ApplicationListResponse,
     CursorToken,
 )
+from .application_artifact_workspace import ApplicationArtifactWorkspaceStore
 from .application_pack_workspace import ApplicationPackWorkspaceStore
 from .contact_workspace import ContactWorkspaceStore
 from .outreach_workspace import OutreachWorkspaceStore
 
 
 class ApplicationWorkspaceStore(
+    ApplicationArtifactWorkspaceStore,
     ApplicationPackWorkspaceStore,
     ContactWorkspaceStore,
     OutreachWorkspaceStore,

@@ -22,6 +22,11 @@ from ..application_schemas import (
     CursorToken,
     OpaqueId,
 )
+from ..application_artifact_schemas import (
+    ApplicationArtifactEventCreate,
+    ApplicationArtifactRevisionCreate,
+    ApplicationArtifactsResponse,
+)
 from ..application_pack_schemas import (
     ApplicationPackCreate,
     ApplicationPackEventCreate,
@@ -277,6 +282,98 @@ def create_application_router(
             )
         _set_etag(response, application_pack.pack.version)
         return application_pack
+
+    @router.get(
+        "/api/applications/{application_id}/application-artifacts",
+        response_model=ApplicationArtifactsResponse,
+        responses=COMMON_ERROR_RESPONSES,
+    )
+    def get_owner_application_artifacts(
+        application_id: OpaqueId,
+        response: Response,
+        owner: AuthenticatedOwner = Security(require_read_owner),
+    ) -> ApplicationArtifactsResponse:
+        artifacts = _invoke(
+            _store(store).get_application_artifacts,
+            owner_id=owner.owner_id,
+            application_id=application_id,
+        )
+        if artifacts is None:
+            _not_found("application")
+        if artifacts.pack is not None:
+            _set_etag(response, artifacts.pack.version)
+        return artifacts
+
+    @router.post(
+        "/api/applications/{application_id}/application-packs/{pack_id}/artifact-revisions",
+        response_model=ApplicationArtifactsResponse,
+        status_code=status.HTTP_201_CREATED,
+        responses=COMMON_ERROR_RESPONSES,
+    )
+    def create_owner_application_artifact_revision(
+        application_id: OpaqueId,
+        pack_id: OpaqueId,
+        payload: ApplicationArtifactRevisionCreate,
+        response: Response,
+        owner: AuthenticatedOwner = Security(require_mutation_owner),
+        if_match: str | None = Header(default=None, alias="If-Match"),
+        idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+    ) -> ApplicationArtifactsResponse:
+        artifacts = _invoke(
+            _store(store).create_application_artifact_revision,
+            owner_id=owner.owner_id,
+            application_id=application_id,
+            pack_id=pack_id,
+            payload=payload,
+            expected_pack_version=_expected_version(if_match),
+            idempotency_key=_required_idempotency_key(idempotency_key),
+        )
+        if artifacts is None:
+            _not_found("application pack")
+        if artifacts.pack is None:
+            raise WorkspaceApiError(
+                status.HTTP_503_SERVICE_UNAVAILABLE,
+                "workspace_unavailable",
+                "application-artifact storage is unavailable",
+                retryable=True,
+            )
+        _set_etag(response, artifacts.pack.version)
+        return artifacts
+
+    @router.post(
+        "/api/applications/{application_id}/application-packs/{pack_id}/artifact-events",
+        response_model=ApplicationArtifactsResponse,
+        responses=COMMON_ERROR_RESPONSES,
+    )
+    def record_owner_application_artifact_event(
+        application_id: OpaqueId,
+        pack_id: OpaqueId,
+        payload: ApplicationArtifactEventCreate,
+        response: Response,
+        owner: AuthenticatedOwner = Security(require_mutation_owner),
+        if_match: str | None = Header(default=None, alias="If-Match"),
+        idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+    ) -> ApplicationArtifactsResponse:
+        artifacts = _invoke(
+            _store(store).record_application_artifact_event,
+            owner_id=owner.owner_id,
+            application_id=application_id,
+            pack_id=pack_id,
+            payload=payload,
+            expected_pack_version=_expected_version(if_match),
+            idempotency_key=_required_idempotency_key(idempotency_key),
+        )
+        if artifacts is None:
+            _not_found("application pack")
+        if artifacts.pack is None:
+            raise WorkspaceApiError(
+                status.HTTP_503_SERVICE_UNAVAILABLE,
+                "workspace_unavailable",
+                "application-artifact storage is unavailable",
+                retryable=True,
+            )
+        _set_etag(response, artifacts.pack.version)
+        return artifacts
 
     @router.get(
         "/api/applications/{application_id}/contacts",

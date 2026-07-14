@@ -11,6 +11,11 @@ import type {
   ApplicationPackResponse,
 } from "./application-pack-types";
 import type {
+  ApplicationArtifactEventCreate,
+  ApplicationArtifactRevisionCreate,
+  ApplicationArtifactsResponse,
+} from "./application-artifact-types";
+import type {
   ApplicationOutreachResponse,
   OutreachEventCreate,
   OutreachMessageCreate,
@@ -168,6 +173,65 @@ export async function recordApplicationPackEvent(
   return json<ApplicationPackResponse>(
     await fetch(
       `/api/applications/${encodeURIComponent(applicationId)}/application-packs/${encodeURIComponent(packId)}/events`,
+      {
+        method: "POST",
+        credentials: "same-origin",
+        headers: {
+          "Content-Type": "application/json",
+          "If-Match": `"${packVersion}"`,
+          "Idempotency-Key": idempotencyKey,
+        },
+        body: JSON.stringify(payload),
+      },
+    ),
+  );
+}
+
+export async function getApplicationArtifacts(
+  applicationId: string,
+): Promise<ApplicationArtifactsResponse> {
+  return json<ApplicationArtifactsResponse>(
+    await fetch(
+      `/api/applications/${encodeURIComponent(applicationId)}/application-artifacts`,
+      { cache: "no-store", credentials: "same-origin" },
+    ),
+  );
+}
+
+export async function createApplicationArtifactRevision(
+  applicationId: string,
+  packId: string,
+  packVersion: number,
+  idempotencyKey: string,
+  payload: ApplicationArtifactRevisionCreate,
+): Promise<ApplicationArtifactsResponse> {
+  return json<ApplicationArtifactsResponse>(
+    await fetch(
+      `/api/applications/${encodeURIComponent(applicationId)}/application-packs/${encodeURIComponent(packId)}/artifact-revisions`,
+      {
+        method: "POST",
+        credentials: "same-origin",
+        headers: {
+          "Content-Type": "application/json",
+          "If-Match": `"${packVersion}"`,
+          "Idempotency-Key": idempotencyKey,
+        },
+        body: JSON.stringify(payload),
+      },
+    ),
+  );
+}
+
+export async function recordApplicationArtifactEvent(
+  applicationId: string,
+  packId: string,
+  packVersion: number,
+  idempotencyKey: string,
+  payload: ApplicationArtifactEventCreate,
+): Promise<ApplicationArtifactsResponse> {
+  return json<ApplicationArtifactsResponse>(
+    await fetch(
+      `/api/applications/${encodeURIComponent(applicationId)}/application-packs/${encodeURIComponent(packId)}/artifact-events`,
       {
         method: "POST",
         credentials: "same-origin",

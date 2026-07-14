@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session
 from .job_queue import utcnow
 from .models import (
     AchievementEvidence,
+    ApplicationArtifactEvent,
     ApplicationPack,
     CandidateProfile,
     CareerTrack,
@@ -429,6 +430,13 @@ def delete_resume_version(
         ).limit(1)
     ) is not None:
         raise ResourceInUse("resume version is referenced by an application pack")
+    if session.scalar(
+        select(ApplicationArtifactEvent.id).where(
+            ApplicationArtifactEvent.owner_id == owner_id,
+            ApplicationArtifactEvent.tailored_resume_version_id == row.id,
+        ).limit(1)
+    ) is not None:
+        raise ResourceInUse("resume version is referenced by an artifact approval")
     if row.is_base and session.scalar(
         select(ResumeVersion.id).where(
             ResumeVersion.owner_id == owner_id,
