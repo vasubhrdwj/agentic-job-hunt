@@ -4,9 +4,16 @@ import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 
 import { getApplication } from "@/lib/application-api";
-import type { ApplicationDetailResponse } from "@/lib/application-types";
+import type { ApplicationArtifactsResponse } from "@/lib/application-artifact-types";
+import type {
+  ApplicationActivityEvent,
+  ApplicationDetailResponse,
+  ApplicationStage,
+} from "@/lib/application-types";
+import { ApplicationMaterials } from "./application-materials";
 import { ApplicationPack } from "./application-pack";
 import { ApplicationPeople } from "./application-people";
+import { ApplicationSubmission } from "./application-submission";
 import { ApplicationStageBadge, DueDate } from "./applications-workspace";
 import {
   errorText,
@@ -25,6 +32,7 @@ export function ApplicationDossier({
   const [detail, setDetail] = useState<ApplicationDetailResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [currentArtifacts, setCurrentArtifacts] = useState<ApplicationArtifactsResponse | null>(null);
 
   const load = useCallback(async () => {
     setError(null);
@@ -136,8 +144,7 @@ export function ApplicationDossier({
           className="mt-3"
         />
         <p className="mt-4 max-w-2xl text-sm leading-6 text-indigo-900 dark:text-indigo-200">
-          Review the current posting, identify the strongest evidence from your experience,
-          and decide what must be tailored before applying.
+          {nextActionGuidance(application.stage)}
         </p>
       </section>
 
@@ -145,10 +152,29 @@ export function ApplicationDossier({
         key={`pack:${application.id}`}
         applicationId={application.id}
         applicationVersion={application.version}
+        applicationStage={application.stage}
+      />
+
+      <ApplicationMaterials
+        key={`materials:${application.id}`}
+        applicationId={application.id}
+        applicationVersion={application.version}
+        applicationStage={application.stage}
+        onArtifactsChanged={setCurrentArtifacts}
+      />
+
+      <ApplicationSubmission
+        applicationId={application.id}
+        applicationVersion={application.version}
+        stage={application.stage}
+        postingState={posting.state}
+        ownerLocalDate={ownerLocalDate}
+        currentArtifacts={currentArtifacts}
+        onApplicationChanged={load}
       />
 
       <ApplicationPeople
-        key={application.id}
+        key={`people:${application.id}`}
         applicationId={application.id}
         applicationVersion={application.version}
         postingState={posting.state}
@@ -186,9 +212,9 @@ export function ApplicationDossier({
             <li key={event.id} className="flex min-w-0 gap-3">
               <span aria-hidden="true" className="mt-1.5 h-2.5 w-2.5 shrink-0 rounded-full bg-indigo-500" />
               <div className="min-w-0">
-                <p className="font-medium">Application started</p>
+                <p className="font-medium">{activityCopy(event).title}</p>
                 <p className="mt-1 text-sm text-zinc-500">
-                  Entered Pursuing · {formatDate(event.occurred_at)}
+                  {activityCopy(event).detail} · {formatDate(event.occurred_at)}
                 </p>
               </div>
             </li>
@@ -197,4 +223,36 @@ export function ApplicationDossier({
       </section>
     </div>
   );
+}
+
+function nextActionGuidance(stage: ApplicationStage): string {
+  if (stage === "ready_to_apply") {
+    return "Open the verified employer destination, submit the reviewed materials yourself, then record exactly what you used.";
+  }
+  if (stage === "applied") {
+    return "Follow up on schedule, keep useful referral conversations moving, and preserve the exact submission record.";
+  }
+  return "Review the role, ground every claim in approved evidence, and prepare the exact materials you will submit.";
+}
+
+function activityCopy(event: ApplicationActivityEvent): {
+  title: string;
+  detail: string;
+} {
+  if (event.event_type === "application_ready_to_apply") {
+    return {
+      title: "Application materials marked ready",
+      detail: "Entered Ready to apply",
+    };
+  }
+  if (event.event_type === "application_applied") {
+    return {
+      title: "Manual application recorded",
+      detail: "Entered Applied",
+    };
+  }
+  return {
+    title: "Application started",
+    detail: "Entered Pursuing",
+  };
 }

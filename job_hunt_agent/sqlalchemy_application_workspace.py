@@ -8,12 +8,6 @@ from typing import Iterator
 from pydantic import ValidationError
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 
-from .application_repository import (
-    ApplicationRepositoryError,
-    list_application_activity,
-    list_applications,
-    load_application_detail,
-)
 from .application_artifact_repository import (
     ApplicationArtifactRepositoryError,
     create_application_artifact_revision,
@@ -38,11 +32,27 @@ from .application_pack_schemas import (
     ApplicationPackRevisionCreate,
     ApplicationPackResponse,
 )
+from .application_repository import (
+    ApplicationRepositoryError,
+    list_application_activity,
+    list_applications,
+    load_application_detail,
+)
 from .application_schemas import (
     ApplicationActivityListResponse,
     ApplicationDetailResponse,
     ApplicationListResponse,
     CursorToken,
+)
+from .application_submission_repository import (
+    ApplicationSubmissionRepositoryError,
+    load_application_submission,
+    transition_application,
+)
+from .application_submission_schemas import (
+    ApplicationSubmissionProjection,
+    ApplicationTransitionCreate,
+    ApplicationTransitionResponse,
 )
 from .database import Database
 from .mutation_receipts import MutationIdempotencyConflict, MutationPending
@@ -58,7 +68,11 @@ from .outreach_schemas import (
     OutreachEventCreate,
     OutreachMessageCreate,
 )
-from .owner_workspace import WorkspaceConflict, WorkspaceInputError, WorkspaceUnavailable
+from .owner_workspace import (
+    WorkspaceConflict,
+    WorkspaceInputError,
+    WorkspaceUnavailable,
+)
 from .private_payloads import PrivatePayloadBindingError
 from .repository_errors import ResourceConflict, VersionConflict
 from .security import DataKeyring, DecryptionError
@@ -111,6 +125,39 @@ class SqlAlchemyApplicationWorkspaceStore(SqlAlchemyContactWorkspaceStore):
                 session,
                 owner_id=owner_id,
                 application_id=application_id,
+            )
+
+    def get_application_submission(
+        self,
+        *,
+        owner_id: str,
+        application_id: str,
+    ) -> ApplicationSubmissionProjection | None:
+        with _application_submission_errors(), self.database.session() as session:
+            return load_application_submission(
+                session,
+                owner_id=owner_id,
+                application_id=application_id,
+            )
+
+    def transition_application(
+        self,
+        *,
+        owner_id: str,
+        application_id: str,
+        payload: ApplicationTransitionCreate,
+        expected_application_version: int,
+        idempotency_key: str,
+    ) -> ApplicationTransitionResponse | None:
+        with _application_submission_errors(), self.database.session() as session:
+            return transition_application(
+                session,
+                owner_id=owner_id,
+                application_id=application_id,
+                payload=payload,
+                expected_application_version=expected_application_version,
+                idempotency_key=idempotency_key,
+                keyring=self.keyring,
             )
 
     def get_application_pack(
@@ -405,6 +452,44 @@ def _application_pack_errors() -> Iterator[None]:
     except SQLAlchemyError as exc:
         raise WorkspaceUnavailable(
             "application-pack database is unavailable"
+        ) from exc
+
+
+@contextmanager
+def _application_submission_errors() -> Iterator[None]:
+    try:
+        yield
+    except WorkspaceUnavailable:
+        raise
+    except WorkspaceConflict:
+        raise
+    except WorkspaceInputError:
+        raise
+    except VersionConflict as exc:
+        raise WorkspaceConflict(str(exc), code="version_conflict") from exc
+    except MutationIdempotencyConflict as exc:
+        raise WorkspaceConflict(str(exc), code="idempotency_conflict") from exc
+    except MutationPending as exc:
+        raise WorkspaceConflict(str(exc), code="mutation_pending") from exc
+    except ResourceConflict as exc:
+        raise WorkspaceConflict(str(exc)) from exc
+    except ApplicationSubmissionRepositoryError as exc:
+        raise WorkspaceUnavailable(
+            "application-submission data is inconsistent"
+        ) from exc
+    except ValidationError as exc:
+        raise WorkspaceUnavailable(
+            "stored application-submission data failed contract validation"
+        ) from exc
+    except ValueError as exc:
+        raise WorkspaceInputError(str(exc)) from exc
+    except IntegrityError as exc:
+        raise WorkspaceConflict(
+            "application submission conflicts with existing state"
+        ) from exc
+    except SQLAlchemyError as exc:
+        raise WorkspaceUnavailable(
+            "application-submission database is unavailable"
         ) from exc
 
 

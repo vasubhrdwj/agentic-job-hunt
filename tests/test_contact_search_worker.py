@@ -384,6 +384,41 @@ def test_contact_worker_atomically_publishes_five_reserves_from_a_larger_pool(
         assert _count(session, ApplicationContact) == 6
 
 
+@pytest.mark.parametrize("stage", ["ready_to_apply", "applied"])
+def test_contact_worker_start_and_publish_accept_later_active_stages(
+    contact_worker_db: Database,
+    stage: str,
+) -> None:
+    with contact_worker_db.session() as session:
+        application = session.get(Application, APPLICATION_ID)
+        assert application is not None
+        application.stage = stage
+
+    claim = _claim(contact_worker_db)
+    provider = FakeProvider(_full_responses())
+    contact_worker.process_claimed_contact_search(
+        claim,
+        database=contact_worker_db,
+        worker_id=WORKER_ID,
+        provider=provider,
+    )
+
+    assert provider.calls == [
+        (DiscoveryCategory.peer, 12),
+        (DiscoveryCategory.leader, 12),
+        (DiscoveryCategory.recruiter, 12),
+    ]
+    with contact_worker_db.session() as session:
+        plan = session.get(ContactPlan, PLAN_ID)
+        job = session.get(BackgroundJob, JOB_ID)
+        assert plan is not None and job is not None
+        assert plan.status == "completed"
+        assert plan.coverage_status == "met"
+        assert plan.selected_count == 5
+        assert job.status == "succeeded"
+        assert _count(session, ApplicationContact) == 6
+
+
 def test_oversized_provider_row_is_skipped_without_retrying_or_losing_good_leads(
     contact_worker_db: Database,
 ) -> None:
@@ -566,9 +601,17 @@ def test_total_provider_failure_retries_or_fails_without_publishing(
         assert "private" not in str(job.__dict__)
 
 
+@pytest.mark.parametrize(
+    "stage", ["pursuing", "ready_to_apply", "applied"]
+)
 def test_cancel_requested_during_provider_work_publishes_nothing(
     contact_worker_db: Database,
+    stage: str,
 ) -> None:
+    with contact_worker_db.session() as session:
+        application = session.get(Application, APPLICATION_ID)
+        assert application is not None
+        application.stage = stage
     claim = _claim(contact_worker_db)
 
     def request_cancel() -> None:
@@ -600,9 +643,17 @@ def test_cancel_requested_during_provider_work_publishes_nothing(
         assert _count(session, Contact) == 0
 
 
+@pytest.mark.parametrize(
+    "stage", ["pursuing", "ready_to_apply", "applied"]
+)
 def test_posting_closed_during_provider_work_cancels_before_publication(
     contact_worker_db: Database,
+    stage: str,
 ) -> None:
+    with contact_worker_db.session() as session:
+        application = session.get(Application, APPLICATION_ID)
+        assert application is not None
+        application.stage = stage
     claim = _claim(contact_worker_db)
 
     def close_posting() -> None:

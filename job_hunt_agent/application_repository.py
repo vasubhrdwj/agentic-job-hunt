@@ -669,6 +669,8 @@ def _activity_response(
         from_stage=row.from_stage,
         to_stage=row.to_stage,
         action_item_id=row.action_item_id,
+        previous_action_item_id=row.previous_action_item_id,
+        submission_id=row.submission_id,
         occurred_at=_as_utc(row.occurred_at),
     )
 

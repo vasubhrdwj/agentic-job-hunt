@@ -1,6 +1,6 @@
 # Practical Job Search Control Room — Implementable Plan
 
-**Status:** Phases 0–4D2 and the provider-free Phase 5A grounding workspace are implemented; grounded artifacts in Phase 5B are next
+**Status:** Phases 0–5C are implemented; the next product slice is outcome learning, weekly review, and hardening
 **Primary user:** one private owner using the product for a real job search
 **North-star metric:** qualified interviews for genuinely better roles per hour of user effort
 **First complete release:** durable opportunity radar + application pipeline + five-person contact bench + manual, staged outreach
@@ -58,11 +58,11 @@ career profile
 | Job discovery | Eight first-party/ATS source strategies, stable native IDs, safe URL aliases, and manual durable scans | Current adapters are criteria-filtered and intentionally non-authoritative for closure | Add broad, complete-board inventory before enabling lifecycle closure or schedules |
 | Role matching | Resume fit scorer and job-description evidence | Fit and opportunity quality are conflated | Separate eligibility, career value, evidence confidence, and action priority |
 | Contacts | Provider-backed discovery, preserved current-employer evidence, a deterministic bench of up to five, and manual staged outreach | Category-specific searches and exact-sent learning import remain incomplete | Improve coverage without weakening verification or automatic-send boundaries |
-| Drafting | Persistent exact outreach revisions, manual-send assertions, outcomes, and the legacy drafter/evaluator loop | Practical application artifacts do not exist yet; outreach learning is not wired to exact sent versions | Add grounded resume/answer artifacts in Phase 5B, then learn only from exact used versions |
-| Queue | Postgres leases, heartbeats, retries, cancellation, `legacy_hunt`, scans, and contact discovery | Assessments and future artifact generation have no handlers | Keep Phase 5A synchronous and provider-free; add work only for explicit later generation |
-| Storage | Encrypted profile/resume/search data, radar/application/contact/outreach graphs, and immutable application-pack grounding revisions | Only the initial `pursuing` stage and creation action exist | Add governed stage/action transitions without weakening the one-current-action invariant |
-| API | Owner-scoped profile, search, scan, Today, opportunity, application, contact, outreach, and grounding-pack resources | Later application stages, action updates, and generated artifacts remain absent | Add Phase 5B artifacts, then the narrow exact-submission transition |
-| Frontend | Profile, Saved searches, Today, job review, application dossier, five-person People/outreach, and Fit and evidence review | No tailored resume, application-answer, exact-submission, or later-stage UI | Build grounded artifacts next without automating external applications |
+| Drafting | Persistent exact outreach revisions plus immutable grounded résumé, note, and answer revisions with claim provenance | Outcome learning is not wired to the exact application/outreach versions actually used | Learn only from exact recorded versions and real outcomes |
+| Queue | Postgres leases, heartbeats, retries, cancellation, `legacy_hunt`, scans, and contact discovery | Assessments have no background handlers; Phase 5 generation is intentionally local and synchronous | Add work only for explicit, bounded tasks that benefit from asynchronous execution |
+| Storage | Encrypted profile/resume/search data, radar/application/contact/outreach graphs, immutable application artifacts, and exact manual submissions | Interview, offer, rejection, and withdrawal outcomes are not represented yet | Add outcome events without weakening exact-version or one-current-action invariants |
+| API | Owner-scoped profile, search, scan, Today, opportunity, application, contact, outreach, artifact, transition, and submission resources | General action editing and later outcome transitions remain absent | Add only the outcome transitions needed for weekly funnel learning |
+| Frontend | Profile, Saved searches, Today, job review, full application preparation, exact manual-application tracking, and five-person People/outreach | Weekly review and interview/outcome workflows remain absent | Build the weekly operating loop and outcome capture next |
 | Observability | Phoenix/OpenTelemetry, migration-aware readiness, worker capabilities, and source-health projections | Weekly product-quality and funnel review remain incomplete | Add outcome and operational review without tracing private content |
 
 The existing `run_hunt` path remains available temporarily for demo compatibility. It is not the architecture for the practical product.
@@ -374,7 +374,7 @@ POST       /api/opportunities/{id}/assessment
 
 ### Applications and actions
 
-Implemented through the Phase 5A checkpoint:
+Implemented through the Phase 5C checkpoint:
 
 ```text
 GET        /api/applications
@@ -384,6 +384,11 @@ GET        /api/applications/{id}/application-pack
 POST       /api/applications/{id}/application-packs
 POST       /api/applications/{id}/application-packs/{pack_id}/revisions
 POST       /api/applications/{id}/application-packs/{pack_id}/events
+GET        /api/applications/{id}/application-artifacts
+POST       /api/applications/{id}/application-packs/{pack_id}/artifact-revisions
+POST       /api/applications/{id}/application-packs/{pack_id}/artifact-events
+GET        /api/applications/{id}/submission
+POST       /api/applications/{id}/transitions
 ```
 
 Still planned after the narrow pursuit/grounding boundary:
@@ -395,11 +400,13 @@ GET/POST   /api/action-items
 PATCH      /api/action-items/{id}
 ```
 
-The application-pack endpoints are the implemented provider-free Phase 5A
-boundary. `GET` projects the current revision plus only the latest reviewed
-revision/event; it is not a full history endpoint. Grounded artifact generation
-follows in Phase 5B, and the exact submission record plus narrow
-`ready_to_apply`/`applied` transitions follow in Phase 5C. See
+The Phase 5 endpoints form one provider-free, forward-only application boundary.
+Grounding `GET` projects the current revision plus only the latest reviewed
+revision/event; artifacts expose the current and approved exact revision, not a
+general history browser. The transition endpoint accepts only
+`pursuing -> ready_to_apply -> applied`, replaces the dated action atomically,
+and records the exact manually submitted materials and first-party destination.
+See
 [`docs/PHASE_5_APPLICATION_PACK.md`](docs/PHASE_5_APPLICATION_PACK.md).
 
 ### Contacts and outreach
@@ -728,9 +735,9 @@ Definition of done:
 
 **Goal:** reduce the time from `Pursue` to a truthful, high-quality application.
 
-**Status:** Phase 5A is implemented and verified by automated checks plus live
-desktop and mobile browser acceptance. Phase 5B artifacts and Phase 5C submission
-tracking remain planned. The detailed contract is in
+**Status:** Phases 5A–5C are implemented. The complete grounded-material and
+manual-submission path is covered by automated checks and has passed desktop
+and mobile live acceptance. The detailed contract is in
 [`docs/PHASE_5_APPLICATION_PACK.md`](docs/PHASE_5_APPLICATION_PACK.md).
 
 #### Phase 5A — Provider-free grounding workspace
@@ -784,39 +791,41 @@ Phase 5A definition of done:
 
 Backend tasks:
 
-- [ ] Generate a tailored resume variant, concise answers to exact
+- [x] Generate a tailored resume variant, concise answers to exact
       owner-entered questions, and a company-specific note from one reviewed
       grounding revision.
-- [ ] Store immutable artifact revisions, generator/input versions, exact claim
+- [x] Store immutable artifact revisions, generator/input versions, exact claim
       provenance, safe errors, and approvals.
-- [ ] Reject or omit generated and rewritten factual claims without approved
+- [x] Reject or omit generated and rewritten factual claims without approved
       evidence; require JD source spans for company/role facts.
-- [ ] Create or reuse an immutable tailored resume version whose parent is the
+- [x] Create or reuse an immutable tailored resume version whose parent is the
       pinned base resume when one artifact revision is approved.
 
 Frontend tasks:
 
-- [ ] Show the exact base-versus-tailored resume diff and claim source links.
-- [ ] Let the owner edit, reject, approve, copy, and recover immutable artifact
-      revisions without silently overwriting an approved version.
-- [ ] Keep a short manual-application checklist visible; nothing submits or
+- [x] Show the exact base-versus-tailored resume diff and claim source links.
+- [x] Let the owner revise grounded inputs, reject, approve, copy, and recover
+      immutable artifact revisions without silently overwriting an approved
+      version.
+- [x] Keep a short manual-application checklist visible; nothing submits or
       fills an external form automatically.
 
 #### Phase 5C — Exact submission record and narrow stages
 
 Backend tasks:
 
-- [ ] Add only the `ready_to_apply` and `applied` transitions needed by this
+- [x] Add only the `ready_to_apply` and `applied` transitions needed by this
       checkpoint, with compatible active contact/outreach rules.
-- [ ] Atomically record the exact approved pack revision, immutable tailored
+- [x] Atomically record the exact approved pack revision, immutable tailored
       resume version, first-party destination, owner-local applied date, action
       change, and immutable activity event.
 
 Frontend tasks:
 
-- [ ] Require explicit review of the selected pack/resume before **Mark
-      applied** and show the exact recorded submission afterward.
-- [ ] Keep the saved grounding projection readable for closed postings and
+- [x] Require explicit review of the selected pack/resume before **Mark
+      ready**, require a separate manual-submission assertion before **Record
+      application**, and show the exact recorded submission afterward.
+- [x] Keep the saved grounding projection readable for closed postings and
       never imply that the system submitted the application.
 
 Full Slice 5 definition of done:
@@ -1009,15 +1018,14 @@ durable radar and pursuit invariant:
 > action and one immutable creation activity.
 
 The radar, Phase 3A pursuit boundary, verified five-person contact bench,
-manual outreach workspace, and provider-free Phase 5A grounding review are now
-implemented. The next checkpoint is separate and remains locked:
+manual outreach workspace, and provider-free Phase 5 application workflow are
+now implemented. The completed checkpoint is:
 
-> Phase 5B turns one explicitly reviewed grounding revision into editable
-> application artifacts whose factual claims remain tied to approved evidence
-> or exact pinned-source spans.
+> One explicitly reviewed grounding revision produces immutable application
+> materials whose claims remain tied to approved evidence or exact pinned-source
+> spans, and a manual application records the exact approved versions used.
 
-Phase 5A already keeps requirements, evidence snapshots, immutable revisions,
-and exact review events attached to the durable application ID without making
-provider/model calls. Phase 5B must build on that boundary rather than on
-disposable run output. The contract is documented in
+The next checkpoint is Slice 6: capture real application outcomes and turn the
+immutable application/outreach history into a trustworthy weekly operating
+review. The completed Phase 5 contract is documented in
 [`docs/PHASE_5_APPLICATION_PACK.md`](docs/PHASE_5_APPLICATION_PACK.md).

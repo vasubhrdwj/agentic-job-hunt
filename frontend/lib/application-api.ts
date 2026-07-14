@@ -20,6 +20,11 @@ import type {
   OutreachEventCreate,
   OutreachMessageCreate,
 } from "./outreach-types";
+import type {
+  ApplicationSubmissionResponse,
+  ApplicationTransitionCreate,
+  ApplicationTransitionResponse,
+} from "./application-submission-types";
 import { WorkspaceApiError } from "./workspace-api";
 
 async function responseError(response: Response): Promise<WorkspaceApiError> {
@@ -101,6 +106,40 @@ export async function getApplicationActivity(
     await fetch(
       `/api/applications/${encodeURIComponent(id)}/activity`,
       { cache: "no-store" },
+    ),
+  );
+}
+
+export async function getApplicationSubmission(
+  applicationId: string,
+): Promise<ApplicationSubmissionResponse> {
+  return json<ApplicationSubmissionResponse>(
+    await fetch(
+      `/api/applications/${encodeURIComponent(applicationId)}/submission`,
+      { cache: "no-store", credentials: "same-origin" },
+    ),
+  );
+}
+
+export async function transitionApplication(
+  applicationId: string,
+  applicationVersion: number,
+  idempotencyKey: string,
+  payload: ApplicationTransitionCreate,
+): Promise<ApplicationTransitionResponse> {
+  return json<ApplicationTransitionResponse>(
+    await fetch(
+      `/api/applications/${encodeURIComponent(applicationId)}/transitions`,
+      {
+        method: "POST",
+        credentials: "same-origin",
+        headers: {
+          "Content-Type": "application/json",
+          "If-Match": `"${applicationVersion}"`,
+          "Idempotency-Key": idempotencyKey,
+        },
+        body: JSON.stringify(payload),
+      },
     ),
   );
 }

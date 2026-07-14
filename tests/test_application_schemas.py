@@ -145,6 +145,34 @@ def test_pursuing_application_requires_its_own_open_current_action() -> None:
 
 
 @pytest.mark.parametrize(
+    ("stage", "kind"),
+    [
+        ("pursuing", "review_and_prepare_application"),
+        ("ready_to_apply", "submit_application"),
+        ("applied", "follow_up_application"),
+    ],
+)
+def test_application_stage_requires_its_matching_current_action_kind(
+    stage: str,
+    kind: str,
+) -> None:
+    application = _application(stage=stage, current_action=_action(kind=kind))
+
+    assert application.current_action.kind.value == kind
+    with pytest.raises(ValidationError, match="current_action"):
+        _application(
+            stage=stage,
+            current_action=_action(
+                kind=(
+                    "submit_application"
+                    if kind != "submit_application"
+                    else "follow_up_application"
+                )
+            ),
+        )
+
+
+@pytest.mark.parametrize(
     "updates",
     [
         {"sequence_number": 2},

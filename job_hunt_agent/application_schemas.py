@@ -77,10 +77,17 @@ class ContractModel(BaseModel):
 
 class ApplicationStage(str, Enum):
     pursuing = "pursuing"
+    ready_to_apply = "ready_to_apply"
+    applied = "applied"
+
+
+ACTIVE_APPLICATION_STAGE_VALUES = frozenset(stage.value for stage in ApplicationStage)
 
 
 class ActionItemKind(str, Enum):
     review_and_prepare_application = "review_and_prepare_application"
+    submit_application = "submit_application"
+    follow_up_application = "follow_up_application"
 
 
 class ActionItemStatus(str, Enum):
@@ -91,6 +98,8 @@ class ActionItemStatus(str, Enum):
 
 class ApplicationActivityEventType(str, Enum):
     application_created = "application_created"
+    application_ready_to_apply = "application_ready_to_apply"
+    application_applied = "application_applied"
 
 
 class ApplicationPostingState(str, Enum):
@@ -153,19 +162,51 @@ class ApplicationActivityEventResponse(ContractModel):
     from_stage: ApplicationStage | None = None
     to_stage: ApplicationStage | None = None
     action_item_id: OpaqueId | None = None
+    previous_action_item_id: OpaqueId | None = None
+    submission_id: OpaqueId | None = None
     occurred_at: UTCDateTime
 
     @model_validator(mode="after")
-    def creation_event_is_immutable_and_complete(self) -> Self:
-        if (
-            self.sequence_number != 1
-            or self.from_stage is not None
-            or self.to_stage is not ApplicationStage.pursuing
+    def event_shape_is_immutable_and_complete(self) -> Self:
+        if self.event_type is ApplicationActivityEventType.application_created:
+            if (
+                self.sequence_number != 1
+                or self.from_stage is not None
+                or self.to_stage is not ApplicationStage.pursuing
+                or self.action_item_id is None
+                or self.previous_action_item_id is not None
+                or self.submission_id is not None
+            ):
+                raise ValueError(
+                    "application_created must be the first event, enter pursuing, "
+                    "name its initial action, and have no submission"
+                )
+        elif self.event_type is ApplicationActivityEventType.application_ready_to_apply:
+            if (
+                self.sequence_number != 2
+                or self.from_stage is not ApplicationStage.pursuing
+                or self.to_stage is not ApplicationStage.ready_to_apply
+                or self.action_item_id is None
+                or self.previous_action_item_id is None
+                or self.previous_action_item_id == self.action_item_id
+                or self.submission_id is not None
+            ):
+                raise ValueError(
+                    "application_ready_to_apply must replace the pursuing action "
+                    "without creating a submission"
+                )
+        elif (
+            self.sequence_number != 3
+            or self.from_stage is not ApplicationStage.ready_to_apply
+            or self.to_stage is not ApplicationStage.applied
             or self.action_item_id is None
+            or self.previous_action_item_id is None
+            or self.previous_action_item_id == self.action_item_id
+            or self.submission_id is None
         ):
             raise ValueError(
-                "application_created must be the first event, enter pursuing, "
-                "and name its initial action"
+                "application_applied must replace the submit action and name "
+                "the exact submission"
             )
         return self
 
@@ -182,13 +223,23 @@ class ApplicationSummary(ContractModel):
     updated_at: UTCDateTime
 
     @model_validator(mode="after")
-    def pursuing_application_has_an_open_action(self) -> Self:
+    def active_application_has_an_open_action(self) -> Self:
         if self.updated_at < self.created_at:
             raise ValueError("updated_at cannot precede created_at")
         if self.current_action.application_id != self.id:
             raise ValueError("current_action must belong to the application")
         if self.current_action.status is not ActionItemStatus.open:
-            raise ValueError("a pursuing application requires one open current_action")
+            raise ValueError("an active application requires one open current_action")
+        expected_kind = {
+            ApplicationStage.pursuing: ActionItemKind.review_and_prepare_application,
+            ApplicationStage.ready_to_apply: ActionItemKind.submit_application,
+            ApplicationStage.applied: ActionItemKind.follow_up_application,
+        }[self.stage]
+        if self.current_action.kind is not expected_kind:
+            raise ValueError(
+                f"{self.stage.value} applications require a {expected_kind.value} "
+                "current_action"
+            )
         return self
 
 
@@ -279,6 +330,7 @@ __all__ = [
     "ActionItemStatus",
     "ApplicationActivityEventResponse",
     "ApplicationActivityEventType",
+    "ACTIVE_APPLICATION_STAGE_VALUES",
     "ApplicationActivityListResponse",
     "ApplicationDetailResponse",
     "ApplicationListResponse",

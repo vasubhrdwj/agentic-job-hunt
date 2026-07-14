@@ -160,6 +160,73 @@ def _count(session, model: type) -> int:
     return int(session.scalar(select(func.count()).select_from(model)) or 0)
 
 
+@pytest.mark.parametrize(
+    ("stage", "application_version"),
+    [("ready_to_apply", 2), ("applied", 3)],
+)
+def test_contact_search_remains_available_in_later_active_stages(
+    contact_search_db: Database,
+    stage: str,
+    application_version: int,
+) -> None:
+    with contact_search_db.session() as session:
+        application = session.get(Application, "application-a")
+        assert application is not None
+        application.stage = stage
+        application.version = application_version
+
+    with contact_search_db.session() as session:
+        result = create_contact_search(
+            session,
+            owner_id="owner-a",
+            application_id="application-a",
+            expected_application_version=application_version,
+            idempotency_key=f"search-while-{stage}",
+            now=NOW,
+        )
+
+        assert result is not None and result.created is True
+        assert result.plan.status == "queued"
+        assert result.plan.target_count == 5
+        assert _count(session, ContactPlan) == 1
+        assert _count(session, BackgroundJob) == 1
+
+
+@pytest.mark.parametrize(
+    ("stage", "application_version"),
+    [("ready_to_apply", 2), ("applied", 3)],
+)
+def test_later_active_stages_still_reject_search_for_a_closed_posting(
+    contact_search_db: Database,
+    stage: str,
+    application_version: int,
+) -> None:
+    with contact_search_db.session() as session:
+        application = session.get(Application, "application-a")
+        posting = session.get(JobPosting, "posting-a")
+        assert application is not None and posting is not None
+        application.stage = stage
+        application.version = application_version
+        posting.lifecycle_state = "closed"
+        posting.closure_reason = "explicit"
+        posting.closed_at = NOW
+
+    with pytest.raises(ResourceConflict, match="closed postings"):
+        with contact_search_db.session() as session:
+            create_contact_search(
+                session,
+                owner_id="owner-a",
+                application_id="application-a",
+                expected_application_version=application_version,
+                idempotency_key=f"closed-search-while-{stage}",
+                now=NOW,
+            )
+
+    with contact_search_db.session() as session:
+        assert _count(session, ContactPlan) == 0
+        assert _count(session, BackgroundJob) == 0
+
+
 def test_contact_search_is_queued_once_and_all_active_retries_reuse_it(
     contact_search_db: Database,
 ) -> None:

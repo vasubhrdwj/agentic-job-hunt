@@ -4,14 +4,19 @@ from __future__ import annotations
 
 from typing import Protocol
 
+from .application_artifact_workspace import ApplicationArtifactWorkspaceStore
+from .application_pack_workspace import ApplicationPackWorkspaceStore
 from .application_schemas import (
     ApplicationActivityListResponse,
     ApplicationDetailResponse,
     ApplicationListResponse,
     CursorToken,
 )
-from .application_artifact_workspace import ApplicationArtifactWorkspaceStore
-from .application_pack_workspace import ApplicationPackWorkspaceStore
+from .application_submission_schemas import (
+    ApplicationSubmissionProjection,
+    ApplicationTransitionCreate,
+    ApplicationTransitionResponse,
+)
 from .contact_workspace import ContactWorkspaceStore
 from .outreach_workspace import OutreachWorkspaceStore
 
@@ -46,6 +51,23 @@ class ApplicationWorkspaceStore(
         owner_id: str,
         application_id: str,
     ) -> ApplicationActivityListResponse | None: ...
+
+    def get_application_submission(
+        self,
+        *,
+        owner_id: str,
+        application_id: str,
+    ) -> ApplicationSubmissionProjection | None: ...
+
+    def transition_application(
+        self,
+        *,
+        owner_id: str,
+        application_id: str,
+        payload: ApplicationTransitionCreate,
+        expected_application_version: int,
+        idempotency_key: str,
+    ) -> ApplicationTransitionResponse | None: ...
 
 
 __all__ = ["ApplicationWorkspaceStore"]

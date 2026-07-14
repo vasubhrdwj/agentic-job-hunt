@@ -32,8 +32,8 @@ first practical application checkpoint is documented in
 [`docs/PHASE_3_APPLICATION_PIPELINE.md`](docs/PHASE_3_APPLICATION_PIPELINE.md).
 The verified-contact bench and manual outreach workflow are documented in
 [`docs/PHASE_4_CONTACT_BENCH.md`](docs/PHASE_4_CONTACT_BENCH.md). The delivered
-provider-free requirement grounding workspace and the still-planned artifact
-and submission checkpoints are documented in
+provider-free grounding, application-material, and exact manual-submission
+checkpoints are documented in
 [`docs/PHASE_5_APPLICATION_PACK.md`](docs/PHASE_5_APPLICATION_PACK.md).
 
 The delivered foundation includes migrated Postgres models, private owner
@@ -55,10 +55,10 @@ or calls a model merely because the page was opened.
 
 Phase 3A adds an atomic **Pursue** decision. It creates exactly one application,
 one open dated next action, and one immutable creation activity, then exposes a
-database-only Applications list and dossier. The only current application stage
-is `pursuing`; later stage transitions and action updates remain explicit
-follow-up work. Phase 5A now adds the first application-pack checkpoint without
-expanding that stage boundary.
+database-only Applications list and dossier. Phase 5 extends that narrow state
+machine to `pursuing -> ready_to_apply -> applied`; every transition completes
+the prior task, creates exactly one new dated task, and appends an immutable
+activity event.
 
 Phase 4A–4D2 add the durable verified-contact bench, its provider-backed worker,
 the practical dossier experience, and a safe manual-outreach workspace. Each
@@ -79,18 +79,18 @@ clipboard-first copy tracking, separate send confirmation, follow-up timing,
 outcome logging, and pause/resume/stop controls while preserving unsaved text
 through refresh and ambiguous network failures.
 
-Phase 5A adds a provider-free **Fit and evidence review** before the People
-workspace. One pack is pinned to the application's pursued posting version and
-one selected immutable resume. It deterministically extracts only `required`
-and `preferred` statements as exact job-description spans, suggests currently
-approved achievements, preserves selected evidence snapshots in encrypted
-immutable revisions, and records explicit review events. If the pursued posting
-has no full description, the owner may paste the exact JD once when starting
-the pack; an owner paste cannot replace a persisted description. The dossier
-shows the current revision and the latest reviewed revision, not a full review
-history. Reads and mutations make no model or external-provider calls. Tailored
-resume/answer artifacts and the exact applied transition remain Phase 5B and
-5C work.
+Phase 5 adds a provider-free application workflow before the People workspace.
+The **Fit and evidence review** pins one immutable resume and the pursued posting
+version, extracts exact `required` and `preferred` JD spans, maps only approved
+achievement evidence, and records explicit immutable review events.
+**Application materials** then creates an exact tailored-resume diff, company
+note, and answers to owner-entered questions with claim-level evidence or
+pinned-JD provenance. Unanswerable questions stay visibly blocked; approving
+one exact revision creates an immutable non-base resume version. Finally, the
+manual-application checklist records `ready_to_apply` and `applied` only against
+those exact reviewed materials, a persisted verified first-party destination,
+the owner-local applied date, and the next follow-up. Nothing fills or submits
+an employer form, and reads never generate or call a model/provider.
 
 The separate **Legacy hunt** remains available when you explicitly want the
 current end-to-end flow with resume matching, at least five appropriate

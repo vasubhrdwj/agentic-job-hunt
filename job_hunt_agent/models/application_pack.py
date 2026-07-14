@@ -192,6 +192,14 @@ class ApplicationPackEvent(Base):
         ),
         UniqueConstraint(
             "owner_id",
+            "application_id",
+            "application_pack_id",
+            "revision_id",
+            "id",
+            name="uq_application_pack_events_submission_ref",
+        ),
+        UniqueConstraint(
+            "owner_id",
             "application_pack_id",
             "idempotency_key_hash",
             name="uq_application_pack_events_owner_mutation",

@@ -98,7 +98,7 @@ export function ApplicationsWorkspace({ ownerLocalDate }: { ownerLocalDate: stri
         <div className="rounded-xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900/70">
           <span className="text-3xl font-semibold">{response.total}</span>
           <span className="mt-1 block text-sm text-zinc-500">
-            pursued role{response.total === 1 ? "" : "s"}
+            tracked application{response.total === 1 ? "" : "s"}
           </span>
         </div>
         <div className="rounded-xl border border-indigo-200 bg-indigo-50 p-5 dark:border-indigo-900 dark:bg-indigo-950/25">
@@ -210,9 +210,22 @@ export function ApplicationsWorkspace({ ownerLocalDate }: { ownerLocalDate: stri
 }
 
 export function ApplicationStageBadge({ stage }: { stage: ApplicationStage }) {
+  const labels: Record<ApplicationStage, string> = {
+    pursuing: "Pursuing",
+    ready_to_apply: "Ready to apply",
+    applied: "Applied",
+  };
+  const tones: Record<ApplicationStage, string> = {
+    pursuing:
+      "bg-indigo-50 text-indigo-800 dark:bg-indigo-950 dark:text-indigo-200",
+    ready_to_apply:
+      "bg-amber-100 text-amber-900 dark:bg-amber-950 dark:text-amber-200",
+    applied:
+      "bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-200",
+  };
   return (
-    <span className="rounded-full bg-indigo-50 px-2.5 py-1 text-xs font-semibold text-indigo-800 dark:bg-indigo-950 dark:text-indigo-200">
-      {stage === "pursuing" ? "Pursuing" : stage}
+    <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${tones[stage]}`}>
+      {labels[stage]}
     </span>
   );
 }

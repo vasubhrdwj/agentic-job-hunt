@@ -28,6 +28,7 @@ import type {
   AchievementEvidence,
   ResumeVersionSummary,
 } from "@/lib/workspace-types";
+import type { ApplicationStage } from "@/lib/application-types";
 import {
   errorText,
   FormField,
@@ -114,9 +115,11 @@ const BLOCKER_COPY: Record<ApplicationPackBlocker, string> = {
 export function ApplicationPack({
   applicationId,
   applicationVersion,
+  applicationStage,
 }: {
   applicationId: string;
   applicationVersion: number;
+  applicationStage: ApplicationStage;
 }) {
   const [projection, setProjection] = useState<ApplicationPackResponse | null>(null);
   const [resumes, setResumes] = useState<ResumeVersionSummary[]>([]);
@@ -609,15 +612,16 @@ export function ApplicationPack({
     );
   }
 
-  const controlsLocked = Boolean(busy || unresolvedIntent);
+  const stageLocked = applicationStage !== "pursuing";
+  const controlsLocked = Boolean(busy || unresolvedIntent || stageLocked);
   const startActionLocked = Boolean(
-    busy || (unresolvedIntent && unresolvedIntent !== "start"),
+    stageLocked || busy || (unresolvedIntent && unresolvedIntent !== "start"),
   );
   const saveActionLocked = Boolean(
-    busy || (unresolvedIntent && unresolvedIntent !== "save"),
+    stageLocked || busy || (unresolvedIntent && unresolvedIntent !== "save"),
   );
   const reviewActionLocked = Boolean(
-    busy || (unresolvedIntent && unresolvedIntent !== "review"),
+    stageLocked || busy || (unresolvedIntent && unresolvedIntent !== "review"),
   );
   const ownerDescriptionRequired = projection.blockers.includes(
     "owner_job_description_required",
@@ -625,7 +629,7 @@ export function ApplicationPack({
   const postingClosed = projection.blockers.includes("posting_closed");
   const selectedResume = resumes.find((resume) => resume.id === selectedResumeId) ?? null;
   const revision = projection.current_revision;
-  const readOnlyReviewed = projection.status === "reviewed" && !editingReviewed;
+  const readOnlyReviewed = stageLocked || (projection.status === "reviewed" && !editingReviewed);
   const payloadReady = buildRevisionPayload(projection, drafts) !== null;
   const everyRequirementReviewed = Boolean(
     revision &&
@@ -646,6 +650,7 @@ export function ApplicationPack({
     everyRequirementReviewed &&
     !projection.blockers.includes("requirements_need_review") &&
     !projection.blockers.includes("mapped_evidence_changed") &&
+    !stageLocked &&
     !postingClosed
   );
 
@@ -691,6 +696,11 @@ export function ApplicationPack({
         {unresolvedIntent ? (
           <StatusMessage kind="info">
             The {unresolvedIntent} result is still unconfirmed. Controls are locked so retrying preserves the exact payload and receipt.
+          </StatusMessage>
+        ) : null}
+        {stageLocked ? (
+          <StatusMessage kind="info">
+            This fit review is read-only because the application is {applicationStage === "applied" ? "already applied" : "ready to apply"}. Its exact evidence record stays frozen.
           </StatusMessage>
         ) : null}
 
@@ -807,7 +817,7 @@ export function ApplicationPack({
                       Required and preferred statements are exact source spans. A genuine gap is a valid review outcome.
                     </p>
                   </div>
-                  {projection.status === "reviewed" && !editingReviewed ? (
+                  {projection.status === "reviewed" && !editingReviewed && !stageLocked ? (
                     <button
                       type="button"
                       disabled={controlsLocked || postingClosed}
@@ -918,7 +928,7 @@ export function ApplicationPack({
               </div>
             ) : (
               <StatusMessage kind="success">
-                The requirement review is complete and immutable. Phase 5B will build truthful resume and answer drafts from this reviewed evidence; no application materials have been generated yet.
+                The requirement review is complete and immutable. Use the Application materials section below to create or review grounded resume and answer drafts.
               </StatusMessage>
             )}
           </div>

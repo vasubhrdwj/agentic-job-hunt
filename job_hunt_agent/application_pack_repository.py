@@ -165,6 +165,7 @@ def create_application_pack(
         expected=expected_application_version,
         actual=application.version,
     )
+    _require_editable_application(application)
     if _owned_pack(session, owner_id, application.id, for_update=True) is not None:
         raise ResourceConflict("an application pack already exists for this application")
     _require_open_posting(session, application)
@@ -301,6 +302,7 @@ def create_application_pack_revision(
         expected=expected_pack_version,
         actual=pack.version,
     )
+    _require_editable_application(application)
     _require_open_posting(session, application)
     parent = _latest_revision(session, pack, for_update=True)
     if parent is None:
@@ -402,6 +404,7 @@ def record_application_pack_event(
         expected=expected_pack_version,
         actual=pack.version,
     )
+    _require_editable_application(application)
     _require_open_posting(session, application)
     revision = _latest_revision(session, pack, for_update=True)
     if revision is None or revision.id != payload.revision_id:
@@ -1143,6 +1146,13 @@ def _require_open_posting(session: Session, application: Application) -> None:
         raise ApplicationPackRepositoryError("application posting is unavailable")
     if posting.lifecycle_state != "open":
         raise ResourceConflict("closed postings cannot mutate application packs")
+
+
+def _require_editable_application(application: Application) -> None:
+    if application.stage != "pursuing":
+        raise ResourceConflict(
+            "application packs are frozen after the application is ready to apply"
+        )
 
 
 def _content_hash(owner_id: str, payload: dict[str, object]) -> str:

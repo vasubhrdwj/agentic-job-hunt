@@ -1,13 +1,13 @@
 # Phase 5 — Grounded Application Pack
 
-**Status:** Phase 5A is implemented and covered by automated model, schema,
-repository, route, migration, frontend build, and live desktop/mobile browser
-checks. Phase 5B grounded artifacts and Phase 5C
-exact submission tracking are not implemented.
+**Status:** Phases 5A–5C are implemented. Model, schema, repository, route,
+migration, generated-contract, frontend, and full-suite checks cover the
+provider-free workflow; live desktop/mobile acceptance has passed.
 
 ## Outcome
 
-Phase 5A adds a truthful fit-and-evidence review to each pursued application:
+Phase 5 adds a truthful preparation and manual-application path to each pursued
+role:
 
 ```text
 pursued application
@@ -17,12 +17,18 @@ pursued application
   -> review each statement against currently approved achievements
   -> save a complete immutable review revision
   -> explicitly mark that exact current revision reviewed
+  -> create a deterministic tailored resume, company note, and exact answers
+  -> inspect the exact diff and claim-level source provenance
+  -> approve one immutable artifact revision and tailored resume version
+  -> mark those exact materials ready to apply
+  -> submit manually at a persisted verified first-party destination
+  -> record the exact submission, applied date, and follow-up action
 ```
 
 An unsupported requirement is a valid, visible outcome. It is not converted
-into evidence and it does not authorize a fabricated claim. Phase 5A prepares
-the grounding boundary only; it does not generate application materials or
-submit an application.
+into evidence and it does not authorize a fabricated claim. Questions that
+cannot be answered from approved evidence stay `needs_owner_input` and block
+approval. The system never opens, fills, or submits an employer form.
 
 ## Delivered Phase 5A workflow
 
@@ -154,8 +160,24 @@ Append-only explicit review confirmations:
 Only one `reviewed` event is allowed for a given revision, while later revisions
 may each receive their own reviewed event.
 
-Downgrading the migration removes `application_pack.%` owner mutation receipts
-before dropping these three tables.
+### `application_artifact_revisions` and `application_artifact_events`
+
+Artifact revisions append encrypted complete material payloads, input/generator
+versions, revision/parent edges, owner-bound hashes, and exact grounding IDs.
+Events append explicit `approved` or `rejected` decisions; an approval also
+names the immutable tailored resume created for that exact revision. Composite
+owner/application/pack keys prevent cross-aggregate references.
+
+### `application_submissions` and transition activity
+
+There is at most one submission per owner/application. It stores only exact IDs
+for the pack revision/review, artifact revision/approval, tailored resume,
+canonical persisted destination, owner-local applied date, `manual` method, and
+recorded timestamp. Application activity events preserve the previous and new
+action IDs; the applied event also references the exact submission.
+
+Downgrades remove the relevant mutation receipts before dropping each phase's
+tables or restoring the earlier stage/action constraints.
 
 ## Implemented API
 
@@ -164,6 +186,11 @@ GET  /api/applications/{application_id}/application-pack
 POST /api/applications/{application_id}/application-packs
 POST /api/applications/{application_id}/application-packs/{pack_id}/revisions
 POST /api/applications/{application_id}/application-packs/{pack_id}/events
+GET  /api/applications/{application_id}/application-artifacts
+POST /api/applications/{application_id}/application-packs/{pack_id}/artifact-revisions
+POST /api/applications/{application_id}/application-packs/{pack_id}/artifact-events
+GET  /api/applications/{application_id}/submission
+POST /api/applications/{application_id}/transitions
 ```
 
 `GET /application-pack` is an authenticated, owner-scoped, private `no-store`,
@@ -182,8 +209,20 @@ complete reviewed requirement set. It appends one immutable `edited` revision.
 and `confirm_requirements_reviewed: true`. It appends the review event and
 advances the pack version.
 
+`POST /artifact-revisions` accepts selected approved evidence plus exact
+owner-entered application questions. It deterministically appends a complete
+encrypted material revision with an exact line diff and claim provenance.
+`POST /artifact-events` explicitly approves or rejects that exact revision;
+approval atomically creates or reuses its immutable tailored resume version.
+
+`GET /submission` is a database-only projection of the saved first-party apply
+destinations and any immutable manual-submission receipt. `POST /transitions`
+accepts only `ready_to_apply` or `applied`, exact reviewed material IDs, an
+explicit confirmation, and the next dated action. Recording `applied` also
+requires the owner-local applied date and exact persisted destination URL.
+
 Every mutation is origin/CSRF protected, owner-scoped, `If-Match` fenced, and
-idempotency-keyed. Accepted responses return the reconciled current projection.
+idempotency-keyed. Accepted responses return the reconciled saved projection.
 
 ## Safety invariants
 
@@ -200,14 +239,27 @@ idempotency-keyed. Accepted responses return the reconciled current projection.
 - Revisions and review events are append-only and exact-revision scoped.
 - Editing after review returns the projection to `draft`; the latest prior
   reviewed revision remains identifiable without exposing full history.
+- Artifact revisions and approve/reject events are append-only; approval names
+  one exact revision and one immutable child resume.
+- Generated claims must reproduce exact source spans from approved evidence,
+  the pinned JD, or persisted posting fields. Missing support stays missing.
+- Fit and material mutations are accepted only while `pursuing` and freeze after
+  readiness.
+- Application transitions are forward-only, exact-material fenced, and replace
+  one open action with exactly one next action atomically.
+- An `applied` application has exactly one immutable `manual` submission record,
+  and earlier stages have none.
+- A submission destination must be one of the persisted first-party apply URLs
+  from the pursued posting version.
 - The selected resume cannot be deleted while referenced by a pack.
 - Private JD/evidence snapshots are encrypted and excluded from receipt
   payloads and validation-error echoes.
 - Reads make no model, provider, browser, contact-search, or background-job
   call. Phase 5A mutations are also provider/model-free.
 - Closed postings remain readable and reject mutations.
-- Nothing generates claims, fills a form, sends a message, or submits an
-  application.
+- Nothing fills a form, sends a message, or submits an application. Phase 5B
+  generation occurs only after an explicit mutation and remains local and
+  deterministic.
 
 ## Phase 5A definition of done
 
@@ -239,40 +291,91 @@ idempotency-keyed. Accepted responses return the reconciled current projection.
   revision reviewed on desktop and mobile, with no console errors or lost
   unsaved choices.
 
-## Planned Phase 5B — Grounded artifacts
+## Delivered Phase 5B — Grounded artifacts
 
-Phase 5B will use one reviewed grounding revision to create a tailored resume,
-exact base-versus-tailored diff, company-specific note, and concise answers to
-exact owner-entered questions. Any generated or rewritten candidate claim must
-cite approved evidence from that reviewed revision; company/role facts must
-cite the pinned JD. Owner edits must create immutable artifact revisions rather
-than overwrite reviewed material.
+One explicit request uses the current reviewed grounding revision to create a
+deterministic local material set. The owner selects up to five approved evidence
+statements and may add exact application questions with character limits and
+per-question evidence. The server appends one encrypted immutable revision:
 
-Provider disclosure and consent are required if a future implementation sends
-private input to an external model. No read may trigger generation.
+- a tailored resume that preserves the base resume and prepends only sourced
+  relevant highlights;
+- an exact reconstructable line diff between base and tailored text;
+- a company/role note sourced from pinned posting fields and JD spans;
+- concise answers whose candidate claims cite approved evidence; and
+- claim-level source ranges for every generated evidence, JD, or posting fact.
 
-## Planned Phase 5C — Exact submission record
+An unanswered question remains `needs_owner_input` and blocks approval. Reads
+never generate. Creating a later revision never overwrites an earlier one, and
+rejecting an exact revision requires changed inputs before another approval.
+Approving atomically creates or reuses an immutable non-base resume version
+whose parent is the pack's pinned base resume.
 
-Phase 5C will add the narrow `ready_to_apply` and `applied` transitions and
-atomically record the exact reviewed artifact/resume version, first-party
-destination, owner-local applied date, next-action change, and immutable
-activity event. It will record a manual submission; it will not submit for the
-owner.
+Phase 5B makes no model or provider call. If a future generator sends private
+input to an external service, it requires a separate disclosed consent and
+data-boundary design.
 
-## Explicit Phase 5A exclusions
+## Delivered Phase 5C — Exact manual submission
 
-Phase 5A does **not** include:
+The application state machine is forward-only:
 
-- tailored resume, answer, note, claim generation, or an exact resume diff;
+```text
+pursuing
+  -> ready_to_apply   # reviewed exact materials; next action is submit
+  -> applied          # owner asserts manual submission; next action is follow up
+```
+
+Readiness validates the current reviewed grounding event, approved artifact
+event, immutable tailored resume, open posting, and at least one persisted
+verified first-party destination. It completes the preparation action, creates
+one dated submit action, and appends activity sequence 2. Grounding and material
+mutations then become read-only; People and manual outreach remain available.
+
+The applied transition requires a separate literal manual-submission
+confirmation, one exact saved destination, the owner-local applied date, and a
+follow-up due date. In one transaction it creates the immutable submission row,
+completes the submit action, creates one dated follow-up action, advances the
+application, and appends activity sequence 3 referencing that submission.
+Closing a posting after readiness does not erase the saved pack or prevent the
+owner from accurately recording an application submitted on or before closure.
+
+The receipt names the exact 5A revision/review event, 5B revision/approval
+event, tailored resume version, destination, and dates used. The system records
+the owner's assertion; it does not claim to have submitted anything itself.
+
+## Phase 5B/5C definition of done
+
+- [x] Deterministic local generation produces immutable resume, note, and answer
+  revisions without provider/model calls.
+- [x] Every emitted candidate claim cites exact approved evidence, and every
+  company/role fact cites a pinned posting field or exact JD span.
+- [x] Exact line diffs reconstruct both base and tailored resume content.
+- [x] Unanswered questions, unchanged resumes, stale grounding, rejected current
+  revisions, and closed postings block approval visibly.
+- [x] Approval creates or reuses one immutable non-base child resume and pins it
+  to the exact artifact event.
+- [x] Only `pursuing -> ready_to_apply -> applied` is accepted, with one open
+  dated action and one immutable event at each stage.
+- [x] The applied receipt records exact reviewed materials, a verified persisted
+  destination, owner-local applied date, and manual method atomically.
+- [x] Fit review and materials freeze after readiness while People/outreach stay
+  usable throughout all three stages.
+- [x] No read generates, no form is filled, and no application is submitted
+  automatically.
+
+## Explicit Phase 5 exclusions
+
+Phase 5 does **not** include:
+
 - a full revision/review-event history API or history browser;
 - pack reset, deletion, repinning, or switching the selected resume;
 - overriding a persisted JD with owner-supplied text;
 - an `uncertain` requirement importance;
-- model/provider processing or automatic resume-to-evidence parsing;
+- model/provider processing, automatic resume-to-evidence parsing, or freeform
+  AI rewriting;
 - PDF/DOCX rendering or export;
 - application-form scraping, browser automation, form filling, or submission;
 - live company research beyond the pinned JD;
 - a synthetic ATS score or LLM truth verdict;
-- application stage changes or an applied record;
 - bulk pack creation; or
 - using contact identities, outreach content, or replies as candidate evidence.

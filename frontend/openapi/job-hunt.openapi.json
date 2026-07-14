@@ -278,7 +278,9 @@
       },
       "ActionItemKind": {
         "enum": [
-          "review_and_prepare_application"
+          "review_and_prepare_application",
+          "submit_application",
+          "follow_up_application"
         ],
         "title": "ActionItemKind",
         "type": "string"
@@ -419,10 +421,34 @@
             "title": "Occurred At",
             "type": "string"
           },
+          "previous_action_item_id": {
+            "anyOf": [
+              {
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Previous Action Item Id"
+          },
           "sequence_number": {
             "minimum": 1.0,
             "title": "Sequence Number",
             "type": "integer"
+          },
+          "submission_id": {
+            "anyOf": [
+              {
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Submission Id"
           },
           "to_stage": {
             "anyOf": [
@@ -447,7 +473,9 @@
       },
       "ApplicationActivityEventType": {
         "enum": [
-          "application_created"
+          "application_created",
+          "application_ready_to_apply",
+          "application_applied"
         ],
         "title": "ApplicationActivityEventType",
         "type": "string"
@@ -471,6 +499,831 @@
           }
         },
         "title": "ApplicationActivityListResponse",
+        "type": "object"
+      },
+      "ApplicationArtifactAnswer": {
+        "additionalProperties": false,
+        "properties": {
+          "claims": {
+            "items": {
+              "$ref": "#/components/schemas/ApplicationArtifactClaim"
+            },
+            "maxItems": 100,
+            "title": "Claims",
+            "type": "array"
+          },
+          "content_hash": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Content Hash",
+            "type": "string"
+          },
+          "id": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
+            "title": "Id",
+            "type": "string"
+          },
+          "question_id": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
+            "title": "Question Id",
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/ApplicationArtifactAnswerStatus"
+          },
+          "text": {
+            "maxLength": 50000,
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "text",
+          "content_hash",
+          "id",
+          "question_id",
+          "status"
+        ],
+        "title": "ApplicationArtifactAnswer",
+        "type": "object"
+      },
+      "ApplicationArtifactAnswerStatus": {
+        "enum": [
+          "answered",
+          "needs_owner_input"
+        ],
+        "title": "ApplicationArtifactAnswerStatus",
+        "type": "string"
+      },
+      "ApplicationArtifactBlocker": {
+        "enum": [
+          "application_pack_missing",
+          "grounding_review_required",
+          "posting_closed",
+          "grounded_evidence_missing",
+          "grounding_evidence_changed",
+          "questions_need_owner_input",
+          "tailored_resume_unchanged",
+          "current_revision_rejected"
+        ],
+        "title": "ApplicationArtifactBlocker",
+        "type": "string"
+      },
+      "ApplicationArtifactClaim": {
+        "additionalProperties": false,
+        "properties": {
+          "derivation": {
+            "const": "verbatim",
+            "default": "verbatim",
+            "title": "Derivation",
+            "type": "string"
+          },
+          "end": {
+            "maximum": 50000.0,
+            "minimum": 1.0,
+            "title": "End",
+            "type": "integer"
+          },
+          "id": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
+            "title": "Id",
+            "type": "string"
+          },
+          "sources": {
+            "items": {
+              "discriminator": {
+                "mapping": {
+                  "evidence_snapshot": "#/components/schemas/ApplicationArtifactEvidenceClaimSource",
+                  "job_description_span": "#/components/schemas/ApplicationArtifactJobDescriptionClaimSource",
+                  "posting_field": "#/components/schemas/ApplicationArtifactPostingFieldClaimSource"
+                },
+                "propertyName": "kind"
+              },
+              "oneOf": [
+                {
+                  "$ref": "#/components/schemas/ApplicationArtifactEvidenceClaimSource"
+                },
+                {
+                  "$ref": "#/components/schemas/ApplicationArtifactJobDescriptionClaimSource"
+                },
+                {
+                  "$ref": "#/components/schemas/ApplicationArtifactPostingFieldClaimSource"
+                }
+              ]
+            },
+            "maxItems": 5,
+            "minItems": 1,
+            "title": "Sources",
+            "type": "array"
+          },
+          "start": {
+            "maximum": 50000.0,
+            "minimum": 0.0,
+            "title": "Start",
+            "type": "integer"
+          },
+          "text": {
+            "maxLength": 2000,
+            "minLength": 1,
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "start",
+          "end",
+          "text",
+          "sources"
+        ],
+        "title": "ApplicationArtifactClaim",
+        "type": "object"
+      },
+      "ApplicationArtifactDiff": {
+        "additionalProperties": false,
+        "properties": {
+          "algorithm_version": {
+            "const": "line-diff-v1",
+            "default": "line-diff-v1",
+            "title": "Algorithm Version",
+            "type": "string"
+          },
+          "base_content_hash": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Base Content Hash",
+            "type": "string"
+          },
+          "lines": {
+            "items": {
+              "$ref": "#/components/schemas/ApplicationArtifactDiffLine"
+            },
+            "maxItems": 20000,
+            "title": "Lines",
+            "type": "array"
+          },
+          "tailored_content_hash": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Tailored Content Hash",
+            "type": "string"
+          }
+        },
+        "required": [
+          "base_content_hash",
+          "tailored_content_hash"
+        ],
+        "title": "ApplicationArtifactDiff",
+        "type": "object"
+      },
+      "ApplicationArtifactDiffLine": {
+        "additionalProperties": false,
+        "properties": {
+          "base_line_number": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Base Line Number"
+          },
+          "operation": {
+            "enum": [
+              "equal",
+              "delete",
+              "insert"
+            ],
+            "title": "Operation",
+            "type": "string"
+          },
+          "tailored_line_number": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tailored Line Number"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "operation",
+          "text"
+        ],
+        "title": "ApplicationArtifactDiffLine",
+        "type": "object"
+      },
+      "ApplicationArtifactDocument": {
+        "additionalProperties": false,
+        "properties": {
+          "claims": {
+            "items": {
+              "$ref": "#/components/schemas/ApplicationArtifactClaim"
+            },
+            "maxItems": 100,
+            "title": "Claims",
+            "type": "array"
+          },
+          "content_hash": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Content Hash",
+            "type": "string"
+          },
+          "text": {
+            "maxLength": 50000,
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "text",
+          "content_hash"
+        ],
+        "title": "ApplicationArtifactDocument",
+        "type": "object"
+      },
+      "ApplicationArtifactEventCreate": {
+        "additionalProperties": false,
+        "properties": {
+          "artifact_revision_id": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
+            "title": "Artifact Revision Id",
+            "type": "string"
+          },
+          "confirm_artifacts_reviewed": {
+            "anyOf": [
+              {
+                "const": true,
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Confirm Artifacts Reviewed"
+          },
+          "event_type": {
+            "enum": [
+              "approved",
+              "rejected"
+            ],
+            "title": "Event Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "event_type",
+          "artifact_revision_id"
+        ],
+        "title": "ApplicationArtifactEventCreate",
+        "type": "object"
+      },
+      "ApplicationArtifactEventResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "application_pack_id": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
+            "title": "Application Pack Id",
+            "type": "string"
+          },
+          "artifact_revision_id": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
+            "title": "Artifact Revision Id",
+            "type": "string"
+          },
+          "event_type": {
+            "enum": [
+              "approved",
+              "rejected"
+            ],
+            "title": "Event Type",
+            "type": "string"
+          },
+          "id": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
+            "title": "Id",
+            "type": "string"
+          },
+          "occurred_at": {
+            "format": "date-time",
+            "title": "Occurred At",
+            "type": "string"
+          },
+          "sequence_number": {
+            "minimum": 1.0,
+            "title": "Sequence Number",
+            "type": "integer"
+          },
+          "tailored_resume_version_id": {
+            "anyOf": [
+              {
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tailored Resume Version Id"
+          }
+        },
+        "required": [
+          "id",
+          "application_pack_id",
+          "artifact_revision_id",
+          "sequence_number",
+          "event_type",
+          "tailored_resume_version_id",
+          "occurred_at"
+        ],
+        "title": "ApplicationArtifactEventResponse",
+        "type": "object"
+      },
+      "ApplicationArtifactEvidenceClaimSource": {
+        "additionalProperties": false,
+        "properties": {
+          "evidence_id": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
+            "title": "Evidence Id",
+            "type": "string"
+          },
+          "evidence_version": {
+            "minimum": 1.0,
+            "title": "Evidence Version",
+            "type": "integer"
+          },
+          "kind": {
+            "const": "evidence_snapshot",
+            "default": "evidence_snapshot",
+            "title": "Kind",
+            "type": "string"
+          },
+          "quote": {
+            "maxLength": 1000,
+            "minLength": 1,
+            "title": "Quote",
+            "type": "string"
+          }
+        },
+        "required": [
+          "evidence_id",
+          "evidence_version",
+          "quote"
+        ],
+        "title": "ApplicationArtifactEvidenceClaimSource",
+        "type": "object"
+      },
+      "ApplicationArtifactJobDescriptionClaimSource": {
+        "additionalProperties": false,
+        "properties": {
+          "grounding_revision_id": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
+            "title": "Grounding Revision Id",
+            "type": "string"
+          },
+          "kind": {
+            "const": "job_description_span",
+            "default": "job_description_span",
+            "title": "Kind",
+            "type": "string"
+          },
+          "quote": {
+            "maxLength": 2000,
+            "minLength": 1,
+            "title": "Quote",
+            "type": "string"
+          },
+          "source_end": {
+            "maximum": 100000.0,
+            "minimum": 1.0,
+            "title": "Source End",
+            "type": "integer"
+          },
+          "source_start": {
+            "maximum": 100000.0,
+            "minimum": 0.0,
+            "title": "Source Start",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "grounding_revision_id",
+          "source_start",
+          "source_end",
+          "quote"
+        ],
+        "title": "ApplicationArtifactJobDescriptionClaimSource",
+        "type": "object"
+      },
+      "ApplicationArtifactPostingFieldClaimSource": {
+        "additionalProperties": false,
+        "properties": {
+          "field": {
+            "enum": [
+              "company_name",
+              "title"
+            ],
+            "title": "Field",
+            "type": "string"
+          },
+          "kind": {
+            "const": "posting_field",
+            "default": "posting_field",
+            "title": "Kind",
+            "type": "string"
+          },
+          "posting_version_id": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
+            "title": "Posting Version Id",
+            "type": "string"
+          },
+          "value": {
+            "maxLength": 300,
+            "minLength": 1,
+            "title": "Value",
+            "type": "string"
+          }
+        },
+        "required": [
+          "posting_version_id",
+          "field",
+          "value"
+        ],
+        "title": "ApplicationArtifactPostingFieldClaimSource",
+        "type": "object"
+      },
+      "ApplicationArtifactQuestion": {
+        "additionalProperties": false,
+        "properties": {
+          "character_limit": {
+            "anyOf": [
+              {
+                "maximum": 10000.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Character Limit"
+          },
+          "evidence_refs": {
+            "items": {
+              "$ref": "#/components/schemas/ApplicationPackEvidenceReference"
+            },
+            "maxItems": 3,
+            "title": "Evidence Refs",
+            "type": "array"
+          },
+          "id": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
+            "title": "Id",
+            "type": "string"
+          },
+          "text": {
+            "maxLength": 2000,
+            "minLength": 1,
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "text"
+        ],
+        "title": "ApplicationArtifactQuestion",
+        "type": "object"
+      },
+      "ApplicationArtifactRevisionCreate": {
+        "additionalProperties": false,
+        "properties": {
+          "generation_mode": {
+            "const": "deterministic",
+            "default": "deterministic",
+            "title": "Generation Mode",
+            "type": "string"
+          },
+          "grounding_revision_id": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
+            "title": "Grounding Revision Id",
+            "type": "string"
+          },
+          "operation": {
+            "const": "generate",
+            "default": "generate",
+            "title": "Operation",
+            "type": "string"
+          },
+          "parent_artifact_revision_id": {
+            "anyOf": [
+              {
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Artifact Revision Id"
+          },
+          "questions": {
+            "items": {
+              "$ref": "#/components/schemas/ApplicationArtifactQuestion"
+            },
+            "maxItems": 20,
+            "title": "Questions",
+            "type": "array"
+          },
+          "selected_evidence_refs": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/ApplicationPackEvidenceReference"
+                },
+                "maxItems": 5,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Selected Evidence Refs"
+          }
+        },
+        "required": [
+          "grounding_revision_id"
+        ],
+        "title": "ApplicationArtifactRevisionCreate",
+        "type": "object"
+      },
+      "ApplicationArtifactRevisionResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "answers": {
+            "items": {
+              "$ref": "#/components/schemas/ApplicationArtifactAnswer"
+            },
+            "maxItems": 20,
+            "title": "Answers",
+            "type": "array"
+          },
+          "application_pack_id": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
+            "title": "Application Pack Id",
+            "type": "string"
+          },
+          "company_note": {
+            "$ref": "#/components/schemas/ApplicationArtifactDocument"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "diff": {
+            "$ref": "#/components/schemas/ApplicationArtifactDiff"
+          },
+          "generator_version": {
+            "const": "application-artifacts-deterministic-v1",
+            "title": "Generator Version",
+            "type": "string"
+          },
+          "grounding_review_event_id": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
+            "title": "Grounding Review Event Id",
+            "type": "string"
+          },
+          "grounding_revision_id": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
+            "title": "Grounding Revision Id",
+            "type": "string"
+          },
+          "id": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
+            "title": "Id",
+            "type": "string"
+          },
+          "parent_artifact_revision_id": {
+            "anyOf": [
+              {
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Artifact Revision Id"
+          },
+          "questions": {
+            "items": {
+              "$ref": "#/components/schemas/ApplicationArtifactQuestion"
+            },
+            "maxItems": 20,
+            "title": "Questions",
+            "type": "array"
+          },
+          "revision_number": {
+            "minimum": 1.0,
+            "title": "Revision Number",
+            "type": "integer"
+          },
+          "selected_evidence": {
+            "items": {
+              "$ref": "#/components/schemas/ApplicationPackEvidenceSnapshot"
+            },
+            "maxItems": 5,
+            "title": "Selected Evidence",
+            "type": "array"
+          },
+          "source": {
+            "const": "deterministic",
+            "title": "Source",
+            "type": "string"
+          },
+          "tailored_resume": {
+            "$ref": "#/components/schemas/ApplicationArtifactDocument"
+          }
+        },
+        "required": [
+          "id",
+          "application_pack_id",
+          "grounding_revision_id",
+          "grounding_review_event_id",
+          "parent_artifact_revision_id",
+          "revision_number",
+          "source",
+          "generator_version",
+          "tailored_resume",
+          "company_note",
+          "diff",
+          "created_at"
+        ],
+        "title": "ApplicationArtifactRevisionResponse",
+        "type": "object"
+      },
+      "ApplicationArtifactSourceCatalog": {
+        "additionalProperties": false,
+        "properties": {
+          "evidence": {
+            "items": {
+              "$ref": "#/components/schemas/ApplicationPackEvidenceSnapshot"
+            },
+            "maxItems": 500,
+            "title": "Evidence",
+            "type": "array"
+          },
+          "reviewed_grounding_event_id": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
+            "title": "Reviewed Grounding Event Id",
+            "type": "string"
+          },
+          "reviewed_grounding_revision_id": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
+            "title": "Reviewed Grounding Revision Id",
+            "type": "string"
+          },
+          "reviewed_grounding_revision_number": {
+            "minimum": 1.0,
+            "title": "Reviewed Grounding Revision Number",
+            "type": "integer"
+          },
+          "unsupported_requirements": {
+            "items": {
+              "$ref": "#/components/schemas/ApplicationPackRequirementResponse"
+            },
+            "maxItems": 40,
+            "title": "Unsupported Requirements",
+            "type": "array"
+          }
+        },
+        "required": [
+          "reviewed_grounding_revision_id",
+          "reviewed_grounding_revision_number",
+          "reviewed_grounding_event_id"
+        ],
+        "title": "ApplicationArtifactSourceCatalog",
+        "type": "object"
+      },
+      "ApplicationArtifactStatus": {
+        "enum": [
+          "not_started",
+          "draft",
+          "approved"
+        ],
+        "title": "ApplicationArtifactStatus",
+        "type": "string"
+      },
+      "ApplicationArtifactsResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "application_id": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
+            "title": "Application Id",
+            "type": "string"
+          },
+          "approval_event": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ApplicationArtifactEventResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "approved_revision": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ApplicationArtifactRevisionResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "blockers": {
+            "items": {
+              "$ref": "#/components/schemas/ApplicationArtifactBlocker"
+            },
+            "maxItems": 10,
+            "title": "Blockers",
+            "type": "array"
+          },
+          "current_event": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ApplicationArtifactEventResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "current_revision": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ApplicationArtifactRevisionResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "data_source": {
+            "const": "database",
+            "default": "database",
+            "title": "Data Source",
+            "type": "string"
+          },
+          "pack": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ApplicationPackSummary"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "source_catalog": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ApplicationArtifactSourceCatalog"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "status": {
+            "$ref": "#/components/schemas/ApplicationArtifactStatus"
+          },
+          "tailored_resume_version": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ResumeVersionSummary"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "application_id",
+          "status"
+        ],
+        "title": "ApplicationArtifactsResponse",
         "type": "object"
       },
       "ApplicationContactBenchResponse": {
@@ -1364,10 +2217,150 @@
       },
       "ApplicationStage": {
         "enum": [
-          "pursuing"
+          "pursuing",
+          "ready_to_apply",
+          "applied"
         ],
         "title": "ApplicationStage",
         "type": "string"
+      },
+      "ApplicationSubmissionProjection": {
+        "additionalProperties": false,
+        "properties": {
+          "application_id": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
+            "title": "Application Id",
+            "type": "string"
+          },
+          "available_destinations": {
+            "items": {
+              "maxLength": 2048,
+              "minLength": 1,
+              "type": "string"
+            },
+            "maxItems": 50,
+            "title": "Available Destinations",
+            "type": "array"
+          },
+          "data_source": {
+            "const": "database",
+            "default": "database",
+            "title": "Data Source",
+            "type": "string"
+          },
+          "first_party_verified": {
+            "title": "First Party Verified",
+            "type": "boolean"
+          },
+          "stage": {
+            "$ref": "#/components/schemas/ApplicationStage"
+          },
+          "submission": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ApplicationSubmissionResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "application_id",
+          "stage",
+          "first_party_verified"
+        ],
+        "title": "ApplicationSubmissionProjection",
+        "type": "object"
+      },
+      "ApplicationSubmissionResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "application_artifact_approval_event_id": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
+            "title": "Application Artifact Approval Event Id",
+            "type": "string"
+          },
+          "application_artifact_revision_id": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
+            "title": "Application Artifact Revision Id",
+            "type": "string"
+          },
+          "application_id": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
+            "title": "Application Id",
+            "type": "string"
+          },
+          "application_pack_id": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
+            "title": "Application Pack Id",
+            "type": "string"
+          },
+          "application_pack_review_event_id": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
+            "title": "Application Pack Review Event Id",
+            "type": "string"
+          },
+          "application_pack_revision_id": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
+            "title": "Application Pack Revision Id",
+            "type": "string"
+          },
+          "applied_on": {
+            "format": "date",
+            "title": "Applied On",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "destination_url": {
+            "maxLength": 2048,
+            "minLength": 1,
+            "title": "Destination Url",
+            "type": "string"
+          },
+          "id": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
+            "title": "Id",
+            "type": "string"
+          },
+          "recorded_at": {
+            "format": "date-time",
+            "title": "Recorded At",
+            "type": "string"
+          },
+          "submission_method": {
+            "const": "manual",
+            "title": "Submission Method",
+            "type": "string"
+          },
+          "tailored_resume_version_id": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
+            "title": "Tailored Resume Version Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "application_id",
+          "application_pack_id",
+          "application_pack_revision_id",
+          "application_pack_review_event_id",
+          "application_artifact_revision_id",
+          "application_artifact_approval_event_id",
+          "tailored_resume_version_id",
+          "destination_url",
+          "applied_on",
+          "submission_method",
+          "recorded_at",
+          "created_at"
+        ],
+        "title": "ApplicationSubmissionResponse",
+        "type": "object"
       },
       "ApplicationSummary": {
         "additionalProperties": false,
@@ -1424,6 +2417,120 @@
           "updated_at"
         ],
         "title": "ApplicationSummary",
+        "type": "object"
+      },
+      "ApplicationTransitionResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "activity_event": {
+            "$ref": "#/components/schemas/ApplicationActivityEventResponse"
+          },
+          "application": {
+            "$ref": "#/components/schemas/ApplicationSummary"
+          },
+          "data_source": {
+            "const": "database",
+            "default": "database",
+            "title": "Data Source",
+            "type": "string"
+          },
+          "submission": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ApplicationSubmissionResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "transition_created": {
+            "title": "Transition Created",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "application",
+          "activity_event",
+          "transition_created"
+        ],
+        "title": "ApplicationTransitionResponse",
+        "type": "object"
+      },
+      "AppliedTransitionCreate": {
+        "additionalProperties": false,
+        "properties": {
+          "application_artifact_approval_event_id": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
+            "title": "Application Artifact Approval Event Id",
+            "type": "string"
+          },
+          "application_artifact_revision_id": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
+            "title": "Application Artifact Revision Id",
+            "type": "string"
+          },
+          "application_pack_id": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
+            "title": "Application Pack Id",
+            "type": "string"
+          },
+          "application_pack_review_event_id": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
+            "title": "Application Pack Review Event Id",
+            "type": "string"
+          },
+          "application_pack_revision_id": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
+            "title": "Application Pack Revision Id",
+            "type": "string"
+          },
+          "applied_on": {
+            "format": "date",
+            "title": "Applied On",
+            "type": "string"
+          },
+          "confirm_manual_submission": {
+            "const": true,
+            "title": "Confirm Manual Submission",
+            "type": "boolean"
+          },
+          "destination_url": {
+            "maxLength": 2048,
+            "minLength": 1,
+            "title": "Destination Url",
+            "type": "string"
+          },
+          "next_action_due_on": {
+            "format": "date",
+            "title": "Next Action Due On",
+            "type": "string"
+          },
+          "tailored_resume_version_id": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
+            "title": "Tailored Resume Version Id",
+            "type": "string"
+          },
+          "to_stage": {
+            "const": "applied",
+            "title": "To Stage",
+            "type": "string"
+          }
+        },
+        "required": [
+          "application_pack_id",
+          "application_pack_revision_id",
+          "application_pack_review_event_id",
+          "application_artifact_revision_id",
+          "application_artifact_approval_event_id",
+          "tailored_resume_version_id",
+          "to_stage",
+          "destination_url",
+          "applied_on",
+          "next_action_due_on",
+          "confirm_manual_submission"
+        ],
+        "title": "AppliedTransitionCreate",
         "type": "object"
       },
       "CandidateProfileResponse": {
@@ -4981,6 +6088,69 @@
         "title": "PursuitBundle",
         "type": "object"
       },
+      "ReadyToApplyTransitionCreate": {
+        "additionalProperties": false,
+        "properties": {
+          "application_artifact_approval_event_id": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
+            "title": "Application Artifact Approval Event Id",
+            "type": "string"
+          },
+          "application_artifact_revision_id": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
+            "title": "Application Artifact Revision Id",
+            "type": "string"
+          },
+          "application_pack_id": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
+            "title": "Application Pack Id",
+            "type": "string"
+          },
+          "application_pack_review_event_id": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
+            "title": "Application Pack Review Event Id",
+            "type": "string"
+          },
+          "application_pack_revision_id": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
+            "title": "Application Pack Revision Id",
+            "type": "string"
+          },
+          "confirm_ready": {
+            "const": true,
+            "title": "Confirm Ready",
+            "type": "boolean"
+          },
+          "next_action_due_on": {
+            "format": "date",
+            "title": "Next Action Due On",
+            "type": "string"
+          },
+          "tailored_resume_version_id": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
+            "title": "Tailored Resume Version Id",
+            "type": "string"
+          },
+          "to_stage": {
+            "const": "ready_to_apply",
+            "title": "To Stage",
+            "type": "string"
+          }
+        },
+        "required": [
+          "application_pack_id",
+          "application_pack_revision_id",
+          "application_pack_review_event_id",
+          "application_artifact_revision_id",
+          "application_artifact_approval_event_id",
+          "tailored_resume_version_id",
+          "to_stage",
+          "next_action_due_on",
+          "confirm_ready"
+        ],
+        "title": "ReadyToApplyTransitionCreate",
+        "type": "object"
+      },
       "RelevanceEvidenceResponse": {
         "additionalProperties": false,
         "properties": {
@@ -7521,6 +8691,124 @@
         ]
       }
     },
+    "/api/applications/{application_id}/application-artifacts": {
+      "get": {
+        "operationId": "get_owner_application_artifacts_api_applications__application_id__application_artifacts_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "application_id",
+            "required": true,
+            "schema": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
+              "title": "Application Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApplicationArtifactsResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
+          "428": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Precondition Required"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "security": [
+          {
+            "OwnerSessionCookie": []
+          }
+        ],
+        "summary": "Get Owner Application Artifacts",
+        "tags": [
+          "applications"
+        ]
+      }
+    },
     "/api/applications/{application_id}/application-pack": {
       "get": {
         "operationId": "get_owner_application_pack_api_applications__application_id__application_pack_get",
@@ -7794,6 +9082,346 @@
           }
         ],
         "summary": "Create Owner Application Pack",
+        "tags": [
+          "applications"
+        ]
+      }
+    },
+    "/api/applications/{application_id}/application-packs/{pack_id}/artifact-events": {
+      "post": {
+        "operationId": "record_owner_application_artifact_event_api_applications__application_id__application_packs__pack_id__artifact_events_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "application_id",
+            "required": true,
+            "schema": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
+              "title": "Application Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "pack_id",
+            "required": true,
+            "schema": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
+              "title": "Pack Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "If-Match",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ApplicationArtifactEventCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApplicationArtifactsResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
+          "428": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Precondition Required"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "security": [
+          {
+            "OwnerSessionCookie": []
+          }
+        ],
+        "summary": "Record Owner Application Artifact Event",
+        "tags": [
+          "applications"
+        ]
+      }
+    },
+    "/api/applications/{application_id}/application-packs/{pack_id}/artifact-revisions": {
+      "post": {
+        "operationId": "create_owner_application_artifact_revision_api_applications__application_id__application_packs__pack_id__artifact_revisions_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "application_id",
+            "required": true,
+            "schema": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
+              "title": "Application Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "pack_id",
+            "required": true,
+            "schema": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
+              "title": "Pack Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "If-Match",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ApplicationArtifactRevisionCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApplicationArtifactsResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
+          "428": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Precondition Required"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "security": [
+          {
+            "OwnerSessionCookie": []
+          }
+        ],
+        "summary": "Create Owner Application Artifact Revision",
         "tags": [
           "applications"
         ]
@@ -9041,6 +10669,299 @@
           }
         ],
         "summary": "Save Owner Application Outreach Message",
+        "tags": [
+          "applications"
+        ]
+      }
+    },
+    "/api/applications/{application_id}/submission": {
+      "get": {
+        "operationId": "get_owner_application_submission_api_applications__application_id__submission_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "application_id",
+            "required": true,
+            "schema": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
+              "title": "Application Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApplicationSubmissionProjection"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
+          "428": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Precondition Required"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "security": [
+          {
+            "OwnerSessionCookie": []
+          }
+        ],
+        "summary": "Get Owner Application Submission",
+        "tags": [
+          "applications"
+        ]
+      }
+    },
+    "/api/applications/{application_id}/transitions": {
+      "post": {
+        "operationId": "transition_owner_application_api_applications__application_id__transitions_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "application_id",
+            "required": true,
+            "schema": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
+              "title": "Application Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "If-Match",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "discriminator": {
+                  "mapping": {
+                    "applied": "#/components/schemas/AppliedTransitionCreate",
+                    "ready_to_apply": "#/components/schemas/ReadyToApplyTransitionCreate"
+                  },
+                  "propertyName": "to_stage"
+                },
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/ReadyToApplyTransitionCreate"
+                  },
+                  {
+                    "$ref": "#/components/schemas/AppliedTransitionCreate"
+                  }
+                ],
+                "title": "Payload"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApplicationTransitionResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
+          "428": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Precondition Required"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "security": [
+          {
+            "OwnerSessionCookie": []
+          }
+        ],
+        "summary": "Transition Owner Application",
         "tags": [
           "applications"
         ]

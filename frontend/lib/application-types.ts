@@ -6,11 +6,16 @@ import type { components } from "./api-generated";
 
 type ApiSchemas = components["schemas"];
 
-export type ApplicationStage = ApiSchemas["ApplicationStage"];
-export type ActionItemKind = ApiSchemas["ActionItemKind"];
+export type ApplicationStage = "pursuing" | "ready_to_apply" | "applied";
+export type ActionItemKind =
+  | "review_and_prepare_application"
+  | "submit_application"
+  | "follow_up_application";
 export type ActionItemStatus = ApiSchemas["ActionItemStatus"];
 export type ApplicationActivityEventType =
-  ApiSchemas["ApplicationActivityEventType"];
+  | "application_created"
+  | "application_ready_to_apply"
+  | "application_applied";
 export type ApplicationPostingState = ApiSchemas["ApplicationPostingState"];
 export type ContactBenchCoverage = ApiSchemas["ContactBenchCoverage"];
 export type ContactBenchState = ApiSchemas["ContactBenchState"];
@@ -26,26 +31,34 @@ export type ApplicationPostingSummary = ApiSchemas["ApplicationPostingSummary"];
 
 export type ActionItem = Omit<
   ApiSchemas["ActionItemResponse"],
-  "completed_at" | "cancelled_at"
+  "completed_at" | "cancelled_at" | "kind"
 > & {
   completed_at: string | null;
   cancelled_at: string | null;
+  kind: ActionItemKind;
 };
 
 export type ApplicationActivityEvent = Omit<
   ApiSchemas["ApplicationActivityEventResponse"],
-  "action_item_id" | "from_stage" | "to_stage"
+  | "action_item_id"
+  | "event_type"
+  | "from_stage"
+  | "to_stage"
 > & {
   action_item_id: string | null;
+  event_type: ApplicationActivityEventType;
   from_stage: ApplicationStage | null;
   to_stage: ApplicationStage | null;
+  previous_action_item_id: string | null;
+  submission_id: string | null;
 };
 
 export type ApplicationSummary = Omit<
   ApiSchemas["ApplicationSummary"],
-  "current_action"
+  "current_action" | "stage"
 > & {
   current_action: ActionItem;
+  stage: ApplicationStage;
 };
 
 export type PursuitBundle = Omit<

@@ -55,6 +55,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/applications/{application_id}/application-artifacts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Owner Application Artifacts */
+        get: operations["get_owner_application_artifacts_api_applications__application_id__application_artifacts_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/applications/{application_id}/application-pack": {
         parameters: {
             query?: never;
@@ -83,6 +100,40 @@ export interface paths {
         put?: never;
         /** Create Owner Application Pack */
         post: operations["create_owner_application_pack_api_applications__application_id__application_packs_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/applications/{application_id}/application-packs/{pack_id}/artifact-events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Record Owner Application Artifact Event */
+        post: operations["record_owner_application_artifact_event_api_applications__application_id__application_packs__pack_id__artifact_events_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/applications/{application_id}/application-packs/{pack_id}/artifact-revisions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create Owner Application Artifact Revision */
+        post: operations["create_owner_application_artifact_revision_api_applications__application_id__application_packs__pack_id__artifact_revisions_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -219,6 +270,40 @@ export interface paths {
         put?: never;
         /** Save Owner Application Outreach Message */
         post: operations["save_owner_application_outreach_message_api_applications__application_id__outreach_sequences__sequence_id__messages_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/applications/{application_id}/submission": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Owner Application Submission */
+        get: operations["get_owner_application_submission_api_applications__application_id__submission_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/applications/{application_id}/transitions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Transition Owner Application */
+        post: operations["transition_owner_application_api_applications__application_id__transitions_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -753,7 +838,7 @@ export interface components {
          * ActionItemKind
          * @enum {string}
          */
-        ActionItemKind: "review_and_prepare_application";
+        ActionItemKind: "review_and_prepare_application" | "submit_application" | "follow_up_application";
         /** ActionItemResponse */
         ActionItemResponse: {
             /** Application Id */
@@ -806,15 +891,19 @@ export interface components {
              * Format: date-time
              */
             occurred_at: string;
+            /** Previous Action Item Id */
+            previous_action_item_id?: string | null;
             /** Sequence Number */
             sequence_number: number;
+            /** Submission Id */
+            submission_id?: string | null;
             to_stage?: components["schemas"]["ApplicationStage"] | null;
         };
         /**
          * ApplicationActivityEventType
          * @enum {string}
          */
-        ApplicationActivityEventType: "application_created";
+        ApplicationActivityEventType: "application_created" | "application_ready_to_apply" | "application_applied";
         /** ApplicationActivityListResponse */
         ApplicationActivityListResponse: {
             /**
@@ -825,6 +914,281 @@ export interface components {
             data_source: "database";
             /** Items */
             items?: components["schemas"]["ApplicationActivityEventResponse"][];
+        };
+        /** ApplicationArtifactAnswer */
+        ApplicationArtifactAnswer: {
+            /** Claims */
+            claims?: components["schemas"]["ApplicationArtifactClaim"][];
+            /** Content Hash */
+            content_hash: string;
+            /** Id */
+            id: string;
+            /** Question Id */
+            question_id: string;
+            status: components["schemas"]["ApplicationArtifactAnswerStatus"];
+            /** Text */
+            text: string;
+        };
+        /**
+         * ApplicationArtifactAnswerStatus
+         * @enum {string}
+         */
+        ApplicationArtifactAnswerStatus: "answered" | "needs_owner_input";
+        /**
+         * ApplicationArtifactBlocker
+         * @enum {string}
+         */
+        ApplicationArtifactBlocker: "application_pack_missing" | "grounding_review_required" | "posting_closed" | "grounded_evidence_missing" | "grounding_evidence_changed" | "questions_need_owner_input" | "tailored_resume_unchanged" | "current_revision_rejected";
+        /** ApplicationArtifactClaim */
+        ApplicationArtifactClaim: {
+            /**
+             * Derivation
+             * @default verbatim
+             * @constant
+             */
+            derivation: "verbatim";
+            /** End */
+            end: number;
+            /** Id */
+            id: string;
+            /** Sources */
+            sources: (components["schemas"]["ApplicationArtifactEvidenceClaimSource"] | components["schemas"]["ApplicationArtifactJobDescriptionClaimSource"] | components["schemas"]["ApplicationArtifactPostingFieldClaimSource"])[];
+            /** Start */
+            start: number;
+            /** Text */
+            text: string;
+        };
+        /** ApplicationArtifactDiff */
+        ApplicationArtifactDiff: {
+            /**
+             * Algorithm Version
+             * @default line-diff-v1
+             * @constant
+             */
+            algorithm_version: "line-diff-v1";
+            /** Base Content Hash */
+            base_content_hash: string;
+            /** Lines */
+            lines?: components["schemas"]["ApplicationArtifactDiffLine"][];
+            /** Tailored Content Hash */
+            tailored_content_hash: string;
+        };
+        /** ApplicationArtifactDiffLine */
+        ApplicationArtifactDiffLine: {
+            /** Base Line Number */
+            base_line_number?: number | null;
+            /**
+             * Operation
+             * @enum {string}
+             */
+            operation: "equal" | "delete" | "insert";
+            /** Tailored Line Number */
+            tailored_line_number?: number | null;
+            /** Text */
+            text: string;
+        };
+        /** ApplicationArtifactDocument */
+        ApplicationArtifactDocument: {
+            /** Claims */
+            claims?: components["schemas"]["ApplicationArtifactClaim"][];
+            /** Content Hash */
+            content_hash: string;
+            /** Text */
+            text: string;
+        };
+        /** ApplicationArtifactEventCreate */
+        ApplicationArtifactEventCreate: {
+            /** Artifact Revision Id */
+            artifact_revision_id: string;
+            /** Confirm Artifacts Reviewed */
+            confirm_artifacts_reviewed?: true | null;
+            /**
+             * Event Type
+             * @enum {string}
+             */
+            event_type: "approved" | "rejected";
+        };
+        /** ApplicationArtifactEventResponse */
+        ApplicationArtifactEventResponse: {
+            /** Application Pack Id */
+            application_pack_id: string;
+            /** Artifact Revision Id */
+            artifact_revision_id: string;
+            /**
+             * Event Type
+             * @enum {string}
+             */
+            event_type: "approved" | "rejected";
+            /** Id */
+            id: string;
+            /**
+             * Occurred At
+             * Format: date-time
+             */
+            occurred_at: string;
+            /** Sequence Number */
+            sequence_number: number;
+            /** Tailored Resume Version Id */
+            tailored_resume_version_id: string | null;
+        };
+        /** ApplicationArtifactEvidenceClaimSource */
+        ApplicationArtifactEvidenceClaimSource: {
+            /** Evidence Id */
+            evidence_id: string;
+            /** Evidence Version */
+            evidence_version: number;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "evidence_snapshot";
+            /** Quote */
+            quote: string;
+        };
+        /** ApplicationArtifactJobDescriptionClaimSource */
+        ApplicationArtifactJobDescriptionClaimSource: {
+            /** Grounding Revision Id */
+            grounding_revision_id: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "job_description_span";
+            /** Quote */
+            quote: string;
+            /** Source End */
+            source_end: number;
+            /** Source Start */
+            source_start: number;
+        };
+        /** ApplicationArtifactPostingFieldClaimSource */
+        ApplicationArtifactPostingFieldClaimSource: {
+            /**
+             * Field
+             * @enum {string}
+             */
+            field: "company_name" | "title";
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "posting_field";
+            /** Posting Version Id */
+            posting_version_id: string;
+            /** Value */
+            value: string;
+        };
+        /** ApplicationArtifactQuestion */
+        ApplicationArtifactQuestion: {
+            /** Character Limit */
+            character_limit?: number | null;
+            /** Evidence Refs */
+            evidence_refs?: components["schemas"]["ApplicationPackEvidenceReference"][];
+            /** Id */
+            id: string;
+            /** Text */
+            text: string;
+        };
+        /** ApplicationArtifactRevisionCreate */
+        ApplicationArtifactRevisionCreate: {
+            /**
+             * Generation Mode
+             * @default deterministic
+             * @constant
+             */
+            generation_mode: "deterministic";
+            /** Grounding Revision Id */
+            grounding_revision_id: string;
+            /**
+             * Operation
+             * @default generate
+             * @constant
+             */
+            operation: "generate";
+            /** Parent Artifact Revision Id */
+            parent_artifact_revision_id?: string | null;
+            /** Questions */
+            questions?: components["schemas"]["ApplicationArtifactQuestion"][];
+            /** Selected Evidence Refs */
+            selected_evidence_refs?: components["schemas"]["ApplicationPackEvidenceReference"][] | null;
+        };
+        /** ApplicationArtifactRevisionResponse */
+        ApplicationArtifactRevisionResponse: {
+            /** Answers */
+            answers?: components["schemas"]["ApplicationArtifactAnswer"][];
+            /** Application Pack Id */
+            application_pack_id: string;
+            company_note: components["schemas"]["ApplicationArtifactDocument"];
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            diff: components["schemas"]["ApplicationArtifactDiff"];
+            /**
+             * Generator Version
+             * @constant
+             */
+            generator_version: "application-artifacts-deterministic-v1";
+            /** Grounding Review Event Id */
+            grounding_review_event_id: string;
+            /** Grounding Revision Id */
+            grounding_revision_id: string;
+            /** Id */
+            id: string;
+            /** Parent Artifact Revision Id */
+            parent_artifact_revision_id: string | null;
+            /** Questions */
+            questions?: components["schemas"]["ApplicationArtifactQuestion"][];
+            /** Revision Number */
+            revision_number: number;
+            /** Selected Evidence */
+            selected_evidence?: components["schemas"]["ApplicationPackEvidenceSnapshot"][];
+            /**
+             * Source
+             * @constant
+             */
+            source: "deterministic";
+            tailored_resume: components["schemas"]["ApplicationArtifactDocument"];
+        };
+        /** ApplicationArtifactSourceCatalog */
+        ApplicationArtifactSourceCatalog: {
+            /** Evidence */
+            evidence?: components["schemas"]["ApplicationPackEvidenceSnapshot"][];
+            /** Reviewed Grounding Event Id */
+            reviewed_grounding_event_id: string;
+            /** Reviewed Grounding Revision Id */
+            reviewed_grounding_revision_id: string;
+            /** Reviewed Grounding Revision Number */
+            reviewed_grounding_revision_number: number;
+            /** Unsupported Requirements */
+            unsupported_requirements?: components["schemas"]["ApplicationPackRequirementResponse"][];
+        };
+        /**
+         * ApplicationArtifactStatus
+         * @enum {string}
+         */
+        ApplicationArtifactStatus: "not_started" | "draft" | "approved";
+        /** ApplicationArtifactsResponse */
+        ApplicationArtifactsResponse: {
+            /** Application Id */
+            application_id: string;
+            approval_event?: components["schemas"]["ApplicationArtifactEventResponse"] | null;
+            approved_revision?: components["schemas"]["ApplicationArtifactRevisionResponse"] | null;
+            /** Blockers */
+            blockers?: components["schemas"]["ApplicationArtifactBlocker"][];
+            current_event?: components["schemas"]["ApplicationArtifactEventResponse"] | null;
+            current_revision?: components["schemas"]["ApplicationArtifactRevisionResponse"] | null;
+            /**
+             * Data Source
+             * @default database
+             * @constant
+             */
+            data_source: "database";
+            pack?: components["schemas"]["ApplicationPackSummary"] | null;
+            source_catalog?: components["schemas"]["ApplicationArtifactSourceCatalog"] | null;
+            status: components["schemas"]["ApplicationArtifactStatus"];
+            tailored_resume_version?: components["schemas"]["ResumeVersionSummary"] | null;
         };
         /**
          * ApplicationContactBenchResponse
@@ -1141,7 +1505,65 @@ export interface components {
          * ApplicationStage
          * @enum {string}
          */
-        ApplicationStage: "pursuing";
+        ApplicationStage: "pursuing" | "ready_to_apply" | "applied";
+        /** ApplicationSubmissionProjection */
+        ApplicationSubmissionProjection: {
+            /** Application Id */
+            application_id: string;
+            /** Available Destinations */
+            available_destinations?: string[];
+            /**
+             * Data Source
+             * @default database
+             * @constant
+             */
+            data_source: "database";
+            /** First Party Verified */
+            first_party_verified: boolean;
+            stage: components["schemas"]["ApplicationStage"];
+            submission?: components["schemas"]["ApplicationSubmissionResponse"] | null;
+        };
+        /** ApplicationSubmissionResponse */
+        ApplicationSubmissionResponse: {
+            /** Application Artifact Approval Event Id */
+            application_artifact_approval_event_id: string;
+            /** Application Artifact Revision Id */
+            application_artifact_revision_id: string;
+            /** Application Id */
+            application_id: string;
+            /** Application Pack Id */
+            application_pack_id: string;
+            /** Application Pack Review Event Id */
+            application_pack_review_event_id: string;
+            /** Application Pack Revision Id */
+            application_pack_revision_id: string;
+            /**
+             * Applied On
+             * Format: date
+             */
+            applied_on: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Destination Url */
+            destination_url: string;
+            /** Id */
+            id: string;
+            /**
+             * Recorded At
+             * Format: date-time
+             */
+            recorded_at: string;
+            /**
+             * Submission Method
+             * @constant
+             */
+            submission_method: "manual";
+            /** Tailored Resume Version Id */
+            tailored_resume_version_id: string;
+        };
         /** ApplicationSummary */
         ApplicationSummary: {
             /**
@@ -1165,6 +1587,57 @@ export interface components {
             updated_at: string;
             /** Version */
             version: number;
+        };
+        /** ApplicationTransitionResponse */
+        ApplicationTransitionResponse: {
+            activity_event: components["schemas"]["ApplicationActivityEventResponse"];
+            application: components["schemas"]["ApplicationSummary"];
+            /**
+             * Data Source
+             * @default database
+             * @constant
+             */
+            data_source: "database";
+            submission?: components["schemas"]["ApplicationSubmissionResponse"] | null;
+            /** Transition Created */
+            transition_created: boolean;
+        };
+        /** AppliedTransitionCreate */
+        AppliedTransitionCreate: {
+            /** Application Artifact Approval Event Id */
+            application_artifact_approval_event_id: string;
+            /** Application Artifact Revision Id */
+            application_artifact_revision_id: string;
+            /** Application Pack Id */
+            application_pack_id: string;
+            /** Application Pack Review Event Id */
+            application_pack_review_event_id: string;
+            /** Application Pack Revision Id */
+            application_pack_revision_id: string;
+            /**
+             * Applied On
+             * Format: date
+             */
+            applied_on: string;
+            /**
+             * Confirm Manual Submission
+             * @constant
+             */
+            confirm_manual_submission: true;
+            /** Destination Url */
+            destination_url: string;
+            /**
+             * Next Action Due On
+             * Format: date
+             */
+            next_action_due_on: string;
+            /** Tailored Resume Version Id */
+            tailored_resume_version_id: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            to_stage: "applied";
         };
         /** CandidateProfileResponse */
         CandidateProfileResponse: {
@@ -2496,6 +2969,36 @@ export interface components {
             /** Application Created */
             application_created: boolean;
         };
+        /** ReadyToApplyTransitionCreate */
+        ReadyToApplyTransitionCreate: {
+            /** Application Artifact Approval Event Id */
+            application_artifact_approval_event_id: string;
+            /** Application Artifact Revision Id */
+            application_artifact_revision_id: string;
+            /** Application Pack Id */
+            application_pack_id: string;
+            /** Application Pack Review Event Id */
+            application_pack_review_event_id: string;
+            /** Application Pack Revision Id */
+            application_pack_revision_id: string;
+            /**
+             * Confirm Ready
+             * @constant
+             */
+            confirm_ready: true;
+            /**
+             * Next Action Due On
+             * Format: date
+             */
+            next_action_due_on: string;
+            /** Tailored Resume Version Id */
+            tailored_resume_version_id: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            to_stage: "ready_to_apply";
+        };
         /** RelevanceEvidenceResponse */
         RelevanceEvidenceResponse: {
             status: components["schemas"]["ContactEvidenceStatus"];
@@ -3553,6 +4056,100 @@ export interface operations {
             };
         };
     };
+    get_owner_application_artifacts_api_applications__application_id__application_artifacts_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                application_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApplicationArtifactsResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Precondition Required */
+            428: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+        };
+    };
     get_owner_application_pack_api_applications__application_id__application_pack_get: {
         parameters: {
             query?: never;
@@ -3672,6 +4269,210 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ApplicationPackResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Precondition Required */
+            428: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+        };
+    };
+    record_owner_application_artifact_event_api_applications__application_id__application_packs__pack_id__artifact_events_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "If-Match"?: string | null;
+                "Idempotency-Key"?: string | null;
+            };
+            path: {
+                application_id: string;
+                pack_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ApplicationArtifactEventCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApplicationArtifactsResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Precondition Required */
+            428: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+        };
+    };
+    create_owner_application_artifact_revision_api_applications__application_id__application_packs__pack_id__artifact_revisions_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "If-Match"?: string | null;
+                "Idempotency-Key"?: string | null;
+            };
+            path: {
+                application_id: string;
+                pack_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ApplicationArtifactRevisionCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApplicationArtifactsResponse"];
                 };
             };
             /** @description Bad Request */
@@ -4462,6 +5263,201 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ApplicationOutreachResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Precondition Required */
+            428: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+        };
+    };
+    get_owner_application_submission_api_applications__application_id__submission_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                application_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApplicationSubmissionProjection"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Precondition Required */
+            428: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+        };
+    };
+    transition_owner_application_api_applications__application_id__transitions_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "If-Match"?: string | null;
+                "Idempotency-Key"?: string | null;
+            };
+            path: {
+                application_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReadyToApplyTransitionCreate"] | components["schemas"]["AppliedTransitionCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApplicationTransitionResponse"];
                 };
             };
             /** @description Bad Request */

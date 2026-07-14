@@ -15,6 +15,7 @@ import type {
   ApplicationArtifactRevisionResponse,
   ApplicationArtifactsResponse,
 } from "@/lib/application-artifact-types";
+import type { ApplicationStage } from "@/lib/application-types";
 import {
   createIdempotencyKey,
   WorkspaceApiError,
@@ -84,9 +85,13 @@ const MAX_QUESTIONS = 20;
 export function ApplicationMaterials({
   applicationId,
   applicationVersion,
+  applicationStage,
+  onArtifactsChanged,
 }: {
   applicationId: string;
   applicationVersion: number;
+  applicationStage: ApplicationStage;
+  onArtifactsChanged?: (projection: ApplicationArtifactsResponse) => void;
 }) {
   const [projection, setProjection] = useState<ApplicationArtifactsResponse | null>(null);
   const [questions, setQuestions] = useState<QuestionDraft[]>([]);
@@ -163,6 +168,7 @@ export function ApplicationMaterials({
 
     projectionRef.current = next;
     setProjection(next);
+    onArtifactsChanged?.(next);
     hydrateInputs(next, forceInputs);
 
     const pending = pendingRef.current;
@@ -183,7 +189,7 @@ export function ApplicationMaterials({
       );
     }
     return true;
-  }, [applicationId, hydrateInputs]);
+  }, [applicationId, hydrateInputs, onArtifactsChanged]);
 
   const refresh = useCallback(async (showLoading = false) => {
     const generation = ++requestGeneration.current;
@@ -529,19 +535,21 @@ export function ApplicationMaterials({
 
   const revision = projection.current_revision;
   const postingClosed = projection.blockers.includes("posting_closed");
+  const stageLocked = applicationStage !== "pursuing";
   const questionPayloadValid = buildQuestions() !== null;
-  const controlsLocked = Boolean(busy || unresolvedIntent);
+  const controlsLocked = Boolean(busy || unresolvedIntent || stageLocked);
   const canGenerate = Boolean(
     projection.pack &&
     sourceCatalog?.reviewed_grounding_revision_id &&
     selectedEvidence.length > 0 &&
     questionPayloadValid &&
+    !stageLocked &&
     !postingClosed,
   );
   const hasNeedsInput = Boolean(
     revision?.answers.some((answer) => answer.status === "needs_owner_input"),
   );
-  const approvalBlocked = postingClosed ||
+  const approvalBlocked = stageLocked || postingClosed ||
     hasNeedsInput ||
     projection.blockers.some((blocker) => [
       "grounding_evidence_changed",
@@ -609,6 +617,11 @@ export function ApplicationMaterials({
                 Check saved state
               </button>
             </div>
+          </StatusMessage>
+        ) : null}
+        {stageLocked ? (
+          <StatusMessage kind="info">
+            These materials are read-only because the application is {applicationStage === "applied" ? "already applied" : "ready to apply"}. The approved résumé and answers remain frozen for an exact submission record.
           </StatusMessage>
         ) : null}
 
@@ -835,6 +848,7 @@ export function ApplicationMaterials({
                   <button
                     type="button"
                     disabled={
+                      stageLocked ||
                       postingClosed ||
                       currentRejected ||
                       Boolean(busy) ||

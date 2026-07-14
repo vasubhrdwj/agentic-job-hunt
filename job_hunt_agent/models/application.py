@@ -59,7 +59,9 @@ class Application(Base):
             deferrable=True,
             initially="DEFERRED",
         ),
-        CheckConstraint("stage = 'pursuing'", name="stage"),
+        CheckConstraint(
+            "stage IN ('pursuing', 'ready_to_apply', 'applied')", name="stage"
+        ),
         CheckConstraint("version >= 1", name="version_positive"),
         Index("ix_applications_owner_stage", "owner_id", "stage", "updated_at"),
     )
@@ -100,7 +102,9 @@ class ActionItem(Base):
             ondelete="CASCADE",
         ),
         CheckConstraint(
-            "kind = 'review_and_prepare_application'", name="kind"
+            "kind IN ('review_and_prepare_application', 'submit_application', "
+            "'follow_up_application')",
+            name="kind",
         ),
         CheckConstraint(
             "length(trim(title)) BETWEEN 1 AND 240", name="title_length"
@@ -177,12 +181,45 @@ class ApplicationActivityEvent(Base):
             deferrable=True,
             initially="DEFERRED",
         ),
+        ForeignKeyConstraint(
+            ["owner_id", "application_id", "previous_action_item_id"],
+            ["action_items.owner_id", "action_items.application_id", "action_items.id"],
+            name="fk_application_activity_events_owner_previous_action",
+            deferrable=True,
+            initially="DEFERRED",
+        ),
+        ForeignKeyConstraint(
+            ["owner_id", "application_id", "submission_id"],
+            [
+                "application_submissions.owner_id",
+                "application_submissions.application_id",
+                "application_submissions.id",
+            ],
+            name="fk_application_activity_events_owner_submission",
+            deferrable=True,
+            initially="DEFERRED",
+        ),
         CheckConstraint("sequence_number >= 1", name="sequence_positive"),
-        CheckConstraint("event_type = 'application_created'", name="event_type"),
         CheckConstraint(
-            "sequence_number = 1 AND from_stage IS NULL "
-            "AND to_stage = 'pursuing' AND action_item_id IS NOT NULL",
-            name="creation_shape",
+            "event_type IN ('application_created', 'application_ready_to_apply', "
+            "'application_applied')",
+            name="event_type",
+        ),
+        CheckConstraint(
+            "(event_type = 'application_created' AND sequence_number = 1 "
+            "AND from_stage IS NULL AND to_stage = 'pursuing' "
+            "AND previous_action_item_id IS NULL AND submission_id IS NULL) OR "
+            "(event_type = 'application_ready_to_apply' AND sequence_number = 2 "
+            "AND from_stage = 'pursuing' AND to_stage = 'ready_to_apply' "
+            "AND previous_action_item_id IS NOT NULL "
+            "AND previous_action_item_id <> action_item_id "
+            "AND submission_id IS NULL) OR "
+            "(event_type = 'application_applied' AND sequence_number = 3 "
+            "AND from_stage = 'ready_to_apply' AND to_stage = 'applied' "
+            "AND previous_action_item_id IS NOT NULL "
+            "AND previous_action_item_id <> action_item_id "
+            "AND submission_id IS NOT NULL)",
+            name="event_shape",
         ),
         Index(
             "uq_application_activity_events_owner_created",
@@ -191,6 +228,30 @@ class ApplicationActivityEvent(Base):
             unique=True,
             sqlite_where=text("event_type = 'application_created'"),
             postgresql_where=text("event_type = 'application_created'"),
+        ),
+        Index(
+            "uq_application_activity_events_owner_ready",
+            "owner_id",
+            "application_id",
+            unique=True,
+            sqlite_where=text("event_type = 'application_ready_to_apply'"),
+            postgresql_where=text("event_type = 'application_ready_to_apply'"),
+        ),
+        Index(
+            "uq_application_activity_events_owner_applied",
+            "owner_id",
+            "application_id",
+            unique=True,
+            sqlite_where=text("event_type = 'application_applied'"),
+            postgresql_where=text("event_type = 'application_applied'"),
+        ),
+        Index(
+            "uq_application_activity_events_owner_submission",
+            "owner_id",
+            "submission_id",
+            unique=True,
+            sqlite_where=text("submission_id IS NOT NULL"),
+            postgresql_where=text("submission_id IS NOT NULL"),
         ),
         Index(
             "ix_application_activity_events_timeline",
@@ -210,6 +271,8 @@ class ApplicationActivityEvent(Base):
     from_stage: Mapped[str | None] = mapped_column(String(24))
     to_stage: Mapped[str] = mapped_column(String(24), nullable=False)
     action_item_id: Mapped[str] = mapped_column(String(32), nullable=False)
+    previous_action_item_id: Mapped[str | None] = mapped_column(String(32))
+    submission_id: Mapped[str | None] = mapped_column(String(32))
     occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()

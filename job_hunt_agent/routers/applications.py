@@ -15,13 +15,6 @@ from fastapi import (
 )
 from fastapi.security import APIKeyCookie
 
-from ..application_schemas import (
-    ApplicationActivityListResponse,
-    ApplicationDetailResponse,
-    ApplicationListResponse,
-    CursorToken,
-    OpaqueId,
-)
 from ..application_artifact_schemas import (
     ApplicationArtifactEventCreate,
     ApplicationArtifactRevisionCreate,
@@ -32,6 +25,18 @@ from ..application_pack_schemas import (
     ApplicationPackEventCreate,
     ApplicationPackRevisionCreate,
     ApplicationPackResponse,
+)
+from ..application_schemas import (
+    ApplicationActivityListResponse,
+    ApplicationDetailResponse,
+    ApplicationListResponse,
+    CursorToken,
+    OpaqueId,
+)
+from ..application_submission_schemas import (
+    ApplicationSubmissionProjection,
+    ApplicationTransitionCreate,
+    ApplicationTransitionResponse,
 )
 from ..application_workspace import ApplicationWorkspaceStore
 from ..auth import session_cookie_name
@@ -156,6 +161,50 @@ def create_application_router(
         if activity is None:
             _not_found("application")
         return activity
+
+    @router.get(
+        "/api/applications/{application_id}/submission",
+        response_model=ApplicationSubmissionProjection,
+        responses=COMMON_ERROR_RESPONSES,
+    )
+    def get_owner_application_submission(
+        application_id: OpaqueId,
+        owner: AuthenticatedOwner = Security(require_read_owner),
+    ) -> ApplicationSubmissionProjection:
+        submission = _invoke(
+            _store(store).get_application_submission,
+            owner_id=owner.owner_id,
+            application_id=application_id,
+        )
+        if submission is None:
+            _not_found("application")
+        return submission
+
+    @router.post(
+        "/api/applications/{application_id}/transitions",
+        response_model=ApplicationTransitionResponse,
+        responses=COMMON_ERROR_RESPONSES,
+    )
+    def transition_owner_application(
+        application_id: OpaqueId,
+        payload: ApplicationTransitionCreate,
+        response: Response,
+        owner: AuthenticatedOwner = Security(require_mutation_owner),
+        if_match: str | None = Header(default=None, alias="If-Match"),
+        idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+    ) -> ApplicationTransitionResponse:
+        transition = _invoke(
+            _store(store).transition_application,
+            owner_id=owner.owner_id,
+            application_id=application_id,
+            payload=payload,
+            expected_application_version=_expected_version(if_match),
+            idempotency_key=_required_idempotency_key(idempotency_key),
+        )
+        if transition is None:
+            _not_found("application")
+        _set_etag(response, transition.application.version)
+        return transition
 
     @router.get(
         "/api/applications/{application_id}/application-pack",

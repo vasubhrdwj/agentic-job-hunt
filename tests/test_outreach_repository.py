@@ -302,13 +302,14 @@ def _start(
     key: str = "start-sequence",
     now: datetime = NOW,
     application_id: str = APPLICATION_ID,
+    expected_application_version: int = 1,
 ) -> ApplicationOutreachResponse:
     with database.session() as session:
         result = start_outreach_sequence(
             session,
             owner_id=OWNER_ID,
             application_id=application_id,
-            expected_application_version=1,
+            expected_application_version=expected_application_version,
             idempotency_key=key,
             keyring=keyring,
             now=now,
@@ -476,6 +477,45 @@ def test_start_unlocks_strongest_non_recruiter_and_top_recruiter_then_replays(
     assert _sequence(replay).version == 1
     with outreach_db.session() as session:
         assert session.scalar(select(func.count(OutreachEvent.id))) == 1
+
+
+@pytest.mark.parametrize(
+    ("stage", "application_version"),
+    [("ready_to_apply", 2), ("applied", 3)],
+)
+def test_outreach_remains_mutable_in_later_active_application_stages(
+    outreach_db: Database,
+    keyring: DataKeyring,
+    stage: str,
+    application_version: int,
+) -> None:
+    with outreach_db.session() as session:
+        application = session.get(Application, APPLICATION_ID)
+        assert application is not None
+        application.stage = stage
+        application.version = application_version
+
+    response = _start(
+        outreach_db,
+        keyring,
+        key=f"start-while-{stage}",
+        expected_application_version=application_version,
+    )
+    response = _save(
+        outreach_db,
+        keyring,
+        response,
+        recipient_id="application-contact-1",
+        kind="initial",
+        body=f"Exact message while {stage}",
+        key=f"save-while-{stage}",
+        now=NOW + timedelta(minutes=1),
+    )
+
+    assert response.status.value == "active"
+    saved = _recipient(response, "application-contact-1").initial_message
+    assert saved is not None
+    assert saved.body == f"Exact message while {stage}"
 
 
 def test_exact_v1_v2_are_encrypted_and_latest_body_survives_fresh_reload(
@@ -1162,11 +1202,27 @@ def test_manual_pause_resume_stop_reasons_are_encrypted_and_reload_exactly(
     } == reasons
 
 
+@pytest.mark.parametrize(
+    ("stage", "application_version"),
+    [("pursuing", 1), ("ready_to_apply", 2), ("applied", 3)],
+)
 def test_posting_closure_on_next_mutation_atomically_stops_without_saving_message(
     outreach_db: Database,
     keyring: DataKeyring,
+    stage: str,
+    application_version: int,
 ) -> None:
-    response = _start(outreach_db, keyring)
+    with outreach_db.session() as session:
+        application = session.get(Application, APPLICATION_ID)
+        assert application is not None
+        application.stage = stage
+        application.version = application_version
+    response = _start(
+        outreach_db,
+        keyring,
+        key=f"start-before-close-{stage}",
+        expected_application_version=application_version,
+    )
     with outreach_db.session() as session:
         posting = session.get(JobPosting, "posting-a")
         assert posting is not None

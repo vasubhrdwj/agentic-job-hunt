@@ -4,6 +4,7 @@ from .base import Base
 from .application import ActionItem, Application, ApplicationActivityEvent
 from .application_artifact import ApplicationArtifactEvent, ApplicationArtifactRevision
 from .application_pack import ApplicationPack, ApplicationPackEvent, ApplicationPackRevision
+from .application_submission import ApplicationSubmission
 from .contact import ApplicationContact, Contact, ContactPlan
 from .foundation import (
     BackgroundJob,
@@ -45,6 +46,7 @@ __all__ = [
     "ApplicationPack",
     "ApplicationPackEvent",
     "ApplicationPackRevision",
+    "ApplicationSubmission",
     "ApplicationContact",
     "BackgroundJob",
     "BackgroundJobEvent",
