@@ -5,6 +5,7 @@ import { useCallback, useEffect, useState } from "react";
 
 import { getApplication } from "@/lib/application-api";
 import type { ApplicationDetailResponse } from "@/lib/application-types";
+import { ApplicationPack } from "./application-pack";
 import { ApplicationPeople } from "./application-people";
 import { ApplicationStageBadge, DueDate } from "./applications-workspace";
 import {
@@ -139,6 +140,12 @@ export function ApplicationDossier({
           and decide what must be tailored before applying.
         </p>
       </section>
+
+      <ApplicationPack
+        key={`pack:${application.id}`}
+        applicationId={application.id}
+        applicationVersion={application.version}
+      />
 
       <ApplicationPeople
         key={application.id}

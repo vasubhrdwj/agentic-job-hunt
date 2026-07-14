@@ -1,6 +1,6 @@
 # Practical Job Search Control Room — Implementable Plan
 
-**Status:** Phase 0, Phase 1, and Phase 2A are complete; Phase 3A adds the atomic Pursue/application foundation, and the verified five-person contact bench is the immediate next checkpoint
+**Status:** Phases 0–4D2 and the provider-free Phase 5A grounding workspace are implemented; grounded artifacts in Phase 5B are next
 **Primary user:** one private owner using the product for a real job search
 **North-star metric:** qualified interviews for genuinely better roles per hour of user effort
 **First complete release:** durable opportunity radar + application pipeline + five-person contact bench + manual, staged outreach
@@ -57,13 +57,13 @@ career profile
 | --- | --- | --- | --- |
 | Job discovery | Eight first-party/ATS source strategies, stable native IDs, safe URL aliases, and manual durable scans | Current adapters are criteria-filtered and intentionally non-authoritative for closure | Add broad, complete-board inventory before enabling lifecycle closure or schedules |
 | Role matching | Resume fit scorer and job-description evidence | Fit and opportunity quality are conflated | Separate eligibility, career value, evidence confidence, and action priority |
-| Contacts | Current-employer verification, public-profile discovery, and five contacts per returned role | Evidence is compressed and drafts are still generated eagerly | Discover 10–12, retain at least five verified and diverse contacts, then sequence outreach |
-| Drafting | Drafter, evaluator, and existing outcome loop | Edits live only in React state; learning may use generated rather than sent text | Persist every message version and learn only from the exact version marked sent |
-| Queue | Postgres leases, heartbeats, retries, cancellation, `legacy_hunt`, and search-only `scan_saved_search` dispatch | Assessments, contacts, and application packs have no handlers yet | Add them only after the owner chooses to pursue a role |
-| Storage | Encrypted profile/resume/search data; durable radar records; and the Phase 3A application, open action, and immutable creation activity | Only the initial `pursuing` stage and creation action exist | Add governed stage/action transitions without weakening the one-current-action invariant |
-| API | Owner-scoped profile, search, scan, Today, opportunity, application-read, decision, hunt, and outcome resources | Application mutation is currently limited to atomic Pursue; no contact/action-update API exists | Add the verified contact workflow next, then the remaining application transitions |
-| Frontend | Profile, Saved searches, Today, opportunity review, Applications list/dossier, and separate Legacy hunt | The dossier shows the real current action and creation history, but has no stage/action/contact controls yet | Add honest `N/5 verified` contact coverage before richer pipeline controls |
-| Observability | Phoenix/OpenTelemetry and live registry verification | Health says only that the HTTP process responds | Readiness includes database, worker heartbeat, scheduler lag, and source-run health |
+| Contacts | Provider-backed discovery, preserved current-employer evidence, a deterministic bench of up to five, and manual staged outreach | Category-specific searches and exact-sent learning import remain incomplete | Improve coverage without weakening verification or automatic-send boundaries |
+| Drafting | Persistent exact outreach revisions, manual-send assertions, outcomes, and the legacy drafter/evaluator loop | Practical application artifacts do not exist yet; outreach learning is not wired to exact sent versions | Add grounded resume/answer artifacts in Phase 5B, then learn only from exact used versions |
+| Queue | Postgres leases, heartbeats, retries, cancellation, `legacy_hunt`, scans, and contact discovery | Assessments and future artifact generation have no handlers | Keep Phase 5A synchronous and provider-free; add work only for explicit later generation |
+| Storage | Encrypted profile/resume/search data, radar/application/contact/outreach graphs, and immutable application-pack grounding revisions | Only the initial `pursuing` stage and creation action exist | Add governed stage/action transitions without weakening the one-current-action invariant |
+| API | Owner-scoped profile, search, scan, Today, opportunity, application, contact, outreach, and grounding-pack resources | Later application stages, action updates, and generated artifacts remain absent | Add Phase 5B artifacts, then the narrow exact-submission transition |
+| Frontend | Profile, Saved searches, Today, job review, application dossier, five-person People/outreach, and Fit and evidence review | No tailored resume, application-answer, exact-submission, or later-stage UI | Build grounded artifacts next without automating external applications |
+| Observability | Phoenix/OpenTelemetry, migration-aware readiness, worker capabilities, and source-health projections | Weekly product-quality and funnel review remain incomplete | Add outcome and operational review without tracing private content |
 
 The existing `run_hunt` path remains available temporarily for demo compatibility. It is not the architecture for the practical product.
 
@@ -271,7 +271,9 @@ Use synchronous SQLAlchemy 2, psycopg 3, and Alembic. Keep routes thin: routers 
 | `contact_plans` | application, target `5`, candidate budget, cooldown policy, status, stop reason |
 | `outreach_attempts` | contact link, exact message, channel, initial/follow-up, sequence, draft/sent times, state |
 | `outreach_events` | attempt, event type, notes, event time, idempotency key |
-| `pursuit_packs` | application, input versions, encrypted artifacts, claims provenance, approval state |
+| `application_packs` | one owner/application pack pinned to the pursued posting and selected resume, with contract version and timestamps |
+| `application_pack_revisions` | immutable parent/number/source records with encrypted JD, requirement, and approved-evidence snapshots plus a revision hash |
+| `application_pack_events` | immutable review events tied to an exact revision, with per-pack sequence, idempotency hash, and timestamps |
 | `background_jobs` | kind, dedupe key, payload IDs, status, retries, scheduling and lease fields |
 | `worker_heartbeats` | worker ID, supported kinds, last heartbeat, current job, build version |
 
@@ -372,23 +374,33 @@ POST       /api/opportunities/{id}/assessment
 
 ### Applications and actions
 
-Implemented in the Phase 3A checkpoint:
+Implemented through the Phase 5A checkpoint:
 
 ```text
 GET        /api/applications
 GET        /api/applications/{id}
 GET        /api/applications/{id}/activity
+GET        /api/applications/{id}/application-pack
+POST       /api/applications/{id}/application-packs
+POST       /api/applications/{id}/application-packs/{pack_id}/revisions
+POST       /api/applications/{id}/application-packs/{pack_id}/events
 ```
 
-Planned after the narrow pursuit boundary:
+Still planned after the narrow pursuit/grounding boundary:
 
 ```text
 PATCH      /api/applications/{id}
 POST       /api/applications/{id}/notes
 GET/POST   /api/action-items
 PATCH      /api/action-items/{id}
-POST       /api/applications/{id}/pursuit-pack
 ```
+
+The application-pack endpoints are the implemented provider-free Phase 5A
+boundary. `GET` projects the current revision plus only the latest reviewed
+revision/event; it is not a full history endpoint. Grounded artifact generation
+follows in Phase 5B, and the exact submission record plus narrow
+`ready_to_apply`/`applied` transitions follow in Phase 5C. See
+[`docs/PHASE_5_APPLICATION_PACK.md`](docs/PHASE_5_APPLICATION_PACK.md).
 
 ### Contacts and outreach
 
@@ -465,19 +477,23 @@ Filters live in URL search parameters. Dismiss asks for a reason, updates optimi
 The pre-pursuit job page contains persisted source facts, preserved posting
 versions, unknowns, provenance, and first-seen/change history. Expensive
 contact and pack work has not run yet. Career-value, eligibility, and
-requirement-to-evidence assessments remain planned.
+generated-artifact assessments remain planned.
 
-The Phase 3A dossier currently has:
+The application dossier currently has:
 
 - **Overview:** `pursuing` stage, posting state and first-party link, pursued
   posting version, and the open dated next action
+- **Fit and evidence review:** one pack pinned to the pursued posting and one
+  selected immutable resume, exact required/preferred JD spans, approved
+  evidence mappings, honest gaps, immutable review revisions, and the latest
+  reviewed revision/event projection
+- **People:** five-person coverage, rankings, public evidence, manual outreach
+  waves, exact messages, sends, follow-ups, and outcomes
 - **Activity:** the immutable application-creation event
 
 The expanded dossier will add:
 
-- **Fit & evidence:** requirement-to-approved-achievement mapping and gaps
 - **Application pack:** tailored resume version, diff, answers, and claim provenance
-- **People:** five-person coverage, rankings, evidence, waves, messages, and outcomes
 - **Activity:** later decisions, notes, sends, replies, application changes, and interviews
 
 Target application stages (only `pursuing` exists in Phase 3A):
@@ -712,27 +728,105 @@ Definition of done:
 
 **Goal:** reduce the time from `Pursue` to a truthful, high-quality application.
 
+**Status:** Phase 5A is implemented and verified by automated checks plus live
+desktop and mobile browser acceptance. Phase 5B artifacts and Phase 5C submission
+tracking remain planned. The detailed contract is in
+[`docs/PHASE_5_APPLICATION_PACK.md`](docs/PHASE_5_APPLICATION_PACK.md).
+
+#### Phase 5A — Provider-free grounding workspace
+
 Backend tasks:
 
-- [ ] Extract required/preferred JD requirements with source spans.
-- [ ] Map requirements only to approved achievement evidence.
-- [ ] Generate a tailored resume variant, concise application answers, and a company-specific note.
-- [ ] Store input versions, generated artifact versions, claim provenance, errors, and approvals.
-- [ ] Reject or flag any generated claim without approved evidence.
+- [x] Pin one pack per application to the pursued posting version and one
+      owner-selected immutable resume.
+- [x] Extract deterministic `required` and `preferred` JD requirement
+      candidates with exact source quotes and character offsets.
+- [x] Accept an exact owner JD paste only when the pursued posting version has
+      no persisted full description; never promote the summary or override a
+      persisted description.
+- [x] Map requirements only to currently approved achievement evidence while
+      preserving encrypted evidence snapshots and honest gaps.
+- [x] Append immutable grounding review revisions with optimistic concurrency,
+      idempotency, and an explicit `reviewed` event per reviewed revision.
+- [x] Keep every Phase 5A read and mutation provider-free and database-only.
 
 Frontend tasks:
 
-- [ ] Build requirement-to-evidence table and unsupported-gap view.
-- [ ] Show exact base-versus-tailored resume diff.
-- [ ] Let the owner edit, approve, reject, copy, and select the version actually used.
-- [ ] Keep the first-party apply link and a short application checklist visible.
+- [x] Build the requirement-to-evidence table and unsupported-gap view.
+- [x] Show pinned JD/resume metadata, exact source quotes, evidence versions,
+      coverage labels, the current revision, and only the latest reviewed
+      revision/event in the application dossier.
+- [x] Let the owner choose `supported`, `partial`, or `unsupported`, select
+      approved evidence, exclude false positives, reclassify importance, save a
+      successor revision, and mark one exact current revision reviewed.
+- [x] Keep the first-party apply link visible and preserve accepted local work
+      through reload, stale conflicts, and ambiguous mutation responses.
 
-Definition of done:
+Phase 5A definition of done:
+
+- [x] Deterministic extraction is stable and every quote/offset matches the
+  pinned pursued JD exactly.
+- [x] Pending, rejected, retired, cross-owner, nonexistent, and stale evidence
+  fails closed; only approved evidence can be mapped.
+- [x] One pack is enforced per application, pinned inputs cannot be silently
+  replaced, and deleting its selected resume is blocked.
+- [x] Saving creates immutable revisions, same-key retry creates no duplicate,
+  and reviewed events name exact revisions without disguising gaps as evidence.
+- [x] Raw mapped revision storage and mutation receipts do not contain the
+  tested private JD/evidence markers, and invalid private input is not echoed.
+- [x] Opening, refreshing, creating, revising, and reviewing cause zero
+  model/provider calls.
+- [x] Closed postings retain a readable projection and block mutations.
+- [x] Live browser QA confirms the complete desktop and mobile start → map →
+  save revision → mark reviewed flow with no lost local work or console errors.
+
+#### Phase 5B — Grounded artifacts and exact diff
+
+Backend tasks:
+
+- [ ] Generate a tailored resume variant, concise answers to exact
+      owner-entered questions, and a company-specific note from one reviewed
+      grounding revision.
+- [ ] Store immutable artifact revisions, generator/input versions, exact claim
+      provenance, safe errors, and approvals.
+- [ ] Reject or omit generated and rewritten factual claims without approved
+      evidence; require JD source spans for company/role facts.
+- [ ] Create or reuse an immutable tailored resume version whose parent is the
+      pinned base resume when one artifact revision is approved.
+
+Frontend tasks:
+
+- [ ] Show the exact base-versus-tailored resume diff and claim source links.
+- [ ] Let the owner edit, reject, approve, copy, and recover immutable artifact
+      revisions without silently overwriting an approved version.
+- [ ] Keep a short manual-application checklist visible; nothing submits or
+      fills an external form automatically.
+
+#### Phase 5C — Exact submission record and narrow stages
+
+Backend tasks:
+
+- [ ] Add only the `ready_to_apply` and `applied` transitions needed by this
+      checkpoint, with compatible active contact/outreach rules.
+- [ ] Atomically record the exact approved pack revision, immutable tailored
+      resume version, first-party destination, owner-local applied date, action
+      change, and immutable activity event.
+
+Frontend tasks:
+
+- [ ] Require explicit review of the selected pack/resume before **Mark
+      applied** and show the exact recorded submission afterward.
+- [ ] Keep the saved grounding projection readable for closed postings and
+      never imply that the system submitted the application.
+
+Full Slice 5 definition of done:
 
 - Every nontrivial factual claim links to approved evidence or is blocked.
 - Regeneration never silently overwrites an approved version.
 - The user can move from Pursue to a ready, reviewed pack in under ten minutes in the pilot test.
 - The applied transition records the exact pack/resume version used.
+- No checkpoint automatically fills or submits a form, sends a message, or
+  invents an ATS score, company fact, relationship, qualification, or result.
 
 ### Slice 6 — Outcome learning, weekly review, and hardening
 
@@ -856,8 +950,14 @@ Keep changes reviewable in this order:
 5. **PR 5 — Applications and actions:** pipeline, next-action invariant, activity timeline.
 6. **PR 6 — Contact backend:** evidence-rich discovery, five-person selection, waves, outreach persistence.
 7. **PR 7 — Contact frontend:** bench, composer, sends, follow-ups, outcomes, stop behavior.
-8. **PR 8 — Application pack:** evidence mapping, resume diff, grounded answers, approvals.
-9. **PR 9 — Learning and production gate:** weekly review, funnel metrics, import, backups, full E2E.
+8. **PR 8A — Application grounding (implemented):** pinned inputs,
+   deterministic JD spans, approved-evidence mapping, immutable review
+   revisions/events, no provider.
+9. **PR 8B — Grounded artifacts:** tailored resume, exact diff, grounded
+   answers/notes, claim provenance, approvals.
+10. **PR 8C — Submission record:** exact used pack/resume and narrow
+    `ready_to_apply`/`applied` transitions.
+11. **PR 9 — Learning and production gate:** weekly review, funnel metrics, import, backups, full E2E.
 
 Release gates:
 
@@ -908,13 +1008,16 @@ durable radar and pursuit invariant:
 > pursued role creates exactly one application with exactly one dated next
 > action and one immutable creation activity.
 
-The radar half and the Phase 3A pursuit boundary are now implemented. The next
-checkpoint is separate and remains locked:
+The radar, Phase 3A pursuit boundary, verified five-person contact bench,
+manual outreach workspace, and provider-free Phase 5A grounding review are now
+implemented. The next checkpoint is separate and remains locked:
 
-> Contact discovery retains at least five verified, appropriate people when
-> five exist, reports an honest shortfall otherwise, and allows no more than the
-> configured outreach wave to be active.
+> Phase 5B turns one explicitly reviewed grounding revision into editable
+> application artifacts whose factual claims remain tied to approved evidence
+> or exact pinned-source spans.
 
-That five-person contact checkpoint is not implemented yet. Building it on the
-durable application ID keeps evidence, messages, replies, and future learning
-attached to the real job-search workflow instead of disposable run output.
+Phase 5A already keeps requirements, evidence snapshots, immutable revisions,
+and exact review events attached to the durable application ID without making
+provider/model calls. Phase 5B must build on that boundary rather than on
+disposable run output. The contract is documented in
+[`docs/PHASE_5_APPLICATION_PACK.md`](docs/PHASE_5_APPLICATION_PACK.md).

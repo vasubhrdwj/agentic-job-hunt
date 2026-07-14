@@ -9,7 +9,7 @@ from alembic import command
 from alembic.config import Config
 from sqlalchemy import func, inspect, select
 
-from job_hunt_agent.database import Database
+from job_hunt_agent.database import MIGRATION_HEAD, Database
 from job_hunt_agent.models import Owner, OwnerMutationReceipt
 
 
@@ -27,13 +27,13 @@ def test_outreach_migration_round_trip_constraints_and_receipt_cleanup(
     url = f"sqlite+pysqlite:///{tmp_path / 'outreach-migration.db'}"
     monkeypatch.setenv("DATABASE_URL", url)
     config = Config("alembic.ini")
-    command.upgrade(config, "20260713_0008")
+    command.upgrade(config, "head")
     command.check(config)
 
     database = Database(url)
     try:
         inspector = inspect(database.engine)
-        assert database.current_migration_revision() == "20260713_0008"
+        assert database.current_migration_revision() == MIGRATION_HEAD
         assert OUTREACH_TABLES.issubset(inspector.get_table_names())
 
         sequence_uniques = {
@@ -107,7 +107,7 @@ def test_outreach_migration_round_trip_constraints_and_receipt_cleanup(
     finally:
         downgraded.dispose()
 
-    command.upgrade(config, "20260713_0008")
+    command.upgrade(config, "head")
     command.check(config)
 
     migration_source = Path(

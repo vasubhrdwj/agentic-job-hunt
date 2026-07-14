@@ -22,6 +22,12 @@ from ..application_schemas import (
     CursorToken,
     OpaqueId,
 )
+from ..application_pack_schemas import (
+    ApplicationPackCreate,
+    ApplicationPackEventCreate,
+    ApplicationPackRevisionCreate,
+    ApplicationPackResponse,
+)
 from ..application_workspace import ApplicationWorkspaceStore
 from ..auth import session_cookie_name
 from ..contact_schemas import ApplicationContactBenchResponse
@@ -145,6 +151,132 @@ def create_application_router(
         if activity is None:
             _not_found("application")
         return activity
+
+    @router.get(
+        "/api/applications/{application_id}/application-pack",
+        response_model=ApplicationPackResponse,
+        responses=COMMON_ERROR_RESPONSES,
+    )
+    def get_owner_application_pack(
+        application_id: OpaqueId,
+        response: Response,
+        owner: AuthenticatedOwner = Security(require_read_owner),
+    ) -> ApplicationPackResponse:
+        application_pack = _invoke(
+            _store(store).get_application_pack,
+            owner_id=owner.owner_id,
+            application_id=application_id,
+        )
+        if application_pack is None:
+            _not_found("application")
+        if application_pack.pack is not None:
+            _set_etag(response, application_pack.pack.version)
+        return application_pack
+
+    @router.post(
+        "/api/applications/{application_id}/application-packs",
+        response_model=ApplicationPackResponse,
+        status_code=status.HTTP_201_CREATED,
+        responses=COMMON_ERROR_RESPONSES,
+    )
+    def create_owner_application_pack(
+        application_id: OpaqueId,
+        payload: ApplicationPackCreate,
+        response: Response,
+        owner: AuthenticatedOwner = Security(require_mutation_owner),
+        if_match: str | None = Header(default=None, alias="If-Match"),
+        idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+    ) -> ApplicationPackResponse:
+        application_pack = _invoke(
+            _store(store).create_application_pack,
+            owner_id=owner.owner_id,
+            application_id=application_id,
+            payload=payload,
+            expected_application_version=_expected_version(if_match),
+            idempotency_key=_required_idempotency_key(idempotency_key),
+        )
+        if application_pack is None:
+            _not_found("application")
+        if application_pack.pack is None:
+            raise WorkspaceApiError(
+                status.HTTP_503_SERVICE_UNAVAILABLE,
+                "workspace_unavailable",
+                "application-pack storage is unavailable",
+                retryable=True,
+            )
+        _set_etag(response, application_pack.pack.version)
+        return application_pack
+
+    @router.post(
+        "/api/applications/{application_id}/application-packs/{pack_id}/revisions",
+        response_model=ApplicationPackResponse,
+        status_code=status.HTTP_201_CREATED,
+        responses=COMMON_ERROR_RESPONSES,
+    )
+    def create_owner_application_pack_revision(
+        application_id: OpaqueId,
+        pack_id: OpaqueId,
+        payload: ApplicationPackRevisionCreate,
+        response: Response,
+        owner: AuthenticatedOwner = Security(require_mutation_owner),
+        if_match: str | None = Header(default=None, alias="If-Match"),
+        idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+    ) -> ApplicationPackResponse:
+        application_pack = _invoke(
+            _store(store).create_application_pack_revision,
+            owner_id=owner.owner_id,
+            application_id=application_id,
+            pack_id=pack_id,
+            payload=payload,
+            expected_pack_version=_expected_version(if_match),
+            idempotency_key=_required_idempotency_key(idempotency_key),
+        )
+        if application_pack is None:
+            _not_found("application pack")
+        if application_pack.pack is None:
+            raise WorkspaceApiError(
+                status.HTTP_503_SERVICE_UNAVAILABLE,
+                "workspace_unavailable",
+                "application-pack storage is unavailable",
+                retryable=True,
+            )
+        _set_etag(response, application_pack.pack.version)
+        return application_pack
+
+    @router.post(
+        "/api/applications/{application_id}/application-packs/{pack_id}/events",
+        response_model=ApplicationPackResponse,
+        responses=COMMON_ERROR_RESPONSES,
+    )
+    def record_owner_application_pack_event(
+        application_id: OpaqueId,
+        pack_id: OpaqueId,
+        payload: ApplicationPackEventCreate,
+        response: Response,
+        owner: AuthenticatedOwner = Security(require_mutation_owner),
+        if_match: str | None = Header(default=None, alias="If-Match"),
+        idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+    ) -> ApplicationPackResponse:
+        application_pack = _invoke(
+            _store(store).record_application_pack_event,
+            owner_id=owner.owner_id,
+            application_id=application_id,
+            pack_id=pack_id,
+            payload=payload,
+            expected_pack_version=_expected_version(if_match),
+            idempotency_key=_required_idempotency_key(idempotency_key),
+        )
+        if application_pack is None:
+            _not_found("application pack")
+        if application_pack.pack is None:
+            raise WorkspaceApiError(
+                status.HTTP_503_SERVICE_UNAVAILABLE,
+                "workspace_unavailable",
+                "application-pack storage is unavailable",
+                retryable=True,
+            )
+        _set_etag(response, application_pack.pack.version)
+        return application_pack
 
     @router.get(
         "/api/applications/{application_id}/contacts",

@@ -30,9 +30,11 @@ durable opportunity radar is documented in
 [`docs/PHASE_2_OPPORTUNITY_RADAR.md`](docs/PHASE_2_OPPORTUNITY_RADAR.md). The
 first practical application checkpoint is documented in
 [`docs/PHASE_3_APPLICATION_PIPELINE.md`](docs/PHASE_3_APPLICATION_PIPELINE.md).
-The verified-contact foundation, provider-backed worker, and remaining UI
-checkpoints are documented in
-[`docs/PHASE_4_CONTACT_BENCH.md`](docs/PHASE_4_CONTACT_BENCH.md).
+The verified-contact bench and manual outreach workflow are documented in
+[`docs/PHASE_4_CONTACT_BENCH.md`](docs/PHASE_4_CONTACT_BENCH.md). The delivered
+provider-free requirement grounding workspace and the still-planned artifact
+and submission checkpoints are documented in
+[`docs/PHASE_5_APPLICATION_PACK.md`](docs/PHASE_5_APPLICATION_PACK.md).
 
 The delivered foundation includes migrated Postgres models, private owner
 sessions, owner-scoped generic jobs, lease/cancellation safety, capability-aware
@@ -54,12 +56,14 @@ or calls a model merely because the page was opened.
 Phase 3A adds an atomic **Pursue** decision. It creates exactly one application,
 one open dated next action, and one immutable creation activity, then exposes a
 database-only Applications list and dossier. The only current application stage
-is `pursuing`; stage transitions, action updates, and application packs remain
-explicit follow-up work.
+is `pursuing`; later stage transitions and action updates remain explicit
+follow-up work. Phase 5A now adds the first application-pack checkpoint without
+expanding that stage boundary.
 
 Phase 4A–4D2 add the durable verified-contact bench, its provider-backed worker,
-the practical dossier experience, and a safe manual-outreach workspace. Each pursued application can explicitly
-and idempotently queue a public-profile search, retain a 12-person
+the practical dossier experience, and a safe manual-outreach workspace. Each
+pursued application can explicitly and idempotently queue a public-profile
+search, retain a 12-person
 evidence-backed discovery pool, and atomically publish a deterministic, diverse
 bench of up to five. The dossier polls real progress, preserves the last good
 bench during refresh failures, shows public evidence and checked dates, and
@@ -74,6 +78,19 @@ nothing sends automatically. The dossier adds an exact-message composer,
 clipboard-first copy tracking, separate send confirmation, follow-up timing,
 outcome logging, and pause/resume/stop controls while preserving unsaved text
 through refresh and ambiguous network failures.
+
+Phase 5A adds a provider-free **Fit and evidence review** before the People
+workspace. One pack is pinned to the application's pursued posting version and
+one selected immutable resume. It deterministically extracts only `required`
+and `preferred` statements as exact job-description spans, suggests currently
+approved achievements, preserves selected evidence snapshots in encrypted
+immutable revisions, and records explicit review events. If the pursued posting
+has no full description, the owner may paste the exact JD once when starting
+the pack; an owner paste cannot replace a persisted description. The dossier
+shows the current revision and the latest reviewed revision, not a full review
+history. Reads and mutations make no model or external-provider calls. Tailored
+resume/answer artifacts and the exact applied transition remain Phase 5B and
+5C work.
 
 The separate **Legacy hunt** remains available when you explicitly want the
 current end-to-end flow with resume matching, at least five appropriate
@@ -200,6 +217,14 @@ GET    /api/applications            → database-only pursuing applications + ne
 GET    /api/applications/{id}       → application dossier + immutable activity
 GET    /api/applications/{id}/activity
                                     → database-only immutable activity stream
+GET    /api/applications/{id}/application-pack
+                                    → database-only current + latest-reviewed grounding projection
+POST   /api/applications/{id}/application-packs
+                                    → pin pursued JD/resume and extract exact requirement spans
+POST   /api/applications/{id}/application-packs/{pack_id}/revisions
+                                    → save one immutable coverage/evidence review revision
+POST   /api/applications/{id}/application-packs/{pack_id}/events
+                                    → mark the exact current revision reviewed
 GET    /api/applications/{id}/contacts
                                     → database-only contact plan, progress, bench, and evidence
 POST   /api/applications/{id}/contact-searches
@@ -421,16 +446,17 @@ job_hunt_agent/        ADK agent, schemas, pipeline runner, tracing
   hunt_repository.py   Encrypted owner-scoped Postgres hunt aggregate
   profile_repository.py Profile, resume-version, and career-target persistence
   evidence_repository.py Encrypted approval-gated achievement evidence
+  application_pack_repository.py Provider-free JD/evidence grounding revisions
   saved_search_repository.py Saved criteria and timezone projections
   sqlalchemy_owner_workspace.py Transaction-owning profile/search API adapter
   job_queue.py         Generic Postgres jobs, leases, events, and heartbeats
-  models/              Owner, profile, search, job, hunt, and outcome tables
+  models/              Owner, profile, radar, application, contact, outreach, and pack tables
   evals.py             LLM-as-judge draft scoring (V9)
   mcp_client.py        Phoenix past-draft retrieval (self-RAG)
   persistence.py       Explicit practical-mode-off SQLite compatibility path
   worker.py            Postgres practical worker + isolated legacy dispatcher
   tools/               search_jobs, find_referrals, draft_message (+ mocks)
-frontend/              Next.js app (input → review → outcomes)
+frontend/              Next.js private job-search workspace and legacy hunt UI
 fixtures/              sample resume, criteria, seed corpus, judge references
 scripts/               seed_phoenix.py, validate_judge.py, compare_rounds.py
 demo/                  round comparison chart, demo script, Devpost writeup,

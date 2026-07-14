@@ -5,6 +5,12 @@ import type {
   ApplicationListResponse,
 } from "./application-types";
 import type {
+  ApplicationPackCreate,
+  ApplicationPackEventCreate,
+  ApplicationPackRevisionCreate,
+  ApplicationPackResponse,
+} from "./application-pack-types";
+import type {
   ApplicationOutreachResponse,
   OutreachEventCreate,
   OutreachMessageCreate,
@@ -90,6 +96,88 @@ export async function getApplicationActivity(
     await fetch(
       `/api/applications/${encodeURIComponent(id)}/activity`,
       { cache: "no-store" },
+    ),
+  );
+}
+
+export async function getApplicationPack(
+  applicationId: string,
+): Promise<ApplicationPackResponse> {
+  return json<ApplicationPackResponse>(
+    await fetch(
+      `/api/applications/${encodeURIComponent(applicationId)}/application-pack`,
+      { cache: "no-store", credentials: "same-origin" },
+    ),
+  );
+}
+
+export async function createApplicationPack(
+  applicationId: string,
+  applicationVersion: number,
+  idempotencyKey: string,
+  payload: ApplicationPackCreate,
+): Promise<ApplicationPackResponse> {
+  return json<ApplicationPackResponse>(
+    await fetch(
+      `/api/applications/${encodeURIComponent(applicationId)}/application-packs`,
+      {
+        method: "POST",
+        credentials: "same-origin",
+        headers: {
+          "Content-Type": "application/json",
+          "If-Match": `"${applicationVersion}"`,
+          "Idempotency-Key": idempotencyKey,
+        },
+        body: JSON.stringify(payload),
+      },
+    ),
+  );
+}
+
+export async function createApplicationPackRevision(
+  applicationId: string,
+  packId: string,
+  packVersion: number,
+  idempotencyKey: string,
+  payload: ApplicationPackRevisionCreate,
+): Promise<ApplicationPackResponse> {
+  return json<ApplicationPackResponse>(
+    await fetch(
+      `/api/applications/${encodeURIComponent(applicationId)}/application-packs/${encodeURIComponent(packId)}/revisions`,
+      {
+        method: "POST",
+        credentials: "same-origin",
+        headers: {
+          "Content-Type": "application/json",
+          "If-Match": `"${packVersion}"`,
+          "Idempotency-Key": idempotencyKey,
+        },
+        body: JSON.stringify(payload),
+      },
+    ),
+  );
+}
+
+export async function recordApplicationPackEvent(
+  applicationId: string,
+  packId: string,
+  packVersion: number,
+  idempotencyKey: string,
+  payload: ApplicationPackEventCreate,
+): Promise<ApplicationPackResponse> {
+  return json<ApplicationPackResponse>(
+    await fetch(
+      `/api/applications/${encodeURIComponent(applicationId)}/application-packs/${encodeURIComponent(packId)}/events`,
+      {
+        method: "POST",
+        credentials: "same-origin",
+        headers: {
+          "Content-Type": "application/json",
+          "If-Match": `"${packVersion}"`,
+          "Idempotency-Key": idempotencyKey,
+        },
+        body: JSON.stringify(payload),
+      },
     ),
   );
 }

@@ -14,6 +14,19 @@ from .application_repository import (
     list_applications,
     load_application_detail,
 )
+from .application_pack_repository import (
+    ApplicationPackRepositoryError,
+    create_application_pack,
+    create_application_pack_revision,
+    load_application_pack,
+    record_application_pack_event,
+)
+from .application_pack_schemas import (
+    ApplicationPackCreate,
+    ApplicationPackEventCreate,
+    ApplicationPackRevisionCreate,
+    ApplicationPackResponse,
+)
 from .application_schemas import (
     ApplicationActivityListResponse,
     ApplicationDetailResponse,
@@ -34,7 +47,7 @@ from .outreach_schemas import (
     OutreachEventCreate,
     OutreachMessageCreate,
 )
-from .owner_workspace import WorkspaceConflict, WorkspaceUnavailable
+from .owner_workspace import WorkspaceConflict, WorkspaceInputError, WorkspaceUnavailable
 from .private_payloads import PrivatePayloadBindingError
 from .repository_errors import ResourceConflict, VersionConflict
 from .security import DataKeyring, DecryptionError
@@ -87,6 +100,84 @@ class SqlAlchemyApplicationWorkspaceStore(SqlAlchemyContactWorkspaceStore):
                 session,
                 owner_id=owner_id,
                 application_id=application_id,
+            )
+
+    def get_application_pack(
+        self,
+        *,
+        owner_id: str,
+        application_id: str,
+    ) -> ApplicationPackResponse | None:
+        with _application_pack_errors(), self.database.session() as session:
+            return load_application_pack(
+                session,
+                owner_id=owner_id,
+                application_id=application_id,
+                keyring=self.keyring,
+            )
+
+    def create_application_pack(
+        self,
+        *,
+        owner_id: str,
+        application_id: str,
+        payload: ApplicationPackCreate,
+        expected_application_version: int,
+        idempotency_key: str,
+    ) -> ApplicationPackResponse | None:
+        with _application_pack_errors(), self.database.session() as session:
+            return create_application_pack(
+                session,
+                owner_id=owner_id,
+                application_id=application_id,
+                payload=payload,
+                expected_application_version=expected_application_version,
+                idempotency_key=idempotency_key,
+                keyring=self.keyring,
+            )
+
+    def create_application_pack_revision(
+        self,
+        *,
+        owner_id: str,
+        application_id: str,
+        pack_id: str,
+        payload: ApplicationPackRevisionCreate,
+        expected_pack_version: int,
+        idempotency_key: str,
+    ) -> ApplicationPackResponse | None:
+        with _application_pack_errors(), self.database.session() as session:
+            return create_application_pack_revision(
+                session,
+                owner_id=owner_id,
+                application_id=application_id,
+                pack_id=pack_id,
+                payload=payload,
+                expected_pack_version=expected_pack_version,
+                idempotency_key=idempotency_key,
+                keyring=self.keyring,
+            )
+
+    def record_application_pack_event(
+        self,
+        *,
+        owner_id: str,
+        application_id: str,
+        pack_id: str,
+        payload: ApplicationPackEventCreate,
+        expected_pack_version: int,
+        idempotency_key: str,
+    ) -> ApplicationPackResponse | None:
+        with _application_pack_errors(), self.database.session() as session:
+            return record_application_pack_event(
+                session,
+                owner_id=owner_id,
+                application_id=application_id,
+                pack_id=pack_id,
+                payload=payload,
+                expected_pack_version=expected_pack_version,
+                idempotency_key=idempotency_key,
+                keyring=self.keyring,
             )
 
     def get_application_outreach(
@@ -211,6 +302,40 @@ def _outreach_errors() -> Iterator[None]:
     except SQLAlchemyError as exc:
         raise WorkspaceUnavailable(
             "application outreach database is unavailable"
+        ) from exc
+
+
+@contextmanager
+def _application_pack_errors() -> Iterator[None]:
+    try:
+        yield
+    except WorkspaceUnavailable:
+        raise
+    except WorkspaceConflict:
+        raise
+    except WorkspaceInputError:
+        raise
+    except VersionConflict as exc:
+        raise WorkspaceConflict(str(exc), code="version_conflict") from exc
+    except MutationIdempotencyConflict as exc:
+        raise WorkspaceConflict(str(exc), code="idempotency_conflict") from exc
+    except MutationPending as exc:
+        raise WorkspaceConflict(str(exc), code="mutation_pending") from exc
+    except ResourceConflict as exc:
+        raise WorkspaceConflict(str(exc)) from exc
+    except (ApplicationPackRepositoryError, PrivatePayloadBindingError, DecryptionError) as exc:
+        raise WorkspaceUnavailable("application-pack data is inconsistent") from exc
+    except ValidationError as exc:
+        raise WorkspaceUnavailable(
+            "stored application-pack data failed contract validation"
+        ) from exc
+    except ValueError as exc:
+        raise WorkspaceInputError(str(exc)) from exc
+    except IntegrityError as exc:
+        raise WorkspaceConflict("application pack conflicts with existing state") from exc
+    except SQLAlchemyError as exc:
+        raise WorkspaceUnavailable(
+            "application-pack database is unavailable"
         ) from exc
 
 

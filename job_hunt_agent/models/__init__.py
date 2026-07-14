@@ -2,6 +2,7 @@
 
 from .base import Base
 from .application import ActionItem, Application, ApplicationActivityEvent
+from .application_pack import ApplicationPack, ApplicationPackEvent, ApplicationPackRevision
 from .contact import ApplicationContact, Contact, ContactPlan
 from .foundation import (
     BackgroundJob,
@@ -38,6 +39,9 @@ __all__ = [
     "ActionItem",
     "Application",
     "ApplicationActivityEvent",
+    "ApplicationPack",
+    "ApplicationPackEvent",
+    "ApplicationPackRevision",
     "ApplicationContact",
     "BackgroundJob",
     "BackgroundJobEvent",
