@@ -1,6 +1,6 @@
 # Practical Job Search Control Room — Implementable Plan
 
-**Status:** Phases 0–5C are implemented; the next product slice is outcome learning, weekly review, and hardening
+**Status:** Phases 0–6B are implemented; Phase 6C is the final named phase and production-hardening gate
 **Primary user:** one private owner using the product for a real job search
 **North-star metric:** qualified interviews for genuinely better roles per hour of user effort
 **First complete release:** durable opportunity radar + application pipeline + five-person contact bench + manual, staged outreach
@@ -848,9 +848,10 @@ Full Slice 5 definition of done:
       hiring progress.
 - [x] Put owner-local overdue, due-today, and next-seven-day application
       actions at the top of Today from a dedicated database projection.
-- [ ] Add weekly funnel and next-action review.
-- [ ] Measure results by career track, source, assessment band, contact type, and sequence position.
-- [ ] Show the incremental value of contacts two through five.
+- [x] Add weekly funnel and next-action review.
+- [x] Measure results by career track, source, assessment band, contact type, and sequence position.
+- [x] Show the observed rescue value of contacts two through five without
+      claiming causal uplift.
 - [ ] Add recruiter-screen/interview preparation actions and evidence-backed story prompts.
 - [ ] Add privacy export/delete and retention controls.
 - [ ] Complete legacy import/deprecation, backup/restore drill, deployment smoke tests, and runbooks.
@@ -882,7 +883,29 @@ Full Slice 5 definition of done:
 - [x] Attribute each outreach response to the exact marked-sent event and
       message version.
 
-Next: Phase 6B adds the weekly review and trustworthy funnel.
+#### Phase 6B — Weekly review and trustworthy funnel
+
+- [x] Add a bounded owner-local stale-application queue whose explicit
+      Continue or Waiting decision reschedules the exact current action without
+      inventing progress, silence, or rejection.
+- [x] Add an immutable pursuit-time attribution snapshot for acquisition
+      source, selected saved search, career track, and assessment state before
+      those dimensions enter reporting; legacy ambiguity stays missing.
+- [x] Report submitted-application conversion over a fixed 14-day mature
+      cohort, with exact sample sizes, censored recent work, missing graphs, and
+      later conversions separated from the primary rate.
+- [x] Report exact outreach results by verified contact category and bench
+      position, including contacts two through five as observed rescue rates
+      after prior unsuccessful contacts, with censored and same-day ambiguous
+      attempts visible.
+- [x] Keep every metric database-only, owner-scoped, and grounded in immutable
+      submissions, corrected milestone dates, exact sends, and exact replies.
+
+Next: Phase 6C is the last named phase. It includes privacy export/delete and
+retention controls, interview-preparation story prompts, legacy
+import/deprecation, backup/restore and restart drills, runbooks and migration
+gates, plus cross-browser, mobile, accessibility, concurrency, source-failure,
+and deployment smoke coverage.
 
 Definition of done:
 
@@ -1060,7 +1083,9 @@ now implemented. The completed checkpoint is:
 > materials whose claims remain tied to approved evidence or exact pinned-source
 > spans, and a manual application records the exact approved versions used.
 
-The next checkpoint is Slice 6: capture real application outcomes and turn the
-immutable application/outreach history into a trustworthy weekly operating
-review. The completed Phase 5 contract is documented in
-[`docs/PHASE_5_APPLICATION_PACK.md`](docs/PHASE_5_APPLICATION_PACK.md).
+The weekly operating review now turns immutable application and outreach facts
+into fixed-horizon funnel and observed contact-rescue metrics while keeping
+missing and censored work visible. The final named checkpoint is Phase 6C:
+privacy, preparation support, legacy migration, recovery drills, runbooks, and
+production-quality gates. Phase 6 is documented in
+[`docs/PHASE_6_OUTCOME_LEARNING.md`](docs/PHASE_6_OUTCOME_LEARNING.md).

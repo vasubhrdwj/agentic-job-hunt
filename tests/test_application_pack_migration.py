@@ -48,7 +48,7 @@ def test_application_pack_migration_round_trip_constraints_and_receipt_cleanup(
     database = Database(url)
     try:
         inspector = inspect(database.engine)
-        assert MIGRATION_HEAD == "20260715_0015"
+        assert MIGRATION_HEAD == "20260715_0016"
         assert database.current_migration_revision() == MIGRATION_HEAD
         assert APPLICATION_PACK_TABLES.issubset(inspector.get_table_names())
 

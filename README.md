@@ -114,6 +114,16 @@ with an owner-local received date and encrypted optional note. Late and multiple
 replies remain recordable after a no-reply result, closed posting, completed
 sequence, or later hiring progress without re-enabling outbound messages.
 
+Phase 6B adds a practical **Weekly review**. It surfaces every overdue
+application without treating silence as rejection, then records an explicit
+Continue or Waiting decision against the exact current action and next date.
+Its fixed 14-day application funnel keeps sample sizes, recent censored work,
+missing attribution, and late conversions visible. Source, career-track, and
+assessment segments use immutable pursuit-time snapshots only. Outreach is
+reported by verified contact type and bench position, while contacts two
+through five are shown as observed rescue rates—not causal uplift—from exact
+initial and follow-up replies.
+
 The separate **Legacy hunt** remains available when you explicitly want the
 current end-to-end flow with resume matching, at least five appropriate
 referral leads per returned role, and draft generation. Cadence preferences

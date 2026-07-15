@@ -57,6 +57,11 @@ from ..outreach_schemas import (
     OutreachMessageCreate,
     OutreachReplyCreate,
 )
+from ..weekly_review_schemas import (
+    ApplicationActionReviewCreate,
+    ApplicationActionReviewMutationResponse,
+    WeeklyReviewResponse,
+)
 from .session import AuthenticatedOwner, require_owner_mutation, require_owner_session
 from .workspace import (
     COMMON_ERROR_RESPONSES,
@@ -131,6 +136,16 @@ def create_application_router(
             owner_id=owner.owner_id,
             limit=limit,
         )
+
+    @router.get(
+        "/api/review/weekly",
+        response_model=WeeklyReviewResponse,
+        responses=COMMON_ERROR_RESPONSES,
+    )
+    def get_owner_weekly_review(
+        owner: AuthenticatedOwner = Security(require_read_owner),
+    ) -> WeeklyReviewResponse:
+        return _invoke(_store(store).get_weekly_review, owner_id=owner.owner_id)
 
     @router.get(
         "/api/applications",
@@ -230,6 +245,39 @@ def create_application_router(
             _not_found("application")
         _set_etag(response, transition.application.version)
         return transition
+
+    @router.post(
+        "/api/applications/{application_id}/actions/{action_id}/reviews",
+        response_model=ApplicationActionReviewMutationResponse,
+        status_code=status.HTTP_201_CREATED,
+        responses=COMMON_ERROR_RESPONSES,
+    )
+    def review_owner_application_action(
+        application_id: OpaqueId,
+        action_id: OpaqueId,
+        payload: ApplicationActionReviewCreate,
+        response: Response,
+        owner: AuthenticatedOwner = Security(require_mutation_owner),
+        if_match: str | None = Header(default=None, alias="If-Match"),
+        idempotency_key: str | None = Header(
+            default=None, alias="Idempotency-Key"
+        ),
+    ) -> ApplicationActionReviewMutationResponse:
+        expected_application_version = _expected_version(if_match)
+        required_idempotency_key = _required_idempotency_key(idempotency_key)
+        mutation = _invoke(
+            _store(store).record_application_action_review,
+            owner_id=owner.owner_id,
+            application_id=application_id,
+            action_id=action_id,
+            payload=payload,
+            expected_application_version=expected_application_version,
+            idempotency_key=required_idempotency_key,
+        )
+        if mutation is None:
+            _not_found("application action")
+        _set_etag(response, mutation.application.version)
+        return mutation
 
     @router.post(
         "/api/applications/{application_id}/activity/"

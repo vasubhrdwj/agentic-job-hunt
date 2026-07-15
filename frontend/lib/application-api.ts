@@ -37,6 +37,11 @@ import type {
   ApplicationTransitionCreate,
   ApplicationTransitionResponse,
 } from "./application-submission-types";
+import type {
+  ApplicationActionReviewCreate,
+  ApplicationActionReviewMutationResponse,
+  WeeklyReviewResponse,
+} from "./weekly-review-types";
 import { WorkspaceApiError } from "./workspace-api";
 
 async function responseError(response: Response): Promise<WorkspaceApiError> {
@@ -113,6 +118,39 @@ export async function getTodayApplicationActions(
     await fetch(`/api/today/application-actions?${params.toString()}`, {
       cache: "no-store",
     }),
+  );
+}
+
+export async function getWeeklyReview(): Promise<WeeklyReviewResponse> {
+  return json<WeeklyReviewResponse>(
+    await fetch("/api/review/weekly", {
+      cache: "no-store",
+      credentials: "same-origin",
+    }),
+  );
+}
+
+export async function reviewApplicationAction(
+  applicationId: string,
+  actionId: string,
+  applicationVersion: number,
+  idempotencyKey: string,
+  payload: ApplicationActionReviewCreate,
+): Promise<ApplicationActionReviewMutationResponse> {
+  return json<ApplicationActionReviewMutationResponse>(
+    await fetch(
+      `/api/applications/${encodeURIComponent(applicationId)}/actions/${encodeURIComponent(actionId)}/reviews`,
+      {
+        method: "POST",
+        credentials: "same-origin",
+        headers: {
+          "Content-Type": "application/json",
+          "If-Match": `"${applicationVersion}"`,
+          "Idempotency-Key": idempotencyKey,
+        },
+        body: JSON.stringify(payload),
+      },
+    ),
   );
 }
 

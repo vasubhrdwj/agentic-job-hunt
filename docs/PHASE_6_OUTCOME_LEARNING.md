@@ -181,17 +181,49 @@ outreach caused an interview or offer.
 
 ### Phase 6B — Weekly review and trustworthy funnel
 
-- Review stale applications without auto-classifying them as rejected.
-- Show mature-cohort counts, rates, missing data, censored open applications,
-  and sample sizes.
-- Report contacts two through five as observed rescue rates among applications
-  still unsuccessful after the prior contact—not as causal uplift.
-- Add immutable career-track, acquisition-source, and assessment snapshots
-  before segmenting metrics by those dimensions.
+Implemented in migration `20260715_0016`.
+
+The authenticated **Weekly review** workspace now combines one owner-local,
+database-only projection with an explicit way to clear overdue application
+work. Continue and Waiting both reschedule the exact current non-interview
+action and append an immutable review record. They never infer a rejection or
+change the application stage. Interview-owned tasks link back to their round
+workflow instead of accepting an incompatible generic reschedule.
+
+The funnel uses exact application submissions from the latest 84 owner-local
+days. An application enters the primary denominator only after a fixed 14-day
+observation horizon. Screen, interview, and offer conversions inside that
+horizon form the reported rate; later conversions stay visible but are not
+quietly mixed into it. Recent open applications, malformed historical graphs,
+missing attribution, rates with no denominator, and every sample size remain
+explicit.
+
+Every new pursuit also captures one immutable reporting snapshot:
+
+- the owner-selected acquisition source;
+- the exact saved search and career-track names and versions when Job Hunt
+  search is selected;
+- the exact pursued posting version; and
+- the current assessment state, with future-capable assessment bands.
+
+A single unambiguous saved-search match can be selected automatically. Several
+matches require an explicit choice. The migration does not reinterpret mutable
+legacy searches or tracks, so older applications remain visibly unattributed
+instead of receiving fabricated history.
+
+Outreach reporting anchors each attempt to its exact initial manual send and
+includes useful replies, introductions, or referrals attributed to either the
+initial message or its exact follow-up. It reports observed results by verified
+contact category and bench position. Contacts two through five use only roles
+that actually reached that position while earlier positions had not already
+succeeded. Same-owner-local-day ordering ambiguity and still-open attempts are
+excluded and counted. These are observed rescue rates, never causal uplift.
 
 ### Phase 6C — Privacy and operational hardening
 
 - Export/delete and retention controls.
+- Recruiter-screen/interview preparation and evidence-backed story prompts.
+- Legacy import/deprecation, runbooks, and migration gates.
 - Backup/restore and restart drills.
 - Cross-browser, mobile, accessibility, concurrency, source-failure, and
   deployment smoke gates.

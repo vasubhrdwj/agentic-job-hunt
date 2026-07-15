@@ -393,6 +393,174 @@
         "title": "ActionItemStatus",
         "type": "string"
       },
+      "ApplicationAcquisitionSource": {
+        "enum": [
+          "job_hunt_search",
+          "referral",
+          "recruiter_inbound",
+          "direct_company",
+          "job_board",
+          "other"
+        ],
+        "title": "ApplicationAcquisitionSource",
+        "type": "string"
+      },
+      "ApplicationActionReviewCreate": {
+        "additionalProperties": false,
+        "properties": {
+          "confirm_current_action": {
+            "const": true,
+            "title": "Confirm Current Action",
+            "type": "boolean"
+          },
+          "decision": {
+            "$ref": "#/components/schemas/ApplicationActionReviewDecision"
+          },
+          "new_due_on": {
+            "format": "date",
+            "title": "New Due On",
+            "type": "string"
+          }
+        },
+        "required": [
+          "decision",
+          "new_due_on",
+          "confirm_current_action"
+        ],
+        "title": "ApplicationActionReviewCreate",
+        "type": "object"
+      },
+      "ApplicationActionReviewDecision": {
+        "enum": [
+          "continue",
+          "waiting"
+        ],
+        "title": "ApplicationActionReviewDecision",
+        "type": "string"
+      },
+      "ApplicationActionReviewMutationResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "$ref": "#/components/schemas/ActionItemResponse"
+          },
+          "application": {
+            "$ref": "#/components/schemas/ApplicationSummary"
+          },
+          "data_source": {
+            "const": "database",
+            "default": "database",
+            "title": "Data Source",
+            "type": "string"
+          },
+          "mutation_created": {
+            "title": "Mutation Created",
+            "type": "boolean"
+          },
+          "review": {
+            "$ref": "#/components/schemas/ApplicationActionReviewResponse"
+          }
+        },
+        "required": [
+          "application",
+          "action",
+          "review",
+          "mutation_created"
+        ],
+        "title": "ApplicationActionReviewMutationResponse",
+        "type": "object"
+      },
+      "ApplicationActionReviewResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "action_item_id": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
+            "title": "Action Item Id",
+            "type": "string"
+          },
+          "action_version": {
+            "minimum": 2.0,
+            "title": "Action Version",
+            "type": "integer"
+          },
+          "application_id": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
+            "title": "Application Id",
+            "type": "string"
+          },
+          "application_version": {
+            "minimum": 2.0,
+            "title": "Application Version",
+            "type": "integer"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "decision": {
+            "$ref": "#/components/schemas/ApplicationActionReviewDecision"
+          },
+          "id": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
+            "title": "Id",
+            "type": "string"
+          },
+          "new_due_on": {
+            "format": "date",
+            "title": "New Due On",
+            "type": "string"
+          },
+          "prior_action_item_id": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
+            "title": "Prior Action Item Id",
+            "type": "string"
+          },
+          "prior_action_version": {
+            "minimum": 1.0,
+            "title": "Prior Action Version",
+            "type": "integer"
+          },
+          "prior_application_version": {
+            "minimum": 1.0,
+            "title": "Prior Application Version",
+            "type": "integer"
+          },
+          "prior_due_on": {
+            "format": "date",
+            "title": "Prior Due On",
+            "type": "string"
+          },
+          "recorded_at": {
+            "format": "date-time",
+            "title": "Recorded At",
+            "type": "string"
+          },
+          "recording_method": {
+            "const": "manual",
+            "title": "Recording Method",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "application_id",
+          "prior_action_item_id",
+          "action_item_id",
+          "decision",
+          "prior_due_on",
+          "new_due_on",
+          "prior_action_version",
+          "action_version",
+          "prior_application_version",
+          "application_version",
+          "recording_method",
+          "recorded_at",
+          "created_at"
+        ],
+        "title": "ApplicationActionReviewResponse",
+        "type": "object"
+      },
       "ApplicationActivityEventResponse": {
         "additionalProperties": false,
         "properties": {
@@ -4304,6 +4472,134 @@
         "title": "EvidenceState",
         "type": "string"
       },
+      "FunnelSegmentMetric": {
+        "additionalProperties": false,
+        "properties": {
+          "cohort_total": {
+            "minimum": 0.0,
+            "title": "Cohort Total",
+            "type": "integer"
+          },
+          "key": {
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Key",
+            "type": "string"
+          },
+          "label": {
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Label",
+            "type": "string"
+          },
+          "missing": {
+            "minimum": 0.0,
+            "title": "Missing",
+            "type": "integer"
+          },
+          "stages": {
+            "items": {
+              "$ref": "#/components/schemas/FunnelStageMetric"
+            },
+            "maxItems": 3,
+            "minItems": 3,
+            "title": "Stages",
+            "type": "array"
+          }
+        },
+        "required": [
+          "key",
+          "label",
+          "cohort_total",
+          "missing",
+          "stages"
+        ],
+        "title": "FunnelSegmentMetric",
+        "type": "object"
+      },
+      "FunnelStage": {
+        "enum": [
+          "screen",
+          "interview",
+          "offer"
+        ],
+        "title": "FunnelStage",
+        "type": "string"
+      },
+      "FunnelStageMetric": {
+        "additionalProperties": false,
+        "properties": {
+          "censored_open": {
+            "minimum": 0.0,
+            "title": "Censored Open",
+            "type": "integer"
+          },
+          "cohort_total": {
+            "minimum": 0.0,
+            "title": "Cohort Total",
+            "type": "integer"
+          },
+          "converted": {
+            "minimum": 0.0,
+            "title": "Converted",
+            "type": "integer"
+          },
+          "evaluable": {
+            "minimum": 0.0,
+            "title": "Evaluable",
+            "type": "integer"
+          },
+          "immature": {
+            "minimum": 0.0,
+            "title": "Immature",
+            "type": "integer"
+          },
+          "late_converted": {
+            "default": 0,
+            "minimum": 0.0,
+            "title": "Late Converted",
+            "type": "integer"
+          },
+          "mature": {
+            "minimum": 0.0,
+            "title": "Mature",
+            "type": "integer"
+          },
+          "missing": {
+            "minimum": 0.0,
+            "title": "Missing",
+            "type": "integer"
+          },
+          "rate": {
+            "anyOf": [
+              {
+                "maximum": 1.0,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rate"
+          },
+          "stage": {
+            "$ref": "#/components/schemas/FunnelStage"
+          }
+        },
+        "required": [
+          "stage",
+          "cohort_total",
+          "mature",
+          "evaluable",
+          "immature",
+          "censored_open",
+          "converted",
+          "missing"
+        ],
+        "title": "FunnelStageMetric",
+        "type": "object"
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -5355,6 +5651,16 @@
       "OpportunityDecisionRequest": {
         "additionalProperties": false,
         "properties": {
+          "acquisition_source": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ApplicationAcquisitionSource"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "action": {
             "$ref": "#/components/schemas/OpportunityDecisionAction"
           },
@@ -5404,6 +5710,18 @@
               }
             ],
             "title": "Restore Decision Event Id"
+          },
+          "selected_saved_search_id": {
+            "anyOf": [
+              {
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Selected Saved Search Id"
           }
         },
         "required": [
@@ -6214,6 +6532,84 @@
         "title": "OutreachNonReplyOutcome",
         "type": "string"
       },
+      "OutreachObservedMetric": {
+        "additionalProperties": false,
+        "properties": {
+          "ambiguity_excluded": {
+            "minimum": 0.0,
+            "title": "Ambiguity Excluded",
+            "type": "integer"
+          },
+          "censored_open": {
+            "minimum": 0.0,
+            "title": "Censored Open",
+            "type": "integer"
+          },
+          "evaluable": {
+            "minimum": 0.0,
+            "title": "Evaluable",
+            "type": "integer"
+          },
+          "immature": {
+            "minimum": 0.0,
+            "title": "Immature",
+            "type": "integer"
+          },
+          "key": {
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Key",
+            "type": "string"
+          },
+          "label": {
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Label",
+            "type": "string"
+          },
+          "mature": {
+            "minimum": 0.0,
+            "title": "Mature",
+            "type": "integer"
+          },
+          "observed_rate": {
+            "anyOf": [
+              {
+                "maximum": 1.0,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Observed Rate"
+          },
+          "reached": {
+            "minimum": 0.0,
+            "title": "Reached",
+            "type": "integer"
+          },
+          "successes": {
+            "minimum": 0.0,
+            "title": "Successes",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "key",
+          "label",
+          "reached",
+          "mature",
+          "evaluable",
+          "successes",
+          "censored_open",
+          "immature",
+          "ambiguity_excluded"
+        ],
+        "title": "OutreachObservedMetric",
+        "type": "object"
+      },
       "OutreachOutcome": {
         "enum": [
           "no_reply",
@@ -6719,6 +7115,81 @@
           "recorded_at"
         ],
         "title": "OutreachReplyResponse",
+        "type": "object"
+      },
+      "OutreachRescueMetric": {
+        "additionalProperties": false,
+        "properties": {
+          "ambiguity_excluded": {
+            "minimum": 0.0,
+            "title": "Ambiguity Excluded",
+            "type": "integer"
+          },
+          "censored_open": {
+            "minimum": 0.0,
+            "title": "Censored Open",
+            "type": "integer"
+          },
+          "evaluable": {
+            "minimum": 0.0,
+            "title": "Evaluable",
+            "type": "integer"
+          },
+          "immature": {
+            "minimum": 0.0,
+            "title": "Immature",
+            "type": "integer"
+          },
+          "mature": {
+            "minimum": 0.0,
+            "title": "Mature",
+            "type": "integer"
+          },
+          "observed_rate": {
+            "anyOf": [
+              {
+                "maximum": 1.0,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Observed Rate"
+          },
+          "position": {
+            "enum": [
+              2,
+              3,
+              4,
+              5
+            ],
+            "title": "Position",
+            "type": "integer"
+          },
+          "reached": {
+            "minimum": 0.0,
+            "title": "Reached",
+            "type": "integer"
+          },
+          "successes": {
+            "minimum": 0.0,
+            "title": "Successes",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "position",
+          "reached",
+          "mature",
+          "evaluable",
+          "successes",
+          "censored_open",
+          "immature",
+          "ambiguity_excluded"
+        ],
+        "title": "OutreachRescueMetric",
         "type": "object"
       },
       "OutreachResumeEventCreate": {
@@ -9689,6 +10160,252 @@
         "title": "ValidationError",
         "type": "object"
       },
+      "WeeklyReviewFunnel": {
+        "additionalProperties": false,
+        "properties": {
+          "assessment_missing": {
+            "minimum": 0.0,
+            "title": "Assessment Missing",
+            "type": "integer"
+          },
+          "attribution_missing": {
+            "minimum": 0.0,
+            "title": "Attribution Missing",
+            "type": "integer"
+          },
+          "by_acquisition_source": {
+            "items": {
+              "$ref": "#/components/schemas/FunnelSegmentMetric"
+            },
+            "title": "By Acquisition Source",
+            "type": "array"
+          },
+          "by_assessment_band": {
+            "items": {
+              "$ref": "#/components/schemas/FunnelSegmentMetric"
+            },
+            "title": "By Assessment Band",
+            "type": "array"
+          },
+          "by_career_track": {
+            "items": {
+              "$ref": "#/components/schemas/FunnelSegmentMetric"
+            },
+            "title": "By Career Track",
+            "type": "array"
+          },
+          "overall": {
+            "items": {
+              "$ref": "#/components/schemas/FunnelStageMetric"
+            },
+            "maxItems": 3,
+            "minItems": 3,
+            "title": "Overall",
+            "type": "array"
+          }
+        },
+        "required": [
+          "overall",
+          "attribution_missing",
+          "assessment_missing"
+        ],
+        "title": "WeeklyReviewFunnel",
+        "type": "object"
+      },
+      "WeeklyReviewOutreach": {
+        "additionalProperties": false,
+        "properties": {
+          "by_contact_category": {
+            "items": {
+              "$ref": "#/components/schemas/OutreachObservedMetric"
+            },
+            "title": "By Contact Category",
+            "type": "array"
+          },
+          "by_sequence_position": {
+            "items": {
+              "$ref": "#/components/schemas/OutreachObservedMetric"
+            },
+            "title": "By Sequence Position",
+            "type": "array"
+          },
+          "contacts_two_through_five": {
+            "items": {
+              "$ref": "#/components/schemas/OutreachRescueMetric"
+            },
+            "maxItems": 4,
+            "minItems": 4,
+            "title": "Contacts Two Through Five",
+            "type": "array"
+          },
+          "noncausal_label": {
+            "const": "Observed association only; outreach position and contact type are not causal.",
+            "default": "Observed association only; outreach position and contact type are not causal.",
+            "title": "Noncausal Label",
+            "type": "string"
+          },
+          "unattributed_legacy_successes": {
+            "minimum": 0.0,
+            "title": "Unattributed Legacy Successes",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "contacts_two_through_five",
+          "unattributed_legacy_successes"
+        ],
+        "title": "WeeklyReviewOutreach",
+        "type": "object"
+      },
+      "WeeklyReviewPolicy": {
+        "additionalProperties": false,
+        "properties": {
+          "application_maturity_days": {
+            "const": 14,
+            "default": 14,
+            "title": "Application Maturity Days",
+            "type": "integer"
+          },
+          "observation_window_days": {
+            "const": 84,
+            "default": 84,
+            "title": "Observation Window Days",
+            "type": "integer"
+          },
+          "outreach_maturity_days": {
+            "const": 14,
+            "default": 14,
+            "title": "Outreach Maturity Days",
+            "type": "integer"
+          },
+          "stale_definition": {
+            "const": "overdue_open_action",
+            "default": "overdue_open_action",
+            "title": "Stale Definition",
+            "type": "string"
+          },
+          "version": {
+            "const": "weekly-review-v1",
+            "default": "weekly-review-v1",
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "title": "WeeklyReviewPolicy",
+        "type": "object"
+      },
+      "WeeklyReviewResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "as_of": {
+            "format": "date-time",
+            "title": "As Of",
+            "type": "string"
+          },
+          "data_source": {
+            "const": "database",
+            "default": "database",
+            "title": "Data Source",
+            "type": "string"
+          },
+          "funnel": {
+            "$ref": "#/components/schemas/WeeklyReviewFunnel"
+          },
+          "outreach": {
+            "$ref": "#/components/schemas/WeeklyReviewOutreach"
+          },
+          "owner_local_date": {
+            "format": "date",
+            "title": "Owner Local Date",
+            "type": "string"
+          },
+          "owner_timezone": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Owner Timezone",
+            "type": "string"
+          },
+          "policy": {
+            "$ref": "#/components/schemas/WeeklyReviewPolicy"
+          },
+          "stale_application_total": {
+            "minimum": 0.0,
+            "title": "Stale Application Total",
+            "type": "integer"
+          },
+          "stale_applications": {
+            "items": {
+              "$ref": "#/components/schemas/WeeklyReviewStaleApplication"
+            },
+            "maxItems": 50,
+            "title": "Stale Applications",
+            "type": "array"
+          },
+          "window": {
+            "$ref": "#/components/schemas/WeeklyReviewWindow"
+          }
+        },
+        "required": [
+          "as_of",
+          "owner_timezone",
+          "owner_local_date",
+          "window",
+          "policy",
+          "stale_application_total",
+          "funnel",
+          "outreach"
+        ],
+        "title": "WeeklyReviewResponse",
+        "type": "object"
+      },
+      "WeeklyReviewStaleApplication": {
+        "additionalProperties": false,
+        "properties": {
+          "application": {
+            "$ref": "#/components/schemas/ApplicationSummary"
+          },
+          "current_action": {
+            "$ref": "#/components/schemas/ActionItemResponse"
+          },
+          "days_overdue": {
+            "minimum": 1.0,
+            "title": "Days Overdue",
+            "type": "integer"
+          },
+          "posting": {
+            "$ref": "#/components/schemas/ApplicationPostingSummary"
+          }
+        },
+        "required": [
+          "application",
+          "posting",
+          "current_action",
+          "days_overdue"
+        ],
+        "title": "WeeklyReviewStaleApplication",
+        "type": "object"
+      },
+      "WeeklyReviewWindow": {
+        "additionalProperties": false,
+        "properties": {
+          "ends_on": {
+            "format": "date",
+            "title": "Ends On",
+            "type": "string"
+          },
+          "starts_on": {
+            "format": "date",
+            "title": "Starts On",
+            "type": "string"
+          }
+        },
+        "required": [
+          "starts_on",
+          "ends_on"
+        ],
+        "title": "WeeklyReviewWindow",
+        "type": "object"
+      },
       "WorkAuthorization": {
         "additionalProperties": false,
         "properties": {
@@ -9998,6 +10715,176 @@
           }
         ],
         "summary": "Get Owner Application",
+        "tags": [
+          "applications"
+        ]
+      }
+    },
+    "/api/applications/{application_id}/actions/{action_id}/reviews": {
+      "post": {
+        "operationId": "review_owner_application_action_api_applications__application_id__actions__action_id__reviews_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "application_id",
+            "required": true,
+            "schema": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
+              "title": "Application Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "action_id",
+            "required": true,
+            "schema": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
+              "title": "Action Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "If-Match",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ApplicationActionReviewCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApplicationActionReviewMutationResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
+          "428": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Precondition Required"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "security": [
+          {
+            "OwnerSessionCookie": []
+          }
+        ],
+        "summary": "Review Owner Application Action",
         "tags": [
           "applications"
         ]
@@ -15395,6 +16282,112 @@
         "summary": "Decide Opportunity",
         "tags": [
           "opportunity-radar"
+        ]
+      }
+    },
+    "/api/review/weekly": {
+      "get": {
+        "operationId": "get_owner_weekly_review_api_review_weekly_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WeeklyReviewResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
+          "428": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Precondition Required"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "security": [
+          {
+            "OwnerSessionCookie": []
+          }
+        ],
+        "summary": "Get Owner Weekly Review",
+        "tags": [
+          "applications"
         ]
       }
     },

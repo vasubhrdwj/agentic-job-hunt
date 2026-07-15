@@ -25,6 +25,13 @@ export type OpportunityDecisionAction =
 export type OpportunityLane = "reach" | "core" | "hedge" | "unassigned";
 export type TodayView = "inbox" | "watching" | "dismissed" | "all";
 export type EvidenceState = "verified" | "inferred" | "unknown";
+export type ApplicationAcquisitionSource =
+  | "job_hunt_search"
+  | "referral"
+  | "recruiter_inbound"
+  | "direct_company"
+  | "job_board"
+  | "other";
 export type DismissReason =
   | "not_relevant"
   | "seniority_mismatch"
@@ -209,6 +216,8 @@ export interface OpportunityDecisionPayload {
   note?: string;
   restore_decision_event_id?: string;
   initial_action_due_on?: string;
+  acquisition_source?: ApplicationAcquisitionSource;
+  selected_saved_search_id?: string;
 }
 
 export interface OpportunityDecisionResponse {

@@ -41,6 +41,7 @@ from .opportunity import (
     SavedSearchMatch,
 )
 from .outreach import OutreachEvent, OutreachMessageVersion, OutreachReply, OutreachSequence
+from .weekly_review import ApplicationActionReview, ApplicationMetricSnapshot
 
 __all__ = [
     "Base",
@@ -57,6 +58,8 @@ __all__ = [
     "ApplicationPackEvent",
     "ApplicationPackRevision",
     "ApplicationSubmission",
+    "ApplicationActionReview",
+    "ApplicationMetricSnapshot",
     "ApplicationContact",
     "BackgroundJob",
     "BackgroundJobEvent",

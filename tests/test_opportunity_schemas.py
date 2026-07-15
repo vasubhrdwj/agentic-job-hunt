@@ -387,8 +387,14 @@ def test_match_summary_is_transparent_or_explicitly_not_assessed() -> None:
             "dismiss_reason": "company",
             "initial_action_due_on": "2026-07-15",
         },
+        {
+            "action": "dismiss",
+            "dismiss_reason": "company",
+            "acquisition_source": "referral",
+        },
         {"action": "watch", "dismiss_reason": "company"},
         {"action": "watch", "initial_action_due_on": "2026-07-15"},
+        {"action": "watch", "selected_saved_search_id": "search1"},
         {"action": "restore_to_inbox"},
         {
             "action": "restore_to_inbox",
@@ -420,7 +426,7 @@ def test_watch_dismiss_and_restore_decisions_have_exact_shapes() -> None:
     assert restore.restore_decision_event_id == "event1"
 
 
-def test_pursue_request_has_only_an_optional_initial_due_date() -> None:
+def test_pursue_request_has_exact_due_date_and_acquisition_attribution() -> None:
     pursue = OpportunityDecisionRequest(
         action="pursue",
         initial_action_due_on=date(2026, 7, 15),
@@ -429,6 +435,19 @@ def test_pursue_request_has_only_an_optional_initial_due_date() -> None:
 
     assert pursue.initial_action_due_on == date(2026, 7, 15)
     assert narrow.action.value == "pursue"
+    assert narrow.acquisition_source.value == "job_hunt_search"
+    assert narrow.selected_saved_search_id is None
+    selected = PursueOpportunityRequest(
+        selected_saved_search_id="search1",
+    )
+    referral = PursueOpportunityRequest(acquisition_source="referral")
+    assert selected.selected_saved_search_id == "search1"
+    assert referral.acquisition_source.value == "referral"
+    with pytest.raises(ValidationError, match="only job_hunt_search"):
+        PursueOpportunityRequest(
+            acquisition_source="referral",
+            selected_saved_search_id="search1",
+        )
     with pytest.raises(ValidationError):
         PursueOpportunityRequest.model_validate({"action": "watch"})
     with pytest.raises(ValidationError, match="extra_forbidden"):

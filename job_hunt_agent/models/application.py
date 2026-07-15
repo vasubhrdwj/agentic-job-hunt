@@ -83,6 +83,14 @@ class Application(Base):
         ),
         CheckConstraint("version >= 1", name="version_positive"),
         Index("ix_applications_owner_stage", "owner_id", "stage", "updated_at"),
+        Index(
+            "uq_applications_metric_snapshot_target",
+            "owner_id",
+            "id",
+            "job_posting_id",
+            "pursued_posting_version_id",
+            unique=True,
+        ),
     )
 
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid_hex)

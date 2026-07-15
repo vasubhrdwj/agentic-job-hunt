@@ -99,6 +99,16 @@ from .private_payloads import PrivatePayloadBindingError
 from .repository_errors import ResourceConflict, VersionConflict
 from .security import DataKeyring, DecryptionError
 from .sqlalchemy_contact_workspace import SqlAlchemyContactWorkspaceStore
+from .weekly_review_repository import (
+    WeeklyReviewRepositoryError,
+    load_weekly_review,
+    record_application_action_review,
+)
+from .weekly_review_schemas import (
+    ApplicationActionReviewCreate,
+    ApplicationActionReviewMutationResponse,
+    WeeklyReviewResponse,
+)
 
 
 class SqlAlchemyApplicationWorkspaceStore(SqlAlchemyContactWorkspaceStore):
@@ -134,6 +144,31 @@ class SqlAlchemyApplicationWorkspaceStore(SqlAlchemyContactWorkspaceStore):
                 session,
                 owner_id=owner_id,
                 limit=limit,
+            )
+
+    def get_weekly_review(self, *, owner_id: str) -> WeeklyReviewResponse:
+        with _weekly_review_errors(), self.database.session() as session:
+            return load_weekly_review(session, owner_id=owner_id)
+
+    def record_application_action_review(
+        self,
+        *,
+        owner_id: str,
+        application_id: str,
+        action_id: str,
+        payload: ApplicationActionReviewCreate,
+        expected_application_version: int,
+        idempotency_key: str,
+    ) -> ApplicationActionReviewMutationResponse | None:
+        with _weekly_review_errors(), self.database.session() as session:
+            return record_application_action_review(
+                session,
+                owner_id=owner_id,
+                application_id=application_id,
+                action_id=action_id,
+                payload=payload,
+                expected_application_version=expected_application_version,
+                idempotency_key=idempotency_key,
             )
 
     def get_application(
@@ -520,6 +555,38 @@ def _application_errors() -> Iterator[None]:
         raise WorkspaceUnavailable(
             "application workspace database is unavailable"
         ) from exc
+
+
+@contextmanager
+def _weekly_review_errors() -> Iterator[None]:
+    try:
+        yield
+    except WorkspaceUnavailable:
+        raise
+    except WorkspaceConflict:
+        raise
+    except WorkspaceInputError:
+        raise
+    except VersionConflict as exc:
+        raise WorkspaceConflict(str(exc), code="version_conflict") from exc
+    except MutationIdempotencyConflict as exc:
+        raise WorkspaceConflict(str(exc), code="idempotency_conflict") from exc
+    except MutationPending as exc:
+        raise WorkspaceConflict(str(exc), code="mutation_pending") from exc
+    except ResourceConflict as exc:
+        raise WorkspaceConflict(str(exc)) from exc
+    except WeeklyReviewRepositoryError as exc:
+        raise WorkspaceUnavailable("weekly-review data is inconsistent") from exc
+    except ValidationError as exc:
+        raise WorkspaceUnavailable(
+            "stored weekly-review data failed contract validation"
+        ) from exc
+    except ValueError as exc:
+        raise WorkspaceInputError(str(exc)) from exc
+    except IntegrityError as exc:
+        raise WorkspaceConflict("weekly review conflicts with existing state") from exc
+    except SQLAlchemyError as exc:
+        raise WorkspaceUnavailable("weekly-review database is unavailable") from exc
 
 
 @contextmanager

@@ -23,6 +23,7 @@ from .application_submission_schemas import (
 from .contact_workspace import ContactWorkspaceStore
 from .interview_round_workspace import InterviewRoundWorkspaceStore
 from .outreach_workspace import OutreachWorkspaceStore
+from .weekly_review_workspace import WeeklyReviewWorkspaceStore
 
 
 class ApplicationWorkspaceStore(
@@ -31,6 +32,7 @@ class ApplicationWorkspaceStore(
     ContactWorkspaceStore,
     InterviewRoundWorkspaceStore,
     OutreachWorkspaceStore,
+    WeeklyReviewWorkspaceStore,
     Protocol,
 ):
     """Owner-scoped, database-only reads for the application workspace."""

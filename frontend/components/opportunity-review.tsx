@@ -73,6 +73,8 @@ export function OpportunityReview({
       payload.action,
       payload.restore_decision_event_id ?? "new",
       payload.initial_action_due_on ?? "default",
+      payload.acquisition_source ?? "no-source",
+      payload.selected_saved_search_id ?? "no-search",
     ].join(":");
     decisionKeys.current[receiptKey] ??= createIdempotencyKey(`opportunity:${receiptKey}`);
     try {

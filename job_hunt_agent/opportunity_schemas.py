@@ -178,6 +178,15 @@ class OpportunityLane(str, Enum):
     unassigned = "unassigned"
 
 
+class ApplicationAcquisitionSource(str, Enum):
+    job_hunt_search = "job_hunt_search"
+    referral = "referral"
+    recruiter_inbound = "recruiter_inbound"
+    direct_company = "direct_company"
+    job_board = "job_board"
+    other = "other"
+
+
 class MatchAssessmentState(str, Enum):
     assessed = "assessed"
     not_assessed = "not_assessed"
@@ -532,6 +541,8 @@ class OpportunityDecisionRequest(ContractModel):
     )
     restore_decision_event_id: OpaqueId | None = None
     initial_action_due_on: date | None = None
+    acquisition_source: ApplicationAcquisitionSource | None = None
+    selected_saved_search_id: OpaqueId | None = None
 
     @model_validator(mode="after")
     def action_shape_is_exact(self) -> Self:
@@ -542,7 +553,16 @@ class OpportunityDecisionRequest(ContractModel):
                 or self.restore_decision_event_id is not None
             ):
                 raise ValueError(
-                    "pursue can only include the optional initial_action_due_on"
+                    "pursue cannot include dismiss, note, or restore fields"
+                )
+            if (
+                self.acquisition_source is not None
+                and self.acquisition_source
+                is not ApplicationAcquisitionSource.job_hunt_search
+                and self.selected_saved_search_id is not None
+            ):
+                raise ValueError(
+                    "only job_hunt_search acquisition can select a saved search"
                 )
         elif self.action is OpportunityDecisionAction.dismiss:
             if self.dismiss_reason is None:
@@ -551,6 +571,8 @@ class OpportunityDecisionRequest(ContractModel):
                 raise ValueError("dismiss cannot restore a decision event")
             if self.initial_action_due_on is not None:
                 raise ValueError("dismiss cannot include an initial action due date")
+            if self.acquisition_source is not None or self.selected_saved_search_id is not None:
+                raise ValueError("dismiss cannot include pursuit attribution")
             if self.dismiss_reason is DismissReason.other and self.note is None:
                 raise ValueError("dismiss_reason other requires a note")
         elif self.action is OpportunityDecisionAction.watch:
@@ -558,6 +580,8 @@ class OpportunityDecisionRequest(ContractModel):
                 self.dismiss_reason is not None
                 or self.restore_decision_event_id is not None
                 or self.initial_action_due_on is not None
+                or self.acquisition_source is not None
+                or self.selected_saved_search_id is not None
             ):
                 raise ValueError(
                     "watch cannot include dismiss, restore, or pursue fields"
@@ -569,6 +593,8 @@ class OpportunityDecisionRequest(ContractModel):
                 self.dismiss_reason is not None
                 or self.note is not None
                 or self.initial_action_due_on is not None
+                or self.acquisition_source is not None
+                or self.selected_saved_search_id is not None
             ):
                 raise ValueError(
                     "restore_to_inbox cannot include a reason, note, or pursue fields"
@@ -583,6 +609,22 @@ class PursueOpportunityRequest(ContractModel):
         OpportunityDecisionAction.pursue
     )
     initial_action_due_on: date | None = None
+    acquisition_source: ApplicationAcquisitionSource = (
+        ApplicationAcquisitionSource.job_hunt_search
+    )
+    selected_saved_search_id: OpaqueId | None = None
+
+    @model_validator(mode="after")
+    def selected_search_matches_source(self) -> Self:
+        if (
+            self.acquisition_source
+            is not ApplicationAcquisitionSource.job_hunt_search
+            and self.selected_saved_search_id is not None
+        ):
+            raise ValueError(
+                "only job_hunt_search acquisition can select a saved search"
+            )
+        return self
 
 
 class OpportunityDecisionEvent(ContractModel):
@@ -881,6 +923,7 @@ class TodayListResponse(ContractModel):
 
 
 __all__ = [
+    "ApplicationAcquisitionSource",
     "CompensationEvidenceFact",
     "CompensationPeriod",
     "CompensationValue",

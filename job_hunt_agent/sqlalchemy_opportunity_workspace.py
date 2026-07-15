@@ -356,8 +356,14 @@ class SqlAlchemyOpportunityWorkspaceStore:
             if payload.action is OpportunityDecisionAction.pursue:
                 pursue_request = PursueOpportunityRequest.model_validate(
                     payload.model_dump(
-                        include={"action", "initial_action_due_on"},
+                        include={
+                            "action",
+                            "initial_action_due_on",
+                            "acquisition_source",
+                            "selected_saved_search_id",
+                        },
                         mode="json",
+                        exclude_none=True,
                     )
                 )
                 return pursue_owner_opportunity(

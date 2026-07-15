@@ -652,6 +652,8 @@ def decide_owner_opportunity(
     # already accepted Watch/Dismiss/Restore key still replays after upgrade.
     if request.action is not OpportunityDecisionAction.pursue:
         request_payload.pop("initial_action_due_on", None)
+        request_payload.pop("acquisition_source", None)
+        request_payload.pop("selected_saved_search_id", None)
     request_hash = _sha256(_canonical_json(request_payload))
     opportunity = session.scalar(
         select(OwnerOpportunity)

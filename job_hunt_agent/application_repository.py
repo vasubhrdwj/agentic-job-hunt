@@ -43,18 +43,23 @@ from .models import (
     Application,
     ApplicationActivityEvent,
     ApplicationInterviewRound,
+    ApplicationMetricSnapshot,
     ApplicationMilestoneCorrection,
     ApplicationOutcome,
+    CareerTrack,
     JobObservation,
     JobPosting,
     JobPostingVersion,
     OpportunityDecisionEvent as OpportunityDecisionEventRow,
     Owner,
     OwnerOpportunity,
+    SavedSearch,
+    SavedSearchMatch,
 )
 from .mutation_receipts import claim_owner_mutation, complete_owner_mutation
 from .opportunity_repository import DecisionIdempotencyConflict, OpportunityNotFound
 from .opportunity_schemas import (
+    ApplicationAcquisitionSource,
     OpportunityDecisionAction,
     OpportunityDecisionEvent,
     OpportunityDecisionResponse,
@@ -97,7 +102,18 @@ def pursue_owner_opportunity(
     if not normalized_key or len(normalized_key) > 200:
         raise ValueError("idempotency key must be 1-200 characters")
     key_hash = _sha256(normalized_key)
-    request_hash = _sha256(_canonical_json(request.model_dump(mode="json")))
+    request_payload = request.model_dump(mode="json")
+    # Preserve replay for pursuit keys accepted before attribution fields
+    # existed. Defaults add no new semantic choice and therefore keep the
+    # byte-for-byte Phase 2B request hash.
+    if (
+        request.acquisition_source
+        is ApplicationAcquisitionSource.job_hunt_search
+        and request.selected_saved_search_id is None
+    ):
+        request_payload.pop("acquisition_source", None)
+        request_payload.pop("selected_saved_search_id", None)
+    request_hash = _sha256(_canonical_json(request_payload))
 
     posting_id = session.scalar(
         select(OwnerOpportunity.job_posting_id).where(
@@ -138,7 +154,7 @@ def pursue_owner_opportunity(
         owner_id=owner_id,
         namespace=f"opportunity.pursue:{opportunity.id}",
         idempotency_key=normalized_key,
-        request=request,
+        request=request_payload,
         now=current,
     )
     if receipt.replay is not None:
@@ -271,6 +287,13 @@ def pursue_owner_opportunity(
     if posting_version is None:
         raise ApplicationRepositoryError("opportunity posting has no version")
 
+    attribution = _pursuit_metric_attribution(
+        session,
+        owner_id=owner_id,
+        posting_id=posting.id,
+        request=request,
+    )
+
     due_on = _initial_action_due_on(
         request.initial_action_due_on,
         owner_timezone=owner.timezone,
@@ -292,6 +315,27 @@ def pursue_owner_opportunity(
         version=1,
         created_at=current,
         updated_at=current,
+    )
+    metric_snapshot = ApplicationMetricSnapshot(
+        id=uuid4().hex,
+        owner_id=owner_id,
+        application_id=application_id,
+        job_posting_id=posting.id,
+        pursued_posting_version_id=posting_version.id,
+        acquisition_source=request.acquisition_source.value,
+        attribution_status=attribution["attribution_status"],
+        saved_search_id=attribution["saved_search_id"],
+        saved_search_version=attribution["saved_search_version"],
+        saved_search_name=attribution["saved_search_name"],
+        career_track_id=attribution["career_track_id"],
+        career_track_version=attribution["career_track_version"],
+        career_track_name=attribution["career_track_name"],
+        assessment_state="not_assessed",
+        assessment_band=None,
+        assessment_algorithm_version=None,
+        assessment_reason="not_requested",
+        recorded_at=current,
+        created_at=current,
     )
     action = ActionItem(
         id=action_id,
@@ -343,6 +387,8 @@ def pursue_owner_opportunity(
     opportunity.decision_updated_at = current
     opportunity.version += 1
     opportunity.updated_at = current
+    session.flush()
+    session.add(metric_snapshot)
     session.flush()
     session.add(action)
     session.flush()
@@ -1221,6 +1267,90 @@ def _latest_posting_version(
         )
         .limit(1)
     )
+
+
+def _pursuit_metric_attribution(
+    session: Session,
+    *,
+    owner_id: str,
+    posting_id: str,
+    request: PursueOpportunityRequest,
+) -> dict[str, str | int | None]:
+    """Freeze exact current search/track identity without guessing."""
+
+    empty: dict[str, str | int | None] = {
+        "saved_search_id": None,
+        "saved_search_version": None,
+        "saved_search_name": None,
+        "career_track_id": None,
+        "career_track_version": None,
+        "career_track_name": None,
+    }
+    if (
+        request.acquisition_source
+        is not ApplicationAcquisitionSource.job_hunt_search
+    ):
+        return {"attribution_status": "captured", **empty}
+
+    rows = list(
+        session.execute(
+            select(SavedSearch, CareerTrack)
+            .join(
+                SavedSearchMatch,
+                and_(
+                    SavedSearchMatch.owner_id == SavedSearch.owner_id,
+                    SavedSearchMatch.saved_search_id == SavedSearch.id,
+                ),
+            )
+            .join(
+                CareerTrack,
+                and_(
+                    CareerTrack.owner_id == SavedSearch.owner_id,
+                    CareerTrack.id == SavedSearch.career_track_id,
+                ),
+            )
+            .where(
+                SavedSearch.owner_id == owner_id,
+                SavedSearchMatch.job_posting_id == posting_id,
+            )
+            .order_by(SavedSearch.id)
+        )
+    )
+    selected: tuple[SavedSearch, CareerTrack] | None = None
+    if request.selected_saved_search_id is not None:
+        selected = next(
+            (
+                (search, track)
+                for search, track in rows
+                if search.id == request.selected_saved_search_id
+            ),
+            None,
+        )
+        if selected is None:
+            raise ResourceConflict(
+                "selected saved search did not produce this opportunity"
+            )
+    elif len(rows) == 1:
+        selected = (rows[0][0], rows[0][1])
+    elif len(rows) > 1:
+        raise ResourceConflict(
+            "multiple saved searches matched; select the search to attribute"
+        )
+
+    if selected is None:
+        return {"attribution_status": "attribution_missing", **empty}
+    search, track = selected
+    if search.career_track_id != track.id:
+        raise ApplicationRepositoryError("saved search career track identity changed")
+    return {
+        "attribution_status": "captured",
+        "saved_search_id": search.id,
+        "saved_search_version": search.version,
+        "saved_search_name": search.name,
+        "career_track_id": track.id,
+        "career_track_version": track.version,
+        "career_track_name": track.name,
+    }
 
 
 def _initial_action_due_on(

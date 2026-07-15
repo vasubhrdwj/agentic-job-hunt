@@ -38,6 +38,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/applications/{application_id}/actions/{action_id}/reviews": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Review Owner Application Action */
+        post: operations["review_owner_application_action_api_applications__application_id__actions__action_id__reviews_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/applications/{application_id}/activity": {
         parameters: {
             query?: never;
@@ -604,6 +621,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/review/weekly": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Owner Weekly Review */
+        get: operations["get_owner_weekly_review_api_review_weekly_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/runs/{run_id}": {
         parameters: {
             query?: never;
@@ -976,6 +1010,89 @@ export interface components {
          * @enum {string}
          */
         ActionItemStatus: "open" | "completed" | "cancelled";
+        /**
+         * ApplicationAcquisitionSource
+         * @enum {string}
+         */
+        ApplicationAcquisitionSource: "job_hunt_search" | "referral" | "recruiter_inbound" | "direct_company" | "job_board" | "other";
+        /** ApplicationActionReviewCreate */
+        ApplicationActionReviewCreate: {
+            /**
+             * Confirm Current Action
+             * @constant
+             */
+            confirm_current_action: true;
+            decision: components["schemas"]["ApplicationActionReviewDecision"];
+            /**
+             * New Due On
+             * Format: date
+             */
+            new_due_on: string;
+        };
+        /**
+         * ApplicationActionReviewDecision
+         * @enum {string}
+         */
+        ApplicationActionReviewDecision: "continue" | "waiting";
+        /** ApplicationActionReviewMutationResponse */
+        ApplicationActionReviewMutationResponse: {
+            action: components["schemas"]["ActionItemResponse"];
+            application: components["schemas"]["ApplicationSummary"];
+            /**
+             * Data Source
+             * @default database
+             * @constant
+             */
+            data_source: "database";
+            /** Mutation Created */
+            mutation_created: boolean;
+            review: components["schemas"]["ApplicationActionReviewResponse"];
+        };
+        /** ApplicationActionReviewResponse */
+        ApplicationActionReviewResponse: {
+            /** Action Item Id */
+            action_item_id: string;
+            /** Action Version */
+            action_version: number;
+            /** Application Id */
+            application_id: string;
+            /** Application Version */
+            application_version: number;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            decision: components["schemas"]["ApplicationActionReviewDecision"];
+            /** Id */
+            id: string;
+            /**
+             * New Due On
+             * Format: date
+             */
+            new_due_on: string;
+            /** Prior Action Item Id */
+            prior_action_item_id: string;
+            /** Prior Action Version */
+            prior_action_version: number;
+            /** Prior Application Version */
+            prior_application_version: number;
+            /**
+             * Prior Due On
+             * Format: date
+             */
+            prior_due_on: string;
+            /**
+             * Recorded At
+             * Format: date-time
+             */
+            recorded_at: string;
+            /**
+             * Recording Method
+             * @constant
+             */
+            recording_method: "manual";
+        };
         /** ApplicationActivityEventResponse */
         ApplicationActivityEventResponse: {
             /** Action Item Id */
@@ -2325,6 +2442,49 @@ export interface components {
          * @enum {string}
          */
         EvidenceState: "verified" | "inferred" | "unknown";
+        /** FunnelSegmentMetric */
+        FunnelSegmentMetric: {
+            /** Cohort Total */
+            cohort_total: number;
+            /** Key */
+            key: string;
+            /** Label */
+            label: string;
+            /** Missing */
+            missing: number;
+            /** Stages */
+            stages: components["schemas"]["FunnelStageMetric"][];
+        };
+        /**
+         * FunnelStage
+         * @enum {string}
+         */
+        FunnelStage: "screen" | "interview" | "offer";
+        /** FunnelStageMetric */
+        FunnelStageMetric: {
+            /** Censored Open */
+            censored_open: number;
+            /** Cohort Total */
+            cohort_total: number;
+            /** Converted */
+            converted: number;
+            /** Evaluable */
+            evaluable: number;
+            /** Immature */
+            immature: number;
+            /**
+             * Late Converted
+             * @default 0
+             */
+            late_converted: number;
+            /** Mature */
+            mature: number;
+            /** Missing */
+            missing: number;
+            /** Rate */
+            rate?: number | null;
+            stage: components["schemas"]["FunnelStage"];
+        };
         /** HTTPValidationError */
         HTTPValidationError: {
             /** Detail */
@@ -2808,6 +2968,7 @@ export interface components {
         };
         /** OpportunityDecisionRequest */
         OpportunityDecisionRequest: {
+            acquisition_source?: components["schemas"]["ApplicationAcquisitionSource"] | null;
             action: components["schemas"]["OpportunityDecisionAction"];
             dismiss_reason?: components["schemas"]["DismissReason"] | null;
             /** Initial Action Due On */
@@ -2816,6 +2977,8 @@ export interface components {
             note?: string | null;
             /** Restore Decision Event Id */
             restore_decision_event_id?: string | null;
+            /** Selected Saved Search Id */
+            selected_saved_search_id?: string | null;
         };
         /** OpportunityDecisionResponse */
         OpportunityDecisionResponse: {
@@ -3139,6 +3302,29 @@ export interface components {
          * @enum {string}
          */
         OutreachNonReplyOutcome: "no_reply" | "unreachable";
+        /** OutreachObservedMetric */
+        OutreachObservedMetric: {
+            /** Ambiguity Excluded */
+            ambiguity_excluded: number;
+            /** Censored Open */
+            censored_open: number;
+            /** Evaluable */
+            evaluable: number;
+            /** Immature */
+            immature: number;
+            /** Key */
+            key: string;
+            /** Label */
+            label: string;
+            /** Mature */
+            mature: number;
+            /** Observed Rate */
+            observed_rate?: number | null;
+            /** Reached */
+            reached: number;
+            /** Successes */
+            successes: number;
+        };
         /**
          * OutreachOutcome
          * @enum {string}
@@ -3329,6 +3515,30 @@ export interface components {
              */
             recorded_at: string;
             reply_kind: components["schemas"]["OutreachReplyKind"];
+        };
+        /** OutreachRescueMetric */
+        OutreachRescueMetric: {
+            /** Ambiguity Excluded */
+            ambiguity_excluded: number;
+            /** Censored Open */
+            censored_open: number;
+            /** Evaluable */
+            evaluable: number;
+            /** Immature */
+            immature: number;
+            /** Mature */
+            mature: number;
+            /** Observed Rate */
+            observed_rate?: number | null;
+            /**
+             * Position
+             * @enum {integer}
+             */
+            position: 2 | 3 | 4 | 5;
+            /** Reached */
+            reached: number;
+            /** Successes */
+            successes: number;
         };
         /** OutreachResumeEventCreate */
         OutreachResumeEventCreate: {
@@ -4488,6 +4698,121 @@ export interface components {
             /** Error Type */
             type: string;
         };
+        /** WeeklyReviewFunnel */
+        WeeklyReviewFunnel: {
+            /** Assessment Missing */
+            assessment_missing: number;
+            /** Attribution Missing */
+            attribution_missing: number;
+            /** By Acquisition Source */
+            by_acquisition_source?: components["schemas"]["FunnelSegmentMetric"][];
+            /** By Assessment Band */
+            by_assessment_band?: components["schemas"]["FunnelSegmentMetric"][];
+            /** By Career Track */
+            by_career_track?: components["schemas"]["FunnelSegmentMetric"][];
+            /** Overall */
+            overall: components["schemas"]["FunnelStageMetric"][];
+        };
+        /** WeeklyReviewOutreach */
+        WeeklyReviewOutreach: {
+            /** By Contact Category */
+            by_contact_category?: components["schemas"]["OutreachObservedMetric"][];
+            /** By Sequence Position */
+            by_sequence_position?: components["schemas"]["OutreachObservedMetric"][];
+            /** Contacts Two Through Five */
+            contacts_two_through_five: components["schemas"]["OutreachRescueMetric"][];
+            /**
+             * Noncausal Label
+             * @default Observed association only; outreach position and contact type are not causal.
+             * @constant
+             */
+            noncausal_label: "Observed association only; outreach position and contact type are not causal.";
+            /** Unattributed Legacy Successes */
+            unattributed_legacy_successes: number;
+        };
+        /** WeeklyReviewPolicy */
+        WeeklyReviewPolicy: {
+            /**
+             * Application Maturity Days
+             * @default 14
+             * @constant
+             */
+            application_maturity_days: 14;
+            /**
+             * Observation Window Days
+             * @default 84
+             * @constant
+             */
+            observation_window_days: 84;
+            /**
+             * Outreach Maturity Days
+             * @default 14
+             * @constant
+             */
+            outreach_maturity_days: 14;
+            /**
+             * Stale Definition
+             * @default overdue_open_action
+             * @constant
+             */
+            stale_definition: "overdue_open_action";
+            /**
+             * Version
+             * @default weekly-review-v1
+             * @constant
+             */
+            version: "weekly-review-v1";
+        };
+        /** WeeklyReviewResponse */
+        WeeklyReviewResponse: {
+            /**
+             * As Of
+             * Format: date-time
+             */
+            as_of: string;
+            /**
+             * Data Source
+             * @default database
+             * @constant
+             */
+            data_source: "database";
+            funnel: components["schemas"]["WeeklyReviewFunnel"];
+            outreach: components["schemas"]["WeeklyReviewOutreach"];
+            /**
+             * Owner Local Date
+             * Format: date
+             */
+            owner_local_date: string;
+            /** Owner Timezone */
+            owner_timezone: string;
+            policy: components["schemas"]["WeeklyReviewPolicy"];
+            /** Stale Application Total */
+            stale_application_total: number;
+            /** Stale Applications */
+            stale_applications?: components["schemas"]["WeeklyReviewStaleApplication"][];
+            window: components["schemas"]["WeeklyReviewWindow"];
+        };
+        /** WeeklyReviewStaleApplication */
+        WeeklyReviewStaleApplication: {
+            application: components["schemas"]["ApplicationSummary"];
+            current_action: components["schemas"]["ActionItemResponse"];
+            /** Days Overdue */
+            days_overdue: number;
+            posting: components["schemas"]["ApplicationPostingSummary"];
+        };
+        /** WeeklyReviewWindow */
+        WeeklyReviewWindow: {
+            /**
+             * Ends On
+             * Format: date
+             */
+            ends_on: string;
+            /**
+             * Starts On
+             * Format: date
+             */
+            starts_on: string;
+        };
         /** WorkAuthorization */
         WorkAuthorization: {
             /** Country Code */
@@ -4629,6 +4954,108 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ApplicationDetailResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Precondition Required */
+            428: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+        };
+    };
+    review_owner_application_action_api_applications__application_id__actions__action_id__reviews_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "If-Match"?: string | null;
+                "Idempotency-Key"?: string | null;
+            };
+            path: {
+                application_id: string;
+                action_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ApplicationActionReviewCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApplicationActionReviewMutationResponse"];
                 };
             };
             /** @description Bad Request */
@@ -8304,6 +8731,98 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["OpportunityDecisionResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Precondition Required */
+            428: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+        };
+    };
+    get_owner_weekly_review_api_review_weekly_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WeeklyReviewResponse"];
                 };
             };
             /** @description Bad Request */

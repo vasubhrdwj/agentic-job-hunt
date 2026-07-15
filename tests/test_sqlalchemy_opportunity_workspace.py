@@ -566,7 +566,9 @@ def test_decision_dispatches_pursuit_to_the_atomic_application_boundary_only(
         assert kwargs["expected_version"] == 4
         assert kwargs["idempotency_key"] == "pursue-1"
         assert kwargs["request"] == PursueOpportunityRequest(
-            initial_action_due_on=date(2026, 7, 15)
+            initial_action_due_on=date(2026, 7, 15),
+            acquisition_source="job_hunt_search",
+            selected_saved_search_id="search-a",
         )
         return pursue_result
 
@@ -591,6 +593,8 @@ def test_decision_dispatches_pursuit_to_the_atomic_application_boundary_only(
         payload=OpportunityDecisionRequest(
             action="pursue",
             initial_action_due_on=date(2026, 7, 15),
+            acquisition_source="job_hunt_search",
+            selected_saved_search_id="search-a",
         ),
     )
     watched = store.decide_opportunity(

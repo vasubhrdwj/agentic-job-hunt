@@ -14,6 +14,7 @@ from job_hunt_agent.models import Owner, OwnerMutationReceipt
 
 
 REVISION = "20260715_0015"
+CURRENT_REVISION = "20260715_0016"
 PREVIOUS_REVISION = "20260715_0014"
 
 
@@ -29,8 +30,8 @@ def test_outreach_reply_migration_schema_and_metadata_parity(
 
     database = Database(url)
     try:
-        assert MIGRATION_HEAD == REVISION
-        assert database.current_migration_revision() == REVISION
+        assert MIGRATION_HEAD == CURRENT_REVISION
+        assert database.current_migration_revision() == CURRENT_REVISION
         inspector = inspect(database.engine)
         assert "outreach_replies" in inspector.get_table_names()
 
@@ -169,7 +170,7 @@ def test_upgrade_preserves_existing_outreach_history(
 
     database = Database(url)
     try:
-        assert database.current_migration_revision() == REVISION
+        assert database.current_migration_revision() == CURRENT_REVISION
         with database.engine.connect() as connection:
             assert connection.execute(
                 text("SELECT event_type FROM outreach_events WHERE id='existing-event'")

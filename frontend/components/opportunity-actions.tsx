@@ -4,6 +4,7 @@ import Link from "next/link";
 import { FormEvent, useEffect, useRef, useState } from "react";
 
 import type {
+  ApplicationAcquisitionSource,
   DismissReason,
   OpportunityDecisionPayload,
   TodayOpportunityItem,
@@ -26,6 +27,18 @@ const DISMISS_REASONS: Array<{ value: DismissReason; label: string }> = [
   { value: "closed_or_invalid", label: "Closed or invalid posting" },
   { value: "duplicate", label: "Looks like a duplicate" },
   { value: "other", label: "Another reason" },
+];
+
+const ACQUISITION_SOURCES: Array<{
+  value: ApplicationAcquisitionSource;
+  label: string;
+}> = [
+  { value: "job_hunt_search", label: "Job Hunt search" },
+  { value: "referral", label: "Referral" },
+  { value: "recruiter_inbound", label: "Recruiter reached out" },
+  { value: "direct_company", label: "Company careers site" },
+  { value: "job_board", label: "Another job board" },
+  { value: "other", label: "Somewhere else" },
 ];
 
 export interface DecisionResult {
@@ -53,6 +66,9 @@ export function OpportunityActions({
   const [initialDueOn, setInitialDueOn] = useState(
     () => dateOffset(ownerLocalDate, 1),
   );
+  const [acquisitionSource, setAcquisitionSource] =
+    useState<ApplicationAcquisitionSource>("job_hunt_search");
+  const [selectedSavedSearchId, setSelectedSavedSearchId] = useState("");
   const [reason, setReason] = useState<DismissReason>("not_relevant");
   const [note, setNote] = useState("");
   const [pursueDialogError, setPursueDialogError] = useState<string | null>(null);
@@ -74,6 +90,12 @@ export function OpportunityActions({
   function openPursue(event: React.MouseEvent<HTMLButtonElement>) {
     pursueTriggerRef.current = event.currentTarget;
     setInitialDueOn(dateOffset(ownerLocalDate, 1));
+    setAcquisitionSource("job_hunt_search");
+    setSelectedSavedSearchId(
+      opportunity.discovered_by.length === 1
+        ? opportunity.discovered_by[0].saved_search_id
+        : "",
+    );
     setPursueDialogError(null);
     pursueDialogRef.current?.showModal();
   }
@@ -94,9 +116,35 @@ export function OpportunityActions({
       setPursueDialogError("Choose a due date from today through one year from now.");
       return;
     }
+    const searchAttribution = acquisitionSource === "job_hunt_search"
+      ? opportunity.discovered_by.length === 1
+        ? opportunity.discovered_by[0].saved_search_id
+        : selectedSavedSearchId
+      : "";
+    if (
+      acquisitionSource === "job_hunt_search"
+      && opportunity.discovered_by.length > 1
+      && !searchAttribution
+    ) {
+      setPursueDialogError("Choose which saved search should receive reporting credit for this application.");
+      return;
+    }
+    if (
+      searchAttribution
+      && !opportunity.discovered_by.some(
+        (search) => search.saved_search_id === searchAttribution,
+      )
+    ) {
+      setPursueDialogError("That saved search is no longer attached to this opportunity. Close and reopen this review before continuing.");
+      return;
+    }
     const saved = await onDecision({
       action: "pursue",
       initial_action_due_on: initialDueOn,
+      acquisition_source: acquisitionSource,
+      ...(searchAttribution
+        ? { selected_saved_search_id: searchAttribution }
+        : {}),
     });
     if (saved.ok) {
       pursueDialogRef.current?.close();
@@ -224,9 +272,75 @@ export function OpportunityActions({
               className="mt-2 text-sm leading-6 text-zinc-600 dark:text-zinc-400"
             >
               This creates one application record and one dated task: review the role
-              and prepare the application. You can open it immediately afterward.
+              and prepare the application. Your source choice is saved with that exact
+              application so weekly reporting does not silently change later.
             </p>
           </div>
+          <div>
+            <label htmlFor={`pursue-source-${opportunity.id}`} className="text-sm font-medium">
+              How did you find this role?
+            </label>
+            <select
+              id={`pursue-source-${opportunity.id}`}
+              value={acquisitionSource}
+              disabled={pending}
+              autoFocus
+              onChange={(event) => {
+                const next = event.target.value as ApplicationAcquisitionSource;
+                setAcquisitionSource(next);
+                setSelectedSavedSearchId(
+                  next === "job_hunt_search" && opportunity.discovered_by.length === 1
+                    ? opportunity.discovered_by[0].saved_search_id
+                    : "",
+                );
+                setPursueDialogError(null);
+              }}
+              className={`${inputClasses} mt-2`}
+            >
+              {ACQUISITION_SOURCES.map((source) => (
+                <option key={source.value} value={source.value}>{source.label}</option>
+              ))}
+            </select>
+            <p className="mt-2 text-xs leading-5 text-zinc-500">
+              This freezes acquisition attribution for trustworthy source comparisons.
+            </p>
+          </div>
+          {acquisitionSource === "job_hunt_search" && opportunity.discovered_by.length > 1 ? (
+            <div>
+              <label htmlFor={`pursue-search-${opportunity.id}`} className="text-sm font-medium">
+                Which saved search found it?
+              </label>
+              <select
+                id={`pursue-search-${opportunity.id}`}
+                value={selectedSavedSearchId}
+                disabled={pending}
+                required
+                onChange={(event) => {
+                  setSelectedSavedSearchId(event.target.value);
+                  setPursueDialogError(null);
+                }}
+                className={`${inputClasses} mt-2`}
+              >
+                <option value="">Choose a saved search</option>
+                {opportunity.discovered_by.map((search) => (
+                  <option key={search.saved_search_id} value={search.saved_search_id}>
+                    {search.saved_search_name}
+                  </option>
+                ))}
+              </select>
+              <p className="mt-2 text-xs leading-5 text-zinc-500">
+                This role matched several searches. Choose the one you want to evaluate in weekly reporting.
+              </p>
+            </div>
+          ) : acquisitionSource === "job_hunt_search" && opportunity.discovered_by.length === 1 ? (
+            <p className="rounded-lg border border-zinc-200 bg-zinc-50 p-3 text-sm dark:border-zinc-800 dark:bg-zinc-950/60">
+              Saved search: <strong>{opportunity.discovered_by[0].saved_search_name}</strong>
+            </p>
+          ) : acquisitionSource === "job_hunt_search" ? (
+            <p className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-100">
+              No saved-search match is attached to this role. It will retain Job Hunt search as its source without inventing a search attribution.
+            </p>
+          ) : null}
           <div>
             <label htmlFor={`pursue-due-${opportunity.id}`} className="text-sm font-medium">
               First task due date
@@ -235,6 +349,7 @@ export function OpportunityActions({
               id={`pursue-due-${opportunity.id}`}
               type="date"
               required
+              disabled={pending}
               min={dateOffset(ownerLocalDate, 0)}
               max={dateOffset(ownerLocalDate, 365)}
               value={initialDueOn}
@@ -243,7 +358,6 @@ export function OpportunityActions({
                 setPursueDialogError(null);
               }}
               className={`${inputClasses} mt-2`}
-              autoFocus
             />
             <p className="mt-2 text-xs leading-5 text-zinc-500">
               Tomorrow is the default in {ownerTimezone}. Pick a realistic date you will actually honor.
