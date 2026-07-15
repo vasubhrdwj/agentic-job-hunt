@@ -145,10 +145,39 @@ timeline would create conflicting histories. Terminal outcome corrections,
 milestone retractions, and stage changes likewise require their own atomic
 workflows rather than a date-only edit.
 
-### Remaining Phase 6A2 checkpoints
+### Phase 6A2d — Exact outreach replies
 
-- Attribute an outreach response to the exact marked-sent event and message
-  version before sequence analytics are enabled.
+Implemented in migration `20260715_0015`.
+
+Replies are now first-class immutable facts rather than person-level outcome
+labels. The owner records a reply from the card for the exact initial or
+follow-up message that elicited it. The server derives the recipient and
+immutable message version from that selected `marked_sent` event, so the
+browser cannot accidentally claim a different person or draft.
+
+- Each reply records its exact manual send, immutable message version and
+  kind, reply classification, owner-local received date, encrypted optional
+  note, and server recording time.
+- Reply dates cannot precede the selected send or fall after the owner's local
+  current date. The exact-send confirmation must be the literal boolean true.
+- Several real replies can point to the same sent attempt. Earlier replies are
+  never overwritten when a later introduction, referral, decline, or request
+  not to be contacted arrives.
+- A reply may be logged after a no-reply resolution, sequence completion,
+  posting closure, or later application progress. Recording that historical
+  fact does not reopen the application or re-enable another message.
+- For a live plan, an introduction, referral, or do-not-contact request stops
+  remaining outreach. Other replies pause it for review. The replied-to person
+  cannot silently re-enter the staged sending cadence.
+- `No reply` and `Could not reach` remain separate non-reply resolutions. New
+  response facts cannot enter through the older unattributed outcome path;
+  legacy outcomes stay readable without fabricated backfills.
+
+The dossier nests ordered reply history under the exact sent attempt, including
+the sent version, channel, date, and expandable text. The same history remains
+available for resolved and terminal recipients. This provenance is the minimum
+safe input for later sequence analytics; it records association, not proof that
+outreach caused an interview or offer.
 
 ### Phase 6B — Weekly review and trustworthy funnel
 

@@ -13,6 +13,7 @@ from job_hunt_agent.database import MIGRATION_HEAD, Database
 
 
 REVISION = "20260715_0014"
+CURRENT_REVISION = "20260715_0015"
 PREVIOUS_REVISION = "20260715_0013"
 
 
@@ -29,8 +30,8 @@ def test_application_correction_migration_schema_and_metadata_parity(
 
     database = Database(url)
     try:
-        assert MIGRATION_HEAD == REVISION
-        assert database.current_migration_revision() == REVISION
+        assert MIGRATION_HEAD == CURRENT_REVISION
+        assert database.current_migration_revision() == CURRENT_REVISION
         inspector = inspect(database.engine)
         assert "application_milestone_corrections" in inspector.get_table_names()
 

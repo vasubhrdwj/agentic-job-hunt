@@ -8,6 +8,7 @@ from .outreach_schemas import (
     ApplicationOutreachResponse,
     OutreachEventCreate,
     OutreachMessageCreate,
+    OutreachReplyCreate,
 )
 
 
@@ -48,6 +49,17 @@ class OutreachWorkspaceStore(Protocol):
         application_id: str,
         sequence_id: str,
         payload: OutreachEventCreate,
+        expected_sequence_version: int,
+        idempotency_key: str,
+    ) -> ApplicationOutreachResponse | None: ...
+
+    def record_outreach_reply(
+        self,
+        *,
+        owner_id: str,
+        application_id: str,
+        sequence_id: str,
+        payload: OutreachReplyCreate,
         expected_sequence_version: int,
         idempotency_key: str,
     ) -> ApplicationOutreachResponse | None: ...

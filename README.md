@@ -107,7 +107,12 @@ and only a completed first round advances the hiring funnel. If a coarse
 screening, manually recorded interview, or offer date was entered incorrectly,
 Activity can now append a dated correction while keeping the original and every
 prior correction visible. The current stage, task, submission, and outcome are
-not rewritten, and later milestones validate against the corrected date.
+not rewritten, and later milestones validate against the corrected date. Manual
+outreach replies are also stored as their own immutable history. Each one is
+linked to the exact initial or follow-up send and exact saved message version,
+with an owner-local received date and encrypted optional note. Late and multiple
+replies remain recordable after a no-reply result, closed posting, completed
+sequence, or later hiring progress without re-enabling outbound messages.
 
 The separate **Legacy hunt** remains available when you explicitly want the
 current end-to-end flow with resume matching, at least five appropriate

@@ -1814,6 +1814,7 @@
                   "message_saved": "#/components/schemas/OutreachMessageSavedTimelineEvent",
                   "outcome_recorded": "#/components/schemas/OutreachOutcomeTimelineEvent",
                   "paused": "#/components/schemas/OutreachPausedTimelineEvent",
+                  "reply_recorded": "#/components/schemas/OutreachReplyRecordedTimelineEvent",
                   "resumed": "#/components/schemas/OutreachResumedTimelineEvent",
                   "sequence_started": "#/components/schemas/OutreachSequenceStartedTimelineEvent",
                   "stopped": "#/components/schemas/OutreachStoppedTimelineEvent",
@@ -1836,6 +1837,9 @@
                 },
                 {
                   "$ref": "#/components/schemas/OutreachOutcomeTimelineEvent"
+                },
+                {
+                  "$ref": "#/components/schemas/OutreachReplyRecordedTimelineEvent"
                 },
                 {
                   "$ref": "#/components/schemas/OutreachPausedTimelineEvent"
@@ -6201,6 +6205,15 @@
         "title": "OutreachMessageVersionResponse",
         "type": "object"
       },
+      "OutreachNonReplyOutcome": {
+        "description": "Legacy non-response facts that do not need sent-attempt attribution.",
+        "enum": [
+          "no_reply",
+          "unreachable"
+        ],
+        "title": "OutreachNonReplyOutcome",
+        "type": "string"
+      },
       "OutreachOutcome": {
         "enum": [
           "no_reply",
@@ -6228,7 +6241,7 @@
             "type": "string"
           },
           "outcome": {
-            "$ref": "#/components/schemas/OutreachOutcome"
+            "$ref": "#/components/schemas/OutreachNonReplyOutcome"
           }
         },
         "required": [
@@ -6463,6 +6476,13 @@
             "title": "Public Name",
             "type": "string"
           },
+          "sent_attempts": {
+            "items": {
+              "$ref": "#/components/schemas/OutreachSentAttemptResponse"
+            },
+            "title": "Sent Attempts",
+            "type": "array"
+          },
           "sequence_id": {
             "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
             "title": "Sequence Id",
@@ -6491,6 +6511,214 @@
           "no_reply_eligible_at"
         ],
         "title": "OutreachRecipientResponse",
+        "type": "object"
+      },
+      "OutreachReplyCreate": {
+        "additionalProperties": false,
+        "description": "Record a manual reply against one exact marked-sent event.",
+        "properties": {
+          "confirm_exact_sent_attempt": {
+            "const": true,
+            "title": "Confirm Exact Sent Attempt",
+            "type": "boolean"
+          },
+          "marked_sent_event_id": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
+            "title": "Marked Sent Event Id",
+            "type": "string"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "maxLength": 1000,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "received_on": {
+            "format": "date",
+            "title": "Received On",
+            "type": "string"
+          },
+          "reply_kind": {
+            "$ref": "#/components/schemas/OutreachReplyKind"
+          }
+        },
+        "required": [
+          "marked_sent_event_id",
+          "reply_kind",
+          "received_on",
+          "confirm_exact_sent_attempt"
+        ],
+        "title": "OutreachReplyCreate",
+        "type": "object"
+      },
+      "OutreachReplyKind": {
+        "enum": [
+          "reply_received",
+          "useful_reply",
+          "introduced",
+          "referred",
+          "declined",
+          "do_not_contact"
+        ],
+        "title": "OutreachReplyKind",
+        "type": "string"
+      },
+      "OutreachReplyRecordedTimelineEvent": {
+        "additionalProperties": false,
+        "properties": {
+          "application_contact_id": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
+            "title": "Application Contact Id",
+            "type": "string"
+          },
+          "event_type": {
+            "const": "reply_recorded",
+            "title": "Event Type",
+            "type": "string"
+          },
+          "id": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
+            "title": "Id",
+            "type": "string"
+          },
+          "marked_sent_event_id": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
+            "title": "Marked Sent Event Id",
+            "type": "string"
+          },
+          "message_kind": {
+            "$ref": "#/components/schemas/OutreachMessageKind"
+          },
+          "message_version_id": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
+            "title": "Message Version Id",
+            "type": "string"
+          },
+          "message_version_number": {
+            "minimum": 1.0,
+            "title": "Message Version Number",
+            "type": "integer"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "maxLength": 1000,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "occurred_at": {
+            "format": "date-time",
+            "title": "Occurred At",
+            "type": "string"
+          },
+          "received_on": {
+            "format": "date",
+            "title": "Received On",
+            "type": "string"
+          },
+          "reply_kind": {
+            "$ref": "#/components/schemas/OutreachReplyKind"
+          },
+          "sequence_id": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
+            "title": "Sequence Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "sequence_id",
+          "occurred_at",
+          "event_type",
+          "application_contact_id",
+          "marked_sent_event_id",
+          "message_version_id",
+          "message_version_number",
+          "message_kind",
+          "reply_kind",
+          "received_on"
+        ],
+        "title": "OutreachReplyRecordedTimelineEvent",
+        "type": "object"
+      },
+      "OutreachReplyResponse": {
+        "additionalProperties": false,
+        "description": "One immutable reply classified against an exact sent message revision.",
+        "properties": {
+          "id": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
+            "title": "Id",
+            "type": "string"
+          },
+          "marked_sent_event_id": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
+            "title": "Marked Sent Event Id",
+            "type": "string"
+          },
+          "message_kind": {
+            "$ref": "#/components/schemas/OutreachMessageKind"
+          },
+          "message_version_id": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
+            "title": "Message Version Id",
+            "type": "string"
+          },
+          "message_version_number": {
+            "minimum": 1.0,
+            "title": "Message Version Number",
+            "type": "integer"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "maxLength": 1000,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "received_on": {
+            "format": "date",
+            "title": "Received On",
+            "type": "string"
+          },
+          "recorded_at": {
+            "format": "date-time",
+            "title": "Recorded At",
+            "type": "string"
+          },
+          "reply_kind": {
+            "$ref": "#/components/schemas/OutreachReplyKind"
+          }
+        },
+        "required": [
+          "id",
+          "marked_sent_event_id",
+          "message_version_id",
+          "message_version_number",
+          "message_kind",
+          "reply_kind",
+          "received_on",
+          "recorded_at"
+        ],
+        "title": "OutreachReplyResponse",
         "type": "object"
       },
       "OutreachResumeEventCreate": {
@@ -6553,6 +6781,68 @@
           "reason"
         ],
         "title": "OutreachResumedTimelineEvent",
+        "type": "object"
+      },
+      "OutreachSentAttemptResponse": {
+        "additionalProperties": false,
+        "description": "The exact immutable message revision behind one manual send assertion.",
+        "properties": {
+          "body": {
+            "maxLength": 4000,
+            "minLength": 1,
+            "title": "Body",
+            "type": "string"
+          },
+          "channel": {
+            "$ref": "#/components/schemas/OutreachChannel"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/OutreachMessageKind"
+          },
+          "marked_sent_event_id": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
+            "title": "Marked Sent Event Id",
+            "type": "string"
+          },
+          "message_version_id": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
+            "title": "Message Version Id",
+            "type": "string"
+          },
+          "replies": {
+            "items": {
+              "$ref": "#/components/schemas/OutreachReplyResponse"
+            },
+            "title": "Replies",
+            "type": "array"
+          },
+          "sent_at": {
+            "format": "date-time",
+            "title": "Sent At",
+            "type": "string"
+          },
+          "sent_local_on": {
+            "format": "date",
+            "title": "Sent Local On",
+            "type": "string"
+          },
+          "version_number": {
+            "minimum": 1.0,
+            "title": "Version Number",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "marked_sent_event_id",
+          "message_version_id",
+          "version_number",
+          "kind",
+          "body",
+          "channel",
+          "sent_at",
+          "sent_local_on"
+        ],
+        "title": "OutreachSentAttemptResponse",
         "type": "object"
       },
       "OutreachSequenceResponse": {
@@ -12460,6 +12750,176 @@
           }
         ],
         "summary": "Save Owner Application Outreach Message",
+        "tags": [
+          "applications"
+        ]
+      }
+    },
+    "/api/applications/{application_id}/outreach-sequences/{sequence_id}/replies": {
+      "post": {
+        "operationId": "record_owner_application_outreach_reply_api_applications__application_id__outreach_sequences__sequence_id__replies_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "application_id",
+            "required": true,
+            "schema": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
+              "title": "Application Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "sequence_id",
+            "required": true,
+            "schema": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
+              "title": "Sequence Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "If-Match",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OutreachReplyCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApplicationOutreachResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
+          "428": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Precondition Required"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "security": [
+          {
+            "OwnerSessionCookie": []
+          }
+        ],
+        "summary": "Record Owner Application Outreach Reply",
         "tags": [
           "applications"
         ]

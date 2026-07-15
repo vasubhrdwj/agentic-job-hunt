@@ -30,6 +30,7 @@ import type {
   ApplicationOutreachResponse,
   OutreachEventCreate,
   OutreachMessageCreate,
+  OutreachReplyCreate,
 } from "./outreach-types";
 import type {
   ApplicationSubmissionResponse,
@@ -487,6 +488,30 @@ export async function recordApplicationOutreachEvent(
   return json<ApplicationOutreachResponse>(
     await fetch(
       `/api/applications/${encodeURIComponent(applicationId)}/outreach-sequences/${encodeURIComponent(sequenceId)}/events`,
+      {
+        method: "POST",
+        credentials: "same-origin",
+        headers: {
+          "Content-Type": "application/json",
+          "If-Match": `"${sequenceVersion}"`,
+          "Idempotency-Key": idempotencyKey,
+        },
+        body: JSON.stringify(payload),
+      },
+    ),
+  );
+}
+
+export async function recordApplicationOutreachReply(
+  applicationId: string,
+  sequenceId: string,
+  sequenceVersion: number,
+  idempotencyKey: string,
+  payload: OutreachReplyCreate,
+): Promise<ApplicationOutreachResponse> {
+  return json<ApplicationOutreachResponse>(
+    await fetch(
+      `/api/applications/${encodeURIComponent(applicationId)}/outreach-sequences/${encodeURIComponent(sequenceId)}/replies`,
       {
         method: "POST",
         credentials: "same-origin",

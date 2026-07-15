@@ -48,12 +48,16 @@ export function ApplicationPeople({
   applicationVersion,
   applicationStage,
   postingState,
+  ownerLocalDate,
+  ownerTimezone,
   interviewHistoryState,
 }: {
   applicationId: string;
   applicationVersion: number;
   applicationStage: ApplicationStage;
   postingState: ApplicationPostingState;
+  ownerLocalDate: string;
+  ownerTimezone: string;
   interviewHistoryState: InterviewHistoryState;
 }) {
   const [bench, setBench] = useState<ApplicationContactBenchResponse | null>(null);
@@ -435,6 +439,8 @@ export function ApplicationPeople({
       applicationVersion={applicationVersion}
       applicationStage={applicationStage}
       postingState={postingState}
+      ownerLocalDate={ownerLocalDate}
+      ownerTimezone={ownerTimezone}
       benchReady={Boolean(result && result.verified_count > 0)}
       contactSearchRunning={activeSearch}
       interviewHistoryState={interviewHistoryState}

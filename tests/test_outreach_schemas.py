@@ -75,6 +75,20 @@ def _recipient(
         if initial is not None
         else None
     )
+    sent_attempts = [
+        {
+            "marked_sent_event_id": f"markedsentevent{rank}{message.kind.value}",
+            "message_version_id": message.id,
+            "version_number": message.version_number,
+            "kind": message.kind,
+            "body": message.body,
+            "channel": message.sent_channel,
+            "sent_at": message.sent_at,
+            "sent_local_on": message.sent_at.date(),
+        }
+        for message in (initial, follow_up)
+        if message is not None and message.sent_at is not None
+    ]
     return OutreachRecipientResponse(
         sequence_id="sequence1",
         application_contact_id=f"applicationcontact{rank}",
@@ -90,6 +104,7 @@ def _recipient(
         bench_state="ready" if rank == 1 else "reserve",
         initial_message=initial,
         follow_up_message=follow_up,
+        sent_attempts=sent_attempts,
         follow_up_due_at=(
             initial.sent_at + timedelta(days=4)
             if initial is not None and initial.sent_at is not None
@@ -194,15 +209,10 @@ def test_event_union_is_discriminated_and_send_confirmation_is_literal_true() ->
     "outcome",
     [
         "no_reply",
-        "declined",
         "unreachable",
-        "useful_reply",
-        "introduced",
-        "referred",
-        "do_not_contact",
     ],
 )
-def test_all_supported_manual_outcomes_validate(outcome: str) -> None:
+def test_non_reply_manual_outcomes_validate(outcome: str) -> None:
     event = TypeAdapter(OutreachEventCreate).validate_python(
         {
             "event_type": "outcome",
@@ -211,6 +221,21 @@ def test_all_supported_manual_outcomes_validate(outcome: str) -> None:
         }
     )
     assert event.outcome.value == outcome
+
+
+@pytest.mark.parametrize(
+    "reply_outcome",
+    ["declined", "useful_reply", "introduced", "referred", "do_not_contact"],
+)
+def test_reply_outcomes_require_the_exact_reply_contract(reply_outcome: str) -> None:
+    with pytest.raises(ValidationError):
+        TypeAdapter(OutreachEventCreate).validate_python(
+            {
+                "event_type": "outcome",
+                "application_contact_id": "applicationcontact1",
+                "outcome": reply_outcome,
+            }
+        )
 
 
 def test_pause_resume_and_stop_require_a_bounded_visible_reason() -> None:

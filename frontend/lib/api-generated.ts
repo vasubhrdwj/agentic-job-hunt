@@ -340,6 +340,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/applications/{application_id}/outreach-sequences/{sequence_id}/replies": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Record Owner Application Outreach Reply */
+        post: operations["record_owner_application_outreach_reply_api_applications__application_id__outreach_sequences__sequence_id__replies_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/applications/{application_id}/submission": {
         parameters: {
             query?: never;
@@ -1467,7 +1484,7 @@ export interface components {
             sequence?: components["schemas"]["OutreachSequenceResponse"] | null;
             status: components["schemas"]["ApplicationOutreachStatus"];
             /** Timeline */
-            timeline?: (components["schemas"]["OutreachSequenceStartedTimelineEvent"] | components["schemas"]["OutreachMessageSavedTimelineEvent"] | components["schemas"]["OutreachCopiedTimelineEvent"] | components["schemas"]["OutreachMarkedSentTimelineEvent"] | components["schemas"]["OutreachOutcomeTimelineEvent"] | components["schemas"]["OutreachPausedTimelineEvent"] | components["schemas"]["OutreachResumedTimelineEvent"] | components["schemas"]["OutreachStoppedTimelineEvent"] | components["schemas"]["OutreachWaveAdvancedTimelineEvent"])[];
+            timeline?: (components["schemas"]["OutreachSequenceStartedTimelineEvent"] | components["schemas"]["OutreachMessageSavedTimelineEvent"] | components["schemas"]["OutreachCopiedTimelineEvent"] | components["schemas"]["OutreachMarkedSentTimelineEvent"] | components["schemas"]["OutreachOutcomeTimelineEvent"] | components["schemas"]["OutreachReplyRecordedTimelineEvent"] | components["schemas"]["OutreachPausedTimelineEvent"] | components["schemas"]["OutreachResumedTimelineEvent"] | components["schemas"]["OutreachStoppedTimelineEvent"] | components["schemas"]["OutreachWaveAdvancedTimelineEvent"])[];
         };
         /**
          * ApplicationOutreachStatus
@@ -3117,6 +3134,12 @@ export interface components {
             version_number: number;
         };
         /**
+         * OutreachNonReplyOutcome
+         * @description Legacy non-response facts that do not need sent-attempt attribution.
+         * @enum {string}
+         */
+        OutreachNonReplyOutcome: "no_reply" | "unreachable";
+        /**
          * OutreachOutcome
          * @enum {string}
          */
@@ -3130,7 +3153,7 @@ export interface components {
              * @enum {string}
              */
             event_type: "outcome";
-            outcome: components["schemas"]["OutreachOutcome"];
+            outcome: components["schemas"]["OutreachNonReplyOutcome"];
         };
         /** OutreachOutcomeTimelineEvent */
         OutreachOutcomeTimelineEvent: {
@@ -3212,10 +3235,100 @@ export interface components {
             profile_url: string;
             /** Public Name */
             public_name: string;
+            /** Sent Attempts */
+            sent_attempts?: components["schemas"]["OutreachSentAttemptResponse"][];
             /** Sequence Id */
             sequence_id: string;
             /** Wave */
             wave: number;
+        };
+        /**
+         * OutreachReplyCreate
+         * @description Record a manual reply against one exact marked-sent event.
+         */
+        OutreachReplyCreate: {
+            /**
+             * Confirm Exact Sent Attempt
+             * @constant
+             */
+            confirm_exact_sent_attempt: true;
+            /** Marked Sent Event Id */
+            marked_sent_event_id: string;
+            /** Note */
+            note?: string | null;
+            /**
+             * Received On
+             * Format: date
+             */
+            received_on: string;
+            reply_kind: components["schemas"]["OutreachReplyKind"];
+        };
+        /**
+         * OutreachReplyKind
+         * @enum {string}
+         */
+        OutreachReplyKind: "reply_received" | "useful_reply" | "introduced" | "referred" | "declined" | "do_not_contact";
+        /** OutreachReplyRecordedTimelineEvent */
+        OutreachReplyRecordedTimelineEvent: {
+            /** Application Contact Id */
+            application_contact_id: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            event_type: "reply_recorded";
+            /** Id */
+            id: string;
+            /** Marked Sent Event Id */
+            marked_sent_event_id: string;
+            message_kind: components["schemas"]["OutreachMessageKind"];
+            /** Message Version Id */
+            message_version_id: string;
+            /** Message Version Number */
+            message_version_number: number;
+            /** Note */
+            note?: string | null;
+            /**
+             * Occurred At
+             * Format: date-time
+             */
+            occurred_at: string;
+            /**
+             * Received On
+             * Format: date
+             */
+            received_on: string;
+            reply_kind: components["schemas"]["OutreachReplyKind"];
+            /** Sequence Id */
+            sequence_id: string;
+        };
+        /**
+         * OutreachReplyResponse
+         * @description One immutable reply classified against an exact sent message revision.
+         */
+        OutreachReplyResponse: {
+            /** Id */
+            id: string;
+            /** Marked Sent Event Id */
+            marked_sent_event_id: string;
+            message_kind: components["schemas"]["OutreachMessageKind"];
+            /** Message Version Id */
+            message_version_id: string;
+            /** Message Version Number */
+            message_version_number: number;
+            /** Note */
+            note?: string | null;
+            /**
+             * Received On
+             * Format: date
+             */
+            received_on: string;
+            /**
+             * Recorded At
+             * Format: date-time
+             */
+            recorded_at: string;
+            reply_kind: components["schemas"]["OutreachReplyKind"];
         };
         /** OutreachResumeEventCreate */
         OutreachResumeEventCreate: {
@@ -3245,6 +3358,34 @@ export interface components {
             reason: string;
             /** Sequence Id */
             sequence_id: string;
+        };
+        /**
+         * OutreachSentAttemptResponse
+         * @description The exact immutable message revision behind one manual send assertion.
+         */
+        OutreachSentAttemptResponse: {
+            /** Body */
+            body: string;
+            channel: components["schemas"]["OutreachChannel"];
+            kind: components["schemas"]["OutreachMessageKind"];
+            /** Marked Sent Event Id */
+            marked_sent_event_id: string;
+            /** Message Version Id */
+            message_version_id: string;
+            /** Replies */
+            replies?: components["schemas"]["OutreachReplyResponse"][];
+            /**
+             * Sent At
+             * Format: date-time
+             */
+            sent_at: string;
+            /**
+             * Sent Local On
+             * Format: date
+             */
+            sent_local_on: string;
+            /** Version Number */
+            version_number: number;
         };
         /**
          * OutreachSequenceResponse
@@ -6265,6 +6406,108 @@ export interface operations {
         responses: {
             /** @description Successful Response */
             200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApplicationOutreachResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Precondition Required */
+            428: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+        };
+    };
+    record_owner_application_outreach_reply_api_applications__application_id__outreach_sequences__sequence_id__replies_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "If-Match"?: string | null;
+                "Idempotency-Key"?: string | null;
+            };
+            path: {
+                application_id: string;
+                sequence_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OutreachReplyCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
                 headers: {
                     [name: string]: unknown;
                 };

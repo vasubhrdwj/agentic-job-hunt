@@ -879,10 +879,10 @@ Full Slice 5 definition of done:
 - [x] Add append-only date corrections for coarse screening, manual-interview,
       and offer milestones while retaining the original and full correction
       chain and leaving stage, task, submission, and outcome untouched.
-- [ ] Attribute each outreach response to the exact marked-sent event and
+- [x] Attribute each outreach response to the exact marked-sent event and
       message version.
 
-Next: Phase 6A2d adds exact outreach-response attribution.
+Next: Phase 6B adds the weekly review and trustworthy funnel.
 
 Definition of done:
 

@@ -20,7 +20,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 
 DATABASE_URL_ENV = "DATABASE_URL"
-MIGRATION_HEAD = "20260715_0014"
+MIGRATION_HEAD = "20260715_0015"
 
 
 class DatabaseConfigError(RuntimeError):

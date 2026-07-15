@@ -11,6 +11,7 @@ import {
 import {
   getApplicationOutreach,
   recordApplicationOutreachEvent,
+  recordApplicationOutreachReply,
   saveApplicationOutreachMessage,
   startApplicationOutreachSequence,
 } from "@/lib/application-api";
@@ -26,8 +27,12 @@ import type {
   OutreachMessageCreate,
   OutreachMessageKind,
   OutreachMessageVersion,
+  OutreachNonReplyOutcome,
   OutreachOutcome,
+  OutreachReplyCreate,
+  OutreachReplyKind,
   OutreachRecipient,
+  OutreachSentAttempt,
   OutreachTimelineEvent,
 } from "@/lib/outreach-types";
 import { createIdempotencyKey, WorkspaceApiError } from "@/lib/workspace-api";
@@ -43,6 +48,15 @@ import {
 
 const MAX_MESSAGE_CHARS = 4_000;
 const MAX_REASON_CHARS = 100;
+const MAX_REPLY_NOTE_CHARS = 1_000;
+const REPLY_KINDS: OutreachReplyKind[] = [
+  "reply_received",
+  "useful_reply",
+  "introduced",
+  "referred",
+  "declined",
+  "do_not_contact",
+];
 
 type DraftKey = `${string}:${OutreachMessageKind}`;
 type ControlMode = "pause" | "resume" | "stop";
@@ -53,6 +67,7 @@ interface PendingIntent {
   expectedVersion: number;
   applied?: (response: ApplicationOutreachResponse) => boolean;
   successMessage?: string;
+  onConfirmed?: () => void;
 }
 
 interface MutationOptions {
@@ -63,15 +78,47 @@ interface MutationOptions {
   applied: (response: ApplicationOutreachResponse) => boolean;
   successMessage: string;
   ambiguousMessage: string;
+  onConfirmed?: () => void;
+}
+
+function notifyConfirmed(pending: PendingIntent) {
+  const callback = pending.onConfirmed;
+  pending.onConfirmed = undefined;
+  callback?.();
 }
 
 type RecipientDeadline = OutreachRecipient;
+
+interface ReplyDraft {
+  replyKind: OutreachReplyKind | "";
+  receivedOn: string;
+  note: string;
+  confirmationFingerprint: string | null;
+}
+
+interface ReplyUi {
+  ownerLocalDate: string;
+  ownerTimezone: string;
+  editorAttemptId: string | null;
+  draft: ReplyDraft;
+  busy: string | null;
+  unresolvedIntent: string | null;
+  onOpen: (attempt: OutreachSentAttempt) => void;
+  onReplyKindChange: (value: OutreachReplyKind | "") => void;
+  onReceivedOnChange: (value: string) => void;
+  onNoteChange: (value: string) => void;
+  onConfirmationChange: (attempt: OutreachSentAttempt, checked: boolean) => void;
+  onCancel: () => void;
+  onRecord: (recipient: OutreachRecipient, attempt: OutreachSentAttempt) => void;
+}
 
 export function ApplicationOutreach({
   applicationId,
   applicationVersion,
   applicationStage,
   postingState,
+  ownerLocalDate,
+  ownerTimezone,
   benchReady,
   contactSearchRunning,
   interviewHistoryState,
@@ -80,6 +127,8 @@ export function ApplicationOutreach({
   applicationVersion: number;
   applicationStage: ApplicationStage;
   postingState: ApplicationPostingState;
+  ownerLocalDate: string;
+  ownerTimezone: string;
   benchReady: boolean;
   contactSearchRunning: boolean;
   interviewHistoryState: InterviewHistoryState;
@@ -95,21 +144,37 @@ export function ApplicationOutreach({
   const [dirtyFlags, setDirtyFlags] = useState<Partial<Record<DraftKey, boolean>>>({});
   const [channels, setChannels] = useState<Record<string, OutreachChannel>>({});
   const [sendConfirmations, setSendConfirmations] = useState<Record<string, boolean>>({});
-  const [outcomeChoices, setOutcomeChoices] = useState<Record<string, OutreachOutcome | "">>({});
+  const [outcomeChoices, setOutcomeChoices] = useState<Record<string, OutreachNonReplyOutcome | "">>({});
   const [controlMode, setControlMode] = useState<ControlMode | null>(null);
   const [controlReason, setControlReason] = useState("");
   const [locallyCopied, setLocallyCopied] = useState<Record<string, boolean>>({});
   const [manualCopyFallback, setManualCopyFallback] = useState<Record<string, boolean>>({});
+  const [replyEditorAttemptId, setReplyEditorAttemptId] = useState<string | null>(null);
+  const [replyDraft, setReplyDraft] = useState<ReplyDraft>({
+    replyKind: "",
+    receivedOn: ownerLocalDate,
+    note: "",
+    confirmationFingerprint: null,
+  });
 
   const requestGeneration = useRef(0);
   const outreachRef = useRef<ApplicationOutreachResponse | null>(null);
   const draftValues = useRef<Record<DraftKey, string>>({});
   const dirtyDrafts = useRef(new Set<DraftKey>());
   const pendingIntents = useRef(new Map<string, PendingIntent>());
+  const replyTriggerAttemptId = useRef<string | null>(null);
 
   useEffect(() => () => {
     requestGeneration.current += 1;
   }, []);
+
+  useEffect(() => {
+    if (!replyEditorAttemptId) return;
+    const timer = setTimeout(() => {
+      document.getElementById(replyKindInputId(replyEditorAttemptId))?.focus();
+    }, 0);
+    return () => clearTimeout(timer);
+  }, [replyEditorAttemptId]);
 
   const hydrateDrafts = useCallback((next: ApplicationOutreachResponse) => {
     setDrafts((current) => {
@@ -151,6 +216,7 @@ export function ApplicationOutreach({
     for (const [intent, pending] of pendingIntents.current) {
       if (pending.applied?.(next)) {
         pendingIntents.current.delete(intent);
+        notifyConfirmed(pending);
         setUnresolvedIntent((currentIntent) =>
           currentIntent === intent ? null : currentIntent,
         );
@@ -237,6 +303,7 @@ export function ApplicationOutreach({
     applied,
     successMessage,
     ambiguousMessage,
+    onConfirmed,
   }: MutationOptions) => {
     if (busy) return false;
     const otherPending = [...pendingIntents.current.keys()].find((key) => key !== intent);
@@ -253,6 +320,7 @@ export function ApplicationOutreach({
       pending = getPendingIntent(intent, fingerprint, expectedVersion);
       pending.applied ??= applied;
       pending.successMessage ??= successMessage;
+      pending.onConfirmed ??= onConfirmed;
     } catch (reason) {
       setActionError(errorText(reason, "Review the latest saved outreach state."));
       return false;
@@ -273,6 +341,7 @@ export function ApplicationOutreach({
       );
       if (returnedApplied || currentApplied) {
         pendingIntents.current.delete(intent);
+        notifyConfirmed(pending);
         setUnresolvedIntent((value) => value === intent ? null : value);
         setNotice(successMessage);
         return true;
@@ -328,6 +397,7 @@ export function ApplicationOutreach({
         }
         if (reconciled && applied(reconciled)) {
           pendingIntents.current.delete(intent);
+          notifyConfirmed(pending);
           setUnresolvedIntent((current) => current === intent ? null : current);
           setNotice(`${successMessage} Confirmed after checking the saved record.`);
           return true;
@@ -554,6 +624,104 @@ export function ApplicationOutreach({
     }
   }
 
+  function openReplyEditor(attempt: OutreachSentAttempt) {
+    if (busy || unresolvedIntent) return;
+    replyTriggerAttemptId.current = attempt.marked_sent_event_id;
+    setReplyDraft({
+      replyKind: "",
+      receivedOn: ownerLocalDate,
+      note: "",
+      confirmationFingerprint: null,
+    });
+    setReplyEditorAttemptId(attempt.marked_sent_event_id);
+    setActionError(null);
+    setNotice(null);
+  }
+
+  function closeReplyEditor() {
+    setReplyEditorAttemptId(null);
+    setReplyDraft({
+      replyKind: "",
+      receivedOn: ownerLocalDate,
+      note: "",
+      confirmationFingerprint: null,
+    });
+    const triggerAttemptId = replyTriggerAttemptId.current;
+    replyTriggerAttemptId.current = null;
+    setTimeout(() => {
+      if (triggerAttemptId) {
+        document.getElementById(replyTriggerId(triggerAttemptId))?.focus();
+      }
+    }, 0);
+  }
+
+  async function recordReply(
+    recipient: OutreachRecipient,
+    selectedAttempt: OutreachSentAttempt,
+  ) {
+    const current = outreachRef.current;
+    const sequence = current?.sequence;
+    const attempt = current
+      ? findSentAttempt(current, selectedAttempt.marked_sent_event_id)
+      : null;
+    if (!sequence || !attempt) {
+      setActionError(
+        "That exact sent message is no longer present in the saved view. Refresh before recording the reply.",
+      );
+      return;
+    }
+    if (replyDraft.note.length > MAX_REPLY_NOTE_CHARS) {
+      setActionError(
+        `Keep the private note within ${MAX_REPLY_NOTE_CHARS.toLocaleString()} characters.`,
+      );
+      return;
+    }
+    const payload = replyPayload(attempt, replyDraft);
+    if (!payload) {
+      setActionError("Choose what kind of reply arrived and when you received it.");
+      return;
+    }
+    if (payload.received_on > ownerLocalDate) {
+      setActionError("The received date cannot be later than today in your timezone.");
+      return;
+    }
+    if (attempt.sent_local_on && payload.received_on < attempt.sent_local_on) {
+      setActionError("The received date cannot be earlier than the exact message send date.");
+      return;
+    }
+    const fingerprint = replyFingerprint(payload);
+    if (replyDraft.confirmationFingerprint !== fingerprint) {
+      setActionError(
+        "Confirm that this reply belongs to this exact sent message before saving it.",
+      );
+      return;
+    }
+
+    const knownReplyIds = new Set(attempt.replies.map((reply) => reply.id));
+    const intent = replyIntent(attempt.marked_sent_event_id);
+    await runMutation({
+      intent,
+      fingerprint,
+      expectedVersion: sequence.version,
+      execute: (pending) => recordApplicationOutreachReply(
+        applicationId,
+        sequence.id,
+        pending.expectedVersion,
+        pending.receiptKey,
+        payload,
+      ),
+      applied: (next) => {
+        const savedAttempt = findSentAttempt(next, attempt.marked_sent_event_id);
+        return Boolean(savedAttempt?.replies.some(
+          (reply) => !knownReplyIds.has(reply.id) && replyMatches(reply, payload),
+        ));
+      },
+      successMessage: `${replyKindLabel(payload.reply_kind)} recorded for ${recipient.public_name} against the exact ${kindLabel(attempt.kind).toLowerCase()} version ${attempt.version_number}.`,
+      ambiguousMessage: "We could not confirm that this exact reply was recorded.",
+      onConfirmed: closeReplyEditor,
+    });
+  }
+
   async function changeSequenceState(mode: ControlMode) {
     const sequence = outreachRef.current?.sequence;
     const reason = controlReason.trim();
@@ -627,18 +795,18 @@ export function ApplicationOutreach({
   );
   const currentReadyCount = currentRecipients.filter(
     (recipient) =>
-      recipient.outcome === null &&
+      !recipientIsResolved(recipient) &&
       recipient.bench_state === "ready" &&
       recipient.lifecycle === "active",
   ).length;
   const currentPausedCount = currentRecipients.filter(
     (recipient) =>
-      recipient.outcome === null &&
+      !recipientIsResolved(recipient) &&
       recipient.bench_state === "paused" &&
       recipient.lifecycle === "active",
   ).length;
   const currentResolvedCount = currentRecipients.filter(
-    (recipient) => recipient.outcome !== null,
+    recipientIsResolved,
   ).length;
   const currentUnavailableCount = Math.max(
     0,
@@ -667,6 +835,38 @@ export function ApplicationOutreach({
           ? "Build a verified contact bench above first."
           : null
   );
+  const replyUi: ReplyUi = {
+    ownerLocalDate,
+    ownerTimezone,
+    editorAttemptId: replyEditorAttemptId,
+    draft: replyDraft,
+    busy,
+    unresolvedIntent,
+    onOpen: openReplyEditor,
+    onReplyKindChange: (value) => setReplyDraft((current) => ({
+      ...current,
+      replyKind: value,
+    })),
+    onReceivedOnChange: (value) => setReplyDraft((current) => ({
+      ...current,
+      receivedOn: value,
+    })),
+    onNoteChange: (value) => setReplyDraft((current) => ({
+      ...current,
+      note: value,
+    })),
+    onConfirmationChange: (attempt, checked) => setReplyDraft((current) => {
+      const payload = replyPayload(attempt, current);
+      return {
+        ...current,
+        confirmationFingerprint: checked && payload
+          ? replyFingerprint(payload)
+          : null,
+      };
+    }),
+    onCancel: closeReplyEditor,
+    onRecord: (recipient, attempt) => void recordReply(recipient, attempt),
+  };
 
   return (
     <section
@@ -811,6 +1011,7 @@ export function ApplicationOutreach({
                     outcomeChoice={outcomeChoices[recipient.application_contact_id] ?? ""}
                     busy={busy}
                     unresolvedIntent={unresolvedIntent}
+                    replyUi={replyUi}
                     onDraftChange={(kind, value) => {
                       const key = draftKey(recipient.application_contact_id, kind);
                       const saved = messageFor(recipient, kind)?.body ?? "";
@@ -846,9 +1047,10 @@ export function ApplicationOutreach({
           {previousRecipients.length > 0 ? (
             <RecipientSummaryList
               title={`${previousRecipients.length} ${previousRecipients.length === 1 ? "person" : "people"} from earlier waves`}
-              description="These people are resolved. Their exact sent messages remain in the saved activity and application history."
+              description="These people are resolved. Their exact sent messages remain here, and a late reply can still be attached to the message that received it."
               recipients={previousRecipients}
               reserve={false}
+              replyUi={replyUi}
             />
           ) : null}
 
@@ -894,7 +1096,11 @@ export function ApplicationOutreach({
             onConfirm={(mode) => void changeSequenceState(mode)}
           />
 
-          <OutreachTimeline events={outreach!.timeline} />
+          <OutreachTimeline
+            events={outreach!.timeline}
+            recipients={outreach!.recipients}
+            ownerTimezone={ownerTimezone}
+          />
         </div>
       ) : null}
     </section>
@@ -919,23 +1125,23 @@ function SequenceSummary({
   const sequence = outreach.sequence;
   if (!sequence) return null;
   const resolved = outreach.recipients.filter(
-    (recipient) => recipient.outcome !== null,
+    recipientIsResolved,
   ).length;
   const ready = outreach.recipients.filter(
     (recipient) =>
-      recipient.outcome === null &&
+      !recipientIsResolved(recipient) &&
       recipient.bench_state === "ready" &&
       recipient.lifecycle === "active",
   ).length;
   const paused = outreach.recipients.filter(
     (recipient) =>
-      recipient.outcome === null &&
+      !recipientIsResolved(recipient) &&
       recipient.bench_state === "paused" &&
       recipient.lifecycle === "active",
   ).length;
   const reserve = outreach.recipients.filter(
     (recipient) =>
-      recipient.outcome === null &&
+      !recipientIsResolved(recipient) &&
       recipient.bench_state === "reserve" &&
       recipient.lifecycle === "active",
   ).length;
@@ -985,12 +1191,14 @@ function RecipientSummaryList({
   recipients,
   reserve,
   unavailable = false,
+  replyUi,
 }: {
   title: string;
   description: string;
   recipients: OutreachRecipient[];
   reserve: boolean;
   unavailable?: boolean;
+  replyUi?: ReplyUi;
 }) {
   return (
     <details className="rounded-xl border border-zinc-200 p-4 dark:border-zinc-800">
@@ -999,10 +1207,7 @@ function RecipientSummaryList({
       </summary>
       <p className="mt-2 text-sm leading-6 text-zinc-500">{description}</p>
       <ul className="mt-3 divide-y divide-zinc-200 dark:divide-zinc-800">
-        {recipients.map((recipient) => {
-          const sentMessages = [recipient.initial_message, recipient.follow_up_message]
-            .filter((message): message is OutreachMessageVersion => Boolean(message?.sent_at));
-          return (
+        {recipients.map((recipient) => (
             <li key={recipient.application_contact_id} className="min-w-0 py-3">
               <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                 <div className="min-w-0">
@@ -1019,23 +1224,15 @@ function RecipientSummaryList({
                         : `Wave ${recipient.wave} resolved`}
                 </span>
               </div>
-              {!reserve && sentMessages.length > 0 ? (
-                <div className="mt-2 space-y-2">
-                  {sentMessages.map((message) => (
-                    <details key={message.id} className="rounded-lg bg-zinc-50 p-3 dark:bg-zinc-950/60">
-                      <summary className="min-h-8 cursor-pointer text-xs font-medium">
-                        Review exact {kindLabel(message.kind).toLowerCase()} version {message.version_number}
-                      </summary>
-                      <pre className="mt-2 whitespace-pre-wrap break-words font-sans text-sm leading-6 [overflow-wrap:anywhere]">
-                        {message.body}
-                      </pre>
-                    </details>
-                  ))}
-                </div>
+              {!reserve && hasSentHistory(recipient) ? (
+                <SentAttemptList
+                  recipient={recipient}
+                  replyUi={unavailable ? undefined : replyUi}
+                  compact
+                />
               ) : null}
             </li>
-          );
-        })}
+          ))}
       </ul>
     </details>
   );
@@ -1056,6 +1253,7 @@ function RecipientCard({
   outcomeChoice,
   busy,
   unresolvedIntent,
+  replyUi,
   onDraftChange,
   onSave,
   onCopy,
@@ -1077,9 +1275,10 @@ function RecipientCard({
   sendConfirmationByMessage: Record<string, boolean>;
   locallyCopied: Record<string, boolean>;
   manualCopyFallback: Record<string, boolean>;
-  outcomeChoice: OutreachOutcome | "";
+  outcomeChoice: OutreachNonReplyOutcome | "";
   busy: string | null;
   unresolvedIntent: string | null;
+  replyUi: ReplyUi;
   onDraftChange: (kind: OutreachMessageKind, value: string) => void;
   onSave: (kind: OutreachMessageKind) => void;
   onCopy: (message: OutreachMessageVersion) => void;
@@ -1087,10 +1286,13 @@ function RecipientCard({
   onChannelChange: (messageId: string, channel: OutreachChannel) => void;
   onSendConfirmation: (messageId: string, checked: boolean) => void;
   onMarkSent: (message: OutreachMessageVersion) => void;
-  onOutcomeChange: (outcome: OutreachOutcome | "") => void;
+  onOutcomeChange: (outcome: OutreachNonReplyOutcome | "") => void;
   onRecordOutcome: () => void;
 }) {
+  const resolved = recipientIsResolved(recipient);
+  const latestReply = latestRecordedReply(recipient);
   const active =
+    !resolved &&
     sequenceStatus === "active" &&
     postingState === "open" &&
     recipient.bench_state === "ready" &&
@@ -1138,7 +1340,18 @@ function RecipientCard({
         </p>
       ) : null}
 
-      {!recipient.outcome && !initial?.sent_at ? (
+      {latestReply ? (
+        <p className="mt-4 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-950 dark:border-emerald-900 dark:bg-emerald-950/30 dark:text-emerald-100">
+          Reply recorded: <strong>{replyKindLabel(latestReply.reply_kind)}</strong>
+          {` · received ${formatLocalDate(latestReply.received_on)}`}
+        </p>
+      ) : null}
+
+      {hasSentHistory(recipient) ? (
+        <SentAttemptList recipient={recipient} replyUi={replyUi} />
+      ) : null}
+
+      {!resolved && !initial?.sent_at ? (
         <MessageEditor
           recipientId={recipient.application_contact_id}
           recipientName={recipient.public_name}
@@ -1164,11 +1377,7 @@ function RecipientCard({
         />
       ) : null}
 
-      {initial?.sent_at ? (
-        <SentMessageSummary message={initial} />
-      ) : null}
-
-      {initial?.sent_at && !recipient.outcome ? (
+      {initial?.sent_at && !resolved && !followUp?.sent_at ? (
         <div className="mt-5 border-t border-zinc-200 pt-5 dark:border-zinc-800">
           <MessageEditor
             recipientId={recipient.application_contact_id}
@@ -1198,24 +1407,22 @@ function RecipientCard({
             onSendConfirmation={(checked) => followUp && onSendConfirmation(followUp.id, checked)}
             onMarkSent={() => followUp && onMarkSent(followUp)}
           />
-          {followUp?.sent_at ? (
-            <p className="mt-3 text-xs font-medium text-zinc-500">
-              One follow-up sent. No further follow-ups will be offered.
-            </p>
-          ) : null}
         </div>
       ) : null}
 
       {outcomeOptions.length > 0 ? (
         <div className="mt-5 rounded-lg border border-zinc-200 p-4 dark:border-zinc-800">
           <label htmlFor={`outcome-${recipient.application_contact_id}`} className="text-sm font-medium">
-            What happened?
+            Close without a reply
           </label>
+          <p className="mt-1 text-xs leading-5 text-zinc-500">
+            Use this only when nobody replied. Replies belong to the exact sent message above.
+          </p>
           <select
             id={`outcome-${recipient.application_contact_id}`}
             value={selectedOutcome}
             disabled={Boolean(busy) || Boolean(unresolvedIntent)}
-            onChange={(event) => onOutcomeChange(event.target.value as OutreachOutcome | "")}
+            onChange={(event) => onOutcomeChange(event.target.value as OutreachNonReplyOutcome | "")}
             className={`${inputClasses} mt-2`}
           >
             <option value="">Choose an outcome</option>
@@ -1245,17 +1452,18 @@ function RecipientCard({
             onClick={onRecordOutcome}
             className={`${secondaryButtonClasses} mt-3 w-full sm:w-auto`}
           >
-            Record outcome
+            Close without a reply
           </button>
         </div>
       ) : null}
 
-      {!active && sequenceStatus === "paused" && !recipient.outcome ? (
+      {!active && sequenceStatus === "paused" && !resolved ? (
         <p className="mt-4 text-xs leading-5 text-zinc-500">
-          Resume this plan before editing, copying, sending, or recording a new outcome.
+          Resume this plan before editing, copying, sending, or closing without a reply.
+          Any reply to an already-sent message can still be recorded above.
         </p>
       ) : null}
-      {sequenceStatus === "active" && !active && !recipient.outcome ? (
+      {sequenceStatus === "active" && !active && !resolved ? (
         <p className="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs leading-5 text-amber-900 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-100">
           This person is no longer eligible for message actions in the current plan.
         </p>
@@ -1475,6 +1683,331 @@ function MessageEditor({
   );
 }
 
+function SentAttemptList({
+  recipient,
+  replyUi,
+  compact = false,
+}: {
+  recipient: OutreachRecipient;
+  replyUi?: ReplyUi;
+  compact?: boolean;
+}) {
+  const attempts = [...(recipient.sent_attempts ?? [])].sort((left, right) => (
+    left.sent_at.localeCompare(right.sent_at) ||
+    left.marked_sent_event_id.localeCompare(right.marked_sent_event_id)
+  ));
+  const projectedMessageIds = new Set(
+    attempts.map((attempt) => attempt.message_version_id),
+  );
+  const legacyMessages = [recipient.initial_message, recipient.follow_up_message]
+    .filter((message): message is OutreachMessageVersion => Boolean(
+      message?.sent_at && !projectedMessageIds.has(message.id),
+    ));
+  if (attempts.length === 0 && legacyMessages.length === 0) return null;
+
+  return (
+    <section
+      aria-label={`Exact sent messages and replies for ${recipient.public_name}`}
+      className={compact ? "mt-3 space-y-3" : "mt-4 space-y-3"}
+    >
+      {attempts.map((attempt) => (
+        <SentAttemptCard
+          key={attempt.marked_sent_event_id}
+          recipient={recipient}
+          attempt={attempt}
+          replyUi={replyUi}
+        />
+      ))}
+      {legacyMessages.map((message) => (
+        <SentMessageSummary key={message.id} message={message} />
+      ))}
+    </section>
+  );
+}
+
+function SentAttemptCard({
+  recipient,
+  attempt,
+  replyUi,
+}: {
+  recipient: OutreachRecipient;
+  attempt: OutreachSentAttempt;
+  replyUi?: ReplyUi;
+}) {
+  const intent = replyIntent(attempt.marked_sent_event_id);
+  const editorOpen = replyUi?.editorAttemptId === attempt.marked_sent_event_id;
+  const pendingThis = replyUi?.unresolvedIntent === intent;
+  const payload = replyUi ? replyPayload(attempt, replyUi.draft) : null;
+  const payloadFingerprint = payload ? replyFingerprint(payload) : null;
+  const confirmationMatches = Boolean(
+    payloadFingerprint &&
+    replyUi?.draft.confirmationFingerprint === payloadFingerprint,
+  );
+  const dateOutsideBounds = Boolean(
+    payload && (
+      payload.received_on > (replyUi?.ownerLocalDate ?? payload.received_on) ||
+      (attempt.sent_local_on && payload.received_on < attempt.sent_local_on)
+    ),
+  );
+  const noteTooLong = Boolean(
+    replyUi && replyUi.draft.note.length > MAX_REPLY_NOTE_CHARS,
+  );
+  const fieldsLocked = Boolean(replyUi?.busy || replyUi?.unresolvedIntent);
+  const submitBlocked = Boolean(
+    !payload ||
+    dateOutsideBounds ||
+    noteTooLong ||
+    !confirmationMatches ||
+    replyUi?.busy ||
+    (replyUi?.unresolvedIntent && !pendingThis),
+  );
+  const formId = replyFormId(attempt.marked_sent_event_id);
+
+  return (
+    <article className="rounded-lg border border-emerald-200 bg-emerald-50 p-4 dark:border-emerald-900 dark:bg-emerald-950/30">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+        <div className="min-w-0">
+          <p className="text-sm font-semibold text-emerald-950 dark:text-emerald-100">
+            {kindLabel(attempt.kind)} version {attempt.version_number} recorded as sent
+          </p>
+          <p className="mt-1 text-xs text-emerald-800 dark:text-emerald-300">
+            {channelLabel(attempt.channel)} · Sent {formatLocalDate(attempt.sent_local_on)} in {replyUi?.ownerTimezone ?? "your workspace timezone"}
+          </p>
+        </div>
+        <span className="shrink-0 rounded-full bg-white/80 px-2.5 py-1 text-[11px] font-semibold text-emerald-800 dark:bg-emerald-950/80 dark:text-emerald-200">
+          Exact attempt
+        </span>
+      </div>
+
+      <details className="mt-3">
+        <summary className="min-h-9 cursor-pointer text-xs font-medium text-emerald-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:text-emerald-200">
+          Review exact sent text
+        </summary>
+        <pre className="mt-2 whitespace-pre-wrap break-words font-sans text-sm leading-6 [overflow-wrap:anywhere]">
+          {attempt.body}
+        </pre>
+      </details>
+
+      <ReplyHistory
+        attempt={attempt}
+        ownerTimezone={replyUi?.ownerTimezone}
+      />
+
+      {replyUi && !editorOpen ? (
+        <button
+          id={replyTriggerId(attempt.marked_sent_event_id)}
+          type="button"
+          aria-expanded={false}
+          aria-controls={formId}
+          disabled={Boolean(replyUi.busy) || Boolean(replyUi.unresolvedIntent)}
+          onClick={() => replyUi.onOpen(attempt)}
+          className={`${secondaryButtonClasses} mt-4 w-full bg-white/80 sm:w-auto dark:bg-zinc-950/70`}
+        >
+          Record a reply to this message
+        </button>
+      ) : null}
+
+      {replyUi && editorOpen ? (
+        <form
+          id={formId}
+          className="mt-4 border-t border-emerald-200 pt-4 dark:border-emerald-900"
+          onSubmit={(event) => {
+            event.preventDefault();
+            replyUi.onRecord(recipient, attempt);
+          }}
+        >
+          <fieldset disabled={fieldsLocked}>
+            <legend className="text-sm font-semibold text-emerald-950 dark:text-emerald-100">
+              Record a reply to this exact sent message
+            </legend>
+            <p className="mt-1 text-xs leading-5 text-emerald-800 dark:text-emerald-300">
+              Save the fact against {kindLabel(attempt.kind).toLowerCase()} version {attempt.version_number}.
+              This does not send anything or reopen message actions.
+            </p>
+
+            <div className="mt-4 grid gap-4 sm:grid-cols-2">
+              <label htmlFor={replyKindInputId(attempt.marked_sent_event_id)} className="text-sm">
+                <span className="block font-medium">What kind of reply arrived?</span>
+                <select
+                  id={replyKindInputId(attempt.marked_sent_event_id)}
+                  value={replyUi.draft.replyKind}
+                  onChange={(event) => replyUi.onReplyKindChange(
+                    event.target.value as OutreachReplyKind | "",
+                  )}
+                  className={`${inputClasses} mt-1 bg-white dark:bg-zinc-950`}
+                >
+                  <option value="">Choose reply kind</option>
+                  {REPLY_KINDS.map((kind) => (
+                    <option key={kind} value={kind}>{replyKindLabel(kind)}</option>
+                  ))}
+                </select>
+              </label>
+
+              <label htmlFor={replyDateInputId(attempt.marked_sent_event_id)} className="text-sm">
+                <span className="block font-medium">Date received</span>
+                <input
+                  id={replyDateInputId(attempt.marked_sent_event_id)}
+                  type="date"
+                  value={replyUi.draft.receivedOn}
+                  min={attempt.sent_local_on || undefined}
+                  max={replyUi.ownerLocalDate}
+                  onChange={(event) => replyUi.onReceivedOnChange(event.target.value)}
+                  className={`${inputClasses} mt-1 bg-white dark:bg-zinc-950`}
+                />
+                <span className="mt-1 block text-xs leading-5 text-emerald-800 dark:text-emerald-300">
+                  {attempt.sent_local_on
+                    ? `Your workspace date; not before ${formatLocalDate(attempt.sent_local_on)}.`
+                    : "Dates use your workspace timezone."}
+                </span>
+              </label>
+            </div>
+
+            {replyUi.draft.replyKind ? (
+              <p
+                role="note"
+                className={`mt-4 rounded-lg border p-3 text-xs leading-5 ${
+                  replyUi.draft.replyKind === "do_not_contact"
+                    ? "border-red-200 bg-red-50 text-red-900 dark:border-red-900 dark:bg-red-950/30 dark:text-red-100"
+                    : "border-amber-200 bg-amber-50 text-amber-900 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-100"
+                }`}
+              >
+                <strong>What saving this changes:</strong>{" "}
+                {replyKindEffect(replyUi.draft.replyKind)}
+              </p>
+            ) : null}
+
+            <label htmlFor={replyNoteInputId(attempt.marked_sent_event_id)} className="mt-4 block text-sm">
+              <span className="flex flex-wrap items-baseline justify-between gap-2">
+                <span className="font-medium">Private note (optional)</span>
+                <span className={replyUi.draft.note.length > MAX_REPLY_NOTE_CHARS ? "text-xs text-red-700" : "text-xs text-emerald-800 dark:text-emerald-300"}>
+                  {replyUi.draft.note.length.toLocaleString()}/{MAX_REPLY_NOTE_CHARS.toLocaleString()}
+                </span>
+              </span>
+              <textarea
+                id={replyNoteInputId(attempt.marked_sent_event_id)}
+                value={replyUi.draft.note}
+                maxLength={MAX_REPLY_NOTE_CHARS}
+                rows={3}
+                onChange={(event) => replyUi.onNoteChange(event.target.value)}
+                placeholder="Optional context for your private job-search record"
+                className={`${textareaClasses} mt-1 bg-white dark:bg-zinc-950`}
+              />
+              <span className="mt-1 block text-xs leading-5 text-emerald-800 dark:text-emerald-300">
+                Keep this brief and private; do not paste sensitive correspondence.
+              </span>
+            </label>
+
+            <label className="mt-4 flex min-h-11 items-start gap-3 rounded-lg border border-emerald-200 bg-white/80 p-3 text-sm dark:border-emerald-900 dark:bg-zinc-950/70">
+              <input
+                type="checkbox"
+                checked={confirmationMatches}
+                disabled={!payload || dateOutsideBounds || noteTooLong}
+                onChange={(event) => replyUi.onConfirmationChange(
+                  attempt,
+                  event.target.checked,
+                )}
+                className="mt-0.5 h-5 w-5 shrink-0 accent-indigo-600"
+              />
+              <span>
+                I confirm this reply belongs to this exact sent message version,
+                not another message or attempt.
+              </span>
+            </label>
+          </fieldset>
+
+          {pendingThis ? (
+            <p className="mt-3 text-xs font-medium text-amber-800 dark:text-amber-300">
+              The last save result is unconfirmed. The exact fields are locked;
+              retrying below uses the same receipt and cannot duplicate the reply.
+            </p>
+          ) : null}
+          {dateOutsideBounds ? (
+            <p className="mt-3 text-xs font-medium text-red-800 dark:text-red-300">
+              {attempt.sent_local_on
+                ? `Choose a date from ${formatLocalDate(attempt.sent_local_on)} through ${formatLocalDate(replyUi.ownerLocalDate)}.`
+                : `Choose a date no later than ${formatLocalDate(replyUi.ownerLocalDate)}.`}
+            </p>
+          ) : null}
+          <div className="mt-4 flex flex-col-reverse gap-2 sm:flex-row">
+            <button
+              type="button"
+              disabled={fieldsLocked}
+              onClick={replyUi.onCancel}
+              className={secondaryButtonClasses}
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={submitBlocked}
+              className={primaryButtonClasses}
+            >
+              {replyUi.busy === intent
+                ? "Saving reply…"
+                : pendingThis
+                  ? "Retry exact reply safely"
+                  : "Save reply"}
+            </button>
+          </div>
+        </form>
+      ) : null}
+    </article>
+  );
+}
+
+function ReplyHistory({
+  attempt,
+  ownerTimezone,
+}: {
+  attempt: OutreachSentAttempt;
+  ownerTimezone?: string;
+}) {
+  const replies = [...(attempt.replies ?? [])].sort((left, right) => (
+    left.received_on.localeCompare(right.received_on) ||
+    left.recorded_at.localeCompare(right.recorded_at) ||
+    left.id.localeCompare(right.id)
+  ));
+  if (replies.length === 0) return null;
+  return (
+    <div className="mt-4 border-t border-emerald-200 pt-4 dark:border-emerald-900">
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <p className="text-sm font-semibold text-emerald-950 dark:text-emerald-100">
+          Saved replies · {replies.length}
+        </p>
+        <span className="text-[11px] font-medium text-emerald-800 dark:text-emerald-300">
+          Immutable history
+        </span>
+      </div>
+      <ol className="mt-3 space-y-3">
+        {replies.map((reply) => (
+          <li
+            key={reply.id}
+            className="rounded-lg border border-emerald-200 bg-white/80 p-3 dark:border-emerald-900 dark:bg-zinc-950/70"
+          >
+            <p className="text-sm font-semibold">{replyKindLabel(reply.reply_kind)}</p>
+            <p className="mt-1 text-xs text-zinc-500">
+              Received {formatLocalDate(reply.received_on)}
+              {ownerTimezone
+                ? ` · Recorded ${formatOwnerTimestamp(reply.recorded_at, ownerTimezone)}`
+                : ""}
+            </p>
+            {reply.note ? (
+              <div className="mt-2 border-t border-zinc-200 pt-2 dark:border-zinc-800">
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-zinc-500">
+                  Private note
+                </p>
+                <p className="mt-1 whitespace-pre-wrap break-words text-sm leading-6 [overflow-wrap:anywhere]">
+                  {reply.note}
+                </p>
+              </div>
+            ) : null}
+          </li>
+        ))}
+      </ol>
+    </div>
+  );
+}
+
 function SentMessageSummary({ message }: { message: OutreachMessageVersion }) {
   return (
     <div className="mt-4 rounded-lg border border-emerald-200 bg-emerald-50 p-4 dark:border-emerald-900 dark:bg-emerald-950/30">
@@ -1492,6 +2025,9 @@ function SentMessageSummary({ message }: { message: OutreachMessageVersion }) {
           {message.body}
         </pre>
       </details>
+      <p className="mt-3 text-xs leading-5 text-emerald-800 dark:text-emerald-300">
+        Refresh to load the exact send-attempt record before attaching a reply.
+      </p>
     </div>
   );
 }
@@ -1534,7 +2070,8 @@ function SequenceControls({
       <div className="rounded-xl border border-zinc-200 p-4 dark:border-zinc-800">
         <p className="font-medium">This outreach plan is {status}.</p>
         <p className="mt-1 text-sm text-zinc-500">
-          Its saved messages and activity remain available for review. No further message actions can be added.
+          No further messages can be sent. Saved activity remains available, and
+          replies to an already-sent message can still be recorded on that exact attempt.
         </p>
       </div>
     );
@@ -1601,7 +2138,15 @@ function SequenceControls({
   );
 }
 
-function OutreachTimeline({ events }: { events: OutreachTimelineEvent[] }) {
+function OutreachTimeline({
+  events,
+  recipients,
+  ownerTimezone,
+}: {
+  events: OutreachTimelineEvent[];
+  recipients: OutreachRecipient[];
+  ownerTimezone: string;
+}) {
   if (events.length === 0) return null;
   return (
     <details className="rounded-xl border border-zinc-200 p-4 dark:border-zinc-800">
@@ -1609,12 +2154,19 @@ function OutreachTimeline({ events }: { events: OutreachTimelineEvent[] }) {
         Saved outreach activity · {events.length}
       </summary>
       <ol className="mt-3 space-y-3 border-l border-zinc-200 pl-4 dark:border-zinc-800">
-        {events.slice().reverse().map((event) => (
-          <li key={event.id} className="text-sm">
-            <p className="font-medium">{timelineLabel(event)}</p>
-            <p className="mt-0.5 text-xs text-zinc-500">{formatDate(event.occurred_at)}</p>
-          </li>
-        ))}
+        {events.slice().reverse().map((event) => {
+          const detail = timelineDetail(event, recipients);
+          return (
+            <li key={event.id} className="text-sm">
+              <p className="font-medium">{timelineLabel(event, recipients)}</p>
+              <p className="mt-0.5 text-xs text-zinc-500">
+                {detail
+                  ? `${detail} · Logged ${formatOwnerTimestamp(event.occurred_at, ownerTimezone)}`
+                  : formatOwnerTimestamp(event.occurred_at, ownerTimezone)}
+              </p>
+            </li>
+          );
+        })}
       </ol>
     </details>
   );
@@ -1649,31 +2201,118 @@ function findMessageById(response: ApplicationOutreachResponse, messageId: strin
   return null;
 }
 
+function findSentAttempt(
+  response: ApplicationOutreachResponse,
+  markedSentEventId: string,
+) {
+  for (const recipient of response.recipients) {
+    const attempt = (recipient.sent_attempts ?? []).find(
+      (candidate) => candidate.marked_sent_event_id === markedSentEventId,
+    );
+    if (attempt) return attempt;
+  }
+  return null;
+}
+
+function hasSentHistory(recipient: OutreachRecipient) {
+  return Boolean(
+    (recipient.sent_attempts ?? []).length > 0 ||
+    recipient.initial_message?.sent_at ||
+    recipient.follow_up_message?.sent_at,
+  );
+}
+
+function latestRecordedReply(recipient: OutreachRecipient) {
+  const replies = (recipient.sent_attempts ?? []).flatMap(
+    (attempt) => attempt.replies ?? [],
+  );
+  return replies.reduce<OutreachSentAttempt["replies"][number] | null>(
+    (latest, reply) => {
+      if (!latest) return reply;
+      return reply.recorded_at > latest.recorded_at ||
+        (reply.recorded_at === latest.recorded_at && reply.id > latest.id)
+        ? reply
+        : latest;
+    },
+    null,
+  );
+}
+
+function recipientIsResolved(recipient: OutreachRecipient) {
+  return recipient.outcome !== null || latestRecordedReply(recipient) !== null;
+}
+
+function replyIntent(markedSentEventId: string) {
+  return `reply:${markedSentEventId}`;
+}
+
+function replyPayload(
+  attempt: OutreachSentAttempt,
+  draft: ReplyDraft,
+): OutreachReplyCreate | null {
+  if (!draft.replyKind || !/^\d{4}-\d{2}-\d{2}$/.test(draft.receivedOn)) {
+    return null;
+  }
+  const note = draft.note.trim();
+  return {
+    marked_sent_event_id: attempt.marked_sent_event_id,
+    reply_kind: draft.replyKind,
+    received_on: draft.receivedOn,
+    note: note || null,
+    confirm_exact_sent_attempt: true,
+  };
+}
+
+function replyFingerprint(payload: OutreachReplyCreate) {
+  return JSON.stringify(payload);
+}
+
+function replyMatches(
+  reply: OutreachSentAttempt["replies"][number],
+  payload: OutreachReplyCreate,
+) {
+  return (
+    reply.marked_sent_event_id === payload.marked_sent_event_id &&
+    reply.reply_kind === payload.reply_kind &&
+    reply.received_on === payload.received_on &&
+    (reply.note ?? null) === (payload.note ?? null)
+  );
+}
+
+function replyFormId(markedSentEventId: string) {
+  return `outreach-reply-form-${markedSentEventId}`;
+}
+
+function replyTriggerId(markedSentEventId: string) {
+  return `outreach-reply-trigger-${markedSentEventId}`;
+}
+
+function replyKindInputId(markedSentEventId: string) {
+  return `outreach-reply-kind-${markedSentEventId}`;
+}
+
+function replyDateInputId(markedSentEventId: string) {
+  return `outreach-reply-date-${markedSentEventId}`;
+}
+
+function replyNoteInputId(markedSentEventId: string) {
+  return `outreach-reply-note-${markedSentEventId}`;
+}
+
 function allowedOutcomes(
   recipient: RecipientDeadline,
   status: "active" | "paused" | "stopped" | "completed",
   postingState: ApplicationPostingState,
-): OutreachOutcome[] {
+): OutreachNonReplyOutcome[] {
   if (postingState !== "open") return [];
   if (status === "stopped" || status === "completed") return [];
-  if (recipient.outcome === "useful_reply") {
-    return ["introduced", "referred", "do_not_contact"];
-  }
   if (status === "paused") {
     return [];
   }
   if (recipient.bench_state !== "ready" || recipient.lifecycle !== "active") return [];
-  if (recipient.outcome) return [];
+  if (recipientIsResolved(recipient)) return [];
   if (!recipient.initial_message?.sent_at) return ["unreachable"];
-  return [
-    "useful_reply",
-    "introduced",
-    "referred",
-    "declined",
-    "unreachable",
-    "no_reply",
-    "do_not_contact",
-  ];
+  return ["no_reply", "unreachable"];
 }
 
 function deadlineReached(value: string | null | undefined) {
@@ -1764,6 +2403,57 @@ function channelLabel(channel: OutreachChannel) {
   return ({ linkedin: "LinkedIn", email: "Email", other: "Other" } as const)[channel];
 }
 
+function replyKindLabel(kind: OutreachReplyKind) {
+  return ({
+    reply_received: "They replied",
+    useful_reply: "Useful reply / conversation started",
+    introduced: "They introduced me",
+    referred: "They referred me",
+    declined: "They declined",
+    do_not_contact: "They asked not to be contacted",
+  } as const)[kind];
+}
+
+function replyKindEffect(kind: OutreachReplyKind) {
+  if (kind === "do_not_contact") {
+    return "This permanently marks this person as Do not contact. If this outreach plan is still live, it also stops every remaining message action.";
+  }
+  if (kind === "introduced" || kind === "referred") {
+    return "This closes outreach for this person. If the plan is still live, it stops the remaining outreach because the referral goal was reached.";
+  }
+  return "This closes outreach for this person. If the plan is still live, remaining outreach pauses for your review; if nobody remains, the plan completes.";
+}
+
+function formatOwnerTimestamp(value: string, timeZone: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  try {
+    return new Intl.DateTimeFormat(undefined, {
+      dateStyle: "medium",
+      timeStyle: "short",
+      timeZone,
+    }).format(date);
+  } catch {
+    return value;
+  }
+}
+
+function formatLocalDate(value: string) {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  if (!match) return value;
+  const date = new Date(
+    Number(match[1]),
+    Number(match[2]) - 1,
+    Number(match[3]),
+  );
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleDateString(undefined, {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+  });
+}
+
 function outcomeLabel(outcome: OutreachOutcome) {
   return ({
     no_reply: "No reply",
@@ -1799,18 +2489,40 @@ function categoryLabel(value: OutreachRecipient["category"]) {
   } as const)[value];
 }
 
-function timelineLabel(event: OutreachTimelineEvent) {
+function timelineLabel(
+  event: OutreachTimelineEvent,
+  recipients: OutreachRecipient[],
+) {
   switch (event.event_type) {
     case "sequence_started": return `Started manual outreach at wave ${event.wave}`;
     case "message_saved": return `Saved ${kindLabel(event.kind).toLowerCase()} version`;
     case "copied": return "Copied an exact saved message";
     case "marked_sent": return `Recorded a manual send via ${channelLabel(event.channel)}`;
     case "outcome_recorded": return `Recorded outcome: ${outcomeLabel(event.outcome)}`;
+    case "reply_recorded": {
+      const recipient = recipients.find(
+        (candidate) => candidate.application_contact_id === event.application_contact_id,
+      );
+      return `${replyKindLabel(event.reply_kind)} from ${recipient?.public_name ?? "a contact"} · ${kindLabel(event.message_kind)} version ${event.message_version_number}`;
+    }
     case "paused": return `Paused outreach: ${event.reason}`;
     case "resumed": return `Resumed outreach: ${event.reason}`;
     case "stopped": return `Stopped outreach: ${event.reason}`;
     case "wave_advanced": return `Unlocked wave ${event.wave}`;
   }
+}
+
+function timelineDetail(
+  event: OutreachTimelineEvent,
+  recipients: OutreachRecipient[],
+) {
+  if (event.event_type !== "reply_recorded") return null;
+  const attempt = recipients
+    .flatMap((recipient) => recipient.sent_attempts ?? [])
+    .find((candidate) => (
+      candidate.marked_sent_event_id === event.marked_sent_event_id
+    ));
+  return `Received ${formatLocalDate(event.received_on)}${attempt ? ` on the exact ${channelLabel(attempt.channel)} send` : ""}`;
 }
 
 function sentence(value: string) {

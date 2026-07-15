@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 import pytest
 from cryptography.fernet import Fernet
@@ -26,6 +27,7 @@ from job_hunt_agent.models import (
 from job_hunt_agent.outreach_repository import (
     load_application_outreach,
     record_outreach_event,
+    record_outreach_reply,
     save_outreach_message,
     start_outreach_sequence,
 )
@@ -36,6 +38,7 @@ from job_hunt_agent.outreach_schemas import (
     OutreachMessageCreate,
     OutreachOutcomeEventCreate,
     OutreachPauseEventCreate,
+    OutreachReplyCreate,
     OutreachResumeEventCreate,
     OutreachStopEventCreate,
 )
@@ -367,6 +370,46 @@ def _record(
             application_id=APPLICATION_ID,
             sequence_id=sequence.id,
             payload=payload,
+            expected_sequence_version=sequence.version,
+            idempotency_key=key,
+            keyring=keyring,
+            now=now,
+        )
+    assert result is not None
+    return result
+
+
+def _reply(
+    database: Database,
+    keyring: DataKeyring,
+    response: ApplicationOutreachResponse,
+    *,
+    recipient_id: str,
+    reply_kind: str,
+    key: str,
+    now: datetime,
+    attempt_kind: str = "initial",
+    note: str | None = None,
+) -> ApplicationOutreachResponse:
+    sequence = _sequence(response)
+    attempt = next(
+        item
+        for item in _recipient(response, recipient_id).sent_attempts
+        if item.kind.value == attempt_kind
+    )
+    with database.session() as session:
+        result = record_outreach_reply(
+            session,
+            owner_id=OWNER_ID,
+            application_id=APPLICATION_ID,
+            sequence_id=sequence.id,
+            payload=OutreachReplyCreate(
+                marked_sent_event_id=attempt.marked_sent_event_id,
+                reply_kind=reply_kind,
+                received_on=now.astimezone(ZoneInfo("Asia/Kolkata")).date(),
+                note=note,
+                confirm_exact_sent_attempt=True,
+            ),
             expected_sequence_version=sequence.version,
             idempotency_key=key,
             keyring=keyring,
@@ -860,33 +903,30 @@ def test_useful_reply_pauses_and_introduction_or_referral_stops(
         keyring,
         _start(outreach_db, keyring),
     )
-    response = _record(
+    response = _reply(
         outreach_db,
         keyring,
         response,
-        payload=OutreachOutcomeEventCreate(
-            event_type="outcome",
-            application_contact_id="application-contact-1",
-            outcome="useful_reply",
-        ),
+        recipient_id="application-contact-1",
+        reply_kind="useful_reply",
         key="useful-reply",
         now=NOW + timedelta(hours=1),
     )
     assert response.status.value == "paused"
     assert _sequence(response).reason == "useful_reply"
-    assert {
-        item.bench_state.value for item in response.recipients if item.wave == 1
-    } == {"paused"}
+    assert _recipient(
+        response, "application-contact-1"
+    ).bench_state.value == "stopped"
+    assert _recipient(
+        response, "application-contact-4"
+    ).bench_state.value == "paused"
 
-    response = _record(
+    response = _reply(
         outreach_db,
         keyring,
         response,
-        payload=OutreachOutcomeEventCreate(
-            event_type="outcome",
-            application_contact_id="application-contact-1",
-            outcome=terminal_outcome,
-        ),
+        recipient_id="application-contact-1",
+        reply_kind=terminal_outcome,
         key=f"{terminal_outcome}-stop",
         now=NOW + timedelta(hours=2),
     )
@@ -895,7 +935,7 @@ def test_useful_reply_pauses_and_introduction_or_referral_stops(
     assert {item.bench_state.value for item in response.recipients} == {"stopped"}
 
 
-def test_unreachable_and_declined_advance_only_after_both_wave_one_purposes_resolve(
+def test_unreachable_and_declined_advance_then_pause_the_next_wave(
     outreach_db: Database,
     keyring: DataKeyring,
 ) -> None:
@@ -923,20 +963,18 @@ def test_unreachable_and_declined_advance_only_after_both_wave_one_purposes_reso
         prefix="recruiter",
         sent_at=NOW + timedelta(minutes=5),
     )
-    response = _record(
+    response = _reply(
         outreach_db,
         keyring,
         response,
-        payload=OutreachOutcomeEventCreate(
-            event_type="outcome",
-            application_contact_id="application-contact-4",
-            outcome="declined",
-        ),
+        recipient_id="application-contact-4",
+        reply_kind="declined",
         key="recruiter-declined",
         now=NOW + timedelta(minutes=6),
     )
+    assert response.status.value == "paused"
     assert _sequence(response).active_wave == 2
-    assert _recipient(response, "application-contact-2").bench_state.value == "ready"
+    assert _recipient(response, "application-contact-2").bench_state.value == "paused"
 
 
 def test_person_cooldown_blocks_same_contact_on_another_application(
@@ -1023,27 +1061,21 @@ def test_timeline_projects_every_persisted_event_with_exact_discriminators(
         keyring,
         _start(outreach_db, keyring),
     )
-    response = _record(
+    response = _reply(
         outreach_db,
         keyring,
         response,
-        payload=OutreachOutcomeEventCreate(
-            event_type="outcome",
-            application_contact_id="application-contact-1",
-            outcome="useful_reply",
-        ),
+        recipient_id="application-contact-1",
+        reply_kind="useful_reply",
         key="timeline-useful-reply",
         now=NOW + timedelta(hours=1),
     )
-    response = _record(
+    response = _reply(
         outreach_db,
         keyring,
         response,
-        payload=OutreachOutcomeEventCreate(
-            event_type="outcome",
-            application_contact_id="application-contact-1",
-            outcome="introduced",
-        ),
+        recipient_id="application-contact-1",
+        reply_kind="introduced",
         key="timeline-introduced",
         now=NOW + timedelta(hours=2),
     )
@@ -1053,9 +1085,9 @@ def test_timeline_projects_every_persisted_event_with_exact_discriminators(
         "message_saved",
         "copied",
         "marked_sent",
-        "outcome_recorded",
+        "reply_recorded",
         "paused",
-        "outcome_recorded",
+        "reply_recorded",
         "stopped",
     ]
 
@@ -1097,15 +1129,12 @@ def test_presaved_follow_up_cannot_be_used_after_useful_reply_and_resume(
             key="presaved-follow-up-copy-before-reply",
             now=NOW + timedelta(days=1, minutes=1),
         )
-    response = _record(
+    response = _reply(
         outreach_db,
         keyring,
         response,
-        payload=OutreachOutcomeEventCreate(
-            event_type="outcome",
-            application_contact_id="application-contact-1",
-            outcome="useful_reply",
-        ),
+        recipient_id="application-contact-1",
+        reply_kind="useful_reply",
         key=f"presaved-useful-reply-{action}",
         now=NOW + timedelta(days=2),
     )
@@ -1134,7 +1163,7 @@ def test_presaved_follow_up_cannot_be_used_after_useful_reply_and_resume(
             confirm_exact_version=True,
         )
     )
-    with pytest.raises(ResourceConflict, match="after an outcome"):
+    with pytest.raises(ResourceConflict):
         _record(
             outreach_db,
             keyring,
@@ -1295,17 +1324,25 @@ def test_fourth_cold_employee_send_at_same_company_within_seven_days_is_blocked(
         prefix="cold-one",
         sent_at=NOW + timedelta(minutes=3),
     )
+    response = _reply(
+        outreach_db,
+        keyring,
+        response,
+        recipient_id="application-contact-1",
+        reply_kind="declined",
+        key="cold-one-declined",
+        now=NOW + timedelta(minutes=4),
+    )
     response = _record(
         outreach_db,
         keyring,
         response,
-        payload=OutreachOutcomeEventCreate(
-            event_type="outcome",
-            application_contact_id="application-contact-1",
-            outcome="declined",
+        payload=OutreachResumeEventCreate(
+            event_type="resume",
+            reason="Continue the company-cap test after reviewing the decline.",
         ),
-        key="cold-one-declined",
-        now=NOW + timedelta(minutes=4),
+        key="resume-after-cold-one-declined",
+        now=NOW + timedelta(minutes=4, seconds=30),
     )
     response = _record(
         outreach_db,
@@ -1334,17 +1371,25 @@ def test_fourth_cold_employee_send_at_same_company_within_seven_days_is_blocked(
             prefix=f"cold-{index}",
             sent_at=sent_at,
         )
+        response = _reply(
+            outreach_db,
+            keyring,
+            response,
+            recipient_id=recipient_id,
+            reply_kind="declined",
+            key=f"cold-{index}-declined",
+            now=sent_at + timedelta(minutes=1),
+        )
         response = _record(
             outreach_db,
             keyring,
             response,
-            payload=OutreachOutcomeEventCreate(
-                event_type="outcome",
-                application_contact_id=recipient_id,
-                outcome="declined",
+            payload=OutreachResumeEventCreate(
+                event_type="resume",
+                reason="Continue after manually reviewing this decline.",
             ),
-            key=f"cold-{index}-declined",
-            now=sent_at + timedelta(minutes=1),
+            key=f"cold-{index}-resume",
+            now=sent_at + timedelta(minutes=2),
         )
 
     assert _sequence(response).active_wave == 4

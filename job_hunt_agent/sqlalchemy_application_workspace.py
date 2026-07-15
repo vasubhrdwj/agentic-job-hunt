@@ -80,6 +80,7 @@ from .outreach_repository import (
     OutreachRepositoryError,
     load_application_outreach,
     record_outreach_event,
+    record_outreach_reply,
     save_outreach_message,
     start_outreach_sequence,
 )
@@ -87,6 +88,7 @@ from .outreach_schemas import (
     ApplicationOutreachResponse,
     OutreachEventCreate,
     OutreachMessageCreate,
+    OutreachReplyCreate,
 )
 from .owner_workspace import (
     WorkspaceConflict,
@@ -469,6 +471,28 @@ class SqlAlchemyApplicationWorkspaceStore(SqlAlchemyContactWorkspaceStore):
     ) -> ApplicationOutreachResponse | None:
         with _outreach_errors(), self.database.session() as session:
             return record_outreach_event(
+                session,
+                owner_id=owner_id,
+                application_id=application_id,
+                sequence_id=sequence_id,
+                payload=payload,
+                expected_sequence_version=expected_sequence_version,
+                idempotency_key=idempotency_key,
+                keyring=self.keyring,
+            )
+
+    def record_outreach_reply(
+        self,
+        *,
+        owner_id: str,
+        application_id: str,
+        sequence_id: str,
+        payload: OutreachReplyCreate,
+        expected_sequence_version: int,
+        idempotency_key: str,
+    ) -> ApplicationOutreachResponse | None:
+        with _outreach_errors(), self.database.session() as session:
+            return record_outreach_reply(
                 session,
                 owner_id=owner_id,
                 application_id=application_id,

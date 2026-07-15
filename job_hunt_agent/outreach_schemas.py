@@ -8,6 +8,7 @@ Nothing in these contracts represents an automated send.
 
 from __future__ import annotations
 
+from datetime import date
 from enum import Enum
 from typing import Annotated, Literal, Self
 
@@ -19,6 +20,7 @@ from .contact_schemas import ContactBenchState, ContactCategory, ContactLifecycl
 
 MAX_OUTREACH_RECIPIENTS = 5
 MAX_OUTREACH_MESSAGE_CHARS = 4_000
+MAX_OUTREACH_REPLY_NOTE_CHARS = 1_000
 MAX_OUTREACH_REASON_CHARS = 100
 MAX_OUTREACH_TIMELINE_EVENTS = 200
 
@@ -65,6 +67,22 @@ class OutreachOutcome(str, Enum):
     do_not_contact = "do_not_contact"
 
 
+class OutreachNonReplyOutcome(str, Enum):
+    """Legacy non-response facts that do not need sent-attempt attribution."""
+
+    no_reply = "no_reply"
+    unreachable = "unreachable"
+
+
+class OutreachReplyKind(str, Enum):
+    reply_received = "reply_received"
+    useful_reply = "useful_reply"
+    introduced = "introduced"
+    referred = "referred"
+    declined = "declined"
+    do_not_contact = "do_not_contact"
+
+
 class OutreachMessageCreate(OutreachContractModel):
     """Create the next immutable version for one recipient and message kind."""
 
@@ -107,7 +125,35 @@ class OutreachMarkedSentEventCreate(OutreachContractModel):
 class OutreachOutcomeEventCreate(OutreachContractModel):
     event_type: Literal["outcome"]
     application_contact_id: OpaqueId
-    outcome: OutreachOutcome
+    outcome: OutreachNonReplyOutcome
+
+
+class OutreachReplyCreate(OutreachContractModel):
+    """Record a manual reply against one exact marked-sent event."""
+
+    marked_sent_event_id: OpaqueId
+    reply_kind: OutreachReplyKind
+    received_on: date
+    note: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=MAX_OUTREACH_REPLY_NOTE_CHARS,
+    )
+    confirm_exact_sent_attempt: Literal[True]
+
+    @field_validator("note")
+    @classmethod
+    def note_contains_visible_text(cls, value: str | None) -> str | None:
+        if value is not None and not value.strip():
+            raise ValueError("reply note must contain non-whitespace text")
+        return value
+
+    @field_validator("confirm_exact_sent_attempt", mode="before")
+    @classmethod
+    def confirmation_is_boolean_true(cls, value: object) -> object:
+        if value is not True:
+            raise ValueError("confirm_exact_sent_attempt must be the boolean true")
+        return value
 
 
 class _ReasonedOutreachEventCreate(OutreachContractModel):
@@ -183,6 +229,72 @@ class OutreachMessageVersionResponse(OutreachContractModel):
         return self
 
 
+class OutreachReplyResponse(OutreachContractModel):
+    """One immutable reply classified against an exact sent message revision."""
+
+    id: OpaqueId
+    marked_sent_event_id: OpaqueId
+    message_version_id: OpaqueId
+    message_version_number: StrictInt = Field(ge=1)
+    message_kind: OutreachMessageKind
+    reply_kind: OutreachReplyKind
+    received_on: date
+    note: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=MAX_OUTREACH_REPLY_NOTE_CHARS,
+    )
+    recorded_at: UTCDateTime
+
+    @field_validator("note")
+    @classmethod
+    def stored_note_contains_visible_text(cls, value: str | None) -> str | None:
+        if value is not None and not value.strip():
+            raise ValueError("stored reply note must contain non-whitespace text")
+        return value
+
+
+class OutreachSentAttemptResponse(OutreachContractModel):
+    """The exact immutable message revision behind one manual send assertion."""
+
+    marked_sent_event_id: OpaqueId
+    message_version_id: OpaqueId
+    version_number: StrictInt = Field(ge=1)
+    kind: OutreachMessageKind
+    body: str = Field(min_length=1, max_length=MAX_OUTREACH_MESSAGE_CHARS)
+    channel: OutreachChannel
+    sent_at: UTCDateTime
+    sent_local_on: date
+    replies: list[OutreachReplyResponse] = Field(default_factory=list)
+
+    @field_validator("body")
+    @classmethod
+    def stored_body_contains_visible_text(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("stored sent message body must contain non-whitespace text")
+        return value
+
+    @model_validator(mode="after")
+    def replies_match_this_exact_attempt(self) -> Self:
+        reply_ids = [reply.id for reply in self.replies]
+        if len(reply_ids) != len(set(reply_ids)):
+            raise ValueError("sent-attempt replies must be distinct")
+        if any(
+            reply.marked_sent_event_id != self.marked_sent_event_id
+            or reply.message_version_id != self.message_version_id
+            or reply.message_version_number != self.version_number
+            or reply.message_kind is not self.kind
+            for reply in self.replies
+        ):
+            raise ValueError("every reply must identify this exact sent attempt")
+        if any(
+            later.recorded_at < earlier.recorded_at
+            for earlier, later in zip(self.replies, self.replies[1:])
+        ):
+            raise ValueError("sent-attempt replies must be ordered by recorded_at")
+        return self
+
+
 class OutreachRecipientResponse(OutreachContractModel):
     """One pinned verified recipient and their latest message projections."""
 
@@ -200,6 +312,7 @@ class OutreachRecipientResponse(OutreachContractModel):
     bench_state: ContactBenchState
     initial_message: OutreachMessageVersionResponse | None = None
     follow_up_message: OutreachMessageVersionResponse | None = None
+    sent_attempts: list[OutreachSentAttemptResponse] = Field(default_factory=list)
     follow_up_due_at: UTCDateTime | None = None
     no_reply_eligible_at: UTCDateTime | None
     outcome: OutreachOutcome | None = None
@@ -245,6 +358,40 @@ class OutreachRecipientResponse(OutreachContractModel):
             raise ValueError("no_reply_eligible_at cannot precede the latest send")
         if (self.outcome is None) != (self.outcome_at is None):
             raise ValueError("outcome and outcome_at must be recorded together")
+
+        attempt_ids = [item.marked_sent_event_id for item in self.sent_attempts]
+        message_ids = [item.message_version_id for item in self.sent_attempts]
+        kinds = [item.kind for item in self.sent_attempts]
+        if len(attempt_ids) != len(set(attempt_ids)):
+            raise ValueError("sent attempts must identify distinct marked-sent events")
+        if len(message_ids) != len(set(message_ids)) or len(kinds) != len(set(kinds)):
+            raise ValueError("a recipient can have only one sent attempt per message kind")
+        if any(
+            later.sent_at < earlier.sent_at
+            for earlier, later in zip(self.sent_attempts, self.sent_attempts[1:])
+        ):
+            raise ValueError("sent attempts must be ordered by sent_at")
+        projected_messages = {
+            OutreachMessageKind.initial: self.initial_message,
+            OutreachMessageKind.follow_up: self.follow_up_message,
+        }
+        for attempt in self.sent_attempts:
+            message = projected_messages[attempt.kind]
+            if (
+                message is None
+                or message.id != attempt.message_version_id
+                or message.version_number != attempt.version_number
+                or message.body != attempt.body
+                or message.sent_at != attempt.sent_at
+                or message.sent_channel is not attempt.channel
+            ):
+                raise ValueError("sent attempt must match the exact projected message")
+        for kind, message in projected_messages.items():
+            matching = [item for item in self.sent_attempts if item.kind is kind]
+            if message is not None and message.sent_at is not None and len(matching) != 1:
+                raise ValueError("every sent message requires one exact sent attempt")
+            if (message is None or message.sent_at is None) and matching:
+                raise ValueError("an unsent message cannot have a sent attempt")
         return self
 
 
@@ -371,6 +518,29 @@ class OutreachOutcomeTimelineEvent(_OutreachTimelineEventBase):
     outcome: OutreachOutcome
 
 
+class OutreachReplyRecordedTimelineEvent(_OutreachTimelineEventBase):
+    event_type: Literal["reply_recorded"]
+    application_contact_id: OpaqueId
+    marked_sent_event_id: OpaqueId
+    message_version_id: OpaqueId
+    message_version_number: StrictInt = Field(ge=1)
+    message_kind: OutreachMessageKind
+    reply_kind: OutreachReplyKind
+    received_on: date
+    note: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=MAX_OUTREACH_REPLY_NOTE_CHARS,
+    )
+
+    @field_validator("note")
+    @classmethod
+    def stored_note_contains_visible_text(cls, value: str | None) -> str | None:
+        if value is not None and not value.strip():
+            raise ValueError("stored reply note must contain non-whitespace text")
+        return value
+
+
 class OutreachPausedTimelineEvent(_OutreachTimelineEventBase):
     event_type: Literal["paused"]
     reason: str = Field(min_length=1, max_length=MAX_OUTREACH_REASON_CHARS)
@@ -397,6 +567,7 @@ OutreachTimelineEvent = Annotated[
     | OutreachCopiedTimelineEvent
     | OutreachMarkedSentTimelineEvent
     | OutreachOutcomeTimelineEvent
+    | OutreachReplyRecordedTimelineEvent
     | OutreachPausedTimelineEvent
     | OutreachResumedTimelineEvent
     | OutreachStoppedTimelineEvent
@@ -482,11 +653,14 @@ class ApplicationOutreachResponse(OutreachContractModel):
         ):
             raise ValueError("timeline events must fall within the sequence lifecycle")
         if any(
-            isinstance(event, OutreachOutcomeTimelineEvent)
+            isinstance(
+                event,
+                (OutreachOutcomeTimelineEvent, OutreachReplyRecordedTimelineEvent),
+            )
             and event.application_contact_id not in set(recipient_ids)
             for event in self.timeline
         ):
-            raise ValueError("outcome events must identify a returned recipient")
+            raise ValueError("recipient events must identify a returned recipient")
         if any(
             later.occurred_at < earlier.occurred_at
             for earlier, later in zip(self.timeline, self.timeline[1:])
@@ -499,6 +673,7 @@ __all__ = [
     "ApplicationOutreachResponse",
     "ApplicationOutreachStatus",
     "MAX_OUTREACH_MESSAGE_CHARS",
+    "MAX_OUTREACH_REPLY_NOTE_CHARS",
     "MAX_OUTREACH_REASON_CHARS",
     "MAX_OUTREACH_RECIPIENTS",
     "MAX_OUTREACH_TIMELINE_EVENTS",
@@ -512,17 +687,23 @@ __all__ = [
     "OutreachMessageCreate",
     "OutreachMessageKind",
     "OutreachMessageVersionResponse",
+    "OutreachNonReplyOutcome",
     "OutreachOutcome",
     "OutreachOutcomeEventCreate",
     "OutreachOutcomeTimelineEvent",
     "OutreachPauseEventCreate",
     "OutreachPausedTimelineEvent",
     "OutreachRecipientResponse",
+    "OutreachReplyCreate",
+    "OutreachReplyKind",
+    "OutreachReplyRecordedTimelineEvent",
+    "OutreachReplyResponse",
     "OutreachResumeEventCreate",
     "OutreachResumedTimelineEvent",
     "OutreachSequenceResponse",
     "OutreachSequenceStartedTimelineEvent",
     "OutreachSequenceStatus",
+    "OutreachSentAttemptResponse",
     "OutreachStopEventCreate",
     "OutreachStoppedTimelineEvent",
     "OutreachTimelineEvent",

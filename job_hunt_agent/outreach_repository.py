@@ -8,7 +8,7 @@ they manually sent one exact immutable message version.
 from __future__ import annotations
 
 import hashlib
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Iterable, cast
 from uuid import uuid4
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -27,6 +27,7 @@ from .models import (
     JobPosting,
     OutreachEvent,
     OutreachMessageVersion,
+    OutreachReply,
     OutreachSequence,
     Owner,
 )
@@ -46,11 +47,15 @@ from .outreach_schemas import (
     OutreachPauseEventCreate,
     OutreachPausedTimelineEvent,
     OutreachRecipientResponse,
+    OutreachReplyCreate,
+    OutreachReplyRecordedTimelineEvent,
+    OutreachReplyResponse,
     OutreachResumeEventCreate,
     OutreachResumedTimelineEvent,
     OutreachMessageSavedTimelineEvent,
     OutreachSequenceResponse,
     OutreachSequenceStartedTimelineEvent,
+    OutreachSentAttemptResponse,
     OutreachStopEventCreate,
     OutreachStoppedTimelineEvent,
     OutreachWaveAdvancedTimelineEvent,
@@ -69,6 +74,7 @@ NO_REPLY_WITHOUT_FOLLOW_UP_BUSINESS_DAYS = 7
 MAX_TIMELINE_EVENTS = 200
 TERMINAL_RECIPIENT_OUTCOMES = {"no_reply", "declined", "unreachable"}
 STOP_OUTCOMES = {"introduced", "referred", "do_not_contact"}
+STOP_REPLY_KINDS = {"introduced", "referred", "do_not_contact"}
 
 
 class OutreachRepositoryError(RuntimeError):
@@ -191,6 +197,72 @@ def load_application_outreach(
         elif event.event_type == "outcome_recorded" and event.application_contact_id:
             latest_outcomes[event.application_contact_id] = event
 
+    sent_message_ids = set(sent_by_message)
+    sent_messages = (
+        {
+            message.id: message
+            for message in session.scalars(
+                select(OutreachMessageVersion).where(
+                    OutreachMessageVersion.owner_id == owner_id,
+                    OutreachMessageVersion.application_id == application_id,
+                    OutreachMessageVersion.outreach_sequence_id == sequence.id,
+                    OutreachMessageVersion.id.in_(sent_message_ids),
+                )
+            )
+        }
+        if sent_message_ids
+        else {}
+    )
+    if set(sent_messages) != sent_message_ids:
+        raise OutreachRepositoryError("a sent outreach message version is missing")
+
+    replies = list(
+        session.scalars(
+            select(OutreachReply)
+            .where(
+                OutreachReply.owner_id == owner_id,
+                OutreachReply.application_id == application_id,
+                OutreachReply.outreach_sequence_id == sequence.id,
+            )
+            .order_by(OutreachReply.recorded_at.asc(), OutreachReply.id.asc())
+        )
+    )
+    sent_event_ids = {
+        event.id for event in state_events if event.event_type == "marked_sent"
+    }
+    replies_by_sent_event: dict[str, list[OutreachReply]] = {}
+    for reply in replies:
+        if reply.marked_sent_event_id not in sent_event_ids:
+            raise OutreachRepositoryError("an outreach reply has no sent attempt")
+        replies_by_sent_event.setdefault(reply.marked_sent_event_id, []).append(reply)
+
+    sent_attempts_by_contact: dict[str, list[OutreachSentAttemptResponse]] = {}
+    for sent_event in state_events:
+        if sent_event.event_type != "marked_sent":
+            continue
+        if (
+            sent_event.application_contact_id is None
+            or sent_event.message_version_id is None
+            or sent_event.kind is None
+            or sent_event.channel is None
+        ):
+            raise OutreachRepositoryError("a marked-sent event is incomplete")
+        sent_message = sent_messages.get(sent_event.message_version_id)
+        if sent_message is None or sent_message.kind != sent_event.kind:
+            raise OutreachRepositoryError("a marked-sent message binding is invalid")
+        sent_attempts_by_contact.setdefault(
+            sent_event.application_contact_id,
+            [],
+        ).append(
+            _sent_attempt_response(
+                sent_event,
+                message=sent_message,
+                replies=replies_by_sent_event.get(sent_event.id, []),
+                owner_timezone=owner_timezone,
+                keyring=keyring,
+            )
+        )
+
     recipients: list[OutreachRecipientResponse] = []
     for application_contact, contact in recipient_rows:
         initial = latest_messages.get((application_contact.id, "initial"))
@@ -234,6 +306,7 @@ def load_application_outreach(
                     if follow_up is not None
                     else None
                 ),
+                sent_attempts=sent_attempts_by_contact.get(application_contact.id, []),
                 follow_up_due_at=(
                     _as_utc(initial_send.follow_up_due_at)
                     if initial_send is not None
@@ -276,7 +349,12 @@ def load_application_outreach(
         )
     )
     timeline_events.reverse()
-    timeline = _timeline(timeline_events, keyring=keyring)
+    timeline = [
+        *_reply_timeline(replies, messages=sent_messages, keyring=keyring),
+        *_timeline(timeline_events, keyring=keyring),
+    ]
+    timeline.sort(key=lambda item: item.occurred_at)
+    timeline = timeline[-MAX_TIMELINE_EVENTS:]
     return ApplicationOutreachResponse(
         application_id=application_id,
         status=sequence.status,
@@ -845,7 +923,7 @@ def record_outreach_event(
     elif isinstance(payload, OutreachResumeEventCreate):
         if sequence.status != "paused":
             raise ResourceConflict("only paused outreach can be resumed")
-        _resume_sequence_rows(session, sequence=sequence, now=current)
+        resumed_wave = _resume_sequence_rows(session, sequence=sequence, now=current)
         _add_reasoned_event(
             session,
             sequence=sequence,
@@ -857,6 +935,16 @@ def record_outreach_event(
             occurred_at=current,
             mutation_hash=_event_hash(idempotency_key, "resumed"),
         )
+        if resumed_wave is not None:
+            _add_sequence_event(
+                session,
+                sequence=sequence,
+                sequence_number=event_number + 1,
+                event_type="wave_advanced",
+                wave=resumed_wave,
+                occurred_at=current,
+                mutation_hash=_event_hash(idempotency_key, "resume_wave_advanced"),
+            )
     elif isinstance(payload, OutreachStopEventCreate):
         if sequence.status not in {"active", "paused"}:
             raise ResourceConflict("outreach is already terminal")
@@ -900,6 +988,271 @@ def record_outreach_event(
     )
 
 
+def record_outreach_reply(
+    session: Session,
+    *,
+    owner_id: str,
+    application_id: str,
+    sequence_id: str,
+    payload: OutreachReplyCreate,
+    expected_sequence_version: int,
+    idempotency_key: str,
+    keyring: DataKeyring,
+    now: datetime | None = None,
+) -> ApplicationOutreachResponse | None:
+    """Append one manual reply tied to an exact immutable sent attempt."""
+
+    current = _as_utc(now or utcnow())
+    sequence = _lock_sequence(
+        session,
+        owner_id=owner_id,
+        application_id=application_id,
+        sequence_id=sequence_id,
+    )
+    if sequence is None:
+        return None
+    claim = claim_owner_mutation(
+        session,
+        owner_id=owner_id,
+        namespace=f"outreach.reply.record:{sequence_id}",
+        idempotency_key=idempotency_key,
+        request={
+            "payload": payload.model_dump(mode="json"),
+            "expected_sequence_version": expected_sequence_version,
+        },
+        now=current,
+    )
+    if claim.replay is not None:
+        _require_replay_type(claim.replay.resource_type, "outreach_reply")
+        return load_application_outreach(
+            session,
+            owner_id=owner_id,
+            application_id=application_id,
+            keyring=keyring,
+        )
+    require_version(
+        "outreach_sequence",
+        sequence.id,
+        expected=expected_sequence_version,
+        actual=sequence.version,
+    )
+
+    sent_event = session.scalar(
+        select(OutreachEvent)
+        .where(
+            OutreachEvent.owner_id == owner_id,
+            OutreachEvent.application_id == application_id,
+            OutreachEvent.outreach_sequence_id == sequence.id,
+            OutreachEvent.id == payload.marked_sent_event_id,
+            OutreachEvent.event_type == "marked_sent",
+        )
+        .with_for_update()
+    )
+    if sent_event is None:
+        raise ResourceConflict("the selected sent attempt is not part of this sequence")
+    if (
+        sent_event.application_contact_id is None
+        or sent_event.message_version_id is None
+        or sent_event.kind is None
+    ):
+        raise OutreachRepositoryError("the selected sent attempt is incomplete")
+
+    message = _lock_message(
+        session,
+        sequence=sequence,
+        message_id=sent_event.message_version_id,
+    )
+    if (
+        message.application_contact_id != sent_event.application_contact_id
+        or message.kind != sent_event.kind
+    ):
+        raise OutreachRepositoryError("the selected sent attempt message is invalid")
+    application_contact, contact = _lock_recipient(
+        session,
+        sequence=sequence,
+        application_contact_id=sent_event.application_contact_id,
+    )
+
+    owner_timezone = session.scalar(
+        select(Owner.timezone).where(Owner.id == owner_id)
+    )
+    if owner_timezone is None:
+        raise OutreachRepositoryError("outreach owner timezone is missing")
+    sent_local_on = _owner_local_on(
+        sent_event.occurred_at,
+        timezone_name=owner_timezone,
+    )
+    today_local_on = _owner_local_on(current, timezone_name=owner_timezone)
+    if payload.received_on < sent_local_on:
+        raise ResourceConflict("reply date cannot precede the selected sent attempt")
+    if payload.received_on > today_local_on:
+        raise ResourceConflict("reply date cannot be in the owner's future")
+
+    reply_id = uuid4().hex
+    encrypted_note: str | None = None
+    note_key_id: str | None = None
+    if payload.note is not None:
+        envelope = encrypt_private_payload(
+            keyring,
+            record_kind="outreach_reply_note",
+            owner_id=owner_id,
+            record_id=reply_id,
+            payload={"note": payload.note},
+        )
+        encrypted_note = envelope.ciphertext
+        note_key_id = envelope.key_id
+    reply_kind = payload.reply_kind.value
+    reply = OutreachReply(
+        id=reply_id,
+        owner_id=owner_id,
+        application_id=application_id,
+        outreach_sequence_id=sequence.id,
+        application_contact_id=application_contact.id,
+        marked_sent_event_id=sent_event.id,
+        marked_sent_event_type="marked_sent",
+        message_version_id=message.id,
+        message_kind=message.kind,
+        reply_kind=reply_kind,
+        received_on=payload.received_on,
+        encrypted_note=encrypted_note,
+        note_key_id=note_key_id,
+        recording_method="manual",
+        recorded_at=current,
+        idempotency_key_hash=_event_hash(idempotency_key, "reply_recorded"),
+        created_at=current,
+    )
+    session.add(reply)
+
+    if application_contact.bench_state != "stopped":
+        application_contact.bench_state = "stopped"
+        application_contact.version += 1
+        application_contact.updated_at = current
+    if reply_kind == "do_not_contact" and contact.lifecycle != "do_not_contact":
+        contact.lifecycle = "do_not_contact"
+        contact.do_not_contact_at = current
+        contact.version += 1
+        contact.updated_at = current
+
+    if sequence.status in {"active", "paused"}:
+        event_number = _next_event_number(session, sequence)
+        automatic_stop_reason = _sequence_stop_reason(session, sequence)
+        if automatic_stop_reason is not None:
+            _stop_sequence_rows(
+                session,
+                sequence=sequence,
+                reason_code=automatic_stop_reason,
+                now=current,
+            )
+            _add_sequence_event(
+                session,
+                sequence=sequence,
+                sequence_number=event_number,
+                event_type="stopped",
+                reason_code=automatic_stop_reason,
+                occurred_at=current,
+                mutation_hash=_event_hash(idempotency_key, "reply_automatic_stop"),
+            )
+        elif reply_kind in STOP_REPLY_KINDS:
+            _stop_sequence_rows(
+                session,
+                sequence=sequence,
+                reason_code=reply_kind,
+                now=current,
+            )
+            _add_sequence_event(
+                session,
+                sequence=sequence,
+                sequence_number=event_number,
+                event_type="stopped",
+                reason_code=reply_kind,
+                occurred_at=current,
+                mutation_hash=_event_hash(idempotency_key, "reply_stop"),
+            )
+        else:
+            was_active = sequence.status == "active"
+            session.flush()
+            if _active_wave_is_resolved(session, sequence=sequence):
+                next_wave = _next_reserve_wave(
+                    session,
+                    sequence=sequence,
+                    now=current,
+                )
+                if next_wave is None:
+                    sequence.status = "completed"
+                    sequence.active_wave = None
+                    sequence.reason_code = None
+                    sequence.paused_at = None
+                    sequence.stopped_at = None
+                    sequence.completed_at = current
+                else:
+                    _unlock_wave(
+                        session,
+                        sequence=sequence,
+                        wave=next_wave,
+                        now=current,
+                    )
+                    sequence.active_wave = next_wave
+                    _add_sequence_event(
+                        session,
+                        sequence=sequence,
+                        sequence_number=event_number,
+                        event_type="wave_advanced",
+                        wave=next_wave,
+                        occurred_at=current,
+                        mutation_hash=_event_hash(idempotency_key, "reply_wave_advanced"),
+                    )
+                    _pause_sequence_rows(
+                        session,
+                        sequence=sequence,
+                        reason_code=reply_kind,
+                        now=current,
+                    )
+                    _add_sequence_event(
+                        session,
+                        sequence=sequence,
+                        sequence_number=event_number + 1,
+                        event_type="paused",
+                        reason_code=reply_kind,
+                        occurred_at=current,
+                        mutation_hash=_event_hash(idempotency_key, "reply_pause"),
+                    )
+            elif was_active:
+                _pause_sequence_rows(
+                    session,
+                    sequence=sequence,
+                    reason_code=reply_kind,
+                    now=current,
+                )
+                _add_sequence_event(
+                    session,
+                    sequence=sequence,
+                    sequence_number=event_number,
+                    event_type="paused",
+                    reason_code=reply_kind,
+                    occurred_at=current,
+                    mutation_hash=_event_hash(idempotency_key, "reply_pause"),
+                )
+
+    sequence.version += 1
+    sequence.updated_at = current
+    session.flush()
+    complete_owner_mutation(
+        session,
+        owner_id=owner_id,
+        receipt_id=claim.receipt_id,
+        resource_type="outreach_reply",
+        resource_id=reply.id,
+        result_version=sequence.version,
+        now=current,
+    )
+    return load_application_outreach(
+        session,
+        owner_id=owner_id,
+        application_id=application_id,
+        keyring=keyring,
+    )
+
+
 def add_business_days(
     value: datetime,
     days: int,
@@ -921,6 +1274,14 @@ def add_business_days(
         if candidate.weekday() < 5:
             remaining -= 1
     return candidate.astimezone(timezone.utc)
+
+
+def _owner_local_on(value: datetime, *, timezone_name: str) -> date:
+    try:
+        owner_zone = ZoneInfo(timezone_name)
+    except ZoneInfoNotFoundError as exc:
+        raise OutreachRepositoryError("owner timezone is invalid") from exc
+    return _as_utc(value).astimezone(owner_zone).date()
 
 
 def _no_reply_eligible_at(
@@ -1264,6 +1625,24 @@ def _message_response(
     copied: OutreachEvent | None,
     sent: OutreachEvent | None,
 ) -> OutreachMessageVersionResponse:
+    body = _message_body(message, keyring=keyring)
+    return OutreachMessageVersionResponse(
+        id=message.id,
+        version_number=message.version_number,
+        kind=message.kind,
+        body=body,
+        copied_at=_as_utc(copied.occurred_at) if copied is not None else None,
+        sent_at=_as_utc(sent.occurred_at) if sent is not None else None,
+        sent_channel=sent.channel if sent is not None else None,
+        created_at=_as_utc(message.created_at),
+    )
+
+
+def _message_body(
+    message: OutreachMessageVersion,
+    *,
+    keyring: DataKeyring,
+) -> str:
     payload = decrypt_private_payload(
         keyring,
         record_kind="outreach_message",
@@ -1275,16 +1654,112 @@ def _message_response(
     body = payload.get("body")
     if not isinstance(body, str):
         raise OutreachRepositoryError("outreach message body is invalid")
-    return OutreachMessageVersionResponse(
-        id=message.id,
+    return body
+
+
+def _sent_attempt_response(
+    sent: OutreachEvent,
+    *,
+    message: OutreachMessageVersion,
+    replies: Iterable[OutreachReply],
+    owner_timezone: str,
+    keyring: DataKeyring,
+) -> OutreachSentAttemptResponse:
+    if (
+        sent.event_type != "marked_sent"
+        or sent.message_version_id != message.id
+        or sent.kind != message.kind
+        or sent.channel is None
+    ):
+        raise OutreachRepositoryError("outreach sent-attempt binding is invalid")
+    return OutreachSentAttemptResponse(
+        marked_sent_event_id=sent.id,
+        message_version_id=message.id,
         version_number=message.version_number,
         kind=message.kind,
-        body=body,
-        copied_at=_as_utc(copied.occurred_at) if copied is not None else None,
-        sent_at=_as_utc(sent.occurred_at) if sent is not None else None,
-        sent_channel=sent.channel if sent is not None else None,
-        created_at=_as_utc(message.created_at),
+        body=_message_body(message, keyring=keyring),
+        channel=sent.channel,
+        sent_at=_as_utc(sent.occurred_at),
+        sent_local_on=_owner_local_on(sent.occurred_at, timezone_name=owner_timezone),
+        replies=[
+            _reply_response(reply, message=message, keyring=keyring)
+            for reply in replies
+        ],
     )
+
+
+def _reply_response(
+    reply: OutreachReply,
+    *,
+    message: OutreachMessageVersion,
+    keyring: DataKeyring,
+) -> OutreachReplyResponse:
+    if (
+        reply.message_version_id != message.id
+        or reply.message_kind != message.kind
+    ):
+        raise OutreachRepositoryError("outreach reply message binding is invalid")
+    return OutreachReplyResponse(
+        id=reply.id,
+        marked_sent_event_id=reply.marked_sent_event_id,
+        message_version_id=message.id,
+        message_version_number=message.version_number,
+        message_kind=reply.message_kind,
+        reply_kind=reply.reply_kind,
+        received_on=reply.received_on,
+        note=_reply_note(reply, keyring=keyring),
+        recorded_at=_as_utc(reply.recorded_at),
+    )
+
+
+def _reply_note(reply: OutreachReply, *, keyring: DataKeyring) -> str | None:
+    if reply.encrypted_note is None and reply.note_key_id is None:
+        return None
+    if reply.encrypted_note is None or reply.note_key_id is None:
+        raise OutreachRepositoryError("outreach reply note envelope is incomplete")
+    payload = decrypt_private_payload(
+        keyring,
+        record_kind="outreach_reply_note",
+        owner_id=reply.owner_id,
+        record_id=reply.id,
+        encryption_key_id=reply.note_key_id,
+        ciphertext=reply.encrypted_note,
+    )
+    note = payload.get("note")
+    if not isinstance(note, str) or not note.strip():
+        raise OutreachRepositoryError("outreach reply note is invalid")
+    return note
+
+
+def _reply_timeline(
+    replies: Iterable[OutreachReply],
+    *,
+    messages: dict[str, OutreachMessageVersion],
+    keyring: DataKeyring,
+) -> list[OutreachReplyRecordedTimelineEvent]:
+    items: list[OutreachReplyRecordedTimelineEvent] = []
+    for reply in replies:
+        message = messages.get(reply.message_version_id)
+        if message is None:
+            raise OutreachRepositoryError("an outreach reply message is missing")
+        response = _reply_response(reply, message=message, keyring=keyring)
+        items.append(
+            OutreachReplyRecordedTimelineEvent(
+                id=response.id,
+                sequence_id=reply.outreach_sequence_id,
+                event_type="reply_recorded",
+                application_contact_id=reply.application_contact_id,
+                marked_sent_event_id=response.marked_sent_event_id,
+                message_version_id=response.message_version_id,
+                message_version_number=response.message_version_number,
+                message_kind=response.message_kind,
+                reply_kind=response.reply_kind,
+                received_on=response.received_on,
+                note=response.note,
+                occurred_at=response.recorded_at,
+            )
+        )
+    return items
 
 
 def _timeline(
@@ -1740,7 +2215,7 @@ def _resume_sequence_rows(
     *,
     sequence: OutreachSequence,
     now: datetime,
-) -> None:
+) -> int | None:
     sequence.status = "active"
     sequence.reason_code = None
     sequence.paused_at = None
@@ -1767,8 +2242,24 @@ def _resume_sequence_rows(
             row.updated_at = now
             if row.bench_state == "ready":
                 restored += 1
-    if restored == 0:
+    if restored > 0:
+        return None
+
+    session.flush()
+    if not _active_wave_is_resolved(session, sequence=sequence):
         raise ResourceConflict("no active recipient remains in the paused wave")
+    next_wave = _next_reserve_wave(session, sequence=sequence, now=now)
+    if next_wave is None:
+        sequence.status = "completed"
+        sequence.active_wave = None
+        sequence.reason_code = None
+        sequence.paused_at = None
+        sequence.stopped_at = None
+        sequence.completed_at = now
+        return None
+    _unlock_wave(session, sequence=sequence, wave=next_wave, now=now)
+    sequence.active_wave = next_wave
+    return next_wave
 
 
 def _stop_sequence_rows(
@@ -1960,6 +2451,7 @@ __all__ = [
     "add_business_days",
     "load_application_outreach",
     "record_outreach_event",
+    "record_outreach_reply",
     "save_outreach_message",
     "start_outreach_sequence",
 ]

@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 from uuid import uuid4
 
 from sqlalchemy import (
     CheckConstraint,
+    Date,
     DateTime,
     ForeignKey,
     ForeignKeyConstraint,
@@ -347,6 +348,18 @@ class OutreachEvent(Base):
             postgresql_where=text("event_type = 'marked_sent'"),
         ),
         Index(
+            "uq_outreach_events_reply_target",
+            "owner_id",
+            "application_id",
+            "outreach_sequence_id",
+            "application_contact_id",
+            "id",
+            "event_type",
+            "message_version_id",
+            "kind",
+            unique=True,
+        ),
+        Index(
             "ix_outreach_events_timeline",
             "owner_id",
             "outreach_sequence_id",
@@ -387,4 +400,155 @@ class OutreachEvent(Base):
     )
 
 
-__all__ = ["OutreachEvent", "OutreachMessageVersion", "OutreachSequence"]
+class OutreachReply(Base):
+    """One immutable, manually recorded reply to an exact sent attempt."""
+
+    __tablename__ = "outreach_replies"
+    __table_args__ = (
+        UniqueConstraint("owner_id", "id", name="uq_outreach_replies_owner_id_id"),
+        UniqueConstraint(
+            "owner_id",
+            "outreach_sequence_id",
+            "idempotency_key_hash",
+            name="uq_outreach_replies_owner_sequence_mutation",
+        ),
+        ForeignKeyConstraint(
+            ["owner_id", "application_id", "outreach_sequence_id"],
+            [
+                "outreach_sequences.owner_id",
+                "outreach_sequences.application_id",
+                "outreach_sequences.id",
+            ],
+            name="fk_outreach_replies_owner_sequence",
+            ondelete="CASCADE",
+        ),
+        ForeignKeyConstraint(
+            ["owner_id", "application_id", "application_contact_id"],
+            [
+                "application_contacts.owner_id",
+                "application_contacts.application_id",
+                "application_contacts.id",
+            ],
+            name="fk_outreach_replies_owner_contact",
+            deferrable=True,
+            initially="DEFERRED",
+        ),
+        ForeignKeyConstraint(
+            [
+                "owner_id",
+                "application_id",
+                "outreach_sequence_id",
+                "application_contact_id",
+                "message_version_id",
+                "message_kind",
+            ],
+            [
+                "outreach_message_versions.owner_id",
+                "outreach_message_versions.application_id",
+                "outreach_message_versions.outreach_sequence_id",
+                "outreach_message_versions.application_contact_id",
+                "outreach_message_versions.id",
+                "outreach_message_versions.kind",
+            ],
+            name="fk_outreach_replies_owner_message_version",
+            deferrable=True,
+            initially="DEFERRED",
+        ),
+        ForeignKeyConstraint(
+            [
+                "owner_id",
+                "application_id",
+                "outreach_sequence_id",
+                "application_contact_id",
+                "marked_sent_event_id",
+                "marked_sent_event_type",
+                "message_version_id",
+                "message_kind",
+            ],
+            [
+                "outreach_events.owner_id",
+                "outreach_events.application_id",
+                "outreach_events.outreach_sequence_id",
+                "outreach_events.application_contact_id",
+                "outreach_events.id",
+                "outreach_events.event_type",
+                "outreach_events.message_version_id",
+                "outreach_events.kind",
+            ],
+            name="fk_outreach_replies_owner_sent_event",
+            ondelete="CASCADE",
+            deferrable=True,
+            initially="DEFERRED",
+        ),
+        CheckConstraint(
+            "marked_sent_event_type = 'marked_sent'",
+            name="marked_sent_event_type",
+        ),
+        CheckConstraint(
+            "message_kind IN ('initial', 'follow_up')",
+            name="message_kind",
+        ),
+        CheckConstraint(
+            "reply_kind IN ('reply_received', 'useful_reply', 'introduced', "
+            "'referred', 'declined', 'do_not_contact')",
+            name="reply_kind",
+        ),
+        CheckConstraint(
+            "(encrypted_note IS NULL AND note_key_id IS NULL) OR "
+            "(encrypted_note IS NOT NULL AND length(trim(encrypted_note)) >= 1 "
+            "AND note_key_id IS NOT NULL "
+            "AND length(trim(note_key_id)) BETWEEN 1 AND 32)",
+            name="note_envelope",
+        ),
+        CheckConstraint("recording_method = 'manual'", name="recording_method"),
+        CheckConstraint("length(idempotency_key_hash) = 64", name="mutation_hash"),
+        Index(
+            "ix_outreach_replies_sent_attempt",
+            "owner_id",
+            "outreach_sequence_id",
+            "marked_sent_event_id",
+            "recorded_at",
+            "id",
+        ),
+        Index(
+            "ix_outreach_replies_timeline",
+            "owner_id",
+            "outreach_sequence_id",
+            "recorded_at",
+            "id",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid_hex)
+    owner_id: Mapped[str] = mapped_column(
+        ForeignKey("owners.id", ondelete="CASCADE"), nullable=False
+    )
+    application_id: Mapped[str] = mapped_column(String(32), nullable=False)
+    outreach_sequence_id: Mapped[str] = mapped_column(String(32), nullable=False)
+    application_contact_id: Mapped[str] = mapped_column(String(32), nullable=False)
+    marked_sent_event_id: Mapped[str] = mapped_column(String(32), nullable=False)
+    marked_sent_event_type: Mapped[str] = mapped_column(
+        String(32), nullable=False, default="marked_sent"
+    )
+    message_version_id: Mapped[str] = mapped_column(String(32), nullable=False)
+    message_kind: Mapped[str] = mapped_column(String(20), nullable=False)
+    reply_kind: Mapped[str] = mapped_column(String(32), nullable=False)
+    received_on: Mapped[date] = mapped_column(Date, nullable=False)
+    encrypted_note: Mapped[str | None] = mapped_column(Text)
+    note_key_id: Mapped[str | None] = mapped_column(String(32))
+    recording_method: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="manual"
+    )
+    recorded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    idempotency_key_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
+__all__ = [
+    "OutreachEvent",
+    "OutreachMessageVersion",
+    "OutreachReply",
+    "OutreachSequence",
+]

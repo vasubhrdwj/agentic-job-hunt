@@ -55,6 +55,7 @@ from ..outreach_schemas import (
     ApplicationOutreachResponse,
     OutreachEventCreate,
     OutreachMessageCreate,
+    OutreachReplyCreate,
 )
 from .session import AuthenticatedOwner, require_owner_mutation, require_owner_session
 from .workspace import (
@@ -706,6 +707,42 @@ def create_application_router(
     ) -> ApplicationOutreachResponse:
         outreach = _invoke(
             _store(store).save_outreach_message,
+            owner_id=owner.owner_id,
+            application_id=application_id,
+            sequence_id=sequence_id,
+            payload=payload,
+            expected_sequence_version=_expected_version(if_match),
+            idempotency_key=_required_idempotency_key(idempotency_key),
+        )
+        if outreach is None:
+            _not_found("outreach sequence")
+        if outreach.sequence is None:
+            raise WorkspaceApiError(
+                status.HTTP_503_SERVICE_UNAVAILABLE,
+                "workspace_unavailable",
+                "application outreach storage is unavailable",
+                retryable=True,
+            )
+        _set_etag(response, outreach.sequence.version)
+        return outreach
+
+    @router.post(
+        "/api/applications/{application_id}/outreach-sequences/{sequence_id}/replies",
+        response_model=ApplicationOutreachResponse,
+        status_code=status.HTTP_201_CREATED,
+        responses=COMMON_ERROR_RESPONSES,
+    )
+    def record_owner_application_outreach_reply(
+        application_id: OpaqueId,
+        sequence_id: OpaqueId,
+        payload: OutreachReplyCreate,
+        response: Response,
+        owner: AuthenticatedOwner = Security(require_mutation_owner),
+        if_match: str | None = Header(default=None, alias="If-Match"),
+        idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+    ) -> ApplicationOutreachResponse:
+        outreach = _invoke(
+            _store(store).record_outreach_reply,
             owner_id=owner.owner_id,
             application_id=application_id,
             sequence_id=sequence_id,

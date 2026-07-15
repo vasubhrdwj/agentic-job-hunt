@@ -20,6 +20,7 @@ from job_hunt_agent.outreach_schemas import (
     ApplicationOutreachResponse,
     OutreachEventCreate,
     OutreachMessageCreate,
+    OutreachReplyCreate,
 )
 from job_hunt_agent.routers.applications import create_application_router
 from job_hunt_agent.routers.session import create_session_router
@@ -167,6 +168,33 @@ class FakeOutreachStore:
             return None
         return _outreach(version=13)
 
+    def record_outreach_reply(
+        self,
+        *,
+        owner_id: str,
+        application_id: str,
+        sequence_id: str,
+        payload: OutreachReplyCreate,
+        expected_sequence_version: int,
+        idempotency_key: str,
+    ) -> ApplicationOutreachResponse | None:
+        self.calls.append(
+            (
+                "record_outreach_reply",
+                {
+                    "owner_id": owner_id,
+                    "application_id": application_id,
+                    "sequence_id": sequence_id,
+                    "payload": payload,
+                    "expected_sequence_version": expected_sequence_version,
+                    "idempotency_key": idempotency_key,
+                },
+            )
+        )
+        if application_id != "application1" or sequence_id != "sequence1":
+            return None
+        return _outreach(version=14)
+
 
 @pytest.fixture
 def outreach_client(
@@ -282,6 +310,15 @@ def test_outreach_get_requires_owner_and_returns_owner_scoped_etag(
         (
             "/api/applications/application1/outreach-sequences/sequence1/events",
             {"event_type": "copied", "message_version_id": "message1"},
+        ),
+        (
+            "/api/applications/application1/outreach-sequences/sequence1/replies",
+            {
+                "marked_sent_event_id": "markedsentevent1",
+                "reply_kind": "reply_received",
+                "received_on": "2026-07-14",
+                "confirm_exact_sent_attempt": True,
+            },
         ),
     ],
 )
@@ -441,6 +478,61 @@ def test_outreach_routes_forward_validated_inputs_and_return_sequence_etags(
     }
 
 
+def test_reply_route_returns_201_and_forwards_only_the_exact_attempt_contract(
+    outreach_client: tuple[TestClient, FakeOutreachStore],
+) -> None:
+    client, store = outreach_client
+    _login(client)
+    private_note = "  PRIVATE exact reply note  "
+    response = client.post(
+        "/api/applications/application1/outreach-sequences/sequence1/replies",
+        headers={
+            "Origin": ORIGIN,
+            "If-Match": '"8"',
+            "Idempotency-Key": "reply-once",
+        },
+        json={
+            "marked_sent_event_id": "markedsentevent1",
+            "reply_kind": "referred",
+            "received_on": "2026-07-14",
+            "note": private_note,
+            "confirm_exact_sent_attempt": True,
+        },
+    )
+
+    assert response.status_code == 201, response.text
+    assert response.headers["etag"] == '"14"'
+    assert response.headers["cache-control"] == "no-store, max-age=0"
+    assert response.headers["pragma"] == "no-cache"
+    assert response.json()["sequence"]["version"] == 14
+    assert store.calls[-1][0] == "record_outreach_reply"
+    args = store.calls[-1][1]
+    assert {
+        key: args[key]
+        for key in (
+            "owner_id",
+            "application_id",
+            "sequence_id",
+            "expected_sequence_version",
+            "idempotency_key",
+        )
+    } == {
+        "owner_id": "owner",
+        "application_id": "application1",
+        "sequence_id": "sequence1",
+        "expected_sequence_version": 8,
+        "idempotency_key": "reply-once",
+    }
+    assert isinstance(args["payload"], OutreachReplyCreate)
+    assert args["payload"].model_dump(mode="json") == {
+        "marked_sent_event_id": "markedsentevent1",
+        "reply_kind": "referred",
+        "received_on": "2026-07-14",
+        "note": private_note,
+        "confirm_exact_sent_attempt": True,
+    }
+
+
 @pytest.mark.parametrize(
     ("path", "payload", "missing_marker"),
     [
@@ -466,6 +558,16 @@ def test_outreach_routes_forward_validated_inputs_and_return_sequence_etags(
         (
             "/api/applications/application1/outreach-sequences/foreignsequence/events",
             {"event_type": "copied", "message_version_id": "message1"},
+            "foreignsequence",
+        ),
+        (
+            "/api/applications/application1/outreach-sequences/foreignsequence/replies",
+            {
+                "marked_sent_event_id": "markedsentevent1",
+                "reply_kind": "reply_received",
+                "received_on": "2026-07-14",
+                "confirm_exact_sent_attempt": True,
+            },
             "foreignsequence",
         ),
     ],
@@ -546,12 +648,46 @@ def test_outreach_validation_is_standardized_and_never_reaches_storage(
             "confirm_exact_version": 1,
         },
     )
+    false_reply_confirmation = client.post(
+        "/api/applications/application1/outreach-sequences/sequence1/replies",
+        headers=headers,
+        json={
+            "marked_sent_event_id": "markedsentevent1",
+            "reply_kind": "reply_received",
+            "received_on": "2026-07-14",
+            "confirm_exact_sent_attempt": False,
+        },
+    )
+    numeric_reply_confirmation = client.post(
+        "/api/applications/application1/outreach-sequences/sequence1/replies",
+        headers=headers,
+        json={
+            "marked_sent_event_id": "markedsentevent1",
+            "reply_kind": "reply_received",
+            "received_on": "2026-07-14",
+            "confirm_exact_sent_attempt": 1,
+        },
+    )
+    client_supplied_reply_binding = client.post(
+        "/api/applications/application1/outreach-sequences/sequence1/replies",
+        headers=headers,
+        json={
+            "marked_sent_event_id": "markedsentevent1",
+            "message_version_id": "message1",
+            "reply_kind": "reply_received",
+            "received_on": "2026-07-14",
+            "confirm_exact_sent_attempt": True,
+        },
+    )
 
     for response in (
         invalid_message,
         invalid_discriminator,
         false_confirmation,
         numeric_confirmation,
+        false_reply_confirmation,
+        numeric_reply_confirmation,
+        client_supplied_reply_binding,
     ):
         body = _assert_problem(
             response,

@@ -227,6 +227,8 @@ export function ApplicationDossier({
         applicationVersion={application.version}
         applicationStage={application.stage}
         postingState={posting.state}
+        ownerLocalDate={ownerLocalDate}
+        ownerTimezone={ownerTimezone}
         interviewHistoryState={interviewHistoryState}
       />
 
