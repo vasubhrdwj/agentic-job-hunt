@@ -3,6 +3,7 @@
 // makes those fields required where OpenAPI describes response defaults as optional.
 
 import type { components } from "./api-generated";
+import type { ApplicationMilestoneCorrectionResponse } from "./application-correction-types";
 
 type ApiSchemas = components["schemas"];
 
@@ -106,12 +107,15 @@ export interface ApplicationOutcome {
 export type ApplicationActivityEvent = Omit<
   ApiSchemas["ApplicationActivityEventResponse"],
   | "action_item_id"
+  | "corrections"
   | "event_type"
   | "from_stage"
   | "interview_round_id"
+  | "resolved_effective_on"
   | "to_stage"
 > & {
   action_item_id: string | null;
+  corrections: ApplicationMilestoneCorrectionResponse[];
   event_type: ApplicationActivityEventType;
   effective_on: string | null;
   from_stage: ApplicationStage | null;
@@ -119,7 +123,17 @@ export type ApplicationActivityEvent = Omit<
   outcome_id: string | null;
   to_stage: ApplicationStage | null;
   previous_action_item_id: string | null;
+  resolved_effective_on: string | null;
   submission_id: string | null;
+};
+
+export type ApplicationMilestoneCorrectionMutationResponse = Omit<
+  ApiSchemas["ApplicationMilestoneCorrectionMutationResponse"],
+  "activity_event" | "application" | "correction"
+> & {
+  activity_event: ApplicationActivityEvent;
+  application: ApplicationSummary;
+  correction: ApplicationMilestoneCorrectionResponse;
 };
 
 export type ApplicationSummary = Omit<

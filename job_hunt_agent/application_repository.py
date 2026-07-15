@@ -25,6 +25,7 @@ from .application_schemas import (
     ApplicationActivityListResponse,
     ApplicationDetailResponse,
     ApplicationListResponse,
+    ApplicationMilestoneCorrectionResponse,
     ApplicationOutcomeResponse,
     ApplicationPostingState,
     ApplicationPostingSummary,
@@ -42,6 +43,7 @@ from .models import (
     Application,
     ApplicationActivityEvent,
     ApplicationInterviewRound,
+    ApplicationMilestoneCorrection,
     ApplicationOutcome,
     JobObservation,
     JobPosting,
@@ -497,7 +499,12 @@ def load_application_detail(
     return ApplicationDetailResponse(
         data_source="database",
         application=_application_summary(session, application),
-        activity=[_activity_response(row) for row in activity],
+        activity=_activity_responses(
+            session,
+            owner_id=owner_id,
+            application_id=application.id,
+            rows=activity,
+        ),
     )
 
 
@@ -513,10 +520,12 @@ def list_application_activity(
         return None
     return ApplicationActivityListResponse(
         data_source="database",
-        items=[
-            _activity_response(row)
-            for row in _activity_rows(session, owner_id, application.id)
-        ],
+        items=_activity_responses(
+            session,
+            owner_id=owner_id,
+            application_id=application.id,
+            rows=_activity_rows(session, owner_id, application.id),
+        ),
     )
 
 
@@ -995,7 +1004,9 @@ def _action_response(row: ActionItem) -> ActionItemResponse:
 
 def _activity_response(
     row: ApplicationActivityEvent,
+    corrections: list[ApplicationMilestoneCorrection] | None = None,
 ) -> ApplicationActivityEventResponse:
+    saved_corrections = corrections or []
     return ApplicationActivityEventResponse(
         id=row.id,
         application_id=row.application_id,
@@ -1010,7 +1021,61 @@ def _activity_response(
         outcome_id=row.outcome_id,
         interview_round_id=row.interview_round_id,
         occurred_at=_as_utc(row.occurred_at),
+        resolved_effective_on=(
+            saved_corrections[-1].corrected_effective_on
+            if saved_corrections
+            else row.effective_on
+        ),
+        corrections=[_correction_response(item) for item in saved_corrections],
     )
+
+
+def _correction_response(
+    row: ApplicationMilestoneCorrection,
+) -> ApplicationMilestoneCorrectionResponse:
+    return ApplicationMilestoneCorrectionResponse(
+        id=row.id,
+        application_id=row.application_id,
+        activity_event_id=row.activity_event_id,
+        correction_number=row.correction_number,
+        supersedes_correction_id=row.supersedes_correction_id,
+        previous_effective_on=row.previous_effective_on,
+        corrected_effective_on=row.corrected_effective_on,
+        recording_method="manual",
+        recorded_at=_as_utc(row.recorded_at),
+        created_at=_as_utc(row.created_at),
+    )
+
+
+def _activity_responses(
+    session: Session,
+    *,
+    owner_id: str,
+    application_id: str,
+    rows: list[ApplicationActivityEvent],
+) -> list[ApplicationActivityEventResponse]:
+    if not rows:
+        return []
+    corrections_by_event: dict[str, list[ApplicationMilestoneCorrection]] = {}
+    for correction in session.scalars(
+        select(ApplicationMilestoneCorrection)
+        .where(
+            ApplicationMilestoneCorrection.owner_id == owner_id,
+            ApplicationMilestoneCorrection.application_id == application_id,
+        )
+        .order_by(
+            ApplicationMilestoneCorrection.activity_event_id,
+            ApplicationMilestoneCorrection.correction_number,
+            ApplicationMilestoneCorrection.recorded_at,
+            ApplicationMilestoneCorrection.id,
+        )
+    ):
+        corrections_by_event.setdefault(correction.activity_event_id, []).append(
+            correction
+        )
+    return [
+        _activity_response(row, corrections_by_event.get(row.id)) for row in rows
+    ]
 
 
 def _require_action_round_consistency(

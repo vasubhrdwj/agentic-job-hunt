@@ -203,6 +203,12 @@ class ApplicationActivityEvent(Base):
         UniqueConstraint(
             "owner_id",
             "application_id",
+            "id",
+            name="uq_application_activity_events_owner_application_id",
+        ),
+        UniqueConstraint(
+            "owner_id",
+            "application_id",
             "sequence_number",
             name="uq_application_activity_events_owner_sequence",
         ),

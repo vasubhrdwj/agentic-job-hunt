@@ -19,6 +19,10 @@ from .application_artifact_schemas import (
     ApplicationArtifactRevisionCreate,
     ApplicationArtifactsResponse,
 )
+from .application_correction_repository import (
+    ApplicationCorrectionRepositoryError,
+    record_application_milestone_correction,
+)
 from .application_pack_repository import (
     ApplicationPackRepositoryError,
     create_application_pack,
@@ -43,6 +47,8 @@ from .application_schemas import (
     ApplicationActivityListResponse,
     ApplicationDetailResponse,
     ApplicationListResponse,
+    ApplicationMilestoneCorrectionCreate,
+    ApplicationMilestoneCorrectionMutationResponse,
     CursorToken,
     TodayApplicationActionsResponse,
 )
@@ -185,6 +191,27 @@ class SqlAlchemyApplicationWorkspaceStore(SqlAlchemyContactWorkspaceStore):
                 expected_application_version=expected_application_version,
                 idempotency_key=idempotency_key,
                 keyring=self.keyring,
+            )
+
+    def record_application_milestone_correction(
+        self,
+        *,
+        owner_id: str,
+        application_id: str,
+        activity_event_id: str,
+        payload: ApplicationMilestoneCorrectionCreate,
+        expected_application_version: int,
+        idempotency_key: str,
+    ) -> ApplicationMilestoneCorrectionMutationResponse | None:
+        with _application_correction_errors(), self.database.session() as session:
+            return record_application_milestone_correction(
+                session,
+                owner_id=owner_id,
+                application_id=application_id,
+                activity_event_id=activity_event_id,
+                payload=payload,
+                expected_application_version=expected_application_version,
+                idempotency_key=idempotency_key,
             )
 
     def get_application_interview_rounds(
@@ -570,6 +597,44 @@ def _application_submission_errors() -> Iterator[None]:
     except SQLAlchemyError as exc:
         raise WorkspaceUnavailable(
             "application-submission database is unavailable"
+        ) from exc
+
+
+@contextmanager
+def _application_correction_errors() -> Iterator[None]:
+    try:
+        yield
+    except WorkspaceUnavailable:
+        raise
+    except WorkspaceConflict:
+        raise
+    except WorkspaceInputError:
+        raise
+    except VersionConflict as exc:
+        raise WorkspaceConflict(str(exc), code="version_conflict") from exc
+    except MutationIdempotencyConflict as exc:
+        raise WorkspaceConflict(str(exc), code="idempotency_conflict") from exc
+    except MutationPending as exc:
+        raise WorkspaceConflict(str(exc), code="mutation_pending") from exc
+    except ResourceConflict as exc:
+        raise WorkspaceConflict(str(exc)) from exc
+    except ApplicationCorrectionRepositoryError as exc:
+        raise WorkspaceUnavailable(
+            "application milestone-correction data is inconsistent"
+        ) from exc
+    except ValidationError as exc:
+        raise WorkspaceUnavailable(
+            "stored milestone-correction data failed contract validation"
+        ) from exc
+    except ValueError as exc:
+        raise WorkspaceInputError(str(exc)) from exc
+    except IntegrityError as exc:
+        raise WorkspaceConflict(
+            "application milestone correction conflicts with existing state"
+        ) from exc
+    except SQLAlchemyError as exc:
+        raise WorkspaceUnavailable(
+            "application milestone-correction database is unavailable"
         ) from exc
 
 

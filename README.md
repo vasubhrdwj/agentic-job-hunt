@@ -103,7 +103,11 @@ opportunity inbox, grouping overdue, due-today, and next-seven-day application
 work with direct dossier links and complete bucket counts. Interview
 appointments now have stable round IDs and immutable reschedule/completion/
 cancellation history; the current appointment owns the Today preparation task,
-and only a completed first round advances the hiring funnel.
+and only a completed first round advances the hiring funnel. If a coarse
+screening, manually recorded interview, or offer date was entered incorrectly,
+Activity can now append a dated correction while keeping the original and every
+prior correction visible. The current stage, task, submission, and outcome are
+not rewritten, and later milestones validate against the corrected date.
 
 The separate **Legacy hunt** remains available when you explicitly want the
 current end-to-end flow with resume matching, at least five appropriate
@@ -232,6 +236,8 @@ GET    /api/applications            → database-only pursuing applications + ne
 GET    /api/applications/{id}       → application dossier + immutable activity
 GET    /api/applications/{id}/activity
                                     → database-only immutable activity stream
+POST   /api/applications/{id}/activity/{event_id}/corrections
+                                    → append a confirmed coarse milestone date correction
 GET    /api/applications/{id}/interview-rounds
                                     → saved round timeline + application ETag for scheduling
 POST   /api/applications/{id}/interview-rounds

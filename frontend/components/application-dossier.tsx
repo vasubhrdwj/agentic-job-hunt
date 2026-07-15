@@ -7,10 +7,10 @@ import { getApplication } from "@/lib/application-api";
 import type { ApplicationArtifactsResponse } from "@/lib/application-artifact-types";
 import type { InterviewHistoryState } from "@/lib/application-interview-types";
 import type {
-  ApplicationActivityEvent,
   ApplicationDetailResponse,
   ApplicationStage,
 } from "@/lib/application-types";
+import { ApplicationActivity } from "./application-activity";
 import { ApplicationMaterials } from "./application-materials";
 import { ApplicationInterviewRounds } from "./application-interview-rounds";
 import { ApplicationPack } from "./application-pack";
@@ -187,6 +187,15 @@ export function ApplicationDossier({
         onApplicationChanged={refreshApplication}
       />
 
+      <ApplicationActivity
+        key={`activity:${application.id}`}
+        applicationId={application.id}
+        applicationVersion={application.version}
+        activity={detail.activity}
+        ownerLocalDate={ownerLocalDate}
+        onApplicationChanged={load}
+      />
+
       <ApplicationPack
         key={`pack:${application.id}`}
         applicationId={application.id}
@@ -245,23 +254,6 @@ export function ApplicationDossier({
         </Link>
       </section>
 
-      <section className="rounded-2xl border border-zinc-200 bg-white p-5 sm:p-7 dark:border-zinc-800 dark:bg-zinc-900/70">
-        <h2 className="text-lg font-semibold">Activity</h2>
-        <p className="mt-1 text-sm text-zinc-500">A durable, chronological record of this application.</p>
-        <ol className="mt-5 space-y-4">
-          {detail.activity.map((event) => (
-            <li key={event.id} className="flex min-w-0 gap-3">
-              <span aria-hidden="true" className="mt-1.5 h-2.5 w-2.5 shrink-0 rounded-full bg-indigo-500" />
-              <div className="min-w-0">
-                <p className="font-medium">{activityCopy(event).title}</p>
-                <p className="mt-1 text-sm text-zinc-500">
-                  {activityCopy(event).detail} · {formatDate(event.occurred_at)}
-                </p>
-              </div>
-            </li>
-          ))}
-        </ol>
-      </section>
     </div>
   );
 }
@@ -283,74 +275,4 @@ function nextActionGuidance(stage: ApplicationStage): string {
     return "Review the offer carefully and record the final decision by the saved response deadline.";
   }
   return "Review the role, ground every claim in approved evidence, and prepare the exact materials you will submit.";
-}
-
-function activityCopy(event: ApplicationActivityEvent): {
-  title: string;
-  detail: string;
-} {
-  if (event.event_type === "application_ready_to_apply") {
-    return {
-      title: "Application materials marked ready",
-      detail: "Entered Ready to apply",
-    };
-  }
-  if (event.event_type === "application_applied") {
-    return {
-      title: "Manual application recorded",
-      detail: "Entered Applied",
-    };
-  }
-  if (event.event_type === "application_screening") {
-    return {
-      title: "Recruiter screen completed",
-      detail: effectiveDateDetail("Entered Screening", event.effective_on),
-    };
-  }
-  if (event.event_type === "application_interviewing") {
-    if (event.interview_round_id) {
-      return {
-        title: "Interview round completed",
-        detail: effectiveDateDetail("Entered Interviewing after the completed round", event.effective_on),
-      };
-    }
-    return {
-      title: "Interview completed",
-      detail: effectiveDateDetail("Entered Interviewing", event.effective_on),
-    };
-  }
-  if (event.event_type === "application_offer") {
-    return {
-      title: "Offer received",
-      detail: effectiveDateDetail("Entered Offer", event.effective_on),
-    };
-  }
-  if (event.event_type === "application_closed") {
-    return {
-      title: "Application closed",
-      detail: effectiveDateDetail("Recorded a terminal outcome", event.effective_on),
-    };
-  }
-  if (event.event_type !== "application_created") {
-    return {
-      title: "Application updated",
-      detail: "Recorded a durable application change",
-    };
-  }
-  return {
-    title: "Application started",
-    detail: "Entered Pursuing",
-  };
-}
-
-function effectiveDateDetail(prefix: string, value: string | null): string {
-  return value ? `${prefix} on ${formatDateOnly(value)}` : prefix;
-}
-
-function formatDateOnly(value: string): string {
-  const [year, month, day] = value.split("-").map(Number);
-  const date = new Date(year, month - 1, day, 12);
-  return Number.isNaN(date.getTime())
-    ? value
-    : new Intl.DateTimeFormat(undefined, { dateStyle: "medium" }).format(date);
 }

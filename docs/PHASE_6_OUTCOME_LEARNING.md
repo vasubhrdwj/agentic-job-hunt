@@ -115,10 +115,38 @@ in this checkpoint. Multiple simultaneous appointments also remain deferred;
 truthfully prioritizing them requires a multi-action design rather than hiding
 several commitments behind one task.
 
+### Phase 6A2c — Append-only milestone date corrections
+
+Implemented in migration `20260715_0014`.
+
+Activity now lets the owner correct an inaccurate coarse recruiter-screen,
+manually recorded interview, or offer date. A correction is a new immutable
+record linked to the original milestone; the original date and every earlier
+correction remain visible. The latest correction is the current effective date
+used by later transition validation.
+
+- The mutation requires the current application version, a retry-safe
+  idempotency key, and explicit confirmation.
+- The server enforces the exact safe window between the immutable submission,
+  adjacent resolved milestones, completed interview rounds, any terminal
+  outcome, and the owner's current local date.
+- A correction changes only `application.version` and `updated_at`. It cannot
+  reopen or advance the application, replace the current task, edit the exact
+  submission, or alter an outcome.
+- Corrections remain available for an earlier eligible milestone after the
+  application closes, provided the corrected date does not cross the saved
+  outcome.
+- Repeating a correction appends another linked revision, including a valid
+  return to the original date; it never mutates or deletes prior history.
+
+Round-linked interview milestones are intentionally excluded. Their date is
+grounded in an exact completed interview round, so changing only the coarse
+timeline would create conflicting histories. Terminal outcome corrections,
+milestone retractions, and stage changes likewise require their own atomic
+workflows rather than a date-only edit.
+
 ### Remaining Phase 6A2 checkpoints
 
-- Add append-only corrections that supersede an incorrect milestone without
-  rewriting history.
 - Attribute an outreach response to the exact marked-sent event and message
   version before sequence analytics are enabled.
 

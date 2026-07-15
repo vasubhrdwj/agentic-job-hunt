@@ -2,6 +2,7 @@
 
 from .base import Base
 from .application import ActionItem, Application, ApplicationActivityEvent
+from .application_correction import ApplicationMilestoneCorrection
 from .application_interview import (
     ApplicationInterviewRound,
     ApplicationInterviewRoundEvent,
@@ -48,6 +49,7 @@ __all__ = [
     "ApplicationActivityEvent",
     "ApplicationInterviewRound",
     "ApplicationInterviewRoundEvent",
+    "ApplicationMilestoneCorrection",
     "ApplicationOutcome",
     "ApplicationArtifactEvent",
     "ApplicationArtifactRevision",

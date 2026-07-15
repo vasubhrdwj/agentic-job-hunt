@@ -30,6 +30,8 @@ from ..application_schemas import (
     ApplicationActivityListResponse,
     ApplicationDetailResponse,
     ApplicationListResponse,
+    ApplicationMilestoneCorrectionCreate,
+    ApplicationMilestoneCorrectionMutationResponse,
     CursorToken,
     OpaqueId,
     TodayApplicationActionsResponse,
@@ -227,6 +229,50 @@ def create_application_router(
             _not_found("application")
         _set_etag(response, transition.application.version)
         return transition
+
+    @router.post(
+        "/api/applications/{application_id}/activity/"
+        "{activity_event_id}/corrections",
+        response_model=ApplicationMilestoneCorrectionMutationResponse,
+        status_code=status.HTTP_201_CREATED,
+        description=(
+            "Correct only the effective date of an original, manually recorded "
+            "screening, unlinked interview, or offer milestone. The immutable "
+            "original and every correction remain visible; the application stage, "
+            "current task, submission, and outcome do not change."
+        ),
+        responses=COMMON_ERROR_RESPONSES,
+    )
+    def correct_owner_application_milestone_date(
+        application_id: OpaqueId,
+        activity_event_id: OpaqueId,
+        payload: ApplicationMilestoneCorrectionCreate,
+        response: Response,
+        owner: AuthenticatedOwner = Security(require_mutation_owner),
+        if_match: str | None = Header(
+            default=None,
+            alias="If-Match",
+            description="Required strong ETag for the application being updated.",
+        ),
+        idempotency_key: str | None = Header(
+            default=None,
+            alias="Idempotency-Key",
+            description="Required retry key for this correction attempt.",
+        ),
+    ) -> ApplicationMilestoneCorrectionMutationResponse:
+        mutation = _invoke(
+            _store(store).record_application_milestone_correction,
+            owner_id=owner.owner_id,
+            application_id=application_id,
+            activity_event_id=activity_event_id,
+            payload=payload,
+            expected_application_version=_expected_version(if_match),
+            idempotency_key=_required_idempotency_key(idempotency_key),
+        )
+        if mutation is None:
+            _not_found("application milestone")
+        _set_etag(response, mutation.application.version)
+        return mutation
 
     @router.get(
         "/api/applications/{application_id}/interview-rounds",

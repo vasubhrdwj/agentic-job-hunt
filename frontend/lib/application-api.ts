@@ -1,10 +1,14 @@
 import type {
+  ApplicationMilestoneCorrectionMutationResponse,
   ApplicationActivityListResponse,
   ApplicationContactBenchResponse,
   ApplicationDetailResponse,
   ApplicationListResponse,
   TodayApplicationActionsResponse,
 } from "./application-types";
+import type {
+  ApplicationMilestoneCorrectionCreate,
+} from "./application-correction-types";
 import type {
   ApplicationInterviewRoundsResponse,
   InterviewRoundCreate,
@@ -124,6 +128,30 @@ export async function getApplicationActivity(
     await fetch(
       `/api/applications/${encodeURIComponent(id)}/activity`,
       { cache: "no-store" },
+    ),
+  );
+}
+
+export async function correctApplicationMilestoneDate(
+  applicationId: string,
+  activityEventId: string,
+  applicationVersion: number,
+  idempotencyKey: string,
+  payload: ApplicationMilestoneCorrectionCreate,
+): Promise<ApplicationMilestoneCorrectionMutationResponse> {
+  return json<ApplicationMilestoneCorrectionMutationResponse>(
+    await fetch(
+      `/api/applications/${encodeURIComponent(applicationId)}/activity/${encodeURIComponent(activityEventId)}/corrections`,
+      {
+        method: "POST",
+        credentials: "same-origin",
+        headers: {
+          "Content-Type": "application/json",
+          "If-Match": `"${applicationVersion}"`,
+          "Idempotency-Key": idempotencyKey,
+        },
+        body: JSON.stringify(payload),
+      },
     ),
   );
 }

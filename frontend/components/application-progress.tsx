@@ -102,6 +102,9 @@ export function ApplicationProgress({
             This application is closed. Its durable outcome is being refreshed.
           </StatusMessage>
         )}
+        <a href="#application-activity" className={`${secondaryButtonClasses} mt-4`}>
+          Review milestone history
+        </a>
       </section>
     );
   }
@@ -118,9 +121,14 @@ export function ApplicationProgress({
             Complete or cancel the scheduled interview round before recording another hiring milestone or closing this application. This keeps the round outcome and hiring progress in the right order.
           </StatusMessage>
         </div>
-        <a href="#interview-rounds" className={`${secondaryButtonClasses} mt-4`}>
-          Manage scheduled round
-        </a>
+        <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:flex-wrap">
+          <a href="#interview-rounds" className={secondaryButtonClasses}>
+            Manage scheduled round
+          </a>
+          <a href="#application-activity" className={secondaryButtonClasses}>
+            Review milestone history
+          </a>
+        </div>
       </section>
     );
   }
@@ -244,6 +252,10 @@ export function ApplicationProgress({
       <ProgressHeading />
       <p className="mt-2 max-w-3xl text-sm leading-6 text-zinc-600 dark:text-zinc-400">
         Record confirmed hiring milestones and final outcomes only. Schedule and complete appointments in Interview rounds so every round keeps its own durable history.
+        If an earlier milestone date is wrong, add an immutable correction in{" "}
+        <a href="#application-activity" className="font-medium underline underline-offset-4">
+          Activity
+        </a>.
       </p>
 
       {error ? <div className="mt-4"><StatusMessage kind="error">{error}</StatusMessage></div> : null}
@@ -435,7 +447,7 @@ function transitionMatches(
     : payload.reached_on;
   return detail.activity.some((event) => (
     event.event_type === eventType[payload.to_stage] &&
-    event.effective_on === effectiveOn
+    (event.resolved_effective_on ?? event.effective_on) === effectiveOn
   ));
 }
 

@@ -413,6 +413,14 @@
             "title": "Application Id",
             "type": "string"
           },
+          "corrections": {
+            "items": {
+              "$ref": "#/components/schemas/ApplicationMilestoneCorrectionResponse"
+            },
+            "maxItems": 50,
+            "title": "Corrections",
+            "type": "array"
+          },
           "effective_on": {
             "anyOf": [
               {
@@ -483,6 +491,18 @@
               }
             ],
             "title": "Previous Action Item Id"
+          },
+          "resolved_effective_on": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resolved Effective On"
           },
           "sequence_number": {
             "minimum": 1.0,
@@ -1541,6 +1561,135 @@
           "total"
         ],
         "title": "ApplicationListResponse",
+        "type": "object"
+      },
+      "ApplicationMilestoneCorrectionCreate": {
+        "additionalProperties": false,
+        "properties": {
+          "confirm_correction": {
+            "const": true,
+            "title": "Confirm Correction",
+            "type": "boolean"
+          },
+          "corrected_effective_on": {
+            "format": "date",
+            "title": "Corrected Effective On",
+            "type": "string"
+          }
+        },
+        "required": [
+          "corrected_effective_on",
+          "confirm_correction"
+        ],
+        "title": "ApplicationMilestoneCorrectionCreate",
+        "type": "object"
+      },
+      "ApplicationMilestoneCorrectionMutationResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "activity_event": {
+            "$ref": "#/components/schemas/ApplicationActivityEventResponse"
+          },
+          "application": {
+            "$ref": "#/components/schemas/ApplicationSummary"
+          },
+          "correction": {
+            "$ref": "#/components/schemas/ApplicationMilestoneCorrectionResponse"
+          },
+          "correction_created": {
+            "title": "Correction Created",
+            "type": "boolean"
+          },
+          "data_source": {
+            "const": "database",
+            "default": "database",
+            "title": "Data Source",
+            "type": "string"
+          }
+        },
+        "required": [
+          "application",
+          "activity_event",
+          "correction",
+          "correction_created"
+        ],
+        "title": "ApplicationMilestoneCorrectionMutationResponse",
+        "type": "object"
+      },
+      "ApplicationMilestoneCorrectionResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "activity_event_id": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
+            "title": "Activity Event Id",
+            "type": "string"
+          },
+          "application_id": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
+            "title": "Application Id",
+            "type": "string"
+          },
+          "corrected_effective_on": {
+            "format": "date",
+            "title": "Corrected Effective On",
+            "type": "string"
+          },
+          "correction_number": {
+            "maximum": 50.0,
+            "minimum": 1.0,
+            "title": "Correction Number",
+            "type": "integer"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
+            "title": "Id",
+            "type": "string"
+          },
+          "previous_effective_on": {
+            "format": "date",
+            "title": "Previous Effective On",
+            "type": "string"
+          },
+          "recorded_at": {
+            "format": "date-time",
+            "title": "Recorded At",
+            "type": "string"
+          },
+          "recording_method": {
+            "const": "manual",
+            "title": "Recording Method",
+            "type": "string"
+          },
+          "supersedes_correction_id": {
+            "anyOf": [
+              {
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Supersedes Correction Id"
+          }
+        },
+        "required": [
+          "id",
+          "application_id",
+          "activity_event_id",
+          "correction_number",
+          "previous_effective_on",
+          "corrected_effective_on",
+          "recording_method",
+          "recorded_at",
+          "created_at"
+        ],
+        "title": "ApplicationMilestoneCorrectionResponse",
         "type": "object"
       },
       "ApplicationOutcome": {
@@ -9677,6 +9826,181 @@
           }
         ],
         "summary": "List Owner Application Activity",
+        "tags": [
+          "applications"
+        ]
+      }
+    },
+    "/api/applications/{application_id}/activity/{activity_event_id}/corrections": {
+      "post": {
+        "description": "Correct only the effective date of an original, manually recorded screening, unlinked interview, or offer milestone. The immutable original and every correction remain visible; the application stage, current task, submission, and outcome do not change.",
+        "operationId": "correct_owner_application_milestone_date_api_applications__application_id__activity__activity_event_id__corrections_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "application_id",
+            "required": true,
+            "schema": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
+              "title": "Application Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "activity_event_id",
+            "required": true,
+            "schema": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
+              "title": "Activity Event Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Required strong ETag for the application being updated.",
+            "in": "header",
+            "name": "If-Match",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Required strong ETag for the application being updated.",
+              "title": "If-Match"
+            }
+          },
+          {
+            "description": "Required retry key for this correction attempt.",
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Required retry key for this correction attempt.",
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ApplicationMilestoneCorrectionCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApplicationMilestoneCorrectionMutationResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
+          "428": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Precondition Required"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "security": [
+          {
+            "OwnerSessionCookie": []
+          }
+        ],
+        "summary": "Correct Owner Application Milestone Date",
         "tags": [
           "applications"
         ]

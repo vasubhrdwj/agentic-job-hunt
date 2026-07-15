@@ -16,11 +16,19 @@ from enum import Enum
 from typing import Annotated, Literal, Self
 from urllib.parse import urlsplit
 
-from pydantic import AfterValidator, BaseModel, ConfigDict, Field, model_validator
+from pydantic import (
+    AfterValidator,
+    BaseModel,
+    ConfigDict,
+    Field,
+    field_validator,
+    model_validator,
+)
 
 
 MAX_APPLICATION_PAGE_SIZE = 50
 MAX_ACTIVITY_ITEMS = 500
+MAX_MILESTONE_CORRECTIONS_PER_EVENT = 50
 MAX_APPLICATION_CURSOR_CHARS = 512
 
 
@@ -132,6 +140,15 @@ class ApplicationActivityEventType(str, Enum):
     application_closed = "application_closed"
 
 
+CORRECTABLE_MILESTONE_EVENT_TYPES = frozenset(
+    {
+        ApplicationActivityEventType.application_screening,
+        ApplicationActivityEventType.application_interviewing,
+        ApplicationActivityEventType.application_offer,
+    }
+)
+
+
 class ApplicationOutcome(str, Enum):
     rejected = "rejected"
     withdrawn = "withdrawn"
@@ -194,6 +211,44 @@ class ActionItemResponse(ContractModel):
         return self
 
 
+class ApplicationMilestoneCorrectionCreate(ContractModel):
+    corrected_effective_on: date
+    confirm_correction: Literal[True]
+
+    @field_validator("confirm_correction", mode="before")
+    @classmethod
+    def confirmation_is_boolean_true(cls, value: object) -> object:
+        if value is not True:
+            raise ValueError("confirm_correction must be the boolean true")
+        return value
+
+
+class ApplicationMilestoneCorrectionResponse(ContractModel):
+    id: OpaqueId
+    application_id: OpaqueId
+    activity_event_id: OpaqueId
+    correction_number: int = Field(ge=1, le=MAX_MILESTONE_CORRECTIONS_PER_EVENT)
+    supersedes_correction_id: OpaqueId | None = None
+    previous_effective_on: date
+    corrected_effective_on: date
+    recording_method: Literal["manual"]
+    recorded_at: UTCDateTime
+    created_at: UTCDateTime
+
+    @model_validator(mode="after")
+    def correction_is_append_only_and_changed(self) -> Self:
+        if self.correction_number == 1:
+            if self.supersedes_correction_id is not None:
+                raise ValueError("the first correction cannot supersede another correction")
+        elif self.supersedes_correction_id is None:
+            raise ValueError("later corrections must supersede the prior correction")
+        if self.previous_effective_on == self.corrected_effective_on:
+            raise ValueError("a correction must change the effective date")
+        if self.created_at < self.recorded_at:
+            raise ValueError("created_at cannot precede recorded_at")
+        return self
+
+
 class ApplicationActivityEventResponse(ContractModel):
     id: OpaqueId
     application_id: OpaqueId
@@ -208,9 +263,23 @@ class ApplicationActivityEventResponse(ContractModel):
     outcome_id: OpaqueId | None = None
     interview_round_id: OpaqueId | None = None
     occurred_at: UTCDateTime
+    resolved_effective_on: date | None = None
+    corrections: list[ApplicationMilestoneCorrectionResponse] = Field(
+        default_factory=list,
+        max_length=MAX_MILESTONE_CORRECTIONS_PER_EVENT,
+    )
+
+    @model_validator(mode="before")
+    @classmethod
+    def resolved_date_defaults_to_original(cls, value: object) -> object:
+        if isinstance(value, dict) and "resolved_effective_on" not in value:
+            value = dict(value)
+            value["resolved_effective_on"] = value.get("effective_on")
+        return value
 
     @model_validator(mode="after")
     def event_shape_is_immutable_and_complete(self) -> Self:
+        self._require_correction_chain()
         if (
             self.interview_round_id is not None
             and self.event_type
@@ -308,6 +377,51 @@ class ApplicationActivityEventResponse(ContractModel):
                 "exact terminal outcome"
             )
         return self
+
+    def _require_correction_chain(self) -> None:
+        if not self.corrections:
+            if self.resolved_effective_on != self.effective_on:
+                raise ValueError(
+                    "an uncorrected activity must resolve to its original effective date"
+                )
+            return
+        if (
+            self.event_type not in CORRECTABLE_MILESTONE_EVENT_TYPES
+            or self.effective_on is None
+            or self.interview_round_id is not None
+        ):
+            raise ValueError(
+                "only an unlinked screening, interviewing, or offer milestone "
+                "may expose corrections"
+            )
+        previous_date = self.effective_on
+        previous_correction_id: str | None = None
+        previous_recorded_at: datetime | None = None
+        seen_ids: set[str] = set()
+        for expected_number, correction in enumerate(self.corrections, start=1):
+            if (
+                correction.id in seen_ids
+                or correction.application_id != self.application_id
+                or correction.activity_event_id != self.id
+                or correction.correction_number != expected_number
+                or correction.supersedes_correction_id != previous_correction_id
+                or correction.previous_effective_on != previous_date
+                or (
+                    previous_recorded_at is not None
+                    and correction.recorded_at < previous_recorded_at
+                )
+            ):
+                raise ValueError(
+                    "milestone corrections must form one ordered, continuous chain"
+                )
+            seen_ids.add(correction.id)
+            previous_date = correction.corrected_effective_on
+            previous_correction_id = correction.id
+            previous_recorded_at = correction.recorded_at
+        if self.resolved_effective_on != previous_date:
+            raise ValueError(
+                "resolved_effective_on must equal the latest correction"
+            )
 
     def _require_progress_shape(
         self,
@@ -431,6 +545,29 @@ class ApplicationSummary(ContractModel):
             raise ValueError(
                 f"{self.stage.value} applications require a {expected_kind.value} "
                 "current_action"
+            )
+        return self
+
+
+class ApplicationMilestoneCorrectionMutationResponse(ContractModel):
+    data_source: Literal["database"] = "database"
+    application: ApplicationSummary
+    activity_event: ApplicationActivityEventResponse
+    correction: ApplicationMilestoneCorrectionResponse
+    correction_created: bool
+
+    @model_validator(mode="after")
+    def resources_form_one_saved_correction(self) -> Self:
+        if (
+            self.activity_event.application_id != self.application.id
+            or self.correction.application_id != self.application.id
+            or self.correction.activity_event_id != self.activity_event.id
+            or not self.activity_event.corrections
+            or self.correction.id
+            not in {item.id for item in self.activity_event.corrections}
+        ):
+            raise ValueError(
+                "the correction response must expose one application milestone chain"
             )
         return self
 
@@ -665,6 +802,11 @@ __all__ = [
     "ActionItemStatus",
     "ApplicationActivityEventResponse",
     "ApplicationActivityEventType",
+    "ApplicationMilestoneCorrectionCreate",
+    "ApplicationMilestoneCorrectionMutationResponse",
+    "ApplicationMilestoneCorrectionResponse",
+    "CORRECTABLE_MILESTONE_EVENT_TYPES",
+    "MAX_MILESTONE_CORRECTIONS_PER_EVENT",
     "ACTIVE_APPLICATION_STAGE_VALUES",
     "CONTACTABLE_APPLICATION_STAGE_VALUES",
     "ApplicationActivityListResponse",

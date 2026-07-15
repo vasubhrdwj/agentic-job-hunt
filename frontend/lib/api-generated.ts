@@ -55,6 +55,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/applications/{application_id}/activity/{activity_event_id}/corrections": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Correct Owner Application Milestone Date
+         * @description Correct only the effective date of an original, manually recorded screening, unlinked interview, or offer milestone. The immutable original and every correction remain visible; the application stage, current task, submission, and outcome do not change.
+         */
+        post: operations["correct_owner_application_milestone_date_api_applications__application_id__activity__activity_event_id__corrections_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/applications/{application_id}/application-artifacts": {
         parameters: {
             query?: never;
@@ -945,6 +965,8 @@ export interface components {
             action_item_id?: string | null;
             /** Application Id */
             application_id: string;
+            /** Corrections */
+            corrections?: components["schemas"]["ApplicationMilestoneCorrectionResponse"][];
             /** Effective On */
             effective_on?: string | null;
             event_type: components["schemas"]["ApplicationActivityEventType"];
@@ -962,6 +984,8 @@ export interface components {
             outcome_id?: string | null;
             /** Previous Action Item Id */
             previous_action_item_id?: string | null;
+            /** Resolved Effective On */
+            resolved_effective_on?: string | null;
             /** Sequence Number */
             sequence_number: number;
             /** Submission Id */
@@ -1323,6 +1347,71 @@ export interface components {
             next_cursor?: string | null;
             /** Total */
             total: number;
+        };
+        /** ApplicationMilestoneCorrectionCreate */
+        ApplicationMilestoneCorrectionCreate: {
+            /**
+             * Confirm Correction
+             * @constant
+             */
+            confirm_correction: true;
+            /**
+             * Corrected Effective On
+             * Format: date
+             */
+            corrected_effective_on: string;
+        };
+        /** ApplicationMilestoneCorrectionMutationResponse */
+        ApplicationMilestoneCorrectionMutationResponse: {
+            activity_event: components["schemas"]["ApplicationActivityEventResponse"];
+            application: components["schemas"]["ApplicationSummary"];
+            correction: components["schemas"]["ApplicationMilestoneCorrectionResponse"];
+            /** Correction Created */
+            correction_created: boolean;
+            /**
+             * Data Source
+             * @default database
+             * @constant
+             */
+            data_source: "database";
+        };
+        /** ApplicationMilestoneCorrectionResponse */
+        ApplicationMilestoneCorrectionResponse: {
+            /** Activity Event Id */
+            activity_event_id: string;
+            /** Application Id */
+            application_id: string;
+            /**
+             * Corrected Effective On
+             * Format: date
+             */
+            corrected_effective_on: string;
+            /** Correction Number */
+            correction_number: number;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Id */
+            id: string;
+            /**
+             * Previous Effective On
+             * Format: date
+             */
+            previous_effective_on: string;
+            /**
+             * Recorded At
+             * Format: date-time
+             */
+            recorded_at: string;
+            /**
+             * Recording Method
+             * @constant
+             */
+            recording_method: "manual";
+            /** Supersedes Correction Id */
+            supersedes_correction_id?: string | null;
         };
         /**
          * ApplicationOutcome
@@ -4493,6 +4582,110 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ApplicationActivityListResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Precondition Required */
+            428: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+        };
+    };
+    correct_owner_application_milestone_date_api_applications__application_id__activity__activity_event_id__corrections_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Required strong ETag for the application being updated. */
+                "If-Match"?: string | null;
+                /** @description Required retry key for this correction attempt. */
+                "Idempotency-Key"?: string | null;
+            };
+            path: {
+                application_id: string;
+                activity_event_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ApplicationMilestoneCorrectionCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApplicationMilestoneCorrectionMutationResponse"];
                 };
             };
             /** @description Bad Request */

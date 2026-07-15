@@ -19,6 +19,7 @@ from .application_pack_schemas import (
     ApplicationPackBlocker,
     ApplicationPackStatus,
 )
+from .application_milestone_dates import latest_resolved_milestone_on
 from .application_repository import _activity_response, _application_summary
 from .application_schemas import ApplicationOutcomeResponse
 from .application_submission_schemas import (
@@ -841,23 +842,11 @@ def _latest_effective_on(
     session: Session,
     application: Application,
 ) -> date | None:
-    activity_date = session.scalar(
-        select(func.max(ApplicationActivityEvent.effective_on)).where(
-            ApplicationActivityEvent.owner_id == application.owner_id,
-            ApplicationActivityEvent.application_id == application.id,
-            ApplicationActivityEvent.effective_on.is_not(None),
-        )
+    return latest_resolved_milestone_on(
+        session,
+        owner_id=application.owner_id,
+        application_id=application.id,
     )
-    completed_round_date = session.scalar(
-        select(func.max(ApplicationInterviewRound.completed_on)).where(
-            ApplicationInterviewRound.owner_id == application.owner_id,
-            ApplicationInterviewRound.application_id == application.id,
-            ApplicationInterviewRound.status == "completed",
-            ApplicationInterviewRound.completed_on.is_not(None),
-        )
-    )
-    values = [value for value in (activity_date, completed_round_date) if value is not None]
-    return max(values) if values else None
 
 
 def _require_milestone_date(

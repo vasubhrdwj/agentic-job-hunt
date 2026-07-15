@@ -10,6 +10,8 @@ from .application_schemas import (
     ApplicationActivityListResponse,
     ApplicationDetailResponse,
     ApplicationListResponse,
+    ApplicationMilestoneCorrectionCreate,
+    ApplicationMilestoneCorrectionMutationResponse,
     CursorToken,
     TodayApplicationActionsResponse,
 )
@@ -78,6 +80,17 @@ class ApplicationWorkspaceStore(
         expected_application_version: int,
         idempotency_key: str,
     ) -> ApplicationTransitionResponse | None: ...
+
+    def record_application_milestone_correction(
+        self,
+        *,
+        owner_id: str,
+        application_id: str,
+        activity_event_id: str,
+        payload: ApplicationMilestoneCorrectionCreate,
+        expected_application_version: int,
+        idempotency_key: str,
+    ) -> ApplicationMilestoneCorrectionMutationResponse | None: ...
 
 
 __all__ = ["ApplicationWorkspaceStore"]

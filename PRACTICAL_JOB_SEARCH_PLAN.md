@@ -876,12 +876,13 @@ Full Slice 5 definition of done:
       exact open action; never from the browser clock or a fabricated score.
 - [x] Add repeatable scheduled/completed interview rounds with stable IDs,
       immutable lifecycle events, and an exact Today preparation task.
-- [ ] Add append-only corrections that supersede inaccurate milestones.
+- [x] Add append-only date corrections for coarse screening, manual-interview,
+      and offer milestones while retaining the original and full correction
+      chain and leaving stage, task, submission, and outcome untouched.
 - [ ] Attribute each outreach response to the exact marked-sent event and
       message version.
 
-Next: Phase 6A2c adds append-only corrections, followed by exact
-outreach-response attribution.
+Next: Phase 6A2d adds exact outreach-response attribution.
 
 Definition of done:
 
