@@ -9,10 +9,11 @@ from zoneinfo import ZoneInfo
 
 import pytest
 from cryptography.fernet import Fernet
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 
 import job_hunt_agent.sqlalchemy_opportunity_workspace as workspace_module
 from job_hunt_agent.database import Database
+from job_hunt_agent.job_queue import record_worker_heartbeat
 from job_hunt_agent.models import (
     ActionItem,
     Application,
@@ -27,6 +28,7 @@ from job_hunt_agent.models import (
     OwnerMutationReceipt,
     ResumeVersion,
     SavedSearch,
+    WorkerHeartbeat,
 )
 from job_hunt_agent.application_repository import ApplicationRepositoryError
 from job_hunt_agent.opportunity_repository import (
@@ -40,6 +42,7 @@ from job_hunt_agent.opportunity_schemas import (
     TodayQuery,
 )
 from job_hunt_agent.owner_workspace import (
+    WorkspaceCapabilityUnavailable,
     WorkspaceConflict,
     WorkspaceInputError,
     WorkspaceNotFound,
@@ -63,10 +66,18 @@ def opportunity_workspace(
     monkeypatch: pytest.MonkeyPatch,
 ) -> tuple[Database, SqlAlchemyOpportunityWorkspaceStore]:
     database = Database(f"sqlite+pysqlite:///{tmp_path / 'workspace.db'}")
+    monkeypatch.delenv("RENDER_GIT_COMMIT", raising=False)
+    monkeypatch.delenv("APP_VERSION", raising=False)
     Base.metadata.create_all(database.engine)
     with database.session() as session:
         _seed_search(session, owner_id="owner-a", search_id="search-a", version=3)
         session.add(Owner(id="owner-b", display_name="Owner B", timezone="UTC"))
+        record_worker_heartbeat(
+            session,
+            worker_id="role-scan-worker",
+            supported_kinds={"scan_saved_search"},
+            now=datetime.now(timezone.utc),
+        )
     registry = CompanyRegistry(
         [
             _company("acme", CompanySource.greenhouse),
@@ -309,6 +320,90 @@ def test_create_scan_replays_once_and_changed_request_or_stale_version_conflicts
             payload=ScanCreateRequest(),
         )
     assert stale.value.code == "version_conflict"
+
+
+def test_create_scan_rejects_missing_worker_before_any_mutation(
+    opportunity_workspace: tuple[Database, SqlAlchemyOpportunityWorkspaceStore],
+) -> None:
+    database, store = opportunity_workspace
+    with database.session() as session:
+        session.execute(delete(WorkerHeartbeat))
+
+    with pytest.raises(WorkspaceCapabilityUnavailable) as unavailable:
+        _create_scan(store, key="no-worker")
+
+    assert unavailable.value.capability == "role_scan"
+    assert unavailable.value.reason == "no_fresh_worker"
+    with database.session() as session:
+        assert session.scalar(select(func.count(OpportunityScan.id))) == 0
+        assert session.scalar(select(func.count(OpportunityScanSource.id))) == 0
+        assert session.scalar(select(func.count(BackgroundJob.id))) == 0
+        assert session.scalar(select(func.count(OwnerMutationReceipt.id))) == 0
+
+
+@pytest.mark.parametrize(
+    ("supported_kinds", "last_seen_delta", "expected_reason"),
+    [
+        (["legacy_hunt"], timedelta(seconds=0), "unsupported_kind"),
+        (["scan_saved_search"], timedelta(seconds=-120), "no_fresh_worker"),
+    ],
+)
+def test_create_scan_rejects_incapable_or_stale_workers(
+    opportunity_workspace: tuple[Database, SqlAlchemyOpportunityWorkspaceStore],
+    supported_kinds: list[str],
+    last_seen_delta: timedelta,
+    expected_reason: str,
+) -> None:
+    database, store = opportunity_workspace
+    with database.session() as session:
+        heartbeat = session.get(WorkerHeartbeat, "role-scan-worker")
+        assert heartbeat is not None
+        heartbeat.supported_kinds = supported_kinds
+        heartbeat.last_seen_at = datetime.now(timezone.utc) + last_seen_delta
+
+    with pytest.raises(WorkspaceCapabilityUnavailable) as unavailable:
+        _create_scan(store, key=f"unavailable-{expected_reason}")
+    assert unavailable.value.reason == expected_reason
+
+
+def test_create_scan_requires_a_worker_from_the_current_build(
+    opportunity_workspace: tuple[Database, SqlAlchemyOpportunityWorkspaceStore],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    database, store = opportunity_workspace
+    monkeypatch.setenv("APP_VERSION", "web-build")
+    with database.session() as session:
+        heartbeat = session.get(WorkerHeartbeat, "role-scan-worker")
+        assert heartbeat is not None
+        heartbeat.build_version = "older-worker-build"
+
+    with pytest.raises(WorkspaceCapabilityUnavailable) as unavailable:
+        _create_scan(store, key="wrong-build")
+    assert unavailable.value.reason == "incompatible_build"
+
+    with database.session() as session:
+        heartbeat = session.get(WorkerHeartbeat, "role-scan-worker")
+        assert heartbeat is not None
+        heartbeat.build_version = "web-build"
+        heartbeat.last_seen_at = datetime.now(timezone.utc)
+
+    created = _create_scan(store, key="matching-build")
+    assert created.status.value == "queued"
+
+
+def test_completed_scan_replay_does_not_require_a_live_worker(
+    opportunity_workspace: tuple[Database, SqlAlchemyOpportunityWorkspaceStore],
+) -> None:
+    database, store = opportunity_workspace
+    created = _create_scan(store, key="replay-without-worker")
+    with database.session() as session:
+        session.execute(delete(WorkerHeartbeat))
+
+    replay = _create_scan(store, key="replay-without-worker")
+    assert replay.id == created.id
+    with database.session() as session:
+        assert session.scalar(select(func.count(OpportunityScan.id))) == 1
+        assert session.scalar(select(func.count(BackgroundJob.id))) == 1
 
 
 def test_scan_creation_requires_owned_active_search_and_masks_pack_failure(

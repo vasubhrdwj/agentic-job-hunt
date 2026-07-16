@@ -8,6 +8,7 @@ import os
 import socket
 import threading
 import time
+from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from uuid import uuid4
@@ -61,6 +62,8 @@ DEFAULT_BUSY_HEARTBEAT_INTERVAL_SECONDS = 30.0
 PRACTICAL_JOB_KINDS = frozenset(
     {"legacy_hunt", SCAN_JOB_KIND, CONTACT_SEARCH_JOB_KIND}
 )
+PROVIDER_JOB_KINDS = frozenset({"legacy_hunt", CONTACT_SEARCH_JOB_KIND})
+WORKER_KINDS_ENV = "JOB_HUNT_WORKER_KINDS"
 WORKER_STARTED_AT = datetime.now(timezone.utc)
 
 
@@ -85,6 +88,7 @@ class ClaimedPracticalHunt:
     job_id: str
     run_id: str
     lease_token: str
+    supported_kinds: frozenset[str]
 
 
 @dataclass(frozen=True)
@@ -94,6 +98,7 @@ class ClaimedPracticalScan:
     job_id: str
     run_id: str
     lease_token: str
+    supported_kinds: frozenset[str]
 
 
 @dataclass(frozen=True)
@@ -103,6 +108,7 @@ class ClaimedPracticalContact:
     job_id: str
     run_id: str
     lease_token: str
+    supported_kinds: frozenset[str]
 
 
 def _env_bool(name: str, *, default: bool = False) -> bool:
@@ -124,6 +130,39 @@ def _worker_id() -> str:
     return f"{socket.gethostname()}-{os.getpid()}"
 
 
+def resolve_practical_job_kinds(
+    configured: str | Iterable[str] | None = None,
+) -> frozenset[str]:
+    """Resolve the exact durable job capabilities this worker may claim."""
+
+    if configured is None:
+        raw = os.getenv(WORKER_KINDS_ENV)
+        if raw is None:
+            return PRACTICAL_JOB_KINDS
+        candidates: Iterable[str] = raw.split(",")
+    elif isinstance(configured, str):
+        candidates = configured.split(",")
+    else:
+        candidates = configured
+
+    resolved = frozenset(
+        str(kind).strip()
+        for kind in candidates
+        if str(kind).strip()
+    )
+    if not resolved:
+        raise RuntimeError(
+            f"{WORKER_KINDS_ENV} must name at least one supported practical job kind"
+        )
+    unknown = resolved - PRACTICAL_JOB_KINDS
+    if unknown:
+        raise RuntimeError(
+            f"{WORKER_KINDS_ENV} contains unsupported job kinds: "
+            + ", ".join(sorted(unknown))
+        )
+    return resolved
+
+
 def run_worker_once(
     *,
     worker_id: str | None = None,
@@ -133,6 +172,7 @@ def run_worker_once(
     enable_tracing: bool | None = None,
     durable_database: Database | None = None,
     practical_mode: bool | None = None,
+    job_kinds: str | Iterable[str] | None = None,
 ) -> WorkerResult:
     """Claim and process one hunt from exactly one configured backend."""
 
@@ -142,10 +182,18 @@ def run_worker_once(
         _env_bool("USE_MOCKS", default=False) if use_mocks is None else use_mocks
     )
     resolved_tracing = _tracing_enabled() if enable_tracing is None else enable_tracing
+    supported_kinds = (
+        resolve_practical_job_kinds(job_kinds)
+        if practical
+        else PRACTICAL_JOB_KINDS
+    )
     validate_production_runtime(
         practical_mode=practical,
         use_mocks=resolved_use_mocks,
         enable_tracing=resolved_tracing,
+        require_providers=(
+            not practical or bool(supported_kinds & PROVIDER_JOB_KINDS)
+        ),
     )
 
     if practical:
@@ -162,11 +210,13 @@ def run_worker_once(
                 retry_delay_seconds=retry_delay_seconds,
                 use_mocks=resolved_use_mocks,
                 enable_tracing=resolved_tracing,
+                supported_kinds=supported_kinds,
             )
         except PracticalWorkerError:
             _clear_practical_current_job(
                 database,
                 worker_id=worker,
+                supported_kinds=supported_kinds,
                 available=False,
             )
             raise
@@ -179,6 +229,7 @@ def run_worker_once(
             _clear_practical_current_job(
                 database,
                 worker_id=worker,
+                supported_kinds=supported_kinds,
                 available=False,
             )
             raise PracticalWorkerError("practical worker cycle failed") from None
@@ -237,6 +288,7 @@ def _run_practical_worker_once(
     retry_delay_seconds: int,
     use_mocks: bool,
     enable_tracing: bool,
+    supported_kinds: frozenset[str],
 ) -> WorkerResult:
     """Claim and dispatch one supported durable practical job."""
 
@@ -255,13 +307,23 @@ def _run_practical_worker_once(
             worker_id=worker_id,
             lease_token=lease_token,
             lease_seconds=lease_seconds,
-            kinds=PRACTICAL_JOB_KINDS,
+            kinds=supported_kinds,
         )
         if job is None:
-            _record_worker_state(session, worker_id=worker_id, current_job_id=None)
+            _record_worker_state(
+                session,
+                worker_id=worker_id,
+                current_job_id=None,
+                supported_kinds=supported_kinds,
+            )
             return WorkerResult(claimed=False)
 
-        _record_worker_state(session, worker_id=worker_id, current_job_id=job.id)
+        _record_worker_state(
+            session,
+            worker_id=worker_id,
+            current_job_id=job.id,
+            supported_kinds=supported_kinds,
+        )
         if job.kind == SCAN_JOB_KIND:
             scan_id = _opportunity_scan_id(job)
             scan = session.get(OpportunityScan, scan_id) if scan_id is not None else None
@@ -304,7 +366,12 @@ def _run_practical_worker_once(
                 )
                 if subject_scan is not None:
                     _reconcile_terminal_opportunity_scans(session, now=current)
-                _record_worker_state(session, worker_id=worker_id, current_job_id=None)
+                _record_worker_state(
+                    session,
+                    worker_id=worker_id,
+                    current_job_id=None,
+                    supported_kinds=supported_kinds,
+                )
                 return WorkerResult(
                     claimed=True,
                     status=failed.status if failed is not None else None,
@@ -314,6 +381,7 @@ def _run_practical_worker_once(
                 job_id=job.id,
                 run_id=scan.id,
                 lease_token=lease_token,
+                supported_kinds=supported_kinds,
             )
         elif job.kind == CONTACT_SEARCH_JOB_KIND:
             plan_id = _contact_plan_id(job)
@@ -359,7 +427,12 @@ def _run_practical_worker_once(
                     error_code="InvalidContactReference",
                     terminal=True,
                 )
-                _record_worker_state(session, worker_id=worker_id, current_job_id=None)
+                _record_worker_state(
+                    session,
+                    worker_id=worker_id,
+                    current_job_id=None,
+                    supported_kinds=supported_kinds,
+                )
                 return WorkerResult(
                     claimed=True,
                     run_id=job.subject_id,
@@ -370,6 +443,7 @@ def _run_practical_worker_once(
                 job_id=job.id,
                 run_id=plan.id,
                 lease_token=lease_token,
+                supported_kinds=supported_kinds,
             )
         else:
             run_id = _hunt_run_id(job)
@@ -387,7 +461,12 @@ def _run_practical_worker_once(
                     error_code="InvalidHuntReference",
                     terminal=True,
                 )
-                _record_worker_state(session, worker_id=worker_id, current_job_id=None)
+                _record_worker_state(
+                    session,
+                    worker_id=worker_id,
+                    current_job_id=None,
+                    supported_kinds=supported_kinds,
+                )
                 return WorkerResult(
                     claimed=True,
                     status=failed.status if failed is not None else None,
@@ -398,6 +477,7 @@ def _run_practical_worker_once(
                 job_id=job.id,
                 run_id=run_id,
                 lease_token=lease_token,
+                supported_kinds=supported_kinds,
             )
 
     if scan_claim is not None:
@@ -592,6 +672,7 @@ def process_claimed_practical_hunt(
                             session,
                             worker_id=worker_id,
                             current_job_id=None,
+                            supported_kinds=claim.supported_kinds,
                         )
                         return _result_from_job(job, run_id=claim.run_id)
             if payload_json is None:
@@ -684,7 +765,12 @@ def process_claimed_practical_hunt(
                 keyring=keyring,
             )
             job = session.get(BackgroundJob, claim.job_id)
-            _record_worker_state(session, worker_id=worker_id, current_job_id=None)
+            _record_worker_state(
+                session,
+                worker_id=worker_id,
+                current_job_id=None,
+                supported_kinds=claim.supported_kinds,
+            )
             return _result_from_job(job, run_id=claim.run_id)
     except PracticalWorkerError:
         fatal_error = True
@@ -702,6 +788,7 @@ def process_claimed_practical_hunt(
         _clear_practical_current_job(
             database,
             worker_id=worker_id,
+            supported_kinds=claim.supported_kinds,
             available=not fatal_error,
         )
 
@@ -759,6 +846,7 @@ def process_claimed_practical_scan(
         _clear_practical_current_job(
             database,
             worker_id=worker_id,
+            supported_kinds=claim.supported_kinds,
             available=not fatal_error,
         )
 
@@ -838,6 +926,7 @@ def process_claimed_practical_contact(
         _clear_practical_current_job(
             database,
             worker_id=worker_id,
+            supported_kinds=claim.supported_kinds,
             available=not fatal_error,
         )
 
@@ -860,7 +949,12 @@ def _finish_practical_scan_attempt_failure(
             lease_token=claim.lease_token,
         )
         if owned is None:
-            _record_worker_state(session, worker_id=worker_id, current_job_id=None)
+            _record_worker_state(
+                session,
+                worker_id=worker_id,
+                current_job_id=None,
+                supported_kinds=claim.supported_kinds,
+            )
             return _result_from_job(
                 session.get(BackgroundJob, claim.job_id),
                 run_id=claim.run_id,
@@ -923,7 +1017,12 @@ def _finish_practical_scan_attempt_failure(
                     )
                 source.updated_at = current
                 source.version += 1
-        _record_worker_state(session, worker_id=worker_id, current_job_id=None)
+        _record_worker_state(
+            session,
+            worker_id=worker_id,
+            current_job_id=None,
+            supported_kinds=claim.supported_kinds,
+        )
         return _result_from_job(failed, run_id=claim.run_id)
 
 
@@ -981,7 +1080,12 @@ def _finish_practical_failure(
             lease_token=claim.lease_token,
         )
         if owned is None:
-            _record_worker_state(session, worker_id=worker_id, current_job_id=None)
+            _record_worker_state(
+                session,
+                worker_id=worker_id,
+                current_job_id=None,
+                supported_kinds=claim.supported_kinds,
+            )
             return _result_from_job(
                 session.get(BackgroundJob, claim.job_id),
                 run_id=claim.run_id,
@@ -1005,7 +1109,12 @@ def _finish_practical_failure(
             retry_delay_seconds=retry_delay_seconds,
             terminal=terminal,
         )
-        _record_worker_state(session, worker_id=worker_id, current_job_id=None)
+        _record_worker_state(
+            session,
+            worker_id=worker_id,
+            current_job_id=None,
+            supported_kinds=claim.supported_kinds,
+        )
         return _result_from_job(failed, run_id=claim.run_id)
 
 
@@ -1047,6 +1156,7 @@ def _renew_practical_lease(
             session,
             worker_id=worker_id,
             current_job_id=claim.job_id if renewed else None,
+            supported_kinds=claim.supported_kinds,
         )
         return renewed
 
@@ -1056,7 +1166,7 @@ def _record_worker_state(
     *,
     worker_id: str,
     current_job_id: str | None,
-    supported_kinds: frozenset[str] = PRACTICAL_JOB_KINDS,
+    supported_kinds: frozenset[str],
 ) -> None:
     record_worker_heartbeat(
         session,
@@ -1096,6 +1206,7 @@ def _clear_practical_current_job(
     database: Database,
     *,
     worker_id: str,
+    supported_kinds: frozenset[str],
     available: bool = True,
 ) -> None:
     try:
@@ -1104,7 +1215,7 @@ def _clear_practical_current_job(
                 session,
                 worker_id=worker_id,
                 current_job_id=None,
-                supported_kinds=PRACTICAL_JOB_KINDS if available else frozenset(),
+                supported_kinds=supported_kinds if available else frozenset(),
             )
     except Exception as exc:  # noqa: BLE001 - a lost DB already invalidates the lease.
         LOGGER.warning(
@@ -1292,10 +1403,16 @@ def run_worker_loop(
     lease_seconds: int = DEFAULT_LEASE_SECONDS,
     idle_sleep_seconds: float = DEFAULT_IDLE_SLEEP_SECONDS,
     retry_delay_seconds: int = DEFAULT_RETRY_DELAY_SECONDS,
+    job_kinds: str | Iterable[str] | None = None,
 ) -> None:
     """Continuously process queued hunts until the process is interrupted."""
 
     practical = practical_mode_enabled()
+    supported_kinds = (
+        resolve_practical_job_kinds(job_kinds)
+        if practical
+        else None
+    )
     durable_database = database_from_env(required=True) if practical else None
     if practical and durable_database is not None and not durable_database.migrations_current():
         raise RuntimeError("practical worker requires current database migrations")
@@ -1306,6 +1423,7 @@ def run_worker_loop(
             retry_delay_seconds=retry_delay_seconds,
             durable_database=durable_database,
             practical_mode=practical,
+            job_kinds=supported_kinds,
         )
         if not result.claimed:
             time.sleep(idle_sleep_seconds)
@@ -1374,6 +1492,13 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Process queued job-hunt runs.")
     parser.add_argument("--once", action="store_true", help="Process at most one run.")
     parser.add_argument("--worker-id", help="Stable worker id for leases/audit.")
+    parser.add_argument(
+        "--job-kinds",
+        help=(
+            "Comma-separated practical job kinds to claim; overrides "
+            f"{WORKER_KINDS_ENV}."
+        ),
+    )
     parser.add_argument("--lease-seconds", type=int, default=DEFAULT_LEASE_SECONDS)
     parser.add_argument("--idle-sleep-seconds", type=float, default=DEFAULT_IDLE_SLEEP_SECONDS)
     parser.add_argument("--retry-delay-seconds", type=int, default=DEFAULT_RETRY_DELAY_SECONDS)
@@ -1388,6 +1513,7 @@ def main() -> None:
             worker_id=args.worker_id,
             lease_seconds=args.lease_seconds,
             retry_delay_seconds=args.retry_delay_seconds,
+            job_kinds=args.job_kinds,
         )
         print(result)
         return
@@ -1396,6 +1522,7 @@ def main() -> None:
         lease_seconds=args.lease_seconds,
         idle_sleep_seconds=args.idle_sleep_seconds,
         retry_delay_seconds=args.retry_delay_seconds,
+        job_kinds=args.job_kinds,
     )
 
 

@@ -20,6 +20,7 @@ import type {
   AchievementEvidence,
   AuthorizationStatus,
   CandidateProfile,
+  CandidateProfileWrite,
   CareerPriorities,
   CareerTrack,
   ResumeVersionSummary,
@@ -27,6 +28,7 @@ import type {
   WorkAuthorization,
   WorkMode,
 } from "@/lib/workspace-types";
+import { hasMeaningfulCandidateProfile } from "@/lib/workspace-types";
 import type { EmploymentType, Seniority } from "@/lib/types";
 import {
   errorText,
@@ -212,20 +214,28 @@ export function ProfileWorkspace() {
       setProfileMessage({ kind: "error", text: "Add each work-authorization country only once." });
       return;
     }
+    const payload: CandidateProfileWrite = {
+      current_title: currentTitle.trim() || null,
+      current_location: currentLocation.trim() || null,
+      career_thesis: careerThesis.trim() || null,
+      notice_period_days: noticeDays ? Number(noticeDays) : null,
+      work_authorizations: authorizations,
+      work_modes: workModes,
+      employment_types: employmentTypes,
+      onboarding_step: profile?.data.onboarding_step ?? "resume",
+    };
+    if (!hasMeaningfulCandidateProfile(payload)) {
+      setProfileMessage({
+        kind: "error",
+        text: "Add at least one useful detail about you, such as your title, location, work mode, authorization, notice period, or career direction.",
+      });
+      return;
+    }
     setProfilePending(true);
     setProfileMessage(null);
     try {
       const saved = await saveCandidateProfile(
-        {
-          current_title: currentTitle.trim() || null,
-          current_location: currentLocation.trim() || null,
-          career_thesis: careerThesis.trim() || null,
-          notice_period_days: noticeDays ? Number(noticeDays) : null,
-          work_authorizations: authorizations,
-          work_modes: workModes,
-          employment_types: employmentTypes,
-          onboarding_step: profile?.data.onboarding_step ?? "resume",
-        },
+        payload,
         profile?.etag ?? '"0"',
       );
       setProfile(saved);

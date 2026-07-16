@@ -58,6 +58,7 @@ from .opportunity_repository import (
     load_opportunity_detail,
 )
 from .owner_workspace import (
+    WorkspaceCapabilityUnavailable,
     WorkspaceConflict,
     WorkspaceInputError,
     WorkspaceNotFound,
@@ -68,6 +69,7 @@ from .profile_schemas import SavedSearchCriteria
 from .repository_errors import ResourceConflict, VersionConflict, require_version
 from .security import DataKeyring, DecryptionError
 from .sources.registry import RegistryError, load_company_pack
+from .worker_health import ROLE_SCAN_JOB_KIND, load_worker_capability
 
 
 _WARNING_MESSAGES: dict[ScanWarningCode, tuple[str, bool]] = {
@@ -196,6 +198,15 @@ class SqlAlchemyOpportunityWorkspaceStore:
 
             criteria = SavedSearchCriteria.model_validate(search.criteria)
             companies = _active_pack_companies(search.pack)
+            role_scan_capability = load_worker_capability(
+                session,
+                kind=ROLE_SCAN_JOB_KIND,
+            )
+            if not role_scan_capability.available:
+                raise WorkspaceCapabilityUnavailable(
+                    "role_scan",
+                    reason=role_scan_capability.reason,
+                )
             if claim is None:
                 # Validate owner/search/config before inserting a pending
                 # receipt. This avoids stranding a key when preconditions fail,
@@ -273,7 +284,7 @@ class SqlAlchemyOpportunityWorkspaceStore:
 
             queued = enqueue_job(
                 session,
-                kind="scan_saved_search",
+                kind=ROLE_SCAN_JOB_KIND,
                 dedupe_key=f"scan:{scan.id}",
                 owner_id=owner_id,
                 subject_type="opportunity_scan",
@@ -611,7 +622,12 @@ def _optional_utc(value: datetime | None) -> datetime | None:
 def _opportunity_errors() -> Iterator[None]:
     try:
         yield
-    except (WorkspaceNotFound, WorkspaceConflict, WorkspaceInputError, WorkspaceUnavailable):
+    except (
+        WorkspaceNotFound,
+        WorkspaceConflict,
+        WorkspaceInputError,
+        WorkspaceUnavailable,
+    ):
         raise
     except VersionConflict as exc:
         raise WorkspaceConflict(str(exc), code="version_conflict") from exc

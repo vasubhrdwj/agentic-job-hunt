@@ -34,10 +34,11 @@ from .schemas import Company, JobCriteria, Role
 from .sources.base import FetchCompleteness, FetchScope, SourceFetchResult
 from .sources.registry import CompanyRegistry, RegistryError, load_company_pack
 from .sources.resolver import SourceResolver, is_first_party_role
+from .worker_health import ROLE_SCAN_JOB_KIND
 
 
 LOGGER = logging.getLogger(__name__)
-SCAN_JOB_KIND = "scan_saved_search"
+SCAN_JOB_KIND = ROLE_SCAN_JOB_KIND
 TERMINAL_SCAN_STATUSES = frozenset(
     {"succeeded", "partial", "failed", "cancelled"}
 )

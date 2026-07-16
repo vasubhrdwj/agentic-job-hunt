@@ -57,6 +57,13 @@ class WorkspaceUnavailable(OwnerWorkspaceError):
     pass
 
 
+class WorkspaceCapabilityUnavailable(WorkspaceUnavailable):
+    def __init__(self, capability: str, *, reason: str) -> None:
+        super().__init__(f"{capability} is unavailable")
+        self.capability = capability
+        self.reason = reason
+
+
 class OwnerWorkspaceStore(Protocol):
     """Owner-scoped operations required by the first usable onboarding slice."""
 
@@ -200,6 +207,7 @@ __all__ = [
     "OwnerWorkspaceError",
     "OwnerWorkspaceStore",
     "WorkspaceConflict",
+    "WorkspaceCapabilityUnavailable",
     "WorkspaceInputError",
     "WorkspaceNotFound",
     "WorkspaceUnavailable",

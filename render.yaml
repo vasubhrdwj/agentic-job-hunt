@@ -17,6 +17,18 @@ services:
       # owner-token hash; the old public paid-provider endpoint is unsafe.
       - key: ENABLE_PRACTICAL_MODE
         value: "1"
+      # Free-tier bridge: the web process also runs one durable, scan-only
+      # queue thread while the service is awake. It never claims contacts or
+      # legacy provider jobs, and interrupted leases recover after the next
+      # request wakes the service.
+      - key: ENABLE_EMBEDDED_SCAN_WORKER
+        value: "1"
+      - key: JOB_HUNT_WORKER_KINDS
+        value: scan_saved_search
+      - key: JOB_HUNT_EMBEDDED_WORKER_ID
+        value: render-embedded-scan
+      - key: USE_MOCKS
+        value: "0"
       # Compatibility history remains readable/deletable during migration,
       # but production cannot create or mutate legacy hunts.
       - key: LEGACY_HUNT_API_MODE

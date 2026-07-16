@@ -57,6 +57,19 @@ export interface CandidateProfile extends CandidateProfileWrite {
   updated_at: string;
 }
 
+export function hasMeaningfulCandidateProfile(
+  profile: CandidateProfileWrite,
+): boolean {
+  return Boolean(
+    profile.career_thesis?.trim() ||
+      profile.current_title?.trim() ||
+      profile.current_location?.trim() ||
+      profile.work_authorizations.length > 0 ||
+      profile.work_modes.length > 0 ||
+      profile.notice_period_days !== null,
+  );
+}
+
 export interface CareerPriorities {
   compensation: number;
   scope: number;

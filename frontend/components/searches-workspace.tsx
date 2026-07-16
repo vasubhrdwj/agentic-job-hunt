@@ -10,11 +10,14 @@ import {
   createSavedSearch,
   deleteSavedSearch,
   getCandidateProfile,
+  getOwnerHealth,
   listCareerTracks,
   listResumeVersions,
   listSavedSearches,
   updateSavedSearch,
+  WorkspaceApiError,
 } from "@/lib/workspace-api";
+import type { RoleScanCapability } from "@/lib/workspace-api";
 import type {
   CandidateProfile,
   CareerTrack,
@@ -25,6 +28,7 @@ import type {
   ScheduleCadence,
   Versioned,
 } from "@/lib/workspace-types";
+import { hasMeaningfulCandidateProfile } from "@/lib/workspace-types";
 import type { EmploymentType, Seniority } from "@/lib/types";
 import {
   errorText,
@@ -65,6 +69,9 @@ export function SearchesWorkspace() {
   const [searches, setSearches] = useState<SavedSearch[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [roleScanCapability, setRoleScanCapability] =
+    useState<RoleScanCapability | null>(null);
+  const [roleScanChecking, setRoleScanChecking] = useState(true);
 
   const [name, setName] = useState("");
   const [trackId, setTrackId] = useState("");
@@ -98,8 +105,26 @@ export function SearchesWorkspace() {
   const createKey = useRef<string | null>(null);
   const scanKeys = useRef<Record<string, string>>({});
 
+  const refreshRoleScanCapability = useCallback(async () => {
+    setRoleScanChecking(true);
+    try {
+      const health = await getOwnerHealth();
+      setRoleScanCapability(health.capabilities.role_scan);
+    } catch {
+      setRoleScanCapability({
+        available: false,
+        reason: "health_unavailable",
+        fresh_worker_count: 0,
+        compatible_worker_count: 0,
+      });
+    } finally {
+      setRoleScanChecking(false);
+    }
+  }, []);
+
   const reload = useCallback(async () => {
     setLoadError(null);
+    void refreshRoleScanCapability();
     try {
       const [nextProfile, nextResumes, nextTracks, nextSearches] = await Promise.all([
         getCandidateProfile(),
@@ -119,10 +144,11 @@ export function SearchesWorkspace() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [refreshRoleScanCapability]);
 
   useEffect(() => {
     let active = true;
+    void refreshRoleScanCapability();
     Promise.all([
       getCandidateProfile(),
       listResumeVersions(),
@@ -152,7 +178,7 @@ export function SearchesWorkspace() {
     return () => {
       active = false;
     };
-  }, []);
+  }, [refreshRoleScanCapability]);
 
   async function saveSearch(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -308,6 +334,14 @@ export function SearchesWorkspace() {
   }
 
   async function scanRoles(search: SavedSearch) {
+    if (roleScanChecking || roleScanCapability?.available !== true) {
+      setRunError((current) => ({
+        ...current,
+        [search.id]:
+          "Role scans are paused until the background scan service is ready. Check again and retry.",
+      }));
+      return;
+    }
     setRunningId(search.id);
     setRunError((current) => ({ ...current, [search.id]: "" }));
     try {
@@ -320,6 +354,12 @@ export function SearchesWorkspace() {
       delete scanKeys.current[search.id];
       router.push(`/today?scan=${encodeURIComponent(scan.id)}`);
     } catch (error) {
+      if (
+        error instanceof WorkspaceApiError &&
+        error.code === "scan_worker_unavailable"
+      ) {
+        await refreshRoleScanCapability();
+      }
       setRunError((current) => ({
         ...current,
         [search.id]: errorText(error, "Unable to start this role scan."),
@@ -348,7 +388,7 @@ export function SearchesWorkspace() {
   const activeTracks = tracks.filter((track) => track.active);
   const hasResume = Boolean(profile?.data.base_resume || resumes.length > 0);
   const missingSetup = [
-    !profile ? "About you" : null,
+    !profile || !hasMeaningfulCandidateProfile(profile.data) ? "About you" : null,
     !hasResume ? "a base resume" : null,
     activeTracks.length === 0 ? "a career target" : null,
   ].filter((item): item is string => item !== null);
@@ -476,10 +516,35 @@ export function SearchesWorkspace() {
         title="Your saved searches"
         description="Scan roles searches configured job sources and saves deduplicated results to Today without contacts, drafting, or model calls. The retired legacy hunt remains read-only."
       >
-        {searches.length === 0 ? (
-          <div className="rounded-lg border border-dashed border-zinc-300 p-6 text-center dark:border-zinc-700"><p className="text-sm font-medium">No saved searches yet</p><p className="mt-1 text-sm text-zinc-500">Create one above, then use Scan roles to find opportunities.</p></div>
-        ) : (
-          <div className="grid gap-4 lg:grid-cols-2">
+        <div className="space-y-4">
+          {roleScanChecking ? (
+            <StatusMessage kind="info">
+              Checking whether the role-scan service is ready…
+            </StatusMessage>
+          ) : roleScanCapability?.available ? null : (
+            <StatusMessage kind="info">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <p className="font-medium">Role scans are temporarily paused.</p>
+                  <p className="mt-1">
+                    The scan service may still be waking up. Your saved searches
+                    are safe; check again in a moment.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  className={secondaryButtonClasses}
+                  onClick={() => void refreshRoleScanCapability()}
+                >
+                  Check again
+                </button>
+              </div>
+            </StatusMessage>
+          )}
+          {searches.length === 0 ? (
+            <div className="rounded-lg border border-dashed border-zinc-300 p-6 text-center dark:border-zinc-700"><p className="text-sm font-medium">No saved searches yet</p><p className="mt-1 text-sm text-zinc-500">Create one above, then use Scan roles to find opportunities.</p></div>
+          ) : (
+            <div className="grid gap-4 lg:grid-cols-2">
             {searches.map((search) => {
               const track = tracks.find((item) => item.id === search.career_track_id);
               const resume = search.resume_version_id ? resumes.find((item) => item.id === search.resume_version_id) : profile?.data.base_resume;
@@ -490,7 +555,25 @@ export function SearchesWorkspace() {
                   <dl className="mt-3 grid grid-cols-2 gap-3 text-xs"><div><dt className="text-zinc-500">Locations</dt><dd className="mt-1">{search.criteria.location.join(", ")}</dd></div><div><dt className="text-zinc-500">Cadence</dt><dd className="mt-1 capitalize">{search.schedule.cadence}{search.schedule.cadence !== "manual" ? " · preference only" : ""}</dd></div><div><dt className="text-zinc-500">Last scan</dt><dd className="mt-1">{formatDate(search.last_scan_at)}</dd></div><div><dt className="text-zinc-500">Next automatic scan</dt><dd className="mt-1">Not connected yet</dd></div></dl>
                   {runError[search.id] ? <div className="mt-3"><StatusMessage kind="error">{runError[search.id]}</StatusMessage></div> : null}
                   <div className="mt-4 flex flex-wrap gap-2">
-                    <button type="button" disabled={!search.active || runningId === search.id} onClick={() => void scanRoles(search)} className={primaryButtonClasses}>{runningId === search.id ? "Starting scan…" : "Scan roles"}</button>
+                    <button
+                      type="button"
+                      disabled={
+                        !search.active ||
+                        runningId === search.id ||
+                        roleScanChecking ||
+                        roleScanCapability?.available !== true
+                      }
+                      onClick={() => void scanRoles(search)}
+                      className={primaryButtonClasses}
+                    >
+                      {runningId === search.id
+                        ? "Starting scan…"
+                        : roleScanChecking
+                          ? "Checking scan service…"
+                          : roleScanCapability?.available
+                            ? "Scan roles"
+                            : "Scan paused"}
+                    </button>
                     <button type="button" onClick={() => editSearch(search)} className={secondaryButtonClasses}>Edit</button>
                     {search.last_scan_at ? null : (
                       <button type="button" disabled={deletingId === search.id} onClick={() => void removeSearch(search)} className={secondaryButtonClasses}>{deletingId === search.id ? "Deleting…" : "Delete"}</button>
@@ -504,8 +587,9 @@ export function SearchesWorkspace() {
                 </article>
               );
             })}
-          </div>
-        )}
+            </div>
+          )}
+        </div>
       </WorkspaceSection>
     </div>
   );

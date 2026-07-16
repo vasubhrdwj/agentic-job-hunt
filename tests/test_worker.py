@@ -10,6 +10,7 @@ from threading import Event, Thread
 import pytest
 from alembic import command
 from alembic.config import Config
+from cryptography.fernet import Fernet
 
 from job_hunt_agent import hunt_repository, persistence
 from job_hunt_agent.database import Database, DatabaseConfigError
@@ -117,6 +118,7 @@ def db_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("USE_MOCKS", "1")
     monkeypatch.setenv("ENABLE_PRACTICAL_MODE", "0")
     monkeypatch.delenv("ENVIRONMENT", raising=False)
+    monkeypatch.delenv("JOB_HUNT_WORKER_KINDS", raising=False)
     persistence.init_db()
 
 
@@ -262,6 +264,115 @@ def test_production_worker_enforces_shared_provider_privacy_before_claim(
             assert job is not None and job.status == "queued"
             assert job.attempt_count == 0
             assert heartbeat is None
+    finally:
+        database.dispose()
+
+
+def test_practical_job_kinds_default_normalize_and_reject_invalid_values(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from job_hunt_agent import worker
+
+    assert worker.resolve_practical_job_kinds() == worker.PRACTICAL_JOB_KINDS
+    assert worker.resolve_practical_job_kinds(
+        " scan_saved_search,legacy_hunt,scan_saved_search "
+    ) == frozenset({"scan_saved_search", "legacy_hunt"})
+
+    monkeypatch.setenv("JOB_HUNT_WORKER_KINDS", "discover_contacts")
+    assert worker.resolve_practical_job_kinds() == frozenset({"discover_contacts"})
+
+    with pytest.raises(RuntimeError, match="at least one supported practical job kind"):
+        worker.resolve_practical_job_kinds(" , ")
+    with pytest.raises(RuntimeError, match="unsupported job kinds: unknown"):
+        worker.resolve_practical_job_kinds("scan_saved_search,unknown")
+
+
+def test_production_scan_only_worker_bypasses_providers_and_leaves_hunts_queued(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from job_hunt_agent import worker
+
+    database = _create_practical_database(tmp_path, monkeypatch)
+    try:
+        _run_id, job_id = _enqueue_practical(database, "provider-free-scan-worker")
+        monkeypatch.setenv("ENVIRONMENT", "production")
+        monkeypatch.setenv("ENABLE_PRACTICAL_MODE", "1")
+        monkeypatch.setenv("ENABLE_TRACE_DRAFT_CONTENT", "0")
+        monkeypatch.setenv("USE_MOCKS", "0")
+        monkeypatch.setenv(
+            "JOB_HUNT_DATA_KEYS",
+            f"v1:{Fernet.generate_key().decode('ascii')}",
+        )
+        monkeypatch.setenv(
+            "DATABASE_URL",
+            "postgresql+psycopg://worker:test@db.invalid/jobs?sslmode=require",
+        )
+        for name in (
+            "GOOGLE_API_KEY",
+            "SERPAPI_API_KEY",
+            "SERPAPI_KEY",
+            "PHOENIX_API_KEY",
+            "PHOENIX_COLLECTOR_ENDPOINT",
+            "GEMINI_PAID_SERVICE_ACK",
+        ):
+            monkeypatch.delenv(name, raising=False)
+
+        result = worker.run_worker_once(
+            worker_id="production-scan-only",
+            durable_database=database,
+            practical_mode=True,
+            use_mocks=False,
+            enable_tracing=False,
+            job_kinds={worker.SCAN_JOB_KIND},
+        )
+
+        assert result.claimed is False
+        with database.session() as session:
+            job = session.get(BackgroundJob, job_id)
+            heartbeat = session.get(WorkerHeartbeat, "production-scan-only")
+            assert job is not None and job.status == "queued"
+            assert job.attempt_count == 0
+            assert heartbeat is not None
+            assert heartbeat.current_job_id is None
+            assert heartbeat.supported_kinds == [worker.SCAN_JOB_KIND]
+    finally:
+        database.dispose()
+
+
+def test_production_scan_only_worker_still_requires_core_safety(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from job_hunt_agent import worker
+
+    database = _create_practical_database(tmp_path, monkeypatch)
+    try:
+        monkeypatch.setenv("ENVIRONMENT", "production")
+        monkeypatch.setenv("ENABLE_PRACTICAL_MODE", "1")
+        monkeypatch.setenv("ENABLE_TRACE_DRAFT_CONTENT", "0")
+        monkeypatch.setenv("USE_MOCKS", "0")
+        monkeypatch.setenv(
+            "DATABASE_URL",
+            "postgresql+psycopg://worker:test@db.invalid/jobs?sslmode=require",
+        )
+        monkeypatch.delenv("JOB_HUNT_DATA_KEYS", raising=False)
+
+        with pytest.raises(
+            RuntimeError,
+            match="JOB_HUNT_DATA_KEYS is required",
+        ):
+            worker.run_worker_once(
+                worker_id="unsafe-production-scan",
+                durable_database=database,
+                practical_mode=True,
+                use_mocks=False,
+                enable_tracing=False,
+                job_kinds={worker.SCAN_JOB_KIND},
+            )
+
+        with database.session() as session:
+            assert session.get(WorkerHeartbeat, "unsafe-production-scan") is None
     finally:
         database.dispose()
 

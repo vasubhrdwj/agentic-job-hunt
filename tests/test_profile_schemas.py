@@ -10,6 +10,7 @@ from pydantic import ValidationError
 from job_hunt_agent.profile_schemas import (
     AchievementEvidenceCreate,
     AchievementEvidencePatch,
+    CandidateProfileData,
     CandidateProfileWrite,
     CareerPriorities,
     CareerTrackCreate,
@@ -115,10 +116,48 @@ def test_schedule_accepts_timezone_correct_weekly_wall_time() -> None:
 
 
 def test_profile_preferences_exclude_unknown_employment_type() -> None:
-    profile = CandidateProfileWrite(employment_types=["full_time", "contract"])
+    profile = CandidateProfileWrite(
+        current_title="Backend Engineer",
+        employment_types=["full_time", "contract"],
+    )
     assert profile.employment_types == ["full_time", "contract"]
     with pytest.raises(ValidationError):
-        CandidateProfileWrite(employment_types=["unknown"])
+        CandidateProfileWrite(
+            current_title="Backend Engineer",
+            employment_types=["unknown"],
+        )
+
+
+def test_profile_write_rejects_defaults_only_but_legacy_data_remains_readable() -> None:
+    with pytest.raises(ValidationError, match="meaningful personal detail"):
+        CandidateProfileWrite()
+    with pytest.raises(ValidationError, match="meaningful personal detail"):
+        CandidateProfileWrite(onboarding_step="complete")
+
+    legacy = CandidateProfileData()
+    assert legacy.employment_types == ["full_time"]
+    assert legacy.onboarding_step == "profile"
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"current_title": "Backend Engineer"},
+        {"current_location": "Bengaluru"},
+        {"career_thesis": "Build reliable developer infrastructure."},
+        {"work_modes": ["remote"]},
+        {
+            "work_authorizations": [
+                {"country_code": "IN", "status": "citizen"}
+            ]
+        },
+        {"notice_period_days": 0},
+    ],
+)
+def test_profile_write_accepts_each_meaningful_detail(
+    payload: dict[str, object],
+) -> None:
+    assert CandidateProfileWrite.model_validate(payload)
 
 
 def test_evidence_is_pending_by_contract_until_explicit_patch() -> None:

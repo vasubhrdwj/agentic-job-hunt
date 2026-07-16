@@ -12,6 +12,7 @@ import hashlib
 import hmac
 import logging
 import os
+from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 from typing import Iterable, Literal
 from urllib.parse import urlsplit
@@ -27,6 +28,7 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from . import hunt_repository, persistence, privacy_repository
 from .database import DatabaseConfigError, database_from_env
+from .embedded_scan_worker import EmbeddedScanWorker, embedded_scan_worker_enabled
 from .requests import HuntRequestPayload, canonical_request_json
 from .production_runtime import production_core_errors
 from .routers.health import create_health_router
@@ -315,10 +317,28 @@ def _is_expired(value: datetime, now: datetime | None = None) -> bool:
     return normalized.astimezone(timezone.utc) <= current.astimezone(timezone.utc)
 
 
+@asynccontextmanager
+async def _app_lifespan(app: FastAPI):
+    embedded_worker: EmbeddedScanWorker | None = None
+    if embedded_scan_worker_enabled():
+        embedded_worker = EmbeddedScanWorker()
+        embedded_worker.start()
+    app.state.embedded_scan_worker = embedded_worker
+    try:
+        yield
+    finally:
+        if embedded_worker is not None:
+            embedded_worker.stop()
+
+
 def create_app() -> FastAPI:
     """Application factory. Tests use this to swap the SQLite path per run."""
     _validate_production_config()
-    app = FastAPI(title="Job Hunt Signal API", version="0.4.0")
+    app = FastAPI(
+        title="Job Hunt Signal API",
+        version="0.4.0",
+        lifespan=_app_lifespan,
+    )
     practical_mode = _practical_mode_enabled()
     legacy_mode = legacy_hunt_api_mode(production=_is_production())
     legacy_headers = legacy_deprecation_headers(

@@ -108,6 +108,8 @@ def practical_client(
     monkeypatch.setenv("JOB_HUNT_OWNER_TOKEN_HASH", hash_access_token(OWNER_TOKEN))
     monkeypatch.setenv("JOB_HUNT_SESSION_TTL_DAYS", "30")
     monkeypatch.setenv("JOB_HUNT_WORKER_HEARTBEAT_MAX_AGE_SECONDS", "90")
+    monkeypatch.delenv("RENDER_GIT_COMMIT", raising=False)
+    monkeypatch.delenv("APP_VERSION", raising=False)
 
     command.upgrade(Config("alembic.ini"), "head")
     app = create_app()
@@ -943,9 +945,28 @@ def test_owner_health_is_private_and_reports_queue_counts(
         )
     response = client.get("/api/health")
     assert response.status_code == 200
-    assert response.json()["owner_id"] == "owner"
-    assert response.json()["queue"]["counts"] == {"queued": 1}
-    assert response.json()["queue"]["dead_letter"] == 0
+    body = response.json()
+    assert body["owner_id"] == "owner"
+    assert body["queue"]["counts"] == {"queued": 1}
+    assert body["queue"]["dead_letter"] == 0
+    assert body["capabilities"]["role_scan"] == {
+        "available": False,
+        "reason": "no_fresh_worker",
+        "fresh_worker_count": 0,
+        "compatible_worker_count": 0,
+    }
+
+    with database.session() as session:
+        record_worker_heartbeat(
+            session,
+            worker_id="owner-health-scan-worker",
+            supported_kinds={"scan_saved_search"},
+            now=datetime.now(timezone.utc),
+        )
+    role_scan = client.get("/api/health").json()["capabilities"]["role_scan"]
+    assert role_scan["available"] is True
+    assert role_scan["reason"] is None
+    assert role_scan["compatible_worker_count"] == 1
 
 
 def test_legacy_liveness_remains_available_without_durable_database(

@@ -27,6 +27,7 @@ from ..auth import session_cookie_name
 from ..database import Database
 from ..owner_workspace import (
     OwnerWorkspaceStore,
+    WorkspaceCapabilityUnavailable,
     WorkspaceConflict,
     WorkspaceInputError,
     WorkspaceNotFound,
@@ -616,6 +617,23 @@ def _invoke(operation: Callable[..., T], **kwargs: object) -> T:
             else None
         )
         raise WorkspaceApiError(422, "invalid_request", str(exc), field_errors=fields) from exc
+    except WorkspaceCapabilityUnavailable as exc:
+        if exc.capability == "role_scan":
+            raise WorkspaceApiError(
+                503,
+                "scan_worker_unavailable",
+                (
+                    "Role scans are temporarily paused because the scan service "
+                    "is not ready yet."
+                ),
+                retryable=True,
+            ) from exc
+        raise WorkspaceApiError(
+            503,
+            "workspace_capability_unavailable",
+            "A required background service is temporarily unavailable.",
+            retryable=True,
+        ) from exc
     except WorkspaceUnavailable as exc:
         raise WorkspaceApiError(
             503,

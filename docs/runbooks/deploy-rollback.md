@@ -14,16 +14,21 @@ export DATABASE_URL='postgresql+psycopg://...'
 
 4. Run `.venv/bin/python -m alembic upgrade head` as a one-shot migration
    process.
-5. Start the new web and worker versions. Do not route traffic until `/ready`
-   is 200: it requires a reachable database, current migration, fresh worker,
-   and support for every active job kind.
+5. Start the new web version. The free private topology starts its embedded
+   scan-only worker from the same commit. Do not enable Scan roles until
+   authenticated `/api/health` reports `role_scan.available=true`.
+   Provider-consuming jobs require a separately configured worker. Set
+   `JOB_HUNT_WORKER_KINDS=scan_saved_search` for a provider-free process or
+   `legacy_hunt,scan_saved_search,discover_contacts` for a full worker.
+   Omitting the variable preserves the full set; blank or unknown values fail
+   startup. The CLI `--job-kinds` option overrides the environment.
 6. Run the deployment smoke below, then sign in and inspect Today and one
    existing application without launching provider work.
 
 ## Deployment smoke
 
-The smoke calls only liveness, readiness, and the legacy policy rejection. It
-does not run a hunt, scan, contact search, or any paid provider.
+The baseline smoke calls only liveness, readiness, and the legacy policy
+rejection. It does not run a hunt, scan, contact search, or any paid provider.
 
 ```bash
 .venv/bin/python -m scripts.deployment_smoke \
@@ -31,19 +36,28 @@ does not run a hunt, scan, contact search, or any paid provider.
   --expect-legacy-mode read_only
 ```
 
-To prove readiness survives an intentional restart:
+To prove web readiness survives an intentional restart:
 
 ```bash
 .venv/bin/python -m scripts.deployment_smoke \
   --base-url https://jobs.example.com \
   --expect-legacy-mode read_only \
   --snapshot-out /tmp/job-hunt-before-restart.json
-# Restart web and worker through the deployment platform, then wait for /ready.
+# Restart the web through the deployment platform, then wait for /web-ready.
 .venv/bin/python -m scripts.deployment_smoke \
   --base-url https://jobs.example.com \
   --expect-legacy-mode read_only \
   --compare-snapshot /tmp/job-hunt-before-restart.json
 ```
+
+For the free embedded-worker topology, additionally sign in through the Vercel
+origin and run one provider-free saved-search scan. Confirm:
+
+1. authenticated `/api/health` reports the scan capability;
+2. the scan reaches a terminal state within ten minutes;
+3. the worker heartbeat advertises only `scan_saved_search`;
+4. trusted roles, if present, reach Today; and
+5. a restart during a test scan leaves a recoverable durable queue record.
 
 ## Rollback
 
@@ -65,7 +79,7 @@ export DATABASE_URL='postgresql+psycopg://...'
   --apply
 ```
 
-After any rollback, start matched web/worker versions, require `/ready`, run the
-smoke, and verify owner login. If downgrade refuses, do not edit migration
-history manually; restore the verified backup into an empty target or deploy a
-forward fix.
+After any rollback, start matched web/worker code, require `/web-ready`, verify
+the configured scan capability, run the smoke, and verify owner login. If
+downgrade refuses, do not edit migration history manually; restore the verified
+backup into an empty target or deploy a forward fix.

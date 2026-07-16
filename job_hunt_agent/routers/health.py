@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import os
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Request, Security
@@ -13,11 +12,18 @@ from sqlalchemy.orm import Session
 
 from ..database import MIGRATION_HEAD, Database
 from ..auth import session_cookie_name
-from ..models import BackgroundJob, WorkerHeartbeat
+from ..models import BackgroundJob
+from ..worker_health import (
+    DEFAULT_WORKER_HEARTBEAT_MAX_AGE_SECONDS,
+    ROLE_SCAN_JOB_KIND,
+    as_utc,
+    heartbeat_age_seconds,
+    load_worker_capability,
+    load_worker_heartbeat_snapshot,
+)
 from .session import require_owner_session
 
 
-DEFAULT_WORKER_HEARTBEAT_MAX_AGE_SECONDS = 90
 ACTIVE_JOB_STATUSES = ("queued", "running")
 
 
@@ -58,9 +64,16 @@ def create_health_router(database: Database | None) -> APIRouter:
         snapshot = readiness_snapshot(database)
         with database.session() as session:
             counts = _owner_queue_counts(session, owner_id=owner.owner_id)
+            role_scan = load_worker_capability(
+                session,
+                kind=ROLE_SCAN_JOB_KIND,
+            )
         return {
             **snapshot,
             "owner_id": owner.owner_id,
+            "capabilities": {
+                "role_scan": role_scan.public_payload(),
+            },
             "queue": {
                 "counts": counts,
                 "dead_letter": counts.get("dead_letter", 0),
@@ -75,7 +88,7 @@ def readiness_snapshot(
     *,
     now: datetime | None = None,
 ) -> dict[str, object]:
-    current = _as_utc(now or datetime.now(timezone.utc))
+    current = as_utc(now or datetime.now(timezone.utc))
     database_snapshot = _database_snapshot(database)
     reachable = bool(database_snapshot["database"]["reachable"])
     migrations_current = bool(database_snapshot["migrations"]["current"])
@@ -93,10 +106,9 @@ def readiness_snapshot(
 
     if migrations_current and database is not None:
         with database.session() as session:
-            heartbeats = list(
-                session.scalars(
-                    select(WorkerHeartbeat).order_by(WorkerHeartbeat.last_seen_at.desc())
-                )
+            heartbeat_snapshot = load_worker_heartbeat_snapshot(
+                session,
+                now=current,
             )
             active_job_kinds = sorted(
                 set(
@@ -108,12 +120,8 @@ def readiness_snapshot(
                 )
             )
 
-        max_age_seconds = _heartbeat_max_age_seconds()
-        fresh_heartbeats = [
-            heartbeat
-            for heartbeat in heartbeats
-            if _heartbeat_age_seconds(heartbeat, now=current) <= max_age_seconds
-        ]
+        heartbeats = heartbeat_snapshot.heartbeats
+        fresh_heartbeats = heartbeat_snapshot.fresh_heartbeats
         supported_kinds = sorted(
             {
                 kind
@@ -126,8 +134,8 @@ def readiness_snapshot(
 
         if heartbeats:
             latest_heartbeat = heartbeats[0]
-            last_seen = _as_utc(latest_heartbeat.last_seen_at)
-            age_seconds = _heartbeat_age_seconds(latest_heartbeat, now=current)
+            last_seen = as_utc(latest_heartbeat.last_seen_at)
+            age_seconds = heartbeat_age_seconds(latest_heartbeat, now=current)
             worker_payload = {
                 "fresh": bool(fresh_heartbeats),
                 "worker_id": latest_heartbeat.worker_id,
@@ -181,27 +189,6 @@ def _database_snapshot(database: Database | None) -> dict[str, object]:
             "expected_revision": MIGRATION_HEAD,
         },
     }
-
-
-def _heartbeat_max_age_seconds() -> int:
-    raw = os.getenv(
-        "JOB_HUNT_WORKER_HEARTBEAT_MAX_AGE_SECONDS",
-        str(DEFAULT_WORKER_HEARTBEAT_MAX_AGE_SECONDS),
-    ).strip()
-    try:
-        return max(1, int(raw))
-    except ValueError:
-        return DEFAULT_WORKER_HEARTBEAT_MAX_AGE_SECONDS
-
-
-def _as_utc(value: datetime) -> datetime:
-    if value.tzinfo is None:
-        return value.replace(tzinfo=timezone.utc)
-    return value.astimezone(timezone.utc)
-
-
-def _heartbeat_age_seconds(heartbeat: WorkerHeartbeat, *, now: datetime) -> float:
-    return max(0.0, (now - _as_utc(heartbeat.last_seen_at)).total_seconds())
 
 
 def _owner_queue_counts(session: Session, *, owner_id: str) -> dict[str, int]:

@@ -1035,6 +1035,7 @@ def test_main_practical_worker_dispatches_contact_jobs_to_contact_execution(
         retry_delay_seconds=0,
         use_mocks=False,
         enable_tracing=False,
+        supported_kinds=worker.PRACTICAL_JOB_KINDS,
     )
 
     assert result == worker.WorkerResult(
@@ -1083,6 +1084,7 @@ def test_main_practical_worker_mock_mode_is_network_free_and_builds_five_contact
         retry_delay_seconds=0,
         use_mocks=True,
         enable_tracing=False,
+        supported_kinds=worker.PRACTICAL_JOB_KINDS,
     )
 
     assert result.status == "succeeded"
@@ -1126,6 +1128,7 @@ def test_main_practical_worker_fails_unconfigured_contact_provider_safely(
         retry_delay_seconds=0,
         use_mocks=False,
         enable_tracing=False,
+        supported_kinds=worker.PRACTICAL_JOB_KINDS,
     )
 
     assert result.claimed is True

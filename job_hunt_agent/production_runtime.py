@@ -84,16 +84,19 @@ def production_runtime_errors(
     practical_mode: bool | None = None,
     use_mocks: bool | None = None,
     enable_tracing: bool | None = None,
+    require_providers: bool = True,
 ) -> list[str]:
     """Return the complete production-worker configuration errors."""
 
-    return [
+    errors = [
         *production_core_errors(
             practical_mode=practical_mode,
             use_mocks=use_mocks,
         ),
-        *production_provider_errors(enable_tracing=enable_tracing),
     ]
+    if require_providers:
+        errors.extend(production_provider_errors(enable_tracing=enable_tracing))
+    return errors
 
 
 def validate_production_runtime(
@@ -101,6 +104,7 @@ def validate_production_runtime(
     practical_mode: bool | None = None,
     use_mocks: bool | None = None,
     enable_tracing: bool | None = None,
+    require_providers: bool = True,
 ) -> None:
     """Refuse unsafe provider work before any process claims or accepts work."""
 
@@ -108,6 +112,7 @@ def validate_production_runtime(
         practical_mode=practical_mode,
         use_mocks=use_mocks,
         enable_tracing=enable_tracing,
+        require_providers=require_providers,
     )
     if errors:
         raise RuntimeError("Invalid production runtime config: " + "; ".join(errors))

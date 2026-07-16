@@ -28,7 +28,11 @@ from .private_payloads import (
     decrypt_private_payload,
     encrypt_private_payload,
 )
-from .profile_schemas import CandidateProfileWrite, CareerTrackCreate
+from .profile_schemas import (
+    CandidateProfileData,
+    CandidateProfileWrite,
+    CareerTrackCreate,
+)
 from .repository_errors import ResourceConflict, ResourceInUse, require_version
 from .security import DataKeyring, MAX_RESUME_CHARS
 
@@ -42,7 +46,7 @@ CareerTrackInput = CareerTrackCreate
 class CandidateProfileRecord:
     id: str
     owner_id: str
-    data: CandidateProfileInput
+    data: CandidateProfileData
     version: int
     created_at: datetime
     updated_at: datetime
@@ -473,7 +477,7 @@ def _profile_record(row: CandidateProfile, keyring: DataKeyring) -> CandidatePro
         ciphertext=row.encrypted_payload,
     )
     try:
-        data = CandidateProfileWrite.model_validate(
+        data = CandidateProfileData.model_validate(
             {**payload, "onboarding_step": row.onboarding_state}
         )
     except ValidationError as exc:

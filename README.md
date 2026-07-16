@@ -196,7 +196,9 @@ Add `--trace` to emit OpenTelemetry spans to your Phoenix project, or `--use-moc
 
 - `backend_india` contains 20 curated companies with live-verified ATS or first-party career sources.
 - Curated hunts do not fall back to paid aggregators. A failed company board degrades to an empty result and a warning.
-- Requested employment types are strict. A posting with no explicit employment evidence remains `unknown` and is omitted from a full-time-only hunt.
+- Known employment-type mismatches are filtered. A posting with no explicit
+  employment evidence remains visible as `unknown` so missing source metadata
+  cannot silently hide an otherwise relevant role.
 - Referral candidates require current-employer evidence and confidence of at least 0.5. No verified candidate means no draft, plus honest guidance in the UI.
 - Past drafts are retrieved by logged outcome first (`introduced`/`replied` before neutral or `no_reply`), with judge score used only as a tiebreaker.
 
@@ -386,11 +388,12 @@ in-place operations and require a migration-current, identity-matched archive.
 
 ## Hosted deployment status
 
-`render.yaml` deliberately defines only the web service. It does not silently
-create a background worker, managed database, or migration service.
-`/web-ready` gates web traffic on a reachable, migrated database; `/ready`
-remains the stronger end-to-end signal and stays unhealthy until a compatible
-worker is alive.
+`render.yaml` keeps the deployment on Render's free web tier and enables one
+embedded, scan-only durable worker in that process. A user request wakes the
+web and worker together; interrupted scan leases recover after a restart.
+This bridge does not claim contact discovery or legacy provider jobs.
+`/web-ready` gates web traffic on a reachable, migrated database; authenticated
+`/api/health` exposes the exact live capabilities.
 
 Before routing production traffic:
 
@@ -400,22 +403,27 @@ Before routing production traffic:
    wrapper runs `python -m alembic upgrade head` and exits instead of serving if
    migration fails. Multi-instance deployments should use one dedicated
    migration release step instead.
-3. Deploy a background worker from the same commit and give web and worker the
-   same database, encryption keys, provider credentials, and owner identity.
+3. For the free private deployment, keep
+   `ENABLE_EMBEDDED_SCAN_WORKER=1` and
+   `JOB_HUNT_WORKER_KINDS=scan_saved_search`. When an always-on standalone
+   worker is introduced, disable the embedded worker and give the new service
+   the same database and encryption keys.
 4. Configure the required Render environment variables, including an exact
    HTTPS `ALLOWED_ORIGINS` entry with no trailing slash.
 5. Require the GitHub quality checks. Render is configured with
    `autoDeployTrigger: checksPass`, so a failing commit is not auto-deployed.
 6. Monitor `https://<service>.onrender.com/web-ready` for web availability and
-   `/ready` for provider-job availability. Use `/health` only to diagnose
-   whether the process itself is alive.
+   authenticated `/api/health` for scan capability. `/ready` remains the
+   strict signal for the currently active durable queue workload.
 
-Render background workers and pre-deploy commands require an explicit hosting
-cost decision. Follow [the deployment runbook](docs/runbooks/deploy-rollback.md)
-when that topology is available. Production startup rejects missing secrets,
-non-Postgres databases, localhost or wildcard CORS origins, mocks, and private
-draft-content tracing. Operators must additionally use TLS-only database and
-HTTPS origin settings.
+Render's free web service can sleep after inactivity, so the first request may
+have a cold-start delay and unattended schedules need a separate wake
+mechanism. A paid always-on background worker remains the strong-beta topology,
+not a requirement for interactive private scans. Follow
+[the deployment runbook](docs/runbooks/deploy-rollback.md) when changing worker
+topology. Production startup rejects missing secrets, non-Postgres databases,
+localhost or wildcard CORS origins, mocks, and private draft-content tracing.
+Operators must additionally use TLS-only database and HTTPS origin settings.
 
 One-time Vercel setup:
 
@@ -463,10 +471,10 @@ curl -X POST $API/api/runs/$RUN_ID/outcomes \
 ```
 
 `/api/hunt` should return queued state promptly. The final `GET` should move
-from `queued`/`running` to `succeeded` after a worker processes the run, and the
-outcome POST should work only after success. The current Render blueprint runs
-only the web service, so an end-to-end hosted smoke requires a
-separate background worker and migration step.
+from `queued`/`running` to `succeeded` after a provider-capable worker processes
+the run, and the outcome POST should work only after success. The free hosted
+blueprint processes saved-search scans only; contact discovery and legacy
+provider hunts still require a separately configured provider-capable worker.
 
 ## Abridged response shape
 

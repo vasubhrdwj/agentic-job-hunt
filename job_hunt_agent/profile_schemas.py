@@ -96,7 +96,7 @@ class ResumeVersionList(ContractModel):
     items: list[ResumeVersionSummary]
 
 
-class CandidateProfileWrite(ContractModel):
+class CandidateProfileData(ContractModel):
     career_thesis: str | None = Field(default=None, min_length=1, max_length=2_000)
     current_title: str | None = Field(default=None, min_length=1, max_length=200)
     current_location: str | None = Field(default=None, min_length=1, max_length=200)
@@ -122,12 +122,33 @@ class CandidateProfileWrite(ContractModel):
         return self
 
 
-class CandidateProfileResponse(CandidateProfileWrite):
+class CandidateProfileWrite(CandidateProfileData):
+    @model_validator(mode="after")
+    def require_meaningful_profile_details(self) -> Self:
+        if not _profile_has_meaningful_details(self):
+            raise ValueError(
+                "profile must include at least one meaningful personal detail"
+            )
+        return self
+
+
+class CandidateProfileResponse(CandidateProfileData):
     id: OpaqueId
     base_resume: ResumeVersionSummary | None = None
     version: int = Field(ge=1)
     created_at: datetime
     updated_at: datetime
+
+
+def _profile_has_meaningful_details(profile: CandidateProfileData) -> bool:
+    return bool(
+        profile.career_thesis
+        or profile.current_title
+        or profile.current_location
+        or profile.work_authorizations
+        or profile.work_modes
+        or profile.notice_period_days is not None
+    )
 
 
 class CareerPriorities(ContractModel):
@@ -444,6 +465,7 @@ __all__ = [
     "AchievementEvidenceList",
     "AchievementEvidencePatch",
     "AchievementEvidenceResponse",
+    "CandidateProfileData",
     "CandidateProfileResponse",
     "CandidateProfileWrite",
     "CareerTrackCreate",

@@ -299,6 +299,15 @@ def test_profile_requires_owner_origin_and_if_match_with_problem_errors(
     assert precondition.status_code == 428
     assert precondition.json()["code"] == "precondition_required"
 
+    blank = client.put(
+        "/api/me/profile",
+        headers={"Origin": ORIGIN, "If-Match": '"0"'},
+        json={},
+    )
+    assert blank.status_code == 422
+    assert blank.json()["code"] == "invalid_request"
+    assert "meaningful personal detail" in json.dumps(blank.json())
+
     created = client.put(
         "/api/me/profile",
         headers={"Origin": ORIGIN, "If-Match": '"0"'},

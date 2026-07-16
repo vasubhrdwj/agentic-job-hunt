@@ -13,6 +13,26 @@ import type {
   Versioned,
 } from "./workspace-types";
 
+export type RoleScanCapabilityReason =
+  | "no_fresh_worker"
+  | "unsupported_kind"
+  | "incompatible_build"
+  | "health_unavailable"
+  | null;
+
+export interface RoleScanCapability {
+  available: boolean;
+  reason: RoleScanCapabilityReason;
+  fresh_worker_count: number;
+  compatible_worker_count: number;
+}
+
+export interface OwnerHealth {
+  capabilities: {
+    role_scan: RoleScanCapability;
+  };
+}
+
 export class WorkspaceApiError extends Error {
   constructor(
     readonly status: number,
@@ -95,6 +115,11 @@ export async function expectJson<T>(response: Response): Promise<T> {
 
 export function createIdempotencyKey(scope: string): string {
   return `${scope}:${crypto.randomUUID()}`;
+}
+
+export async function getOwnerHealth(): Promise<OwnerHealth> {
+  const response = await fetch("/api/health", { cache: "no-store" });
+  return expectJson<OwnerHealth>(response);
 }
 
 export async function getCandidateProfile(): Promise<Versioned<CandidateProfile> | null> {

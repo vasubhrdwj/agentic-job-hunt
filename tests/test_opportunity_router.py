@@ -40,6 +40,7 @@ from job_hunt_agent.opportunity_schemas import (
     TransparentMatchSummary,
 )
 from job_hunt_agent.owner_workspace import (
+    WorkspaceCapabilityUnavailable,
     WorkspaceConflict,
     WorkspaceNotFound,
     WorkspaceUnavailable,
@@ -191,6 +192,11 @@ class FakeOpportunityStore:
         self.calls.append(("create_scan", owner_id))
         if saved_search_id == "foreignsearch":
             raise WorkspaceNotFound("saved search not found")
+        if saved_search_id == "workerless":
+            raise WorkspaceCapabilityUnavailable(
+                "role_scan",
+                reason="no_fresh_worker",
+            )
         self.last_scan_create = {
             "saved_search_id": saved_search_id,
             "expected_version": expected_saved_search_version,
@@ -430,6 +436,30 @@ def test_scan_and_opportunity_reads_mask_foreign_or_missing_resources(
         serialized = json.dumps(body)
         assert "foreign" not in serialized
         assert "owner" not in serialized
+
+
+def test_scan_create_reports_worker_unavailability_as_actionable_retryable_problem(
+    opportunity_client: tuple[TestClient, FakeOpportunityStore],
+) -> None:
+    client, _store = opportunity_client
+    _login(client)
+    response = client.post(
+        "/api/saved-searches/workerless/scans",
+        headers={
+            "Origin": ORIGIN,
+            "If-Match": '"3"',
+            "Idempotency-Key": "workerless-scan",
+        },
+        json={},
+    )
+    body = _assert_problem(
+        response,
+        status_code=503,
+        code="scan_worker_unavailable",
+    )
+    assert body["retryable"] is True
+    assert "scan service" in body["message"]
+    assert "no_fresh_worker" not in json.dumps(body)
 
 
 def test_today_query_validation_is_safe_and_valid_filters_reach_store(

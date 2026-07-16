@@ -2,19 +2,23 @@
 
 from __future__ import annotations
 
+import time
 from collections.abc import Callable, Iterator
+from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import urlsplit
 
 import pytest
 from alembic import command
 from alembic.config import Config
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 
 import job_hunt_agent.opportunity_scan_worker as scan_worker
 import job_hunt_agent.run as hunt_run_module
 from job_hunt_agent import worker
 from job_hunt_agent.database import Database
+from job_hunt_agent.embedded_scan_worker import EmbeddedScanWorker
+from job_hunt_agent.job_queue import record_worker_heartbeat
 from job_hunt_agent.models import (
     BackgroundJob,
     CareerTrack,
@@ -54,11 +58,19 @@ def scan_workspace(
     monkeypatch.setenv("DATABASE_URL", database_url)
     monkeypatch.setenv("ENABLE_PRACTICAL_MODE", "1")
     monkeypatch.delenv("ENVIRONMENT", raising=False)
+    monkeypatch.delenv("RENDER_GIT_COMMIT", raising=False)
+    monkeypatch.delenv("APP_VERSION", raising=False)
     command.upgrade(Config("alembic.ini"), "head")
     database = Database(database_url)
     with database.session() as session:
         _seed_saved_search(session)
         session.add(Owner(id="owner-b", display_name="Owner B", timezone="UTC"))
+        record_worker_heartbeat(
+            session,
+            worker_id="role-scan-capability",
+            supported_kinds={scan_worker.SCAN_JOB_KIND},
+            now=datetime.now(timezone.utc),
+        )
     store = SqlAlchemyOpportunityWorkspaceStore(
         database,
         load_data_keyring(production=False),
@@ -147,7 +159,12 @@ def _create_scan(
     )
 
 
-def _run_once(database: Database, *, worker_id: str = "scan-worker"):
+def _run_once(
+    database: Database,
+    *,
+    worker_id: str = "scan-worker",
+    job_kinds: set[str] | None = None,
+):
     return worker.run_worker_once(
         worker_id=worker_id,
         lease_seconds=60,
@@ -156,6 +173,7 @@ def _run_once(database: Database, *, worker_id: str = "scan-worker"):
         enable_tracing=False,
         durable_database=database,
         practical_mode=True,
+        job_kinds=job_kinds,
     )
 
 
@@ -188,6 +206,55 @@ def _install_no_hunt_guards(monkeypatch: pytest.MonkeyPatch) -> list[str]:
     return calls
 
 
+def test_free_tier_embedded_worker_completes_a_durable_scan(
+    scan_workspace: tuple[Database, SqlAlchemyOpportunityWorkspaceStore],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    database, store = scan_workspace
+    monkeypatch.setenv("USE_MOCKS", "1")
+    with database.session() as session:
+        session.execute(delete(WorkerHeartbeat))
+
+    embedded = EmbeddedScanWorker(
+        worker_id="embedded-scan-e2e",
+        idle_sleep_seconds=0.01,
+        error_sleep_seconds=0.01,
+    )
+    embedded.start()
+    try:
+        deadline = time.monotonic() + 3
+        while time.monotonic() < deadline:
+            with database.session() as session:
+                heartbeat = session.get(WorkerHeartbeat, "embedded-scan-e2e")
+                if heartbeat is not None:
+                    break
+            time.sleep(0.01)
+        else:
+            pytest.fail("embedded worker did not publish a readiness heartbeat")
+
+        created = _create_scan(store, idempotency_key="embedded-free-tier")
+        response = created
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline:
+            response = store.get_scan(owner_id=OWNER_ID, scan_id=created.id)
+            assert response is not None
+            if response.status.value in {"succeeded", "partial", "failed"}:
+                break
+            time.sleep(0.02)
+        else:
+            pytest.fail("embedded worker did not complete the queued scan")
+
+        assert response.status.value in {"succeeded", "partial"}
+        assert response.counts.sources_completed == response.counts.sources_total
+        assert response.counts.new_opportunities > 0
+        with database.session() as session:
+            heartbeat = session.get(WorkerHeartbeat, "embedded-scan-e2e")
+            assert heartbeat is not None
+            assert heartbeat.supported_kinds == [scan_worker.SCAN_JOB_KIND]
+    finally:
+        embedded.stop(timeout_seconds=2)
+
+
 def test_mock_scan_retries_idempotently_and_persists_only_public_job_facts(
     scan_workspace: tuple[Database, SqlAlchemyOpportunityWorkspaceStore],
     monkeypatch: pytest.MonkeyPatch,
@@ -208,19 +275,20 @@ def test_mock_scan_retries_idempotently_and_persists_only_public_job_facts(
             raise RuntimeError("simulated process interruption")
 
     monkeypatch.setattr(scan_worker, "_persist_source_result", persist_then_interrupt)
-    interrupted = _run_once(database)
+    scan_only = {scan_worker.SCAN_JOB_KIND}
+    interrupted = _run_once(database, job_kinds=scan_only)
     assert interrupted.claimed is True
     assert interrupted.run_id == created.id
     assert interrupted.status == "queued"
     assert interrupted.stage == "retry_scheduled"
 
     monkeypatch.setattr(scan_worker, "_persist_source_result", real_persist)
-    completed = _run_once(database)
+    completed = _run_once(database, job_kinds=scan_only)
     assert completed.claimed is True
     assert completed.run_id == created.id
     assert completed.status == "succeeded"
     assert completed.stage == "succeeded"
-    assert _run_once(database).claimed is False
+    assert _run_once(database, job_kinds=scan_only).claimed is False
     assert forbidden_calls == []
 
     response = store.get_scan(owner_id=OWNER_ID, scan_id=created.id)
@@ -301,11 +369,7 @@ def test_mock_scan_retries_idempotently_and_persists_only_public_job_facts(
         assert job.attempt_count == 2
         heartbeat = session.get(WorkerHeartbeat, "scan-worker")
         assert heartbeat is not None
-        assert set(heartbeat.supported_kinds) == {
-            "discover_contacts",
-            "legacy_hunt",
-            scan_worker.SCAN_JOB_KIND,
-        }
+        assert set(heartbeat.supported_kinds) == {scan_worker.SCAN_JOB_KIND}
         assert set(worker.PRACTICAL_JOB_KINDS) == {
             "discover_contacts",
             "legacy_hunt",

@@ -24,14 +24,20 @@ def test_compose_restarts_durable_services_and_health_gates_frontend() -> None:
     assert compose["x-backend-environment"]["LEGACY_HUNT_API_MODE"].endswith(
         ":-read_only}"
     )
+    assert compose["x-backend-environment"]["JOB_HUNT_WORKER_KINDS"].endswith(
+        ":-legacy_hunt,scan_saved_search,discover_contacts}"
+    )
     assert "${POSTGRES_PASSWORD:?" in compose["x-backend-environment"]["DATABASE_URL"]
     assert "${POSTGRES_PASSWORD:?" in services["postgres"]["environment"][
         "POSTGRES_PASSWORD"
     ]
     assert services["postgres"]["ports"] == ["127.0.0.1:5432:5432"]
+    assert compose["x-backend-environment"]["ENABLE_EMBEDDED_SCAN_WORKER"].endswith(
+        ":-0}"
+    )
 
 
-def test_render_gates_web_traffic_on_database_readiness_and_legacy_writes() -> None:
+def test_render_runs_free_scan_worker_inside_database_ready_web() -> None:
     render = _yaml("render.yaml")
     web = render["services"][0]
     env = {item["key"]: item for item in web["envVars"]}
@@ -43,6 +49,10 @@ def test_render_gates_web_traffic_on_database_readiness_and_legacy_writes() -> N
     assert env["DATABASE_URL"]["sync"] is False
     assert env["MIGRATE_ON_START"]["value"] == "1"
     assert env["JOB_HUNT_DATA_KEYS"]["sync"] is False
+    assert env["ENABLE_EMBEDDED_SCAN_WORKER"]["value"] == "1"
+    assert env["JOB_HUNT_WORKER_KINDS"]["value"] == "scan_saved_search"
+    assert env["USE_MOCKS"]["value"] == "0"
+    assert len(render["services"]) == 1
 
 
 def test_quality_workflow_runs_operational_gates_with_bounded_jobs() -> None:
@@ -94,5 +104,5 @@ def test_operational_runbook_set_and_manual_browser_matrix_are_present() -> None
     readme = (ROOT / "README.md").read_text(encoding="utf-8")
     hosted_status = readme.split("## Hosted deployment status", maxsplit=1)[1]
     assert "onrender.com/web-ready" in hosted_status
-    assert "`/ready` for provider-job availability" in hosted_status
+    assert "authenticated `/api/health`" in hosted_status
     assert "onrender.com/health" not in hosted_status

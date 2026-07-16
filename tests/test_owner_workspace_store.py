@@ -27,6 +27,7 @@ from job_hunt_agent.owner_workspace import (
     WorkspaceInputError,
     WorkspaceUnavailable,
 )
+from job_hunt_agent.private_payloads import encrypt_private_payload
 from job_hunt_agent.profile_schemas import (
     AchievementEvidenceCreate,
     AchievementEvidencePatch,
@@ -186,6 +187,37 @@ def test_practical_profile_resume_track_search_vertical_path(
         assert raw_resume is not None
         assert "PRIVATE RESUME" not in raw_resume.encrypted_content
         assert session.scalar(select(func.count(OwnerMutationReceipt.id))) == 3
+
+
+def test_legacy_blank_profile_remains_readable_after_write_validation_tightens(
+    workspace: tuple[Database, SqlAlchemyOwnerWorkspaceStore],
+) -> None:
+    database, store = workspace
+    profile_id = "legacyblankprofile"
+    envelope = encrypt_private_payload(
+        store.keyring,
+        record_kind="candidate_profile",
+        owner_id="owner-a",
+        record_id=profile_id,
+        payload={},
+    )
+    with database.session() as session:
+        session.add(
+            CandidateProfile(
+                id=profile_id,
+                owner_id="owner-a",
+                encrypted_payload=envelope.ciphertext,
+                encryption_key_id=envelope.key_id,
+                onboarding_state="profile",
+                version=1,
+            )
+        )
+
+    loaded = store.get_profile(owner_id="owner-a")
+    assert loaded is not None
+    assert loaded.id == profile_id
+    assert loaded.current_title is None
+    assert loaded.employment_types == ["full_time"]
 
 
 def test_idempotency_replay_conflict_versions_and_restrict_delete(

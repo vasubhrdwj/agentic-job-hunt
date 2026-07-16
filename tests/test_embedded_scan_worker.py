@@ -1,0 +1,132 @@
+"""Free-tier embedded scan-worker lifecycle tests."""
+
+from __future__ import annotations
+
+from threading import Event
+
+from fastapi.testclient import TestClient
+
+from job_hunt_agent import embedded_scan_worker
+from job_hunt_agent.opportunity_scan_worker import SCAN_JOB_KIND
+from job_hunt_agent.worker import WorkerResult
+
+
+class _FakeDatabase:
+    def __init__(self) -> None:
+        self.disposed = False
+
+    def dispose(self) -> None:
+        self.disposed = True
+
+
+def test_embedded_scan_worker_enabled_is_explicit(monkeypatch) -> None:
+    monkeypatch.delenv(embedded_scan_worker.EMBEDDED_SCAN_WORKER_ENV, raising=False)
+    assert embedded_scan_worker.embedded_scan_worker_enabled() is False
+    monkeypatch.setenv(embedded_scan_worker.EMBEDDED_SCAN_WORKER_ENV, "1")
+    assert embedded_scan_worker.embedded_scan_worker_enabled() is True
+    monkeypatch.setenv(embedded_scan_worker.EMBEDDED_SCAN_WORKER_ENV, "false")
+    assert embedded_scan_worker.embedded_scan_worker_enabled() is False
+
+
+def test_embedded_worker_claims_only_scan_jobs_and_disposes_database(
+    monkeypatch,
+) -> None:
+    database = _FakeDatabase()
+    called = Event()
+    captured: dict[str, object] = {}
+
+    monkeypatch.setattr(
+        embedded_scan_worker,
+        "database_from_env",
+        lambda *, required: database,
+    )
+
+    def fake_run_worker_once(**kwargs):
+        captured.update(kwargs)
+        called.set()
+        return WorkerResult(claimed=False)
+
+    monkeypatch.setattr(
+        embedded_scan_worker,
+        "run_worker_once",
+        fake_run_worker_once,
+    )
+
+    worker = embedded_scan_worker.EmbeddedScanWorker(
+        worker_id="embedded-test",
+        idle_sleep_seconds=0.01,
+    )
+    worker.start()
+    assert called.wait(timeout=2)
+    worker.stop(timeout_seconds=2)
+
+    assert worker.alive is False
+    assert captured["worker_id"] == "embedded-test"
+    assert captured["durable_database"] is database
+    assert captured["practical_mode"] is True
+    assert captured["job_kinds"] == {SCAN_JOB_KIND}
+    assert database.disposed is True
+
+
+def test_embedded_worker_retries_sanitized_cycle_failures(monkeypatch) -> None:
+    database = _FakeDatabase()
+    attempted_twice = Event()
+    calls = 0
+
+    monkeypatch.setattr(
+        embedded_scan_worker,
+        "database_from_env",
+        lambda *, required: database,
+    )
+
+    def fail_worker_once(**_kwargs):
+        nonlocal calls
+        calls += 1
+        if calls >= 2:
+            attempted_twice.set()
+        raise RuntimeError("private database detail")
+
+    monkeypatch.setattr(
+        embedded_scan_worker,
+        "run_worker_once",
+        fail_worker_once,
+    )
+
+    worker = embedded_scan_worker.EmbeddedScanWorker(
+        worker_id="embedded-retry",
+        error_sleep_seconds=0.01,
+    )
+    worker.start()
+    assert attempted_twice.wait(timeout=2)
+    worker.stop(timeout_seconds=2)
+
+    assert calls >= 2
+    assert database.disposed is True
+
+
+def test_api_lifespan_starts_and_stops_embedded_worker(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    from job_hunt_agent import api
+
+    states: list[str] = []
+
+    class FakeEmbeddedWorker:
+        def start(self) -> None:
+            states.append("started")
+
+        def stop(self) -> None:
+            states.append("stopped")
+
+    monkeypatch.setenv("JOB_HUNT_DB_PATH", str(tmp_path / "embedded-api.db"))
+    monkeypatch.delenv("ENVIRONMENT", raising=False)
+    monkeypatch.delenv("ENABLE_PRACTICAL_MODE", raising=False)
+    monkeypatch.setattr(api, "embedded_scan_worker_enabled", lambda: True)
+    monkeypatch.setattr(api, "EmbeddedScanWorker", FakeEmbeddedWorker)
+
+    app = api.create_app()
+    with TestClient(app):
+        assert states == ["started"]
+
+    assert states == ["started", "stopped"]
