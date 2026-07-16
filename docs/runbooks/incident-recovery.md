@@ -18,7 +18,8 @@
 - Authenticated `/api/health` adds owner-scoped queue counts without private
   payloads.
 - Use stable request IDs and coarse error codes. Do not log resume text,
-  messages, notes, cookies, owner tokens, data keys, or provider credentials.
+  messages, notes, cookies, private access keys, data keys, or provider
+  credentials.
 
 ## Recover
 

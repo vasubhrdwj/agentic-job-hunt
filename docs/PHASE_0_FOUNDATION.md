@@ -122,11 +122,12 @@ TEST_DATABASE_URL="postgresql+psycopg://job_hunt:${POSTGRES_PASSWORD}@localhost:
 docker compose up web worker frontend
 ```
 
-Generate the private owner credential once with:
+Generate the private workspace access key once with:
 
 ```bash
 .venv/bin/python scripts/generate_owner_token.py
 ```
 
-Save the plaintext token in a password manager and put only the printed hash in
-`JOB_HUNT_OWNER_TOKEN_HASH`.
+Save the printed access key in a password manager and put only its printed hash
+in `JOB_HUNT_OWNER_TOKEN_HASH`. The access key is not a user ID and is normally
+entered only when starting a new browser session.

@@ -1,4 +1,4 @@
-"""Generate the one-time private workspace token and its stored SHA-256 hash."""
+"""Generate the one-time private workspace access key and stored hash."""
 
 from __future__ import annotations
 
@@ -12,7 +12,10 @@ def main() -> None:
     token = secrets.token_urlsafe(32)
     digest = hashlib.sha256(token.encode("utf-8")).hexdigest()
     data_key = Fernet.generate_key().decode("ascii")
-    print("Owner token (save this in your password manager; do not put it in .env):")
+    print(
+        "Private workspace access key "
+        "(save this in your password manager; do not put it in .env):"
+    )
     print(token)
     print("\nBackend .env values (keep this file private and never commit it):")
     print(f"JOB_HUNT_OWNER_TOKEN_HASH={digest}")

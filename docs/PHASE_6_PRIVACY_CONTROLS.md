@@ -55,7 +55,7 @@ domain-separated HMAC of the owner ID. It has no foreign key to the deleted
 owner and contains no raw owner ID or private payload. Production requires a
 stable `JOB_HUNT_PRIVACY_RECEIPT_SECRET` so owner credential rotation cannot
 change deletion identity. Development alone may fall back to the configured
-owner-token digest.
+private-access-key digest.
 
 The `20260715_0018` downgrade refuses to discard any retention setting or
 deletion receipt. An operator must deliberately preserve and clear that state

@@ -46,7 +46,8 @@ JavaScript. The proxy caps request/response sizes and aborts slow upstreams.
 
 ## Pages
 
-- `/login` — exchange the private owner token for an HttpOnly session.
+- `/login` — exchange the generated private workspace access key for an
+  HttpOnly session.
 - `/` — authenticated resume + criteria input and "Run hunt" button.
 - `/privacy` — resume, provider-retention, tracing, and deletion disclosure.
 - `/runs/[runId]` — private status/review page; polls queued/running runs, supports cancellation, and shows terminal failures.

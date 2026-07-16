@@ -159,7 +159,7 @@ docker compose run --rm migrate
 docker compose up web worker frontend
 ```
 
-Open <http://localhost:3000>, enter the one-time owner token, and keep
+Open <http://localhost:3000>, enter the generated private access key, and keep
 `ENABLE_PRACTICAL_MODE=1` whenever real provider calls are possible.
 
 If `postgres_data` already exists from the old fixed-password setup, PostgreSQL
@@ -330,7 +330,8 @@ Configure persistence and CORS via env:
   defaults to read-only; use the practical workspace for new work.
 - `LEGACY_HUNT_API_SUNSET` / `LEGACY_HUNT_DEPRECATION_URL` — validated
   compatibility sunset metadata. The production link must use HTTPS.
-- `JOB_HUNT_OWNER_TOKEN_HASH` — SHA-256 of the private owner-login token.
+- `JOB_HUNT_OWNER_TOKEN_HASH` — SHA-256 of the generated private workspace
+  access key. The environment name is retained for compatibility.
 - `JOB_HUNT_PRIVACY_RECEIPT_SECRET` — stable 32+ character server-only HMAC
   secret so deletion idempotency survives owner-login credential rotation.
 - `JOB_HUNT_DATA_KEYS` — comma-separated `key-id:Fernet-key` values. The first
