@@ -517,23 +517,24 @@ def _within_max_age(
         return True
     if not posted_at:
         LOGGER.warning(
-            "Skipping Greenhouse job %s for %s: missing first_published prevents "
-            "max-age validation.",
+            "Keeping Greenhouse job %s for %s with unknown freshness because "
+            "first_published is missing.",
             job_id,
             company_slug,
         )
-        return False
+        return True
 
     try:
         published = _parse_greenhouse_datetime(posted_at)
     except ValueError:
         LOGGER.warning(
-            "Skipping Greenhouse job %s for %s: invalid first_published %r.",
+            "Keeping Greenhouse job %s for %s with unknown freshness because "
+            "first_published %r is invalid.",
             job_id,
             company_slug,
             posted_at,
         )
-        return False
+        return True
 
     cutoff = _utc_now() - timedelta(days=max_age_days)
     if published < cutoff:

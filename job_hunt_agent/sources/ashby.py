@@ -478,12 +478,13 @@ def _within_max_age(
         return True
     if not posted_at:
         logger.warning(
-            "Skipping %s job %s for %s: missing posted date prevents max-age validation.",
+            "Keeping %s job %s for %s with unknown freshness because the posted "
+            "date is missing.",
             source_name,
             job_id,
             company_slug,
         )
-        return False
+        return True
     try:
         normalized = posted_at[:-1] + "+00:00" if posted_at.endswith("Z") else posted_at
         parsed = datetime.fromisoformat(normalized)
@@ -492,13 +493,14 @@ def _within_max_age(
         parsed = parsed.astimezone(timezone.utc)
     except ValueError:
         logger.warning(
-            "Skipping %s job %s for %s: invalid posted date %r.",
+            "Keeping %s job %s for %s with unknown freshness because posted date "
+            "%r is invalid.",
             source_name,
             job_id,
             company_slug,
             posted_at,
         )
-        return False
+        return True
     return parsed >= _utc_now() - timedelta(days=max_age_days)
 
 

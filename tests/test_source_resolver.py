@@ -234,7 +234,7 @@ def test_cache_separates_fallback_enabled_and_disabled_results():
     assert fallback.calls == 1
 
 
-def test_filters_stale_wrong_type_and_unverifiable_dates():
+def test_filters_known_stale_and_wrong_type_but_preserves_unknown_dates():
     primary = FakeAdapter(
         name="greenhouse",
         supported_source=CompanySource.greenhouse,
@@ -247,6 +247,11 @@ def test_filters_stale_wrong_type_and_unverifiable_dates():
                 url="https://acme.example/jobs/undated",
                 posted_at=None,
             ),
+            _role(
+                title="Unparseable date",
+                url="https://acme.example/jobs/unparseable-date",
+                posted_at="not-a-date",
+            ),
         ],
     )
     resolver = SourceResolver([primary], fallback=FakeAdapter(name="google_jobs"))
@@ -257,10 +262,14 @@ def test_filters_stale_wrong_type_and_unverifiable_dates():
         use_cache=False,
     )
 
-    assert [role.title for role in roles] == ["Fresh"]
+    assert [role.title for role in roles] == [
+        "Fresh",
+        "Undated",
+        "Unparseable date",
+    ]
 
 
-def test_full_time_filter_rejects_unknown_employment_type():
+def test_full_time_filter_preserves_unknown_employment_type():
     primary = FakeAdapter(
         name="greenhouse",
         supported_source=CompanySource.greenhouse,
@@ -273,11 +282,14 @@ def test_full_time_filter_rejects_unknown_employment_type():
     )
     resolver = SourceResolver([primary], fallback=FakeAdapter(name="google_jobs"))
 
-    assert resolver.fetch_company_roles(
+    roles = resolver.fetch_company_roles(
         _company(),
         _criteria(),
         use_cache=False,
-    ) == []
+    )
+
+    assert len(roles) == 1
+    assert roles[0].employment_type is EmploymentType.unknown
 
 
 def test_junior_backend_intent_rejects_frontend_mobile_and_high_experience():

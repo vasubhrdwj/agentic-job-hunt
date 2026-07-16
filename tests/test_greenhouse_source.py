@@ -210,14 +210,28 @@ def test_max_age_none_disables_freshness_filter(
     assert len(roles) == 1
 
 
-def test_invalid_first_published_cannot_bypass_max_age_filter(
+@pytest.mark.parametrize(
+    ("first_published", "expected_posted_at", "expected_warning"),
+    [
+        (None, None, "first_published is missing"),
+        (
+            "not-a-timestamp",
+            "not-a-timestamp",
+            "first_published 'not-a-timestamp' is invalid",
+        ),
+    ],
+)
+def test_unverifiable_first_published_is_preserved_as_unknown_freshness(
     monkeypatch: pytest.MonkeyPatch,
     caplog: pytest.LogCaptureFixture,
     company: Company,
     criteria: JobCriteria,
+    first_published: str | None,
+    expected_posted_at: str | None,
+    expected_warning: str,
 ) -> None:
     payload = json.loads(_fixture_bytes())
-    payload["jobs"][0]["first_published"] = "not-a-timestamp"
+    payload["jobs"][0]["first_published"] = first_published
     _install_response(monkeypatch, json.dumps(payload).encode())
 
     with caplog.at_level(logging.WARNING, logger=greenhouse.__name__):
@@ -226,8 +240,10 @@ def test_invalid_first_published_cannot_bypass_max_age_filter(
             criteria.model_copy(update={"max_age_days": 45}),
         )
 
-    assert roles == []
-    assert "invalid first_published" in caplog.text
+    assert len(roles) == 1
+    assert roles[0].posted_at == expected_posted_at
+    assert "unknown freshness" in caplog.text
+    assert expected_warning in caplog.text
 
 
 def test_keyword_matching_requires_token_or_phrase_boundaries(

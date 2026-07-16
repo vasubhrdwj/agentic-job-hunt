@@ -309,13 +309,15 @@ def _filter_and_dedupe(roles: Iterable[Role], criteria: JobCriteria) -> list[Rol
             continue
         if (
             criteria.employment_types
+            and role.employment_type is not EmploymentType.unknown
             and role.employment_type not in criteria.employment_types
         ):
             continue
         age = _age_days(role.posted_at)
         if (
             criteria.max_age_days is not None
-            and (age is None or age > criteria.max_age_days)
+            and age is not None
+            and age > criteria.max_age_days
         ):
             continue
         filtered.append(role)

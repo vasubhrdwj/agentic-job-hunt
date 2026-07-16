@@ -410,21 +410,25 @@ def test_rejects_job_without_any_trusted_first_party_url(
     assert "missing trusted first-party apply URL" in caplog.text
 
 
-def test_invalid_posted_date_cannot_bypass_freshness_filter(
+@pytest.mark.parametrize("posted_date", [None, "recently"])
+def test_unverifiable_posted_date_is_preserved_as_unknown_freshness(
     monkeypatch: pytest.MonkeyPatch,
     fixture_payload: dict[str, object],
     company: Company,
     criteria: JobCriteria,
     caplog: pytest.LogCaptureFixture,
+    posted_date: str | None,
 ) -> None:
     payload = copy.deepcopy(fixture_payload)
-    payload["jobs"][0]["posted_date"] = "recently"
+    payload["jobs"][0]["posted_date"] = posted_date
     _install_response(monkeypatch, json.dumps(payload).encode())
 
     with caplog.at_level(logging.WARNING, logger=amazon.__name__):
         roles = AmazonAdapter().fetch_open_roles(company, criteria)
 
-    assert roles == []
+    assert len(roles) == 1
+    assert roles[0].posted_at is None
+    assert "unknown freshness" in caplog.text
     assert "posted_date is missing or invalid" in caplog.text
 
 

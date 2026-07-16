@@ -445,10 +445,11 @@ def _within_max_age(
         return True
     if posted_at is None:
         LOGGER.warning(
-            "Skipping Amazon job %s because posted_date is missing or invalid.",
+            "Keeping Amazon job %s with unknown freshness because posted_date is "
+            "missing or invalid.",
             job_id,
         )
-        return False
+        return True
     posted = datetime.fromisoformat(posted_at).date()
     cutoff = _utc_now().date() - timedelta(days=max_age_days)
     return posted >= cutoff

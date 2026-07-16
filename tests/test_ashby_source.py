@@ -199,6 +199,33 @@ def test_criteria_filters(
     )
 
 
+@pytest.mark.parametrize(
+    ("published_at", "expected_posted_at"),
+    [
+        (None, None),
+        ("not-a-timestamp", "not-a-timestamp"),
+    ],
+)
+def test_unverifiable_published_date_is_preserved_as_unknown_freshness(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+    company: Company,
+    criteria: JobCriteria,
+    published_at: str | None,
+    expected_posted_at: str | None,
+) -> None:
+    payload = _payload()
+    payload["jobs"][0]["publishedAt"] = published_at
+    _install(monkeypatch, payload)
+
+    with caplog.at_level(logging.WARNING, logger=ashby.__name__):
+        roles = AshbyAdapter().fetch_open_roles(company, criteria)
+
+    assert len(roles) == 1
+    assert roles[0].posted_at == expected_posted_at
+    assert "unknown freshness" in caplog.text
+
+
 def test_does_not_merge_distinct_locations(
     monkeypatch: pytest.MonkeyPatch,
     company: Company,

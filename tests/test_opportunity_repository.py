@@ -517,6 +517,43 @@ def test_repeated_and_changed_sightings_version_one_stable_opportunity(
         ) is None
 
 
+def test_unknown_source_date_and_employment_type_remain_visible(
+    radar: tuple[Database, DataKeyring],
+) -> None:
+    database, keyring = radar
+    with database.session() as session:
+        persisted = persist_scan_source_role(
+            session,
+            owner_id="owner-a",
+            scan_source_id="source-a1",
+            role=_role(
+                posted_at="not-a-date",
+                employment_type=EmploymentType.unknown,
+            ),
+            first_party_url_verified=True,
+            now=NOW,
+        )
+
+        today = list_today_opportunities(
+            session,
+            owner_id="owner-a",
+            query=TodayQuery(),
+            keyring=keyring,
+            now=NOW,
+        )
+
+        assert len(today.items) == 1
+        item = today.items[0]
+        assert item.id == persisted.opportunity_id
+        assert item.facts.employment_type.state.value == "unknown"
+        assert item.facts.posted_date.state.value == "unknown"
+        assert [unknown.field.value for unknown in item.unknowns] == [
+            "employment_type",
+            "posted_date",
+            "compensation",
+        ]
+
+
 def test_late_lock_with_older_scan_time_keeps_posting_history_monotonic(
     radar: tuple[Database, DataKeyring],
 ) -> None:
