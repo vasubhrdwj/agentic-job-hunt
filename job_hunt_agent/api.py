@@ -24,10 +24,11 @@ from fastapi.security import APIKeyCookie, HTTPAuthorizationCredentials, HTTPBea
 from pydantic import BaseModel, Field
 from sqlalchemy.exc import SQLAlchemyError
 
-from . import hunt_repository, persistence
+from . import hunt_repository, persistence, privacy_repository
 from .database import DatabaseConfigError, database_from_env, resolve_database_url
 from .requests import HuntRequestPayload, canonical_request_json
 from .routers.health import create_health_router
+from .routers.privacy import create_privacy_router
 from .routers.applications import create_application_router
 from .routers.opportunities import create_opportunity_router
 from .routers.workspace import (
@@ -55,6 +56,12 @@ from .sources.registry import RegistryError, load_company_pack
 from .sqlalchemy_owner_workspace import SqlAlchemyOwnerWorkspaceStore
 from .sqlalchemy_application_workspace import SqlAlchemyApplicationWorkspaceStore
 from .sqlalchemy_opportunity_workspace import SqlAlchemyOpportunityWorkspaceStore
+from .legacy_policy import (
+    is_legacy_hunt_path,
+    legacy_deprecation_headers,
+    legacy_hunt_api_mode,
+    legacy_request_problem,
+)
 
 
 TRUTHY_ENV_VALUES = {"1", "true", "yes", "on"}
@@ -180,6 +187,10 @@ def _parse_allowed_origins() -> list[str]:
 
 
 def _validate_production_config() -> None:
+    # Validate the enum and deprecation metadata even outside production so a
+    # typo cannot silently reopen or hide the compatibility API.
+    legacy_mode = legacy_hunt_api_mode(production=_is_production())
+    legacy_deprecation_headers(legacy_mode, production=_is_production())
     if not _is_production():
         return
 
@@ -320,6 +331,11 @@ def create_app() -> FastAPI:
     _validate_production_config()
     app = FastAPI(title="Job Hunt Signal API", version="0.4.0")
     practical_mode = _practical_mode_enabled()
+    legacy_mode = legacy_hunt_api_mode(production=_is_production())
+    legacy_headers = legacy_deprecation_headers(
+        legacy_mode,
+        production=_is_production(),
+    )
     allowed_origins = _parse_allowed_origins()
     owner_cookie = APIKeyCookie(
         name=session_cookie_name(),
@@ -351,8 +367,45 @@ def create_app() -> FastAPI:
             "X-Run-Access-Token",
             "X-CSRF-Token",
         ],
-        expose_headers=["ETag", "X-Request-ID"],
+        expose_headers=[
+            "Deprecation",
+            "ETag",
+            "Link",
+            "Sunset",
+            "X-Legacy-Hunt-Mode",
+            "X-Request-ID",
+        ],
     )
+
+    @app.middleware("http")
+    async def enforce_legacy_hunt_policy(request: Request, call_next):
+        if not is_legacy_hunt_path(request.url.path):
+            return await call_next(request)
+        request_id = getattr(request.state, "request_id", None) or uuid4().hex
+        request.state.request_id = request_id
+        problem = legacy_request_problem(
+            legacy_mode,
+            method=request.method,
+            path=request.url.path,
+        )
+        if problem is not None:
+            problem["request_id"] = request_id
+            return JSONResponse(
+                status_code=status.HTTP_410_GONE,
+                content=problem,
+                headers={
+                    **legacy_headers,
+                    "Cache-Control": "no-store, max-age=0",
+                    "Pragma": "no-cache",
+                    "X-Request-ID": request_id,
+                },
+                media_type="application/problem+json",
+            )
+        response = await call_next(request)
+        for name, value in legacy_headers.items():
+            response.headers[name] = value
+        response.headers.setdefault("X-Request-ID", request_id)
+        return response
 
     try:
         practical_database = database_from_env(required=False)
@@ -386,6 +439,7 @@ def create_app() -> FastAPI:
                     ):
                         with practical_database.session() as session:
                             hunt_repository.purge_expired_hunts(session, now=now)
+                            privacy_repository.purge_configured_hunts(session, now=now)
                         cleanup_succeeded = True
                 else:
                     persistence.purge_expired_data(now=now)
@@ -411,6 +465,8 @@ def create_app() -> FastAPI:
             or request.url.path.startswith("/api/today/")
             or request.url.path.startswith("/api/opportunities")
             or request.url.path.startswith("/api/applications")
+            or request.url.path.startswith("/api/review")
+            or request.url.path.startswith("/api/privacy")
         ):
             response.headers["Cache-Control"] = "no-store, max-age=0"
             response.headers["Pragma"] = "no-cache"
@@ -475,6 +531,15 @@ def create_app() -> FastAPI:
     app.state.opportunity_workspace_store = opportunity_store
     app.state.application_workspace_store = application_store
     app.state.contact_workspace_store = application_store
+    if practical_mode:
+        app.include_router(
+            create_privacy_router(
+                practical_database,
+                data_keyring,
+                allowed_origins=allowed_origins,
+                production=_is_production(),
+            )
+        )
     if practical_mode:
         app.include_router(
             create_workspace_router(
@@ -607,6 +672,7 @@ def create_app() -> FastAPI:
         "/api/hunt",
         response_model=HuntCreatedResponse,
         status_code=status.HTTP_202_ACCEPTED,
+        deprecated=True,
     )
     def post_hunt(
         payload: HuntRequestPayload,
@@ -636,6 +702,11 @@ def create_app() -> FastAPI:
                     # Idempotency is bounded by run retention. Purge first so
                     # an expired key cannot resurrect or extend an old run.
                     hunt_repository.purge_expired_hunts(session, now=now)
+                    privacy_repository.purge_configured_hunts(session, now=now)
+                    retention_days = privacy_repository.get_owner_hunt_retention_days(
+                        session,
+                        owner_id=owner.owner_id,
+                    )
                     created = hunt_repository.create_or_reuse_hunt(
                         session,
                         owner_id=owner.owner_id,
@@ -644,7 +715,7 @@ def create_app() -> FastAPI:
                         access_hash=hash_access_token(access_token),
                         keyring=data_keyring,
                         request_expires_at=now + timedelta(hours=REQUEST_RETENTION_HOURS),
-                        access_expires_at=now + timedelta(days=RUN_RETENTION_DAYS),
+                        access_expires_at=now + timedelta(days=retention_days),
                         idempotency_key_hash=idempotency_key_hash,
                         actor=f"owner:{owner.owner_id}",
                         now=now,
@@ -706,6 +777,7 @@ def create_app() -> FastAPI:
     @app.post(
         "/api/runs/{run_id}/outcomes",
         response_model=OutcomesResponse,
+        deprecated=True,
     )
     def post_outcomes(
         run_id: str,
@@ -791,6 +863,7 @@ def create_app() -> FastAPI:
     @app.get(
         "/api/runs/{run_id}",
         response_model=RunDetailResponse,
+        deprecated=True,
     )
     def get_run(
         run_id: str,
@@ -854,6 +927,7 @@ def create_app() -> FastAPI:
     @app.post(
         "/api/runs/{run_id}/cancel",
         response_model=RunStateResponse,
+        deprecated=True,
     )
     def cancel_run(
         run_id: str,
@@ -882,6 +956,7 @@ def create_app() -> FastAPI:
     @app.post(
         "/api/runs/{run_id}/requeue",
         response_model=RunStateResponse,
+        deprecated=True,
     )
     def requeue_run(
         run_id: str,
@@ -939,6 +1014,7 @@ def create_app() -> FastAPI:
     @app.delete(
         "/api/runs/{run_id}",
         response_model=DeleteResponse,
+        deprecated=True,
     )
     def delete_run(
         run_id: str,

@@ -8,6 +8,7 @@ type WorkspaceSection =
   | "review"
   | "searches"
   | "profile"
+  | "privacy"
   | "hunt";
 
 const NAV_ITEMS: Array<{
@@ -20,6 +21,7 @@ const NAV_ITEMS: Array<{
   { href: "/review", label: "Weekly review", section: "review" },
   { href: "/searches", label: "Saved searches", section: "searches" },
   { href: "/profile", label: "Profile", section: "profile" },
+  { href: "/privacy", label: "Privacy", section: "privacy" },
   { href: "/hunt", label: "Legacy hunt", section: "hunt" },
 ];
 

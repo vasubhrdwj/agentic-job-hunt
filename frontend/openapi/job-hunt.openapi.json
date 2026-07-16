@@ -1661,6 +1661,215 @@
         "title": "ApplicationDetailResponse",
         "type": "object"
       },
+      "ApplicationInterviewPreparationResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "application_id": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
+            "title": "Application Id",
+            "type": "string"
+          },
+          "application_submission_id": {
+            "anyOf": [
+              {
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Application Submission Id"
+          },
+          "application_version": {
+            "minimum": 1.0,
+            "title": "Application Version",
+            "type": "integer"
+          },
+          "blockers": {
+            "items": {
+              "$ref": "#/components/schemas/InterviewPreparationBlocker"
+            },
+            "maxItems": 10,
+            "title": "Blockers",
+            "type": "array"
+          },
+          "data_source": {
+            "const": "database",
+            "default": "database",
+            "title": "Data Source",
+            "type": "string"
+          },
+          "disclaimer": {
+            "const": "Prompts are deterministic scaffolds. Only you can supply and verify the STAR details; no answer is treated as generated truth.",
+            "default": "Prompts are deterministic scaffolds. Only you can supply and verify the STAR details; no answer is treated as generated truth.",
+            "title": "Disclaimer",
+            "type": "string"
+          },
+          "evidence_gaps": {
+            "items": {
+              "$ref": "#/components/schemas/InterviewPreparationEvidenceGap"
+            },
+            "maxItems": 40,
+            "title": "Evidence Gaps",
+            "type": "array"
+          },
+          "generation_method": {
+            "const": "deterministic_scaffold",
+            "default": "deterministic_scaffold",
+            "title": "Generation Method",
+            "type": "string"
+          },
+          "grounding_revision_id": {
+            "anyOf": [
+              {
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Grounding Revision Id"
+          },
+          "latest_revision": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/InterviewPreparationRevisionSummary"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "next_steps": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 10,
+            "title": "Next Steps",
+            "type": "array"
+          },
+          "preparation_id": {
+            "anyOf": [
+              {
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Preparation Id"
+          },
+          "preparation_version": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Preparation Version"
+          },
+          "previous_context_stale": {
+            "default": false,
+            "title": "Previous Context Stale",
+            "type": "boolean"
+          },
+          "previous_prompts": {
+            "description": "Read-only owner-authored prompts from the latest saved revision when its pinned context no longer matches the current target.",
+            "items": {
+              "$ref": "#/components/schemas/InterviewPreparationPrompt"
+            },
+            "maxItems": 12,
+            "title": "Previous Prompts",
+            "type": "array"
+          },
+          "prompt_capacity": {
+            "const": 12,
+            "default": 12,
+            "title": "Prompt Capacity",
+            "type": "integer"
+          },
+          "prompts": {
+            "items": {
+              "$ref": "#/components/schemas/InterviewPreparationPrompt"
+            },
+            "maxItems": 12,
+            "title": "Prompts",
+            "type": "array"
+          },
+          "required_evidence_backed_count": {
+            "maximum": 40.0,
+            "minimum": 0.0,
+            "title": "Required Evidence Backed Count",
+            "type": "integer"
+          },
+          "requirements": {
+            "items": {
+              "$ref": "#/components/schemas/InterviewPreparationRequirement"
+            },
+            "maxItems": 40,
+            "title": "Requirements",
+            "type": "array"
+          },
+          "role": {
+            "$ref": "#/components/schemas/InterviewPreparationRoleContext"
+          },
+          "source_fingerprint": {
+            "anyOf": [
+              {
+                "pattern": "^[0-9a-f]{64}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Fingerprint"
+          },
+          "status": {
+            "$ref": "#/components/schemas/InterviewPreparationStatus"
+          },
+          "target": {
+            "$ref": "#/components/schemas/InterviewPreparationTarget"
+          },
+          "truth_policy": {
+            "const": "owner_authored_only",
+            "default": "owner_authored_only",
+            "title": "Truth Policy",
+            "type": "string"
+          },
+          "write_version": {
+            "minimum": 1.0,
+            "title": "Write Version",
+            "type": "integer"
+          },
+          "write_version_scope": {
+            "enum": [
+              "application",
+              "preparation"
+            ],
+            "title": "Write Version Scope",
+            "type": "string"
+          }
+        },
+        "required": [
+          "application_id",
+          "application_version",
+          "write_version_scope",
+          "write_version",
+          "status",
+          "role",
+          "target",
+          "required_evidence_backed_count"
+        ],
+        "title": "ApplicationInterviewPreparationResponse",
+        "type": "object"
+      },
       "ApplicationInterviewRoundsResponse": {
         "additionalProperties": false,
         "properties": {
@@ -4343,6 +4552,64 @@
         "title": "DeleteResponse",
         "type": "object"
       },
+      "DeletionPreviewResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "active_sessions": {
+            "minimum": 0.0,
+            "title": "Active Sessions",
+            "type": "integer"
+          },
+          "confirmation_phrase": {
+            "title": "Confirmation Phrase",
+            "type": "string"
+          },
+          "export_recommended": {
+            "default": true,
+            "title": "Export Recommended",
+            "type": "boolean"
+          },
+          "external_data_limits": {
+            "items": {
+              "$ref": "#/components/schemas/ExternalDataLimit"
+            },
+            "title": "External Data Limits",
+            "type": "array"
+          },
+          "owner_id": {
+            "title": "Owner Id",
+            "type": "string"
+          },
+          "row_counts": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Row Counts",
+            "type": "object"
+          },
+          "schema_version": {
+            "const": 1,
+            "default": 1,
+            "title": "Schema Version",
+            "type": "integer"
+          },
+          "total_rows": {
+            "minimum": 0.0,
+            "title": "Total Rows",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "owner_id",
+          "confirmation_phrase",
+          "row_counts",
+          "total_rows",
+          "active_sessions",
+          "external_data_limits"
+        ],
+        "title": "DeletionPreviewResponse",
+        "type": "object"
+      },
       "DismissReason": {
         "enum": [
           "not_relevant",
@@ -4471,6 +4738,41 @@
         ],
         "title": "EvidenceState",
         "type": "string"
+      },
+      "ExternalDataLimit": {
+        "additionalProperties": false,
+        "properties": {
+          "category": {
+            "title": "Category",
+            "type": "string"
+          },
+          "provider": {
+            "title": "Provider",
+            "type": "string"
+          },
+          "source_url": {
+            "title": "Source Url",
+            "type": "string"
+          },
+          "summary": {
+            "title": "Summary",
+            "type": "string"
+          },
+          "verified_on": {
+            "format": "date",
+            "title": "Verified On",
+            "type": "string"
+          }
+        },
+        "required": [
+          "provider",
+          "category",
+          "summary",
+          "source_url",
+          "verified_on"
+        ],
+        "title": "ExternalDataLimit",
+        "type": "object"
       },
       "FunnelSegmentMetric": {
         "additionalProperties": false,
@@ -4885,6 +5187,512 @@
           "unspecified"
         ],
         "title": "InterviewMeetingFormat",
+        "type": "string"
+      },
+      "InterviewPreparationBlocker": {
+        "enum": [
+          "application_not_submitted",
+          "application_closed",
+          "reviewed_application_pack_missing",
+          "approved_evidence_missing",
+          "evidence_snapshot_changed",
+          "required_requirement_evidence_missing",
+          "required_prompt_capacity_exceeded"
+        ],
+        "title": "InterviewPreparationBlocker",
+        "type": "string"
+      },
+      "InterviewPreparationEvidenceGap": {
+        "additionalProperties": false,
+        "properties": {
+          "importance": {
+            "enum": [
+              "required",
+              "preferred"
+            ],
+            "title": "Importance",
+            "type": "string"
+          },
+          "reason": {
+            "enum": [
+              "no_approved_evidence",
+              "evidence_changed"
+            ],
+            "title": "Reason",
+            "type": "string"
+          },
+          "requirement_id": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
+            "title": "Requirement Id",
+            "type": "string"
+          },
+          "requirement_text": {
+            "maxLength": 2000,
+            "minLength": 1,
+            "title": "Requirement Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "requirement_id",
+          "importance",
+          "requirement_text",
+          "reason"
+        ],
+        "title": "InterviewPreparationEvidenceGap",
+        "type": "object"
+      },
+      "InterviewPreparationPrompt": {
+        "additionalProperties": false,
+        "properties": {
+          "category": {
+            "$ref": "#/components/schemas/InterviewPreparationPromptCategory"
+          },
+          "draft": {
+            "$ref": "#/components/schemas/InterviewPreparationStarDraft"
+          },
+          "evidence": {
+            "items": {
+              "$ref": "#/components/schemas/ApplicationPackEvidenceSnapshot"
+            },
+            "maxItems": 10,
+            "minItems": 1,
+            "title": "Evidence",
+            "type": "array"
+          },
+          "id": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
+            "title": "Id",
+            "type": "string"
+          },
+          "missing_sections": {
+            "items": {
+              "enum": [
+                "situation",
+                "task",
+                "action",
+                "result"
+              ],
+              "type": "string"
+            },
+            "maxItems": 4,
+            "title": "Missing Sections",
+            "type": "array"
+          },
+          "question": {
+            "maxLength": 1000,
+            "minLength": 1,
+            "title": "Question",
+            "type": "string"
+          },
+          "requirement_id": {
+            "anyOf": [
+              {
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Requirement Id"
+          },
+          "requirement_text": {
+            "anyOf": [
+              {
+                "maxLength": 2000,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Requirement Text"
+          }
+        },
+        "required": [
+          "id",
+          "category",
+          "question",
+          "evidence",
+          "draft"
+        ],
+        "title": "InterviewPreparationPrompt",
+        "type": "object"
+      },
+      "InterviewPreparationPromptCategory": {
+        "enum": [
+          "role_motivation",
+          "key_requirement",
+          "impact",
+          "conflict_ambiguity",
+          "failure_learning",
+          "leadership_collaboration"
+        ],
+        "title": "InterviewPreparationPromptCategory",
+        "type": "string"
+      },
+      "InterviewPreparationPromptDraftCreate": {
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "default": "",
+            "maxLength": 3000,
+            "title": "Action",
+            "type": "string"
+          },
+          "prompt_id": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
+            "title": "Prompt Id",
+            "type": "string"
+          },
+          "result": {
+            "default": "",
+            "maxLength": 3000,
+            "title": "Result",
+            "type": "string"
+          },
+          "situation": {
+            "default": "",
+            "maxLength": 3000,
+            "title": "Situation",
+            "type": "string"
+          },
+          "task": {
+            "default": "",
+            "maxLength": 3000,
+            "title": "Task",
+            "type": "string"
+          }
+        },
+        "required": [
+          "prompt_id"
+        ],
+        "title": "InterviewPreparationPromptDraftCreate",
+        "type": "object"
+      },
+      "InterviewPreparationRequirement": {
+        "additionalProperties": false,
+        "properties": {
+          "coverage": {
+            "enum": [
+              "supported",
+              "partial",
+              "unsupported",
+              "needs_review"
+            ],
+            "title": "Coverage",
+            "type": "string"
+          },
+          "evidence": {
+            "items": {
+              "$ref": "#/components/schemas/ApplicationPackEvidenceSnapshot"
+            },
+            "maxItems": 10,
+            "title": "Evidence",
+            "type": "array"
+          },
+          "id": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
+            "title": "Id",
+            "type": "string"
+          },
+          "importance": {
+            "enum": [
+              "required",
+              "preferred"
+            ],
+            "title": "Importance",
+            "type": "string"
+          },
+          "ordinal": {
+            "maximum": 40.0,
+            "minimum": 1.0,
+            "title": "Ordinal",
+            "type": "integer"
+          },
+          "text": {
+            "maxLength": 2000,
+            "minLength": 1,
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "ordinal",
+          "importance",
+          "text",
+          "coverage"
+        ],
+        "title": "InterviewPreparationRequirement",
+        "type": "object"
+      },
+      "InterviewPreparationRevisionCreate": {
+        "additionalProperties": false,
+        "properties": {
+          "confirm_owner_authored": {
+            "const": true,
+            "title": "Confirm Owner Authored",
+            "type": "boolean"
+          },
+          "parent_revision_id": {
+            "anyOf": [
+              {
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Revision Id"
+          },
+          "prompt_drafts": {
+            "items": {
+              "$ref": "#/components/schemas/InterviewPreparationPromptDraftCreate"
+            },
+            "maxItems": 12,
+            "minItems": 1,
+            "title": "Prompt Drafts",
+            "type": "array"
+          },
+          "source_fingerprint": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Source Fingerprint",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source_fingerprint",
+          "prompt_drafts",
+          "confirm_owner_authored"
+        ],
+        "title": "InterviewPreparationRevisionCreate",
+        "type": "object"
+      },
+      "InterviewPreparationRevisionSummary": {
+        "additionalProperties": false,
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
+            "title": "Id",
+            "type": "string"
+          },
+          "parent_revision_id": {
+            "anyOf": [
+              {
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Revision Id"
+          },
+          "recording_method": {
+            "const": "owner_authored",
+            "title": "Recording Method",
+            "type": "string"
+          },
+          "revision_number": {
+            "minimum": 1.0,
+            "title": "Revision Number",
+            "type": "integer"
+          },
+          "source_fingerprint": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Source Fingerprint",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "revision_number",
+          "source_fingerprint",
+          "recording_method",
+          "created_at"
+        ],
+        "title": "InterviewPreparationRevisionSummary",
+        "type": "object"
+      },
+      "InterviewPreparationRoleContext": {
+        "additionalProperties": false,
+        "properties": {
+          "company": {
+            "maxLength": 240,
+            "minLength": 1,
+            "title": "Company",
+            "type": "string"
+          },
+          "job_posting_id": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
+            "title": "Job Posting Id",
+            "type": "string"
+          },
+          "posting_version_id": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
+            "title": "Posting Version Id",
+            "type": "string"
+          },
+          "summary": {
+            "maxLength": 20000,
+            "title": "Summary",
+            "type": "string"
+          },
+          "title": {
+            "maxLength": 300,
+            "minLength": 1,
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "job_posting_id",
+          "posting_version_id",
+          "company",
+          "title",
+          "summary"
+        ],
+        "title": "InterviewPreparationRoleContext",
+        "type": "object"
+      },
+      "InterviewPreparationStarDraft": {
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "default": "",
+            "maxLength": 3000,
+            "title": "Action",
+            "type": "string"
+          },
+          "result": {
+            "default": "",
+            "maxLength": 3000,
+            "title": "Result",
+            "type": "string"
+          },
+          "situation": {
+            "default": "",
+            "maxLength": 3000,
+            "title": "Situation",
+            "type": "string"
+          },
+          "task": {
+            "default": "",
+            "maxLength": 3000,
+            "title": "Task",
+            "type": "string"
+          }
+        },
+        "title": "InterviewPreparationStarDraft",
+        "type": "object"
+      },
+      "InterviewPreparationStatus": {
+        "enum": [
+          "blocked",
+          "not_started",
+          "in_progress",
+          "ready"
+        ],
+        "title": "InterviewPreparationStatus",
+        "type": "string"
+      },
+      "InterviewPreparationTarget": {
+        "additionalProperties": false,
+        "properties": {
+          "interview_round_id": {
+            "anyOf": [
+              {
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Interview Round Id"
+          },
+          "interview_round_kind": {
+            "anyOf": [
+              {
+                "maxLength": 32,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Interview Round Kind"
+          },
+          "interview_round_version": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Interview Round Version"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/InterviewPreparationTargetKind"
+          },
+          "label": {
+            "maxLength": 160,
+            "minLength": 1,
+            "title": "Label",
+            "type": "string"
+          },
+          "scheduled_start_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scheduled Start At"
+          },
+          "scheduled_timezone": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scheduled Timezone"
+          }
+        },
+        "required": [
+          "kind",
+          "label"
+        ],
+        "title": "InterviewPreparationTarget",
+        "type": "object"
+      },
+      "InterviewPreparationTargetKind": {
+        "enum": [
+          "recruiter_screen",
+          "interview_round"
+        ],
+        "title": "InterviewPreparationTargetKind",
         "type": "string"
       },
       "InterviewRoundCancelledCreate": {
@@ -7723,6 +8531,48 @@
         "title": "PostingVersionSummary",
         "type": "object"
       },
+      "PrivacyOmission": {
+        "additionalProperties": false,
+        "properties": {
+          "field": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Field"
+          },
+          "reason": {
+            "enum": [
+              "security_metadata",
+              "operational_metadata",
+              "decryption_failed",
+              "expired_or_cleared"
+            ],
+            "title": "Reason",
+            "type": "string"
+          },
+          "row_count": {
+            "minimum": 0.0,
+            "title": "Row Count",
+            "type": "integer"
+          },
+          "table": {
+            "title": "Table",
+            "type": "string"
+          }
+        },
+        "required": [
+          "table",
+          "reason",
+          "row_count"
+        ],
+        "title": "PrivacyOmission",
+        "type": "object"
+      },
       "ProblemFieldError": {
         "additionalProperties": false,
         "properties": {
@@ -8148,6 +8998,101 @@
           "updated_at"
         ],
         "title": "ResumeVersionSummary",
+        "type": "object"
+      },
+      "RetentionReportResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "as_of": {
+            "format": "date-time",
+            "title": "As Of",
+            "type": "string"
+          },
+          "eligible_hunt_runs": {
+            "minimum": 0.0,
+            "title": "Eligible Hunt Runs",
+            "type": "integer"
+          },
+          "hunt_run_retention_days": {
+            "maximum": 30.0,
+            "minimum": 1.0,
+            "title": "Hunt Run Retention Days",
+            "type": "integer"
+          },
+          "policy_applies_to": {
+            "items": {
+              "const": "legacy_hunt_runs",
+              "type": "string"
+            },
+            "title": "Policy Applies To",
+            "type": "array"
+          },
+          "purged_hunt_runs": {
+            "minimum": 0.0,
+            "title": "Purged Hunt Runs",
+            "type": "integer"
+          },
+          "retained_hunt_runs": {
+            "minimum": 0.0,
+            "title": "Retained Hunt Runs",
+            "type": "integer"
+          },
+          "retained_until_explicit_deletion": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Retained Until Explicit Deletion",
+            "type": "array"
+          },
+          "schema_version": {
+            "const": 1,
+            "default": 1,
+            "title": "Schema Version",
+            "type": "integer"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          },
+          "version": {
+            "minimum": 1.0,
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "hunt_run_retention_days",
+          "version",
+          "eligible_hunt_runs",
+          "retained_hunt_runs",
+          "purged_hunt_runs",
+          "as_of"
+        ],
+        "title": "RetentionReportResponse",
+        "type": "object"
+      },
+      "RetentionSettingsPatch": {
+        "additionalProperties": false,
+        "properties": {
+          "hunt_run_retention_days": {
+            "maximum": 30.0,
+            "minimum": 1.0,
+            "title": "Hunt Run Retention Days",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "hunt_run_retention_days"
+        ],
+        "title": "RetentionSettingsPatch",
         "type": "object"
       },
       "Role": {
@@ -10446,6 +11391,117 @@
         },
         "title": "WorkspaceDeleteResponse",
         "type": "object"
+      },
+      "WorkspaceDeletionReceipt": {
+        "additionalProperties": false,
+        "description": "Minimal result returned only after the transaction commits its delete.",
+        "properties": {
+          "deleted_at": {
+            "format": "date-time",
+            "title": "Deleted At",
+            "type": "string"
+          },
+          "deletion_id": {
+            "title": "Deletion Id",
+            "type": "string"
+          },
+          "replayed": {
+            "title": "Replayed",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "deletion_id",
+          "deleted_at",
+          "replayed"
+        ],
+        "title": "WorkspaceDeletionReceipt",
+        "type": "object"
+      },
+      "WorkspaceDeletionRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "confirmation": {
+            "maxLength": 160,
+            "minLength": 8,
+            "title": "Confirmation",
+            "type": "string"
+          }
+        },
+        "required": [
+          "confirmation"
+        ],
+        "title": "WorkspaceDeletionRequest",
+        "type": "object"
+      },
+      "WorkspaceExportResponse": {
+        "additionalProperties": false,
+        "description": "Portable, deterministic JSON export with no stored secrets/ciphertext.",
+        "properties": {
+          "counts": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Counts",
+            "type": "object"
+          },
+          "external_data_limits": {
+            "items": {
+              "$ref": "#/components/schemas/ExternalDataLimit"
+            },
+            "title": "External Data Limits",
+            "type": "array"
+          },
+          "generated_at": {
+            "format": "date-time",
+            "title": "Generated At",
+            "type": "string"
+          },
+          "omissions": {
+            "items": {
+              "$ref": "#/components/schemas/PrivacyOmission"
+            },
+            "title": "Omissions",
+            "type": "array"
+          },
+          "owner_id": {
+            "title": "Owner Id",
+            "type": "string"
+          },
+          "schema_name": {
+            "const": "job_hunt_workspace_export",
+            "default": "job_hunt_workspace_export",
+            "title": "Schema Name",
+            "type": "string"
+          },
+          "schema_version": {
+            "const": 1,
+            "default": 1,
+            "title": "Schema Version",
+            "type": "integer"
+          },
+          "tables": {
+            "additionalProperties": {
+              "items": {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              "type": "array"
+            },
+            "title": "Tables",
+            "type": "object"
+          }
+        },
+        "required": [
+          "generated_at",
+          "owner_id",
+          "counts",
+          "tables",
+          "omissions",
+          "external_data_limits"
+        ],
+        "title": "WorkspaceExportResponse",
+        "type": "object"
       }
     },
     "securitySchemes": {
@@ -12522,6 +13578,286 @@
           }
         ],
         "summary": "Get Owner Application Contacts",
+        "tags": [
+          "applications"
+        ]
+      }
+    },
+    "/api/applications/{application_id}/interview-preparation": {
+      "get": {
+        "description": "Load deterministic, database-only interview prompts pinned to the exact submitted application, reviewed evidence, posting, and scheduled round.",
+        "operationId": "get_owner_application_interview_preparation_api_applications__application_id__interview_preparation_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "application_id",
+            "required": true,
+            "schema": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
+              "title": "Application Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApplicationInterviewPreparationResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
+          "428": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Precondition Required"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "security": [
+          {
+            "OwnerSessionCookie": []
+          }
+        ],
+        "summary": "Get Owner Application Interview Preparation",
+        "tags": [
+          "applications"
+        ]
+      }
+    },
+    "/api/applications/{application_id}/interview-preparation/revisions": {
+      "post": {
+        "description": "Append encrypted owner-authored STAR fields. If-Match names the application version before the first save and the preparation version afterward; Idempotency-Key makes exact retries safe.",
+        "operationId": "create_owner_interview_preparation_revision_api_applications__application_id__interview_preparation_revisions_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "application_id",
+            "required": true,
+            "schema": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
+              "title": "Application Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "If-Match",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InterviewPreparationRevisionCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApplicationInterviewPreparationResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
+          "428": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Precondition Required"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "security": [
+          {
+            "OwnerSessionCookie": []
+          }
+        ],
+        "summary": "Create Owner Interview Preparation Revision",
         "tags": [
           "applications"
         ]
@@ -14781,6 +16117,7 @@
     },
     "/api/hunt": {
       "post": {
+        "deprecated": true,
         "description": "Persist an encrypted request and return immediately with queued state.",
         "operationId": "post_hunt_api_hunt_post",
         "parameters": [
@@ -16285,6 +17622,640 @@
         ]
       }
     },
+    "/api/privacy/deletion-preview": {
+      "get": {
+        "operationId": "deletion_preview_api_privacy_deletion_preview_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeletionPreviewResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Content Too Large"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
+          "428": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Precondition Required"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "security": [
+          {
+            "OwnerSessionCookie": []
+          }
+        ],
+        "summary": "Deletion Preview",
+        "tags": [
+          "owner-privacy"
+        ]
+      }
+    },
+    "/api/privacy/export": {
+      "get": {
+        "operationId": "export_workspace_api_privacy_export_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkspaceExportResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Content Too Large"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
+          "428": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Precondition Required"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "security": [
+          {
+            "OwnerSessionCookie": []
+          }
+        ],
+        "summary": "Export Workspace",
+        "tags": [
+          "owner-privacy"
+        ]
+      }
+    },
+    "/api/privacy/retention": {
+      "get": {
+        "operationId": "retention_report_api_privacy_retention_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RetentionReportResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Content Too Large"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
+          "428": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Precondition Required"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "security": [
+          {
+            "OwnerSessionCookie": []
+          }
+        ],
+        "summary": "Retention Report",
+        "tags": [
+          "owner-privacy"
+        ]
+      },
+      "patch": {
+        "operationId": "update_retention_api_privacy_retention_patch",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "If-Match",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RetentionSettingsPatch"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RetentionReportResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Content Too Large"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
+          "428": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Precondition Required"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "security": [
+          {
+            "OwnerSessionCookie": []
+          }
+        ],
+        "summary": "Update Retention",
+        "tags": [
+          "owner-privacy"
+        ]
+      }
+    },
+    "/api/privacy/workspace": {
+      "delete": {
+        "operationId": "delete_workspace_api_privacy_workspace_delete",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WorkspaceDeletionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkspaceDeletionReceipt"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Content Too Large"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
+          "428": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Precondition Required"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "security": [
+          {
+            "OwnerSessionCookie": []
+          }
+        ],
+        "summary": "Delete Workspace",
+        "tags": [
+          "owner-privacy"
+        ]
+      }
+    },
     "/api/review/weekly": {
       "get": {
         "operationId": "get_owner_weekly_review_api_review_weekly_get",
@@ -16393,6 +18364,7 @@
     },
     "/api/runs/{run_id}": {
       "delete": {
+        "deprecated": true,
         "description": "Delete a run, its encrypted request metadata, audit events, and outcomes.",
         "operationId": "delete_run_api_runs__run_id__delete",
         "parameters": [
@@ -16436,6 +18408,7 @@
         "summary": "Delete Run"
       },
       "get": {
+        "deprecated": true,
         "description": "Return queue state, plus result/outcomes after the run succeeds.",
         "operationId": "get_run_api_runs__run_id__get",
         "parameters": [
@@ -16481,6 +18454,7 @@
     },
     "/api/runs/{run_id}/cancel": {
       "post": {
+        "deprecated": true,
         "description": "Cancel a queued/running run through its authorized workspace.",
         "operationId": "cancel_run_api_runs__run_id__cancel_post",
         "parameters": [
@@ -16526,6 +18500,7 @@
     },
     "/api/runs/{run_id}/outcomes": {
       "post": {
+        "deprecated": true,
         "description": "Append user-logged outcomes for a completed hunt.",
         "operationId": "post_outcomes_api_runs__run_id__outcomes_post",
         "parameters": [
@@ -16581,6 +18556,7 @@
     },
     "/api/runs/{run_id}/requeue": {
       "post": {
+        "deprecated": true,
         "description": "Move a dead-letter run back to queued through an authorized action.",
         "operationId": "requeue_run_api_runs__run_id__requeue_post",
         "parameters": [

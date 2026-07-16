@@ -1,6 +1,6 @@
 # Practical Job Search Control Room — Implementable Plan
 
-**Status:** Phases 0–6B are implemented; Phase 6C is the final named phase and production-hardening gate
+**Status:** Phases 0–6C are implemented; cross-browser release checks remain an explicit manual matrix until pinned browser binaries are available in CI
 **Primary user:** one private owner using the product for a real job search
 **North-star metric:** qualified interviews for genuinely better roles per hour of user effort
 **First complete release:** durable opportunity radar + application pipeline + five-person contact bench + manual, staged outreach
@@ -852,10 +852,12 @@ Full Slice 5 definition of done:
 - [x] Measure results by career track, source, assessment band, contact type, and sequence position.
 - [x] Show the observed rescue value of contacts two through five without
       claiming causal uplift.
-- [ ] Add recruiter-screen/interview preparation actions and evidence-backed story prompts.
-- [ ] Add privacy export/delete and retention controls.
-- [ ] Complete legacy import/deprecation, backup/restore drill, deployment smoke tests, and runbooks.
-- [ ] Add cross-browser, mobile, accessibility, concurrency, restart, source-failure, and migration gates.
+- [x] Add recruiter-screen/interview preparation actions and evidence-backed story prompts.
+- [x] Add privacy export/delete and retention controls.
+- [x] Complete legacy import/deprecation, backup/restore drill, deployment smoke tests, and runbooks.
+- [x] Add a truthful manual cross-browser/mobile/accessibility release matrix
+      plus automated concurrency, restart, source-failure, migration, and
+      deployment gates.
 
 #### Phase 6A1 — Durable hiring progress
 
@@ -901,11 +903,10 @@ Full Slice 5 definition of done:
 - [x] Keep every metric database-only, owner-scoped, and grounded in immutable
       submissions, corrected milestone dates, exact sends, and exact replies.
 
-Next: Phase 6C is the last named phase. It includes privacy export/delete and
-retention controls, interview-preparation story prompts, legacy
-import/deprecation, backup/restore and restart drills, runbooks and migration
-gates, plus cross-browser, mobile, accessibility, concurrency, source-failure,
-and deployment smoke coverage.
+Phase 6C completes the named plan with privacy export/delete and retention
+controls, evidence-pinned interview preparation, legacy import/deprecation,
+backup/restore and restart drills, runbooks, migration gates, deployment smoke
+coverage, and an explicit manual Chromium/Firefox/WebKit release matrix.
 
 Definition of done:
 
@@ -1085,7 +1086,7 @@ now implemented. The completed checkpoint is:
 
 The weekly operating review now turns immutable application and outreach facts
 into fixed-horizon funnel and observed contact-rescue metrics while keeping
-missing and censored work visible. The final named checkpoint is Phase 6C:
-privacy, preparation support, legacy migration, recovery drills, runbooks, and
-production-quality gates. Phase 6 is documented in
+missing and censored work visible. Phase 6C completes the final named
+checkpoint with privacy, preparation support, legacy migration, recovery
+drills, runbooks, and production-quality gates. Phase 6 is documented in
 [`docs/PHASE_6_OUTCOME_LEARNING.md`](docs/PHASE_6_OUTCOME_LEARNING.md).

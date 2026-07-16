@@ -245,6 +245,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/applications/{application_id}/interview-preparation": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Owner Application Interview Preparation
+         * @description Load deterministic, database-only interview prompts pinned to the exact submitted application, reviewed evidence, posting, and scheduled round.
+         */
+        get: operations["get_owner_application_interview_preparation_api_applications__application_id__interview_preparation_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/applications/{application_id}/interview-preparation/revisions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create Owner Interview Preparation Revision
+         * @description Append encrypted owner-authored STAR fields. If-Match names the application version before the first save and the preparation version afterward; Idempotency-Key makes exact retries safe.
+         */
+        post: operations["create_owner_interview_preparation_revision_api_applications__application_id__interview_preparation_revisions_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/applications/{application_id}/interview-rounds": {
         parameters: {
             query?: never;
@@ -473,6 +513,7 @@ export interface paths {
         put?: never;
         /**
          * Post Hunt
+         * @deprecated
          * @description Persist an encrypted request and return immediately with queued state.
          */
         post: operations["post_hunt_api_hunt_post"];
@@ -621,6 +662,75 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/privacy/deletion-preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Deletion Preview */
+        get: operations["deletion_preview_api_privacy_deletion_preview_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/privacy/export": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Export Workspace */
+        get: operations["export_workspace_api_privacy_export_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/privacy/retention": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Retention Report */
+        get: operations["retention_report_api_privacy_retention_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Update Retention */
+        patch: operations["update_retention_api_privacy_retention_patch"];
+        trace?: never;
+    };
+    "/api/privacy/workspace": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete Workspace */
+        delete: operations["delete_workspace_api_privacy_workspace_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/review/weekly": {
         parameters: {
             query?: never;
@@ -647,6 +757,7 @@ export interface paths {
         };
         /**
          * Get Run
+         * @deprecated
          * @description Return queue state, plus result/outcomes after the run succeeds.
          */
         get: operations["get_run_api_runs__run_id__get"];
@@ -654,6 +765,7 @@ export interface paths {
         post?: never;
         /**
          * Delete Run
+         * @deprecated
          * @description Delete a run, its encrypted request metadata, audit events, and outcomes.
          */
         delete: operations["delete_run_api_runs__run_id__delete"];
@@ -673,6 +785,7 @@ export interface paths {
         put?: never;
         /**
          * Cancel Run
+         * @deprecated
          * @description Cancel a queued/running run through its authorized workspace.
          */
         post: operations["cancel_run_api_runs__run_id__cancel_post"];
@@ -693,6 +806,7 @@ export interface paths {
         put?: never;
         /**
          * Post Outcomes
+         * @deprecated
          * @description Append user-logged outcomes for a completed hunt.
          */
         post: operations["post_outcomes_api_runs__run_id__outcomes_post"];
@@ -713,6 +827,7 @@ export interface paths {
         put?: never;
         /**
          * Requeue Run
+         * @deprecated
          * @description Move a dead-letter run back to queued through an authorized action.
          */
         post: operations["requeue_run_api_runs__run_id__requeue_post"];
@@ -1454,6 +1569,86 @@ export interface components {
              * @constant
              */
             data_source: "database";
+        };
+        /** ApplicationInterviewPreparationResponse */
+        ApplicationInterviewPreparationResponse: {
+            /** Application Id */
+            application_id: string;
+            /** Application Submission Id */
+            application_submission_id?: string | null;
+            /** Application Version */
+            application_version: number;
+            /** Blockers */
+            blockers?: components["schemas"]["InterviewPreparationBlocker"][];
+            /**
+             * Data Source
+             * @default database
+             * @constant
+             */
+            data_source: "database";
+            /**
+             * Disclaimer
+             * @default Prompts are deterministic scaffolds. Only you can supply and verify the STAR details; no answer is treated as generated truth.
+             * @constant
+             */
+            disclaimer: "Prompts are deterministic scaffolds. Only you can supply and verify the STAR details; no answer is treated as generated truth.";
+            /** Evidence Gaps */
+            evidence_gaps?: components["schemas"]["InterviewPreparationEvidenceGap"][];
+            /**
+             * Generation Method
+             * @default deterministic_scaffold
+             * @constant
+             */
+            generation_method: "deterministic_scaffold";
+            /** Grounding Revision Id */
+            grounding_revision_id?: string | null;
+            latest_revision?: components["schemas"]["InterviewPreparationRevisionSummary"] | null;
+            /** Next Steps */
+            next_steps?: string[];
+            /** Preparation Id */
+            preparation_id?: string | null;
+            /** Preparation Version */
+            preparation_version?: number | null;
+            /**
+             * Previous Context Stale
+             * @default false
+             */
+            previous_context_stale: boolean;
+            /**
+             * Previous Prompts
+             * @description Read-only owner-authored prompts from the latest saved revision when its pinned context no longer matches the current target.
+             */
+            previous_prompts?: components["schemas"]["InterviewPreparationPrompt"][];
+            /**
+             * Prompt Capacity
+             * @default 12
+             * @constant
+             */
+            prompt_capacity: 12;
+            /** Prompts */
+            prompts?: components["schemas"]["InterviewPreparationPrompt"][];
+            /** Required Evidence Backed Count */
+            required_evidence_backed_count: number;
+            /** Requirements */
+            requirements?: components["schemas"]["InterviewPreparationRequirement"][];
+            role: components["schemas"]["InterviewPreparationRoleContext"];
+            /** Source Fingerprint */
+            source_fingerprint?: string | null;
+            status: components["schemas"]["InterviewPreparationStatus"];
+            target: components["schemas"]["InterviewPreparationTarget"];
+            /**
+             * Truth Policy
+             * @default owner_authored_only
+             * @constant
+             */
+            truth_policy: "owner_authored_only";
+            /** Write Version */
+            write_version: number;
+            /**
+             * Write Version Scope
+             * @enum {string}
+             */
+            write_version_scope: "application" | "preparation";
         };
         /** ApplicationInterviewRoundsResponse */
         ApplicationInterviewRoundsResponse: {
@@ -2398,6 +2593,34 @@ export interface components {
             /** Ok */
             ok: boolean;
         };
+        /** DeletionPreviewResponse */
+        DeletionPreviewResponse: {
+            /** Active Sessions */
+            active_sessions: number;
+            /** Confirmation Phrase */
+            confirmation_phrase: string;
+            /**
+             * Export Recommended
+             * @default true
+             */
+            export_recommended: boolean;
+            /** External Data Limits */
+            external_data_limits: components["schemas"]["ExternalDataLimit"][];
+            /** Owner Id */
+            owner_id: string;
+            /** Row Counts */
+            row_counts: {
+                [key: string]: number;
+            };
+            /**
+             * Schema Version
+             * @default 1
+             * @constant
+             */
+            schema_version: 1;
+            /** Total Rows */
+            total_rows: number;
+        };
         /**
          * DismissReason
          * @enum {string}
@@ -2442,6 +2665,22 @@ export interface components {
          * @enum {string}
          */
         EvidenceState: "verified" | "inferred" | "unknown";
+        /** ExternalDataLimit */
+        ExternalDataLimit: {
+            /** Category */
+            category: string;
+            /** Provider */
+            provider: string;
+            /** Source Url */
+            source_url: string;
+            /** Summary */
+            summary: string;
+            /**
+             * Verified On
+             * Format: date
+             */
+            verified_on: string;
+        };
         /** FunnelSegmentMetric */
         FunnelSegmentMetric: {
             /** Cohort Total */
@@ -2614,6 +2853,193 @@ export interface components {
          * @enum {string}
          */
         InterviewMeetingFormat: "video" | "phone" | "onsite" | "unspecified";
+        /**
+         * InterviewPreparationBlocker
+         * @enum {string}
+         */
+        InterviewPreparationBlocker: "application_not_submitted" | "application_closed" | "reviewed_application_pack_missing" | "approved_evidence_missing" | "evidence_snapshot_changed" | "required_requirement_evidence_missing" | "required_prompt_capacity_exceeded";
+        /** InterviewPreparationEvidenceGap */
+        InterviewPreparationEvidenceGap: {
+            /**
+             * Importance
+             * @enum {string}
+             */
+            importance: "required" | "preferred";
+            /**
+             * Reason
+             * @enum {string}
+             */
+            reason: "no_approved_evidence" | "evidence_changed";
+            /** Requirement Id */
+            requirement_id: string;
+            /** Requirement Text */
+            requirement_text: string;
+        };
+        /** InterviewPreparationPrompt */
+        InterviewPreparationPrompt: {
+            category: components["schemas"]["InterviewPreparationPromptCategory"];
+            draft: components["schemas"]["InterviewPreparationStarDraft"];
+            /** Evidence */
+            evidence: components["schemas"]["ApplicationPackEvidenceSnapshot"][];
+            /** Id */
+            id: string;
+            /** Missing Sections */
+            missing_sections?: ("situation" | "task" | "action" | "result")[];
+            /** Question */
+            question: string;
+            /** Requirement Id */
+            requirement_id?: string | null;
+            /** Requirement Text */
+            requirement_text?: string | null;
+        };
+        /**
+         * InterviewPreparationPromptCategory
+         * @enum {string}
+         */
+        InterviewPreparationPromptCategory: "role_motivation" | "key_requirement" | "impact" | "conflict_ambiguity" | "failure_learning" | "leadership_collaboration";
+        /** InterviewPreparationPromptDraftCreate */
+        InterviewPreparationPromptDraftCreate: {
+            /**
+             * Action
+             * @default
+             */
+            action: string;
+            /** Prompt Id */
+            prompt_id: string;
+            /**
+             * Result
+             * @default
+             */
+            result: string;
+            /**
+             * Situation
+             * @default
+             */
+            situation: string;
+            /**
+             * Task
+             * @default
+             */
+            task: string;
+        };
+        /** InterviewPreparationRequirement */
+        InterviewPreparationRequirement: {
+            /**
+             * Coverage
+             * @enum {string}
+             */
+            coverage: "supported" | "partial" | "unsupported" | "needs_review";
+            /** Evidence */
+            evidence?: components["schemas"]["ApplicationPackEvidenceSnapshot"][];
+            /** Id */
+            id: string;
+            /**
+             * Importance
+             * @enum {string}
+             */
+            importance: "required" | "preferred";
+            /** Ordinal */
+            ordinal: number;
+            /** Text */
+            text: string;
+        };
+        /** InterviewPreparationRevisionCreate */
+        InterviewPreparationRevisionCreate: {
+            /**
+             * Confirm Owner Authored
+             * @constant
+             */
+            confirm_owner_authored: true;
+            /** Parent Revision Id */
+            parent_revision_id?: string | null;
+            /** Prompt Drafts */
+            prompt_drafts: components["schemas"]["InterviewPreparationPromptDraftCreate"][];
+            /** Source Fingerprint */
+            source_fingerprint: string;
+        };
+        /** InterviewPreparationRevisionSummary */
+        InterviewPreparationRevisionSummary: {
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Id */
+            id: string;
+            /** Parent Revision Id */
+            parent_revision_id?: string | null;
+            /**
+             * Recording Method
+             * @constant
+             */
+            recording_method: "owner_authored";
+            /** Revision Number */
+            revision_number: number;
+            /** Source Fingerprint */
+            source_fingerprint: string;
+        };
+        /** InterviewPreparationRoleContext */
+        InterviewPreparationRoleContext: {
+            /** Company */
+            company: string;
+            /** Job Posting Id */
+            job_posting_id: string;
+            /** Posting Version Id */
+            posting_version_id: string;
+            /** Summary */
+            summary: string;
+            /** Title */
+            title: string;
+        };
+        /** InterviewPreparationStarDraft */
+        InterviewPreparationStarDraft: {
+            /**
+             * Action
+             * @default
+             */
+            action: string;
+            /**
+             * Result
+             * @default
+             */
+            result: string;
+            /**
+             * Situation
+             * @default
+             */
+            situation: string;
+            /**
+             * Task
+             * @default
+             */
+            task: string;
+        };
+        /**
+         * InterviewPreparationStatus
+         * @enum {string}
+         */
+        InterviewPreparationStatus: "blocked" | "not_started" | "in_progress" | "ready";
+        /** InterviewPreparationTarget */
+        InterviewPreparationTarget: {
+            /** Interview Round Id */
+            interview_round_id?: string | null;
+            /** Interview Round Kind */
+            interview_round_kind?: string | null;
+            /** Interview Round Version */
+            interview_round_version?: number | null;
+            kind: components["schemas"]["InterviewPreparationTargetKind"];
+            /** Label */
+            label: string;
+            /** Scheduled Start At */
+            scheduled_start_at?: string | null;
+            /** Scheduled Timezone */
+            scheduled_timezone?: string | null;
+        };
+        /**
+         * InterviewPreparationTargetKind
+         * @enum {string}
+         */
+        InterviewPreparationTargetKind: "recruiter_screen" | "interview_round";
         /** InterviewRoundCancelledCreate */
         InterviewRoundCancelledCreate: {
             cancelled_by: components["schemas"]["InterviewCancellationParty"];
@@ -3795,6 +4221,20 @@ export interface components {
             /** Version */
             version: number;
         };
+        /** PrivacyOmission */
+        PrivacyOmission: {
+            /** Field */
+            field?: string | null;
+            /**
+             * Reason
+             * @enum {string}
+             */
+            reason: "security_metadata" | "operational_metadata" | "decryption_failed" | "expired_or_cleared";
+            /** Row Count */
+            row_count: number;
+            /** Table */
+            table: string;
+        };
         /** ProblemFieldError */
         ProblemFieldError: {
             /** Field */
@@ -3954,6 +4394,41 @@ export interface components {
             updated_at: string;
             /** Version */
             version: number;
+        };
+        /** RetentionReportResponse */
+        RetentionReportResponse: {
+            /**
+             * As Of
+             * Format: date-time
+             */
+            as_of: string;
+            /** Eligible Hunt Runs */
+            eligible_hunt_runs: number;
+            /** Hunt Run Retention Days */
+            hunt_run_retention_days: number;
+            /** Policy Applies To */
+            policy_applies_to?: "legacy_hunt_runs"[];
+            /** Purged Hunt Runs */
+            purged_hunt_runs: number;
+            /** Retained Hunt Runs */
+            retained_hunt_runs: number;
+            /** Retained Until Explicit Deletion */
+            retained_until_explicit_deletion?: string[];
+            /**
+             * Schema Version
+             * @default 1
+             * @constant
+             */
+            schema_version: 1;
+            /** Updated At */
+            updated_at?: string | null;
+            /** Version */
+            version: number;
+        };
+        /** RetentionSettingsPatch */
+        RetentionSettingsPatch: {
+            /** Hunt Run Retention Days */
+            hunt_run_retention_days: number;
         };
         /**
          * Role
@@ -4831,6 +5306,65 @@ export interface components {
              * @constant
              */
             ok: true;
+        };
+        /**
+         * WorkspaceDeletionReceipt
+         * @description Minimal result returned only after the transaction commits its delete.
+         */
+        WorkspaceDeletionReceipt: {
+            /**
+             * Deleted At
+             * Format: date-time
+             */
+            deleted_at: string;
+            /** Deletion Id */
+            deletion_id: string;
+            /** Replayed */
+            replayed: boolean;
+        };
+        /** WorkspaceDeletionRequest */
+        WorkspaceDeletionRequest: {
+            /** Confirmation */
+            confirmation: string;
+        };
+        /**
+         * WorkspaceExportResponse
+         * @description Portable, deterministic JSON export with no stored secrets/ciphertext.
+         */
+        WorkspaceExportResponse: {
+            /** Counts */
+            counts: {
+                [key: string]: number;
+            };
+            /** External Data Limits */
+            external_data_limits: components["schemas"]["ExternalDataLimit"][];
+            /**
+             * Generated At
+             * Format: date-time
+             */
+            generated_at: string;
+            /** Omissions */
+            omissions: components["schemas"]["PrivacyOmission"][];
+            /** Owner Id */
+            owner_id: string;
+            /**
+             * Schema Name
+             * @default job_hunt_workspace_export
+             * @constant
+             */
+            schema_name: "job_hunt_workspace_export";
+            /**
+             * Schema Version
+             * @default 1
+             * @constant
+             */
+            schema_version: 1;
+            /** Tables */
+            tables: {
+                [key: string]: {
+                    [key: string]: unknown;
+                }[];
+            };
         };
     };
     responses: never;
@@ -6142,6 +6676,201 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ApplicationContactBenchResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Precondition Required */
+            428: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+        };
+    };
+    get_owner_application_interview_preparation_api_applications__application_id__interview_preparation_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                application_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApplicationInterviewPreparationResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Precondition Required */
+            428: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+        };
+    };
+    create_owner_interview_preparation_revision_api_applications__application_id__interview_preparation_revisions_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "If-Match"?: string | null;
+                "Idempotency-Key"?: string | null;
+            };
+            path: {
+                application_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["InterviewPreparationRevisionCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApplicationInterviewPreparationResponse"];
                 };
             };
             /** @description Bad Request */
@@ -8771,6 +9500,523 @@ export interface operations {
             };
             /** @description Conflict */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Precondition Required */
+            428: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+        };
+    };
+    deletion_preview_api_privacy_deletion_preview_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeletionPreviewResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Content Too Large */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Precondition Required */
+            428: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+        };
+    };
+    export_workspace_api_privacy_export_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceExportResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Content Too Large */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Precondition Required */
+            428: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+        };
+    };
+    retention_report_api_privacy_retention_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RetentionReportResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Content Too Large */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Precondition Required */
+            428: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+        };
+    };
+    update_retention_api_privacy_retention_patch: {
+        parameters: {
+            query?: never;
+            header?: {
+                "If-Match"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RetentionSettingsPatch"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RetentionReportResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Content Too Large */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Precondition Required */
+            428: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+        };
+    };
+    delete_workspace_api_privacy_workspace_delete: {
+        parameters: {
+            query?: never;
+            header?: {
+                "Idempotency-Key"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WorkspaceDeletionRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceDeletionReceipt"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Content Too Large */
+            413: {
                 headers: {
                     [name: string]: unknown;
                 };

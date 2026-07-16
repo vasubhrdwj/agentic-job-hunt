@@ -124,6 +124,23 @@ reported by verified contact type and bench position, while contacts two
 through five are shown as observed rescue rates—not causal uplift—from exact
 initial and follow-up replies.
 
+Phase 6C adds deterministic **Interview preparation** inside each submitted
+application dossier. It pins prompts to the exact submission, posting version,
+reviewed requirements, approved evidence snapshots, and scheduled interview
+round/version. STAR fields remain blank until the owner writes them, private
+notes are encrypted and revisioned, and missing evidence is shown as a blocker
+instead of being replaced with invented prose. A changed round or evidence
+snapshot leaves the prior draft readable but stale and read-only.
+
+Phase 6C also turns `/privacy` into an authenticated data-control workspace.
+It downloads deterministic, machine-readable owner data without stored
+ciphertext or security metadata; applies a versioned 1–30 day policy to legacy
+hunt runs; previews the exact local deletion graph; and permanently deletes the
+owner workspace only after an exact typed confirmation and retry-safe request.
+Deletion revokes every owner session while leaving other owners and system
+state untouched. See [the privacy-control contract](docs/PHASE_6_PRIVACY_CONTROLS.md)
+for export omissions, provider-side limits, and downgrade safety.
+
 The separate **Legacy hunt** remains available when you explicitly want the
 current end-to-end flow with resume matching, at least five appropriate
 referral leads per returned role, and draft generation. Cadence preferences
@@ -259,6 +276,10 @@ POST   /api/applications/{id}/interview-rounds
                                     → schedule one round (application If-Match; returns round ETag)
 POST   /api/applications/{id}/interview-rounds/{round_id}/events
                                     → reschedule, complete, or cancel (round If-Match + idempotency)
+GET    /api/applications/{id}/interview-preparation
+                                    → exact evidence-backed prompts + owner-authored STAR drafts
+POST   /api/applications/{id}/interview-preparation/revisions
+                                    → append an encrypted, versioned, retry-safe owner draft
 GET    /api/applications/{id}/application-pack
                                     → database-only current + latest-reviewed grounding projection
 POST   /api/applications/{id}/application-packs
@@ -291,7 +312,13 @@ development-only legacy API compatibility path.
 Configure persistence and CORS via env:
 
 - `DATABASE_URL` — Postgres shared by the practical web and worker processes.
+- `LEGACY_HUNT_API_MODE` — `enabled`, `read_only`, or `disabled`. Production
+  defaults to read-only; use the practical workspace for new work.
+- `LEGACY_HUNT_API_SUNSET` / `LEGACY_HUNT_DEPRECATION_URL` — validated
+  compatibility sunset metadata. The production link must use HTTPS.
 - `JOB_HUNT_OWNER_TOKEN_HASH` — SHA-256 of the private owner-login token.
+- `JOB_HUNT_PRIVACY_RECEIPT_SECRET` — stable 32+ character server-only HMAC
+  secret so deletion idempotency survives owner-login credential rotation.
 - `JOB_HUNT_DATA_KEYS` — comma-separated `key-id:Fernet-key` values. The first
   key encrypts new requests, results, and outcome notes; retain older keys
   during rotation.
@@ -322,6 +349,24 @@ Privacy mode intentionally prevents new user draft text from entering the
 shared Phoenix corpus. Self-RAG continues to use the curated seed corpus; an
 owner-scoped learning store is required before production can learn from
 individual users' drafts safely.
+
+## Operations
+
+Production and recovery procedures live in the
+[operational runbooks](docs/runbooks/README.md): backup/restore,
+deploy/rollback, source outages, incident recovery, legacy history import, and
+the truthful manual Chromium/Firefox/WebKit QA matrix. The provider-free
+deployment smoke is:
+
+```bash
+.venv/bin/python -m scripts.deployment_smoke \
+  --base-url https://jobs.example.com \
+  --expect-legacy-mode read_only
+```
+
+Pass database credentials through `DATABASE_URL` in the environment so they do
+not appear in process arguments. Backup and downgrade tools refuse unsafe
+in-place operations and require a migration-current, identity-matched archive.
 
 ## Hosted deployment status
 

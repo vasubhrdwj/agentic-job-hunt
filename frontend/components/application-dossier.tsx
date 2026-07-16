@@ -13,6 +13,7 @@ import type {
 import { ApplicationActivity } from "./application-activity";
 import { ApplicationMaterials } from "./application-materials";
 import { ApplicationInterviewRounds } from "./application-interview-rounds";
+import { ApplicationInterviewPreparation } from "./application-interview-preparation";
 import { ApplicationPack } from "./application-pack";
 import { ApplicationPeople } from "./application-people";
 import { ApplicationProgress } from "./application-progress";
@@ -175,6 +176,11 @@ export function ApplicationDossier({
         ownerTimezone={ownerTimezone}
         onApplicationChanged={load}
         onHistoryChanged={setInterviewHistoryState}
+      />
+
+      <ApplicationInterviewPreparation
+        key={`interview-preparation:${application.id}:${application.version}`}
+        applicationId={application.id}
       />
 
       <ApplicationProgress

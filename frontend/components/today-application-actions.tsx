@@ -224,8 +224,9 @@ function ActionRow({
   item: TodayApplicationActionItem;
   ownerLocalDate: string;
 }) {
-  const taskHref = item.action.interview_round_id
-    ? `/applications/${encodeURIComponent(item.application.id)}#interview-rounds`
+  const taskHref = item.action.kind === "prepare_interview" ||
+    item.action.kind === "prepare_recruiter_screen"
+    ? `/applications/${encodeURIComponent(item.application.id)}#interview-preparation`
     : `/applications/${encodeURIComponent(item.application.id)}`;
   return (
     <li className="flex min-w-0 flex-col gap-3 py-3 sm:flex-row sm:items-center sm:justify-between">

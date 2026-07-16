@@ -42,6 +42,10 @@ import type {
   ApplicationActionReviewMutationResponse,
   WeeklyReviewResponse,
 } from "./weekly-review-types";
+import type {
+  ApplicationInterviewPreparationResponse,
+  InterviewPreparationRevisionCreate,
+} from "./interview-preparation-types";
 import { WorkspaceApiError } from "./workspace-api";
 
 async function responseError(response: Response): Promise<WorkspaceApiError> {
@@ -202,6 +206,40 @@ export async function getApplicationInterviewRounds(
     await fetch(
       `/api/applications/${encodeURIComponent(applicationId)}/interview-rounds`,
       { cache: "no-store", credentials: "same-origin" },
+    ),
+  );
+}
+
+export async function getApplicationInterviewPreparation(
+  applicationId: string,
+): Promise<ApplicationInterviewPreparationResponse> {
+  return json<ApplicationInterviewPreparationResponse>(
+    await fetch(
+      `/api/applications/${encodeURIComponent(applicationId)}/interview-preparation`,
+      { cache: "no-store", credentials: "same-origin" },
+    ),
+  );
+}
+
+export async function createInterviewPreparationRevision(
+  applicationId: string,
+  version: number,
+  idempotencyKey: string,
+  payload: InterviewPreparationRevisionCreate,
+): Promise<ApplicationInterviewPreparationResponse> {
+  return json<ApplicationInterviewPreparationResponse>(
+    await fetch(
+      `/api/applications/${encodeURIComponent(applicationId)}/interview-preparation/revisions`,
+      {
+        method: "POST",
+        credentials: "same-origin",
+        headers: {
+          "Content-Type": "application/json",
+          "If-Match": `"${version}"`,
+          "Idempotency-Key": idempotencyKey,
+        },
+        body: JSON.stringify(payload),
+      },
     ),
   );
 }

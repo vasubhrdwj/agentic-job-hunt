@@ -41,7 +41,7 @@ export function FormField({
   hint,
   children,
 }: {
-  label: string;
+  label: ReactNode;
   htmlFor: string;
   hint?: string;
   children: ReactNode;

@@ -1,0 +1,74 @@
+"""Keep deploy, recovery, and CI configuration aligned with the runbooks."""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+import yaml
+
+
+ROOT = Path(__file__).resolve().parents[1]
+
+
+def _yaml(path: str) -> dict:
+    return yaml.safe_load((ROOT / path).read_text(encoding="utf-8"))
+
+
+def test_compose_restarts_durable_services_and_health_gates_frontend() -> None:
+    compose = _yaml("docker-compose.yml")
+    services = compose["services"]
+    for name in ("postgres", "web", "worker"):
+        assert services[name]["restart"] == "unless-stopped"
+    assert services["web"]["healthcheck"]["test"]
+    assert services["frontend"]["depends_on"]["web"]["condition"] == "service_healthy"
+    assert compose["x-backend-environment"]["LEGACY_HUNT_API_MODE"].endswith(
+        ":-read_only}"
+    )
+
+
+def test_render_is_fail_closed_on_readiness_and_legacy_writes() -> None:
+    render = _yaml("render.yaml")
+    web = render["services"][0]
+    env = {item["key"]: item for item in web["envVars"]}
+    assert web["healthCheckPath"] == "/ready"
+    assert env["LEGACY_HUNT_API_MODE"]["value"] == "read_only"
+    assert env["LEGACY_HUNT_API_SUNSET"]["value"]
+    assert env["DATABASE_URL"]["sync"] is False
+    assert env["JOB_HUNT_DATA_KEYS"]["sync"] is False
+
+
+def test_quality_workflow_runs_operational_gates_with_bounded_jobs() -> None:
+    workflow_text = (ROOT / ".github/workflows/quality.yml").read_text(
+        encoding="utf-8"
+    )
+    workflow = yaml.safe_load(workflow_text)
+    assert workflow["concurrency"]["cancel-in-progress"] is True
+    assert workflow["jobs"]["backend"]["timeout-minutes"] <= 30
+    assert workflow["jobs"]["frontend"]["timeout-minutes"] <= 30
+    assert "python -m scripts.migration_gate check" in workflow_text
+    assert "docker compose config --quiet" in workflow_text
+    assert "pip check" in workflow_text
+    assert "--max-warnings=0" in workflow_text
+
+
+def test_runtime_image_contains_restore_tools_and_operator_scripts() -> None:
+    dockerfile = (ROOT / "Dockerfile").read_text(encoding="utf-8")
+    assert "postgresql-client" in dockerfile
+    assert "COPY scripts/ ./scripts/" in dockerfile
+
+
+def test_operational_runbook_set_and_manual_browser_matrix_are_present() -> None:
+    runbooks = ROOT / "docs/runbooks"
+    required = {
+        "README.md",
+        "backup-restore.md",
+        "deploy-rollback.md",
+        "incident-recovery.md",
+        "legacy-hunt-deprecation.md",
+        "manual-browser-matrix.md",
+        "source-outage.md",
+    }
+    assert required.issubset({path.name for path in runbooks.glob("*.md")})
+    browser = (runbooks / "manual-browser-matrix.md").read_text(encoding="utf-8")
+    for marker in ("Chromium", "Firefox", "WebKit", "390", "Weekly Review", "Privacy"):
+        assert marker in browser

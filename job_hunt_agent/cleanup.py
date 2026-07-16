@@ -6,6 +6,7 @@ from . import persistence
 from .config import practical_mode_enabled
 from .database import database_from_env
 from .hunt_repository import purge_expired_hunts
+from .privacy_repository import purge_configured_hunts
 
 
 def main() -> None:
@@ -18,8 +19,9 @@ def main() -> None:
         try:
             with database.session() as session:
                 result = purge_expired_hunts(session)
+                policy_deleted = purge_configured_hunts(session)
             cleared = result.requests_cleared
-            deleted = result.runs_deleted
+            deleted = result.runs_deleted + policy_deleted
         finally:
             database.dispose()
     else:

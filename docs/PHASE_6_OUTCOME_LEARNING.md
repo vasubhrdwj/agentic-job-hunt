@@ -221,9 +221,71 @@ excluded and counted. These are observed rescue rates, never causal uplift.
 
 ### Phase 6C — Privacy and operational hardening
 
-- Export/delete and retention controls.
-- Recruiter-screen/interview preparation and evidence-backed story prompts.
-- Legacy import/deprecation, runbooks, and migration gates.
-- Backup/restore and restart drills.
-- Cross-browser, mobile, accessibility, concurrency, source-failure, and
-  deployment smoke gates.
+- Export/delete and retention controls (implemented in migration
+  `20260715_0018`; see `docs/PHASE_6_PRIVACY_CONTROLS.md`).
+- Recruiter-screen/interview preparation and evidence-backed story prompts
+  (implemented in migration `20260715_0017`).
+- Legacy import/deprecation, runbooks, and migration gates (implemented under
+  `scripts/` and `docs/runbooks/`).
+- Backup/restore, restart, and provider-free deployment smoke drills.
+- A manual Chromium/Firefox/WebKit mobile/accessibility release matrix plus
+  automated concurrency, source-failure, restart, configuration, and migration
+  gates.
+
+#### Evidence-pinned interview preparation
+
+Implemented in migration `20260715_0017`.
+
+Every active submitted application now has a deterministic preparation
+workspace. Without a scheduled round it prepares the next recruiter
+conversation; with one scheduled round it binds to that exact round ID and
+version. The source fingerprint also pins the exact application submission,
+pursued posting version, reviewed application-pack revision, requirement
+coverage, and approved evidence IDs and versions.
+
+- Required evidence-backed requirements receive a prompt before optional story
+  categories. The practical set covers role motivation, key requirements,
+  impact, conflict or ambiguity, failure and learning, and leadership or
+  collaboration.
+- The scaffold is capped at 12 prompts. If more than 12 required requirements
+  already have evidence, preparation is explicitly blocked with the exact
+  count instead of silently omitting or grouping requirements.
+- Suggested stories always carry a copied approved evidence statement, optional
+  resume excerpt, and resume reference. Evidence is never silently replaced by
+  a later edit or retirement.
+- Situation, Task, Action, and Result fields start empty. Only owner-authored
+  text is persisted; the deterministic scaffold is explicitly not generated
+  truth.
+- Missing submission, reviewed grounding, approved evidence, or required
+  requirement coverage is a visible blocker with a direct next action. The
+  system does not create a plausible-sounding substitute.
+- Owner notes are encrypted in immutable revisions. Writes require the current
+  application/preparation version and an idempotency key. If the posting,
+  evidence, or round changes, the previous revision remains readable as stale,
+  read-only context and is never copied forward automatically.
+
+Today routes recruiter-screen and interview-preparation tasks directly to this
+workspace in the application dossier.
+
+#### Operational hardening
+
+The legacy hunt compatibility API now has explicit `enabled`, `read_only`, and
+`disabled` modes. Production defaults to read-only: existing exact runs remain
+readable and deletable during migration, while new or nested mutations return
+a stable `410` problem with deprecation, sunset, link, and request-ID headers.
+The SQLite history importer is dry-run by default, source-read-only,
+owner-retention-aware, idempotent, and atomic on apply.
+
+Backup tooling creates and verifies SQLite or PostgreSQL archives with a
+checksum, migration revision, and password-free database identity. Restore
+refuses non-empty targets. Schema downgrade requires a verified current backup
+from the exact database and still allows data-bearing migrations to refuse.
+The deployment smoke touches only liveness, readiness, and legacy-policy
+rejection, so it cannot accidentally start provider work.
+
+Docker and hosted configuration now gate traffic on migration-current
+readiness and a fresh compatible worker. The runbooks cover backup/restore,
+deploy/rollback, incidents, source outages, legacy import/sunset, and a
+truthful manual browser matrix. CI runs the operational tooling, topology,
+source-failure, restart, migration, backend, frontend-contract, lint,
+type-check, and production-build gates.

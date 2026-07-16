@@ -41,7 +41,7 @@ function mutationHeaders(extra: Record<string, string> = {}): HeadersInit {
   return { "Content-Type": "application/json", ...extra };
 }
 
-async function apiError(response: Response): Promise<WorkspaceApiError> {
+export async function apiError(response: Response): Promise<WorkspaceApiError> {
   let value: unknown;
   try {
     value = await response.json();
@@ -88,7 +88,7 @@ async function apiError(response: Response): Promise<WorkspaceApiError> {
   return new WorkspaceApiError(response.status, code, message, retryable, fieldErrors);
 }
 
-async function expectJson<T>(response: Response): Promise<T> {
+export async function expectJson<T>(response: Response): Promise<T> {
   if (!response.ok) throw await apiError(response);
   return (await response.json()) as T;
 }

@@ -247,6 +247,7 @@ export function ApplicationSubmission({
 
   return (
     <section
+      id="manual-application"
       aria-labelledby="manual-application-title"
       className="min-w-0 rounded-2xl border border-emerald-200 bg-white p-5 shadow-sm sm:p-7 dark:border-emerald-900 dark:bg-zinc-900/70"
     >

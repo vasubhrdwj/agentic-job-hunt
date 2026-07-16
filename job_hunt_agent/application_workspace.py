@@ -22,6 +22,7 @@ from .application_submission_schemas import (
 )
 from .contact_workspace import ContactWorkspaceStore
 from .interview_round_workspace import InterviewRoundWorkspaceStore
+from .interview_preparation_workspace import InterviewPreparationWorkspaceStore
 from .outreach_workspace import OutreachWorkspaceStore
 from .weekly_review_workspace import WeeklyReviewWorkspaceStore
 
@@ -31,6 +32,7 @@ class ApplicationWorkspaceStore(
     ApplicationPackWorkspaceStore,
     ContactWorkspaceStore,
     InterviewRoundWorkspaceStore,
+    InterviewPreparationWorkspaceStore,
     OutreachWorkspaceStore,
     WeeklyReviewWorkspaceStore,
     Protocol,

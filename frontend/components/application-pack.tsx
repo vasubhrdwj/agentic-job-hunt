@@ -656,6 +656,7 @@ export function ApplicationPack({
 
   return (
     <section
+      id="application-pack"
       aria-labelledby="application-pack-title"
       aria-busy={Boolean(busy)}
       className="min-w-0 rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm sm:p-7 dark:border-zinc-800 dark:bg-zinc-900/70"

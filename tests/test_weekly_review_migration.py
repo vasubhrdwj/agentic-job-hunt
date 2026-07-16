@@ -14,6 +14,7 @@ from job_hunt_agent.models import Owner, OwnerMutationReceipt
 
 
 REVISION = "20260715_0016"
+CURRENT_REVISION = "20260715_0018"
 PREVIOUS_REVISION = "20260715_0015"
 
 
@@ -62,8 +63,8 @@ def test_weekly_review_migration_schema_and_metadata_parity(
 
     database = Database(url)
     try:
-        assert MIGRATION_HEAD == REVISION
-        assert database.current_migration_revision() == REVISION
+        assert MIGRATION_HEAD == CURRENT_REVISION
+        assert database.current_migration_revision() == CURRENT_REVISION
         inspector = inspect(database.engine)
         assert {
             "application_metric_snapshots",

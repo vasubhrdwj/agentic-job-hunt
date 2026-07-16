@@ -75,6 +75,15 @@ from .interview_round_schemas import (
     InterviewRoundEventCreate,
     InterviewRoundMutationResponse,
 )
+from .interview_preparation_repository import (
+    InterviewPreparationRepositoryError,
+    create_interview_preparation_revision,
+    load_application_interview_preparation,
+)
+from .interview_preparation_schemas import (
+    ApplicationInterviewPreparationResponse,
+    InterviewPreparationRevisionCreate,
+)
 from .mutation_receipts import MutationIdempotencyConflict, MutationPending
 from .outreach_repository import (
     OutreachRepositoryError,
@@ -262,6 +271,40 @@ class SqlAlchemyApplicationWorkspaceStore(SqlAlchemyContactWorkspaceStore):
                 session,
                 owner_id=owner_id,
                 application_id=application_id,
+            )
+
+    def get_application_interview_preparation(
+        self,
+        *,
+        owner_id: str,
+        application_id: str,
+    ) -> ApplicationInterviewPreparationResponse | None:
+        with _interview_preparation_errors(), self.database.session() as session:
+            return load_application_interview_preparation(
+                session,
+                owner_id=owner_id,
+                application_id=application_id,
+                keyring=self.keyring,
+            )
+
+    def create_interview_preparation_revision(
+        self,
+        *,
+        owner_id: str,
+        application_id: str,
+        payload: InterviewPreparationRevisionCreate,
+        expected_version: int,
+        idempotency_key: str,
+    ) -> ApplicationInterviewPreparationResponse | None:
+        with _interview_preparation_errors(), self.database.session() as session:
+            return create_interview_preparation_revision(
+                session,
+                owner_id=owner_id,
+                application_id=application_id,
+                payload=payload,
+                expected_version=expected_version,
+                idempotency_key=idempotency_key,
+                keyring=self.keyring,
             )
 
     def schedule_interview_round(
@@ -762,6 +805,48 @@ def _interview_round_errors() -> Iterator[None]:
     except SQLAlchemyError as exc:
         raise WorkspaceUnavailable(
             "interview-round database is unavailable"
+        ) from exc
+
+
+@contextmanager
+def _interview_preparation_errors() -> Iterator[None]:
+    try:
+        yield
+    except WorkspaceUnavailable:
+        raise
+    except WorkspaceConflict:
+        raise
+    except WorkspaceInputError:
+        raise
+    except VersionConflict as exc:
+        raise WorkspaceConflict(str(exc), code="version_conflict") from exc
+    except MutationIdempotencyConflict as exc:
+        raise WorkspaceConflict(str(exc), code="idempotency_conflict") from exc
+    except MutationPending as exc:
+        raise WorkspaceConflict(str(exc), code="mutation_pending") from exc
+    except ResourceConflict as exc:
+        raise WorkspaceConflict(str(exc)) from exc
+    except (
+        InterviewPreparationRepositoryError,
+        PrivatePayloadBindingError,
+        DecryptionError,
+    ) as exc:
+        raise WorkspaceUnavailable(
+            "interview-preparation data is inconsistent"
+        ) from exc
+    except ValidationError as exc:
+        raise WorkspaceUnavailable(
+            "stored interview-preparation data failed contract validation"
+        ) from exc
+    except ValueError as exc:
+        raise WorkspaceInputError(str(exc)) from exc
+    except IntegrityError as exc:
+        raise WorkspaceConflict(
+            "interview preparation conflicts with existing state"
+        ) from exc
+    except SQLAlchemyError as exc:
+        raise WorkspaceUnavailable(
+            "interview-preparation database is unavailable"
         ) from exc
 
 

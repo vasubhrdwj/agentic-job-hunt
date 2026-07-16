@@ -2,6 +2,7 @@ import type { NextRequest } from "next/server";
 
 const DEFAULT_MAX_REQUEST_BYTES = 512 * 1024;
 const DEFAULT_MAX_RESPONSE_BYTES = 8 * 1024 * 1024;
+const PRIVACY_EXPORT_MAX_RESPONSE_BYTES = 32 * 1024 * 1024;
 const DEFAULT_UPSTREAM_TIMEOUT_MS = 20_000;
 
 const MAX_REQUEST_BYTES = integerSetting(
@@ -35,6 +36,7 @@ const REQUEST_HEADER_ALLOWLIST = [
 ] as const;
 
 const RESPONSE_HEADER_ALLOWLIST = [
+  "content-disposition",
   "content-type",
   "deprecation",
   "etag",
@@ -199,6 +201,11 @@ function isPaidHuntRequest(method: string, segments: string[]): boolean {
   return method === "POST" && segments.length === 1 && segments[0] === "hunt";
 }
 
+function isPrivacyExport(method: string, segments: string[]): boolean {
+  return method === "GET" && segments.length === 2
+    && segments[0] === "privacy" && segments[1] === "export";
+}
+
 async function hasValidOwnerSession(
   request: NextRequest,
   signal: AbortSignal,
@@ -223,6 +230,10 @@ export async function proxyApiRequest(
   segments: string[],
 ): Promise<Response> {
   const method = request.method.toUpperCase();
+  const privacyExport = isPrivacyExport(method, segments);
+  const maxResponseBytes = privacyExport
+    ? PRIVACY_EXPORT_MAX_RESPONSE_BYTES
+    : MAX_RESPONSE_BYTES;
   const hasBody = method !== "GET" && method !== "HEAD";
   const abortController = new AbortController();
   let timedOut = false;
@@ -277,18 +288,20 @@ export async function proxyApiRequest(
     const declaredResponseBytes = hasResponseBody
       ? contentLength(upstream.headers, "response")
       : null;
-    if (declaredResponseBytes !== null && declaredResponseBytes > MAX_RESPONSE_BYTES) {
+    if (declaredResponseBytes !== null && declaredResponseBytes > maxResponseBytes) {
       await upstream.body?.cancel();
       return jsonProblem(
-        502,
-        "upstream_response_too_large",
-        "The job-search service returned an unexpectedly large response.",
+        privacyExport ? 413 : 502,
+        privacyExport ? "privacy_export_too_large" : "upstream_response_too_large",
+        privacyExport
+          ? "The workspace export exceeds the 32 MiB download limit. Shorten legacy-run retention and retry."
+          : "The job-search service returned an unexpectedly large response.",
       );
     }
     const responseBody = hasResponseBody
       ? await readBodyWithLimit(
           upstream.body,
-          MAX_RESPONSE_BYTES,
+          maxResponseBytes,
           "response",
           abortController.signal,
         )
@@ -320,9 +333,11 @@ export async function proxyApiRequest(
             `Request body exceeds the ${MAX_REQUEST_BYTES}-byte limit.`,
           )
         : jsonProblem(
-            502,
-            "upstream_response_too_large",
-            "The job-search service returned an unexpectedly large response.",
+            privacyExport ? 413 : 502,
+            privacyExport ? "privacy_export_too_large" : "upstream_response_too_large",
+            privacyExport
+              ? "The workspace export exceeds the 32 MiB download limit. Shorten legacy-run retention and retry."
+              : "The job-search service returned an unexpectedly large response.",
           );
     }
     if (timedOut) {

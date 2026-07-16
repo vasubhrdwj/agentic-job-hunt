@@ -51,6 +51,10 @@ from ..interview_round_schemas import (
     InterviewRoundEventCreate,
     InterviewRoundMutationResponse,
 )
+from ..interview_preparation_schemas import (
+    ApplicationInterviewPreparationResponse,
+    InterviewPreparationRevisionCreate,
+)
 from ..outreach_schemas import (
     ApplicationOutreachResponse,
     OutreachEventCreate,
@@ -346,6 +350,62 @@ def create_application_router(
             _not_found("application")
         _set_etag(response, interview_rounds.application.version)
         return interview_rounds
+
+    @router.get(
+        "/api/applications/{application_id}/interview-preparation",
+        response_model=ApplicationInterviewPreparationResponse,
+        description=(
+            "Load deterministic, database-only interview prompts pinned to the exact "
+            "submitted application, reviewed evidence, posting, and scheduled round."
+        ),
+        responses=COMMON_ERROR_RESPONSES,
+    )
+    def get_owner_application_interview_preparation(
+        application_id: OpaqueId,
+        response: Response,
+        owner: AuthenticatedOwner = Security(require_read_owner),
+    ) -> ApplicationInterviewPreparationResponse:
+        preparation = _invoke(
+            _store(store).get_application_interview_preparation,
+            owner_id=owner.owner_id,
+            application_id=application_id,
+        )
+        if preparation is None:
+            _not_found("application")
+        _set_etag(response, preparation.write_version)
+        return preparation
+
+    @router.post(
+        "/api/applications/{application_id}/interview-preparation/revisions",
+        response_model=ApplicationInterviewPreparationResponse,
+        status_code=status.HTTP_201_CREATED,
+        description=(
+            "Append encrypted owner-authored STAR fields. If-Match names the "
+            "application version before the first save and the preparation version "
+            "afterward; Idempotency-Key makes exact retries safe."
+        ),
+        responses=COMMON_ERROR_RESPONSES,
+    )
+    def create_owner_interview_preparation_revision(
+        application_id: OpaqueId,
+        payload: InterviewPreparationRevisionCreate,
+        response: Response,
+        owner: AuthenticatedOwner = Security(require_mutation_owner),
+        if_match: str | None = Header(default=None, alias="If-Match"),
+        idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+    ) -> ApplicationInterviewPreparationResponse:
+        preparation = _invoke(
+            _store(store).create_interview_preparation_revision,
+            owner_id=owner.owner_id,
+            application_id=application_id,
+            payload=payload,
+            expected_version=_expected_version(if_match),
+            idempotency_key=_required_idempotency_key(idempotency_key),
+        )
+        if preparation is None:
+            _not_found("application")
+        _set_etag(response, preparation.write_version)
+        return preparation
 
     @router.post(
         "/api/applications/{application_id}/interview-rounds",

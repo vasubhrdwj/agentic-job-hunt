@@ -17,7 +17,7 @@ WORKDIR /app
 # database. The slim image omits it, which would make every saved-search IANA
 # timezone fail validation in the deployed web and worker containers.
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends tzdata \
+    && apt-get install -y --no-install-recommends postgresql-client tzdata \
     && rm -rf /var/lib/apt/lists/*
 
 ENV PATH=/root/.local/bin:$PATH \
@@ -30,6 +30,7 @@ COPY alembic.ini ./alembic.ini
 COPY migrations/ ./migrations/
 COPY job_hunt_agent/ ./job_hunt_agent/
 COPY config/ ./config/
+COPY scripts/ ./scripts/
 
 EXPOSE 8000
 

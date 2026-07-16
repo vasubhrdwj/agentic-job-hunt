@@ -9,7 +9,7 @@ from alembic import command
 from alembic.config import Config
 from sqlalchemy import inspect
 
-from job_hunt_agent.database import Database
+from job_hunt_agent.database import MIGRATION_HEAD, Database
 
 
 def test_application_submission_migration_round_trip_and_composite_edges(
@@ -23,7 +23,7 @@ def test_application_submission_migration_round_trip_and_composite_edges(
 
     database = Database(url)
     try:
-        assert database.current_migration_revision() == "20260715_0016"
+        assert database.current_migration_revision() == MIGRATION_HEAD
         inspector = inspect(database.engine)
         assert "application_submissions" in inspector.get_table_names()
         columns = {
@@ -97,7 +97,7 @@ def test_application_submission_migration_round_trip_and_composite_edges(
     command.upgrade(config, "head")
     upgraded = Database(url)
     try:
-        assert upgraded.current_migration_revision() == "20260715_0016"
+        assert upgraded.current_migration_revision() == MIGRATION_HEAD
         assert "application_submissions" in inspect(upgraded.engine).get_table_names()
     finally:
         upgraded.dispose()

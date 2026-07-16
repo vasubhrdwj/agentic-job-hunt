@@ -7,6 +7,10 @@ from .application_interview import (
     ApplicationInterviewRound,
     ApplicationInterviewRoundEvent,
 )
+from .interview_preparation import (
+    ApplicationInterviewPreparation,
+    ApplicationInterviewPreparationRevision,
+)
 from .application_outcome import ApplicationOutcome
 from .application_artifact import ApplicationArtifactEvent, ApplicationArtifactRevision
 from .application_pack import ApplicationPack, ApplicationPackEvent, ApplicationPackRevision
@@ -42,6 +46,7 @@ from .opportunity import (
 )
 from .outreach import OutreachEvent, OutreachMessageVersion, OutreachReply, OutreachSequence
 from .weekly_review import ApplicationActionReview, ApplicationMetricSnapshot
+from .privacy import OwnerPrivacySetting, PrivacyDeletionReceipt
 
 __all__ = [
     "Base",
@@ -50,6 +55,8 @@ __all__ = [
     "ApplicationActivityEvent",
     "ApplicationInterviewRound",
     "ApplicationInterviewRoundEvent",
+    "ApplicationInterviewPreparation",
+    "ApplicationInterviewPreparationRevision",
     "ApplicationMilestoneCorrection",
     "ApplicationOutcome",
     "ApplicationArtifactEvent",
@@ -78,6 +85,8 @@ __all__ = [
     "OwnerMutationReceipt",
     "OwnerOpportunity",
     "OwnerSession",
+    "OwnerPrivacySetting",
+    "PrivacyDeletionReceipt",
     "OpportunityDecisionEvent",
     "OpportunityScan",
     "OpportunityScanSource",
