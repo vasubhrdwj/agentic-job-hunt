@@ -944,6 +944,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/session/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Session Status */
+        get: operations["session_status_api_session_status_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/today": {
         parameters: {
             query?: never;
@@ -4975,6 +4992,14 @@ export interface components {
             owner_id: string;
             /** Timezone */
             timezone: string;
+        };
+        /** SessionStatusResponse */
+        SessionStatusResponse: {
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "ready" | "setup_required";
         };
         /** TextEvidenceFact */
         TextEvidenceFact: {
@@ -11146,6 +11171,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SessionDeleteResponse"];
+                };
+            };
+        };
+    };
+    session_status_api_session_status_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SessionStatusResponse"];
                 };
             };
         };

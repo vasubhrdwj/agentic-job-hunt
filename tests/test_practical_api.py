@@ -176,6 +176,26 @@ def test_owner_session_survives_requests_and_is_stored_only_as_a_hash(
         assert all(len(row.token_hash) == 64 for row in stored)
 
 
+def test_session_status_reports_only_sanitized_setup_readiness(
+    practical_client: tuple[TestClient, Database],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client, _database = practical_client
+
+    ready = client.get("/api/session/status")
+    assert ready.status_code == 200
+    assert ready.headers["cache-control"] == "no-store, max-age=0"
+    assert ready.json() == {"state": "ready"}
+    assert OWNER_TOKEN not in ready.text
+
+    monkeypatch.delenv("JOB_HUNT_OWNER_TOKEN_HASH")
+    setup_required = client.get("/api/session/status")
+    assert setup_required.status_code == 200
+    assert setup_required.json() == {"state": "setup_required"}
+    assert "database" not in setup_required.text
+    assert "token" not in setup_required.text
+
+
 def test_invalid_token_and_wrong_origin_fail_closed(
     practical_client: tuple[TestClient, Database],
 ) -> None:
@@ -771,6 +791,7 @@ def test_openapi_marks_hunt_as_cookie_authenticated(
     assert schema["paths"]["/api/session"]["delete"]["security"] == [
         {"OwnerSessionCookie": []}
     ]
+    assert "security" not in schema["paths"]["/api/session/status"]["get"]
     assert schema["paths"]["/api/health"]["get"]["security"] == [
         {"OwnerSessionCookie": []}
     ]
@@ -939,6 +960,9 @@ def test_legacy_liveness_remains_available_without_durable_database(
         assert client.get("/api/me/profile").status_code == 404
         assert client.get("/api/career-tracks").status_code == 404
         assert client.get("/api/saved-searches").status_code == 404
+        assert client.get("/api/session/status").json() == {
+            "state": "setup_required"
+        }
         login = client.post(
             "/api/session",
             json={"owner_token": OWNER_TOKEN},

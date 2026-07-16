@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import date, datetime, timezone
+from typing import Literal
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from fastapi import APIRouter, HTTPException, Request, Response, Security, status
@@ -15,6 +16,7 @@ from ..auth import (
     authenticate_owner_token,
     create_owner_session,
     load_owner_session,
+    owner_access_configured,
     revoke_owner_session,
     session_cookie_name,
 )
@@ -37,6 +39,10 @@ class SessionDeleteResponse(BaseModel):
     ok: bool
 
 
+class SessionStatusResponse(BaseModel):
+    state: Literal["ready", "setup_required"]
+
+
 @dataclass(frozen=True)
 class AuthenticatedOwner:
     owner_id: str
@@ -54,6 +60,22 @@ def create_session_router(
 ) -> APIRouter:
     router = APIRouter(tags=["owner-session"])
     owner_cookie = _owner_cookie_security()
+
+    @router.get("/api/session/status", response_model=SessionStatusResponse)
+    def session_status(response: Response) -> SessionStatusResponse:
+        database_ready = bool(
+            database is not None
+            and database.reachable()
+            and database.migrations_current()
+        )
+        response.headers["Cache-Control"] = "no-store, max-age=0"
+        return SessionStatusResponse(
+            state=(
+                "ready"
+                if database_ready and owner_access_configured()
+                else "setup_required"
+            )
+        )
 
     @router.post("/api/session", response_model=SessionResponse)
     def create_session(

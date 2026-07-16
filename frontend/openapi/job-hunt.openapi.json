@@ -10540,6 +10540,23 @@
         "title": "SessionResponse",
         "type": "object"
       },
+      "SessionStatusResponse": {
+        "properties": {
+          "state": {
+            "enum": [
+              "ready",
+              "setup_required"
+            ],
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "state"
+        ],
+        "title": "SessionStatusResponse",
+        "type": "object"
+      },
       "TextEvidenceFact": {
         "additionalProperties": false,
         "properties": {
@@ -19720,6 +19737,27 @@
           }
         },
         "summary": "Create Session",
+        "tags": [
+          "owner-session"
+        ]
+      }
+    },
+    "/api/session/status": {
+      "get": {
+        "operationId": "session_status_api_session_status_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionStatusResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Session Status",
         "tags": [
           "owner-session"
         ]

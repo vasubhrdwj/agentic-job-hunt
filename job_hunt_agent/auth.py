@@ -78,6 +78,12 @@ def authenticate_owner_token(token: str) -> str:
     return configured_owner_id()
 
 
+def owner_access_configured() -> bool:
+    """Return whether the single-owner bootstrap credential is usable."""
+
+    return _HASH_RE.fullmatch(os.getenv(OWNER_TOKEN_HASH_ENV, "").strip()) is not None
+
+
 def ensure_owner(
     session: Session,
     owner_id: str,

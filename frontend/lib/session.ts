@@ -10,13 +10,29 @@ export type OwnerAccessState =
 
 export async function getOwnerAccessState(): Promise<OwnerAccessState> {
   try {
-    const response = await fetch("/api/session", {
+    const statusResponse = await fetch("/api/session/status", {
       cache: "no-store",
       credentials: "same-origin",
     });
-    if (response.ok) return "signed_in";
-    if (response.status === 401) return "ready";
-    if (response.status === 503) return "setup_required";
+    if (!statusResponse.ok) return "unavailable";
+    const statusBody: unknown = await statusResponse.json();
+    if (
+      typeof statusBody !== "object" ||
+      statusBody === null ||
+      !("state" in statusBody)
+    ) {
+      return "unavailable";
+    }
+    if (statusBody.state === "setup_required") return "setup_required";
+    if (statusBody.state !== "ready") return "unavailable";
+
+    const sessionResponse = await fetch("/api/session", {
+      cache: "no-store",
+      credentials: "same-origin",
+    });
+    if (sessionResponse.ok) return "signed_in";
+    if (sessionResponse.status === 401) return "ready";
+    if (sessionResponse.status === 503) return "setup_required";
     return "unavailable";
   } catch {
     return "unavailable";
