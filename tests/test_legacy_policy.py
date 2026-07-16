@@ -134,3 +134,21 @@ def test_deprecation_metadata_requires_https_in_production(
         now=datetime(2026, 7, 15, tzinfo=timezone.utc),
     )
     assert headers["Link"].startswith("<http://example.com/migrate>")
+
+
+def test_default_deprecation_link_tracks_canonical_main(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("LEGACY_HUNT_DEPRECATION_URL", raising=False)
+    monkeypatch.setenv("LEGACY_HUNT_API_SUNSET", SUNSET)
+
+    headers = legacy_deprecation_headers(
+        LegacyHuntApiMode.read_only,
+        production=True,
+        now=datetime(2026, 7, 15, tzinfo=timezone.utc),
+    )
+
+    assert (
+        "/blob/main/docs/runbooks/legacy-hunt-deprecation.md"
+        in headers["Link"]
+    )

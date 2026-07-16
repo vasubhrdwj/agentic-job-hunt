@@ -14,7 +14,7 @@ LEGACY_HUNT_DEPRECATION_URL_ENV = "LEGACY_HUNT_DEPRECATION_URL"
 DEFAULT_LEGACY_HUNT_API_SUNSET = "Tue, 31 Dec 2030 23:59:59 GMT"
 DEFAULT_LEGACY_HUNT_DEPRECATION_URL = (
     "https://github.com/vasubhrdwj/agentic-job-hunt/blob/"
-    "v2-rebuild/docs/runbooks/legacy-hunt-deprecation.md"
+    "main/docs/runbooks/legacy-hunt-deprecation.md"
 )
 
 
