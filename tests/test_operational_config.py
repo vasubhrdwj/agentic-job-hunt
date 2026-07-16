@@ -41,6 +41,7 @@ def test_render_gates_web_traffic_on_database_readiness_and_legacy_writes() -> N
     assert env["LEGACY_HUNT_API_MODE"]["value"] == "read_only"
     assert env["LEGACY_HUNT_API_SUNSET"]["value"]
     assert env["DATABASE_URL"]["sync"] is False
+    assert env["MIGRATE_ON_START"]["value"] == "1"
     assert env["JOB_HUNT_DATA_KEYS"]["sync"] is False
 
 
@@ -71,6 +72,7 @@ def test_runtime_image_contains_restore_tools_and_operator_scripts() -> None:
     dockerfile = (ROOT / "Dockerfile").read_text(encoding="utf-8")
     assert "postgresql-client" in dockerfile
     assert "COPY scripts/ ./scripts/" in dockerfile
+    assert 'CMD ["python", "-m", "scripts.start_web"]' in dockerfile
 
 
 def test_operational_runbook_set_and_manual_browser_matrix_are_present() -> None:

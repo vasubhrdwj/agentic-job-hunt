@@ -25,6 +25,10 @@ services:
         value: "Thu, 31 Dec 2026 23:59:59 GMT"
       - key: DATABASE_URL
         sync: false
+      # The single hosted web instance upgrades the configured database before
+      # accepting traffic. A failed migration exits the container.
+      - key: MIGRATE_ON_START
+        value: "1"
       - key: JOB_HUNT_OWNER_ID
         value: owner
       - key: JOB_HUNT_OWNER_TOKEN_HASH

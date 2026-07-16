@@ -396,7 +396,10 @@ Before routing production traffic:
 
 1. Provision managed Postgres and require TLS in `DATABASE_URL` with
    `sslmode=require`, `verify-ca`, or `verify-full`.
-2. Run `python -m alembic upgrade head` as a one-shot release step.
+2. Keep `MIGRATE_ON_START=1` for the single hosted web instance. Its startup
+   wrapper runs `python -m alembic upgrade head` and exits instead of serving if
+   migration fails. Multi-instance deployments should use one dedicated
+   migration release step instead.
 3. Deploy a background worker from the same commit and give web and worker the
    same database, encryption keys, provider credentials, and owner identity.
 4. Configure the required Render environment variables, including an exact
