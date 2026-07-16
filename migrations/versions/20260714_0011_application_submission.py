@@ -69,7 +69,7 @@ def downgrade() -> None:
         table_name="application_activity_events",
     )
     with op.batch_alter_table(
-        "application_activity_events", recreate="always"
+        "application_activity_events", recreate=_batch_recreate_mode()
     ) as batch_op:
         batch_op.drop_constraint(
             op.f("ck_application_activity_events_event_shape"), type_="check"
@@ -107,7 +107,7 @@ def downgrade() -> None:
 
 def _add_submission_reference_keys() -> None:
     with op.batch_alter_table(
-        "application_pack_events", recreate="always"
+        "application_pack_events", recreate=_batch_recreate_mode()
     ) as batch_op:
         batch_op.create_unique_constraint(
             "uq_application_pack_events_submission_ref",
@@ -123,7 +123,7 @@ def _add_submission_reference_keys() -> None:
 
 def _drop_submission_reference_keys() -> None:
     with op.batch_alter_table(
-        "application_pack_events", recreate="always"
+        "application_pack_events", recreate=_batch_recreate_mode()
     ) as batch_op:
         batch_op.drop_constraint(
             "uq_application_pack_events_submission_ref", type_="unique"
@@ -131,7 +131,9 @@ def _drop_submission_reference_keys() -> None:
 
 
 def _allow_application_stages() -> None:
-    with op.batch_alter_table("applications", recreate="always") as batch_op:
+    with op.batch_alter_table(
+        "applications", recreate=_batch_recreate_mode()
+    ) as batch_op:
         batch_op.drop_constraint(op.f("ck_applications_stage"), type_="check")
         batch_op.create_check_constraint(
             op.f("ck_applications_stage"),
@@ -140,7 +142,9 @@ def _allow_application_stages() -> None:
 
 
 def _restore_application_stage() -> None:
-    with op.batch_alter_table("applications", recreate="always") as batch_op:
+    with op.batch_alter_table(
+        "applications", recreate=_batch_recreate_mode()
+    ) as batch_op:
         batch_op.drop_constraint(op.f("ck_applications_stage"), type_="check")
         batch_op.create_check_constraint(
             op.f("ck_applications_stage"), "stage = 'pursuing'"
@@ -148,7 +152,9 @@ def _restore_application_stage() -> None:
 
 
 def _allow_action_kinds() -> None:
-    with op.batch_alter_table("action_items", recreate="always") as batch_op:
+    with op.batch_alter_table(
+        "action_items", recreate=_batch_recreate_mode()
+    ) as batch_op:
         batch_op.drop_constraint(op.f("ck_action_items_kind"), type_="check")
         batch_op.create_check_constraint(
             op.f("ck_action_items_kind"),
@@ -158,7 +164,9 @@ def _allow_action_kinds() -> None:
 
 
 def _restore_action_kind() -> None:
-    with op.batch_alter_table("action_items", recreate="always") as batch_op:
+    with op.batch_alter_table(
+        "action_items", recreate=_batch_recreate_mode()
+    ) as batch_op:
         batch_op.drop_constraint(op.f("ck_action_items_kind"), type_="check")
         batch_op.create_check_constraint(
             op.f("ck_action_items_kind"),
@@ -336,7 +344,7 @@ def _create_application_submissions() -> None:
 
 def _allow_transition_activity() -> None:
     with op.batch_alter_table(
-        "application_activity_events", recreate="always"
+        "application_activity_events", recreate=_batch_recreate_mode()
     ) as batch_op:
         batch_op.drop_constraint(
             op.f("ck_application_activity_events_creation_shape"), type_="check"
@@ -411,3 +419,9 @@ def _allow_transition_activity() -> None:
         postgresql_where=sa.text("submission_id IS NOT NULL"),
         sqlite_where=sa.text("submission_id IS NOT NULL"),
     )
+
+
+def _batch_recreate_mode() -> str:
+    """Recreate tables only where SQLite requires batch-copy DDL."""
+
+    return "always" if op.get_bind().dialect.name == "sqlite" else "auto"

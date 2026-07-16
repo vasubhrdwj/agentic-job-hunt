@@ -285,6 +285,42 @@ def test_legacy_import_cli_requires_explicit_real_key_configuration(
     assert "JOB_HUNT_DATA_KEYS must be configured" in capsys.readouterr().err
 
 
+def test_legacy_import_cli_reports_malformed_source_without_traceback(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    source = tmp_path / "malformed-legacy.db"
+    with sqlite3.connect(source) as connection:
+        connection.execute("CREATE TABLE runs (run_id TEXT PRIMARY KEY)")
+
+    target_url, target = _migrated_database(tmp_path / "target.db", monkeypatch)
+    try:
+        with target.session() as session:
+            session.add(Owner(id="owner", display_name="Owner", timezone="UTC"))
+    finally:
+        target.dispose()
+    monkeypatch.setenv("ENVIRONMENT", "development")
+    monkeypatch.setenv("DATABASE_URL", target_url)
+    monkeypatch.delenv("JOB_HUNT_DATA_KEYS", raising=False)
+
+    assert (
+        import_main(
+            [
+                "--source",
+                str(source),
+                "--owner-id",
+                "owner",
+                "--allow-development-key",
+            ]
+        )
+        == 2
+    )
+    error = capsys.readouterr().err
+    assert "legacy SQLite source schema cannot be read safely" in error
+    assert "Traceback" not in error
+
+
 def test_database_state_and_readiness_survive_process_restart(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

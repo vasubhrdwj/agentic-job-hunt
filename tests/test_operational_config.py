@@ -24,6 +24,11 @@ def test_compose_restarts_durable_services_and_health_gates_frontend() -> None:
     assert compose["x-backend-environment"]["LEGACY_HUNT_API_MODE"].endswith(
         ":-read_only}"
     )
+    assert "${POSTGRES_PASSWORD:?" in compose["x-backend-environment"]["DATABASE_URL"]
+    assert "${POSTGRES_PASSWORD:?" in services["postgres"]["environment"][
+        "POSTGRES_PASSWORD"
+    ]
+    assert services["postgres"]["ports"] == ["127.0.0.1:5432:5432"]
 
 
 def test_render_is_fail_closed_on_readiness_and_legacy_writes() -> None:
@@ -31,6 +36,8 @@ def test_render_is_fail_closed_on_readiness_and_legacy_writes() -> None:
     web = render["services"][0]
     env = {item["key"]: item for item in web["envVars"]}
     assert web["healthCheckPath"] == "/ready"
+    assert web["autoDeployTrigger"] == "checksPass"
+    assert "autoDeploy" not in web
     assert env["LEGACY_HUNT_API_MODE"]["value"] == "read_only"
     assert env["LEGACY_HUNT_API_SUNSET"]["value"]
     assert env["DATABASE_URL"]["sync"] is False
@@ -45,10 +52,19 @@ def test_quality_workflow_runs_operational_gates_with_bounded_jobs() -> None:
     assert workflow["concurrency"]["cancel-in-progress"] is True
     assert workflow["jobs"]["backend"]["timeout-minutes"] <= 30
     assert workflow["jobs"]["frontend"]["timeout-minutes"] <= 30
+    assert workflow["jobs"]["runtime-image"]["timeout-minutes"] <= 30
     assert "python -m scripts.migration_gate check" in workflow_text
     assert "docker compose config --quiet" in workflow_text
+    assert "docker build --tag job-hunt-agent-ci:" in workflow_text
     assert "pip check" in workflow_text
     assert "--max-warnings=0" in workflow_text
+    assert "branches: [main, master, v2-rebuild]" not in workflow_text
+    postgres_password = workflow["jobs"]["backend"]["services"]["postgres"]["env"][
+        "POSTGRES_PASSWORD"
+    ]
+    assert "github.run_id" in postgres_password
+    assert workflow["jobs"]["backend"]["env"]["POSTGRES_PASSWORD"] == postgres_password
+    assert postgres_password in workflow["jobs"]["backend"]["env"]["POSTGRES_URL"]
 
 
 def test_runtime_image_contains_restore_tools_and_operator_scripts() -> None:
@@ -72,3 +88,8 @@ def test_operational_runbook_set_and_manual_browser_matrix_are_present() -> None
     browser = (runbooks / "manual-browser-matrix.md").read_text(encoding="utf-8")
     for marker in ("Chromium", "Firefox", "WebKit", "390", "Weekly Review", "Privacy"):
         assert marker in browser
+
+    readme = (ROOT / "README.md").read_text(encoding="utf-8")
+    hosted_status = readme.split("## Hosted deployment status", maxsplit=1)[1]
+    assert "onrender.com/ready" in hosted_status
+    assert "onrender.com/health" not in hosted_status

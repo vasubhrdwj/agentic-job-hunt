@@ -107,12 +107,17 @@ npm run build
 With Docker Desktop available:
 
 ```bash
+cp .env.example .env
+# Replace POSTGRES_PASSWORD= with the output of: openssl rand -hex 24
+set -a
+source .env
+set +a
 docker compose build migrate web worker
 docker compose up -d postgres
 docker compose run --rm migrate
-DATABASE_URL=postgresql+psycopg://job_hunt:job_hunt@localhost:5432/job_hunt \
+DATABASE_URL="postgresql+psycopg://job_hunt:${POSTGRES_PASSWORD}@localhost:5432/job_hunt" \
   .venv/bin/python -m alembic check
-TEST_DATABASE_URL=postgresql+psycopg://job_hunt:job_hunt@localhost:5432/job_hunt \
+TEST_DATABASE_URL="postgresql+psycopg://job_hunt:${POSTGRES_PASSWORD}@localhost:5432/job_hunt" \
   .venv/bin/python -m pytest tests/test_job_queue_postgres.py -q
 docker compose up web worker frontend
 ```

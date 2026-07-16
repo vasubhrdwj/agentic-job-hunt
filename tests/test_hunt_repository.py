@@ -31,6 +31,7 @@ from job_hunt_agent.hunt_repository import (
 )
 from job_hunt_agent.job_queue import claim_next_job, fail_job_attempt
 from job_hunt_agent.models import BackgroundJob, Base, HuntOutcome, HuntRun, Owner
+from job_hunt_agent.privacy_repository import export_owner_workspace
 from job_hunt_agent.schemas import (
     CompanySource,
     HuntResult,
@@ -39,7 +40,7 @@ from job_hunt_agent.schemas import (
     Person,
     Role,
 )
-from job_hunt_agent.security import DataKeyring
+from job_hunt_agent.security import DataKeyring, DecryptionError
 
 
 @pytest.fixture
@@ -429,6 +430,7 @@ def test_existing_result_recovery_and_retention_purge(
             hunt_run_id=recovery.state.run_id,
             worker_id="worker-recovery",
             lease_token="lease-recovery",
+            keyring=keyring,
             now=now + timedelta(seconds=2),
         )
         assert recovered is not None and recovered.status == "succeeded"
@@ -458,3 +460,221 @@ def test_existing_result_recovery_and_retention_purge(
         remaining = session.get(HuntRun, request_expired.state.run_id)
         assert remaining is not None and remaining.encrypted_request is None
         assert session.get(HuntRun, access_expired.state.run_id) is None
+
+
+def test_request_ciphertext_is_bound_to_owner_run_and_stored_digest(
+    hunt_db: Database,
+    keyring: DataKeyring,
+) -> None:
+    now = datetime.now(timezone.utc)
+    with hunt_db.session() as session:
+        owner_a = _create(
+            session,
+            keyring,
+            marker="SAME PRIVATE REQUEST",
+            owner_id="owner-a",
+            run_id="request-owner-a",
+            now=now,
+        )
+        claimed = claim_next_job(
+            session,
+            worker_id="worker-request",
+            lease_token="lease-request",
+            kinds={"legacy_hunt"},
+            now=now + timedelta(seconds=1),
+        )
+        assert claimed is not None
+        owner_b = _create(
+            session,
+            keyring,
+            marker="SAME PRIVATE REQUEST",
+            owner_id="owner-b",
+            run_id="request-owner-b",
+            now=now + timedelta(seconds=2),
+        )
+        row_a = session.get(HuntRun, owner_a.state.run_id)
+        row_b = session.get(HuntRun, owner_b.state.run_id)
+        assert row_a is not None and row_b is not None
+        row_a.encrypted_request = row_b.encrypted_request
+        row_a.request_key_id = row_b.request_key_id
+
+        with pytest.raises(DecryptionError, match="binding"):
+            load_hunt_request_for_worker(
+                session,
+                hunt_run_id=row_a.id,
+                worker_id="worker-request",
+                lease_token="lease-request",
+                keyring=keyring,
+                now=now + timedelta(seconds=3),
+            )
+
+        legacy_json, legacy_hash = _request("LEGITIMATE LEGACY REQUEST")
+        legacy_envelope = keyring.encrypt(legacy_json)
+        row_a.encrypted_request = legacy_envelope.ciphertext
+        row_a.request_key_id = legacy_envelope.key_id
+        row_a.request_hash = legacy_hash
+        assert (
+            load_hunt_request_for_worker(
+                session,
+                hunt_run_id=row_a.id,
+                worker_id="worker-request",
+                lease_token="lease-request",
+                keyring=keyring,
+                now=now + timedelta(seconds=4),
+            )
+            == legacy_json
+        )
+        row_a.request_hash = "0" * 64
+        with pytest.raises(DecryptionError, match="digest"):
+            load_hunt_request_for_worker(
+                session,
+                hunt_run_id=row_a.id,
+                worker_id="worker-request",
+                lease_token="lease-request",
+                keyring=keyring,
+                now=now + timedelta(seconds=5),
+            )
+
+
+def test_result_and_outcome_ciphertexts_are_row_bound_and_export_fails_closed(
+    hunt_db: Database,
+    keyring: DataKeyring,
+) -> None:
+    now = datetime.now(timezone.utc)
+    with hunt_db.session() as session:
+        created_runs = []
+        for index, owner_id in ((1, "owner-a"), (2, "owner-b")):
+            created = _create(
+                session,
+                keyring,
+                marker=f"PRIVATE ROW {index}",
+                owner_id=owner_id,
+                run_id=f"bound-run-{index}",
+                now=now + timedelta(seconds=index - 1),
+            )
+            claimed = claim_next_job(
+                session,
+                worker_id=f"worker-{index}",
+                lease_token=f"lease-{index}",
+                kinds={"legacy_hunt"},
+                now=now + timedelta(seconds=index * 3),
+            )
+            assert claimed is not None
+            stored = store_hunt_success(
+                session,
+                hunt_result=_result(created.state.run_id, f"RESULT {index}"),
+                worker_id=f"worker-{index}",
+                lease_token=f"lease-{index}",
+                keyring=keyring,
+                now=now + timedelta(seconds=index * 3 + 1),
+            )
+            assert stored is not None
+            append_hunt_outcomes(
+                session,
+                owner_id=owner_id,
+                hunt_run_id=created.state.run_id,
+                outcomes=[
+                    OutcomeLog(
+                        draft_id="draft-1",
+                        outcome="replied",
+                        notes=f"OUTCOME {index}",
+                    )
+                ],
+                keyring=keyring,
+                now=now + timedelta(seconds=index * 3 + 2),
+            )
+            created_runs.append(created.state.run_id)
+
+        run_a = session.get(HuntRun, created_runs[0])
+        run_b = session.get(HuntRun, created_runs[1])
+        assert run_a is not None and run_b is not None
+        original_a_result = (run_a.encrypted_result, run_a.result_key_id)
+        run_a.encrypted_result, run_a.result_key_id = (
+            run_b.encrypted_result,
+            run_b.result_key_id,
+        )
+        run_b.encrypted_result, run_b.result_key_id = original_a_result
+
+        outcome_a = session.scalar(
+            select(HuntOutcome).where(HuntOutcome.hunt_run_id == run_a.id)
+        )
+        outcome_b = session.scalar(
+            select(HuntOutcome).where(HuntOutcome.hunt_run_id == run_b.id)
+        )
+        assert outcome_a is not None and outcome_b is not None
+        original_a_outcome = (
+            outcome_a.encrypted_payload,
+            outcome_a.encryption_key_id,
+        )
+        outcome_a.encrypted_payload, outcome_a.encryption_key_id = (
+            outcome_b.encrypted_payload,
+            outcome_b.encryption_key_id,
+        )
+        outcome_b.encrypted_payload, outcome_b.encryption_key_id = original_a_outcome
+
+        with pytest.raises(DecryptionError, match="binding"):
+            load_hunt_result(
+                session,
+                owner_id="owner-a",
+                hunt_run_id=run_a.id,
+                keyring=keyring,
+            )
+        with pytest.raises(DecryptionError, match="binding"):
+            load_hunt_outcomes(
+                session,
+                owner_id="owner-a",
+                hunt_run_id=run_a.id,
+                keyring=keyring,
+            )
+
+        exported = export_owner_workspace(
+            session,
+            owner_id="owner-a",
+            keyring=keyring,
+            now=now + timedelta(minutes=1),
+        )
+        assert all(
+            "result_payload" not in row for row in exported.tables["hunt_runs"]
+        )
+        assert all("outcome" not in row for row in exported.tables["hunt_outcomes"])
+        assert any(
+            omission.table == "hunt_runs"
+            and omission.field == "encrypted_result"
+            and omission.reason == "decryption_failed"
+            for omission in exported.omissions
+        )
+        assert any(
+            omission.table == "hunt_outcomes"
+            and omission.field == "encrypted_payload"
+            and omission.reason == "decryption_failed"
+            for omission in exported.omissions
+        )
+
+        legacy_cross_owner = keyring.encrypt(
+            OutcomeLog(
+                draft_id="draft-1",
+                outcome="replied",
+                notes="UNBOUND LEGACY OWNER-B OUTCOME",
+                logged_at=now,
+            ).model_dump_json()
+        )
+        outcome_a.encrypted_payload = legacy_cross_owner.ciphertext
+        outcome_a.encryption_key_id = legacy_cross_owner.key_id
+        with pytest.raises(DecryptionError, match="unbound legacy"):
+            load_hunt_outcomes(
+                session,
+                owner_id="owner-a",
+                hunt_run_id=run_a.id,
+                keyring=keyring,
+            )
+
+        wrong_result = keyring.encrypt(_result("wrong-run").model_dump_json())
+        run_a.encrypted_result = wrong_result.ciphertext
+        run_a.result_key_id = wrong_result.key_id
+        with pytest.raises(DecryptionError, match="result binding"):
+            load_hunt_result(
+                session,
+                owner_id="owner-a",
+                hunt_run_id=run_a.id,
+                keyring=keyring,
+            )

@@ -458,7 +458,7 @@ export function InputForm() {
             return (
               <label
                 key={option.value}
-                className={`inline-flex cursor-pointer items-center gap-2 rounded-full border px-3 py-2 text-xs ${
+                className={`inline-flex cursor-pointer items-center gap-2 rounded-full border px-3 py-2 text-xs focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-indigo-600 dark:focus-within:outline-indigo-400 ${
                   checked
                     ? "border-indigo-500 bg-indigo-50 text-indigo-900 dark:bg-indigo-950 dark:text-indigo-100"
                     : "border-zinc-300 dark:border-zinc-700"

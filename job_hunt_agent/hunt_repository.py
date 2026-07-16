@@ -19,6 +19,14 @@ from uuid import uuid4
 from sqlalchemy import delete, select, update
 from sqlalchemy.orm import Session
 
+from .hunt_payloads import (
+    decrypt_hunt_outcome,
+    decrypt_hunt_request,
+    decrypt_hunt_result,
+    encrypt_hunt_outcome,
+    encrypt_hunt_request,
+    encrypt_hunt_result,
+)
 from .job_queue import (
     cancel_job,
     complete_job,
@@ -36,7 +44,7 @@ from .models import (
     WorkerHeartbeat,
 )
 from .schemas import HuntResult, OutcomeLog
-from .security import DataKeyring, EncryptedEnvelope
+from .security import DataKeyring
 
 
 HUNT_JOB_KIND = "legacy_hunt"
@@ -207,7 +215,13 @@ def create_or_reuse_hunt(
             now=current,
         )
 
-    envelope = keyring.encrypt(request_json)
+    envelope = encrypt_hunt_request(
+        keyring,
+        owner_id=normalized_owner,
+        hunt_run_id=new_run_id,
+        request_json=request_json,
+        request_hash=normalized_request_hash,
+    )
     hunt = HuntRun(
         id=new_run_id,
         owner_id=normalized_owner,
@@ -299,11 +313,13 @@ def load_hunt_request_for_worker(
         or not _job_matches_hunt(job, hunt)
     ):
         return None
-    return keyring.decrypt(
-        EncryptedEnvelope(
-            key_id=hunt.request_key_id,
-            ciphertext=hunt.encrypted_request,
-        )
+    return decrypt_hunt_request(
+        keyring,
+        owner_id=hunt.owner_id,
+        hunt_run_id=hunt.id,
+        request_hash=hunt.request_hash,
+        encryption_key_id=hunt.request_key_id,
+        ciphertext=hunt.encrypted_request,
     )
 
 
@@ -317,13 +333,14 @@ def load_hunt_result(
     hunt = _get_owner_hunt(session, owner_id=owner_id, hunt_run_id=hunt_run_id)
     if hunt is None or hunt.encrypted_result is None or hunt.result_key_id is None:
         return None
-    plaintext = keyring.decrypt(
-        EncryptedEnvelope(
-            key_id=hunt.result_key_id,
-            ciphertext=hunt.encrypted_result,
-        )
+    payload = decrypt_hunt_result(
+        keyring,
+        owner_id=hunt.owner_id,
+        hunt_run_id=hunt.id,
+        encryption_key_id=hunt.result_key_id,
+        ciphertext=hunt.encrypted_result,
     )
-    return HuntResult.model_validate_json(plaintext)
+    return HuntResult.model_validate(payload)
 
 
 def load_hunt_outcomes(
@@ -344,12 +361,14 @@ def load_hunt_outcomes(
         )
     )
     return [
-        OutcomeLog.model_validate_json(
-            keyring.decrypt(
-                EncryptedEnvelope(
-                    key_id=row.encryption_key_id,
-                    ciphertext=row.encrypted_payload,
-                )
+        OutcomeLog.model_validate(
+            decrypt_hunt_outcome(
+                keyring,
+                owner_id=hunt.owner_id,
+                outcome_id=str(row.id),
+                draft_id=row.draft_id,
+                encryption_key_id=row.encryption_key_id,
+                ciphertext=row.encrypted_payload,
             )
         )
         for row in rows
@@ -535,7 +554,12 @@ def store_hunt_success(
 
     if hunt.encrypted_result is not None:
         raise HuntStateConflict("hunt result is already stored")
-    envelope = keyring.encrypt(hunt_result.model_dump_json())
+    envelope = encrypt_hunt_result(
+        keyring,
+        owner_id=hunt.owner_id,
+        hunt_run_id=hunt.id,
+        payload=hunt_result.model_dump(mode="json"),
+    )
     completed = complete_job(
         session,
         job.id,
@@ -560,6 +584,7 @@ def complete_existing_hunt_result_for_worker(
     hunt_run_id: str,
     worker_id: str,
     lease_token: str,
+    keyring: DataKeyring,
     now: datetime | None = None,
 ) -> HuntState | None:
     """Complete imported/interrupted state that already has encrypted output.
@@ -592,6 +617,7 @@ def complete_existing_hunt_result_for_worker(
         return None
     if not _job_matches_hunt(job, hunt):
         raise HuntRepositoryError("hunt run and background job linkage do not match")
+    _decrypt_result(hunt, keyring)
     if _as_utc(hunt.access_expires_at) <= _as_utc(current):
         cancel_job(
             session,
@@ -666,16 +692,32 @@ def append_hunt_outcomes(
         if not entry.draft_id or len(entry.draft_id) > 128:
             raise ValueError("outcome draft_id must be 1-128 characters")
         stamped_entry = entry.model_copy(update={"logged_at": logged_at})
-        envelope = keyring.encrypt(stamped_entry.model_dump_json())
-        session.add(
-            HuntOutcome(
-                hunt_run_id=hunt.id,
-                draft_id=stamped_entry.draft_id,
-                encrypted_payload=envelope.ciphertext,
-                encryption_key_id=envelope.key_id,
-                logged_at=logged_at,
-            )
+        payload = stamped_entry.model_dump(mode="json")
+        placeholder = encrypt_hunt_outcome(
+            keyring,
+            owner_id=hunt.owner_id,
+            outcome_id=f"pending:{uuid4().hex}",
+            draft_id=stamped_entry.draft_id,
+            payload=payload,
         )
+        row = HuntOutcome(
+            hunt_run_id=hunt.id,
+            draft_id=stamped_entry.draft_id,
+            encrypted_payload=placeholder.ciphertext,
+            encryption_key_id=placeholder.key_id,
+            logged_at=logged_at,
+        )
+        session.add(row)
+        session.flush()
+        envelope = encrypt_hunt_outcome(
+            keyring,
+            owner_id=hunt.owner_id,
+            outcome_id=str(row.id),
+            draft_id=row.draft_id,
+            payload=payload,
+        )
+        row.encrypted_payload = envelope.ciphertext
+        row.encryption_key_id = envelope.key_id
         stamped.append(stamped_entry)
     session.flush()
     return stamped
@@ -878,13 +920,14 @@ def _state_from_models(hunt: HuntRun, job: BackgroundJob) -> HuntState:
 def _decrypt_result(hunt: HuntRun, keyring: DataKeyring) -> HuntResult | None:
     if hunt.encrypted_result is None or hunt.result_key_id is None:
         return None
-    plaintext = keyring.decrypt(
-        EncryptedEnvelope(
-            key_id=hunt.result_key_id,
-            ciphertext=hunt.encrypted_result,
-        )
+    payload = decrypt_hunt_result(
+        keyring,
+        owner_id=hunt.owner_id,
+        hunt_run_id=hunt.id,
+        encryption_key_id=hunt.result_key_id,
+        ciphertext=hunt.encrypted_result,
     )
-    return HuntResult.model_validate_json(plaintext)
+    return HuntResult.model_validate(payload)
 
 
 def _job_matches_hunt(job: BackgroundJob, hunt: HuntRun) -> bool:

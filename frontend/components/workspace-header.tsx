@@ -22,7 +22,6 @@ const NAV_ITEMS: Array<{
   { href: "/searches", label: "Saved searches", section: "searches" },
   { href: "/profile", label: "Profile", section: "profile" },
   { href: "/privacy", label: "Privacy", section: "privacy" },
-  { href: "/hunt", label: "Legacy hunt", section: "hunt" },
 ];
 
 export function WorkspaceHeader({

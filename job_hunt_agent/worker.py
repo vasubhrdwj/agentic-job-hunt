@@ -45,6 +45,7 @@ from .models import (
     OpportunityScanSource,
 )
 from .opportunity_scan_worker import SCAN_JOB_KIND, process_claimed_opportunity_scan
+from .production_runtime import validate_production_runtime
 from .requests import HuntRequestPayload
 from .run import run_hunt
 from .security import DataKeyring, DecryptionError, EncryptedEnvelope, load_data_keyring
@@ -141,8 +142,11 @@ def run_worker_once(
         _env_bool("USE_MOCKS", default=False) if use_mocks is None else use_mocks
     )
     resolved_tracing = _tracing_enabled() if enable_tracing is None else enable_tracing
-    if _is_production() and resolved_use_mocks:
-        raise RuntimeError("USE_MOCKS must be false when ENVIRONMENT=production")
+    validate_production_runtime(
+        practical_mode=practical,
+        use_mocks=resolved_use_mocks,
+        enable_tracing=resolved_tracing,
+    )
 
     if practical:
         database = durable_database or database_from_env(required=True)
@@ -579,6 +583,7 @@ def process_claimed_practical_hunt(
                             hunt_run_id=claim.run_id,
                             worker_id=worker_id,
                             lease_token=claim.lease_token,
+                            keyring=keyring,
                         )
                     )
                     if recovered is not None:

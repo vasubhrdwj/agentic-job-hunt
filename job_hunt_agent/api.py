@@ -14,6 +14,7 @@ import logging
 import os
 from datetime import datetime, timedelta, timezone
 from typing import Iterable, Literal
+from urllib.parse import urlsplit
 from uuid import uuid4
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Request, Response, Security, status
@@ -25,10 +26,11 @@ from pydantic import BaseModel, Field
 from sqlalchemy.exc import SQLAlchemyError
 
 from . import hunt_repository, persistence, privacy_repository
-from .database import DatabaseConfigError, database_from_env, resolve_database_url
+from .database import DatabaseConfigError, database_from_env
 from .requests import HuntRequestPayload, canonical_request_json
+from .production_runtime import production_runtime_errors
 from .routers.health import create_health_router
-from .routers.privacy import create_privacy_router
+from .routers.privacy import PRIVACY_RECEIPT_SECRET_ENV, create_privacy_router
 from .routers.applications import create_application_router
 from .routers.opportunities import create_opportunity_router
 from .routers.workspace import (
@@ -161,10 +163,6 @@ def _is_production() -> bool:
     return os.getenv("ENVIRONMENT", "").strip().lower() == "production"
 
 
-def _tracing_enabled() -> bool:
-    return _env_bool("ENABLE_TRACING", default=_is_production())
-
-
 def _practical_mode_enabled() -> bool:
     # Public paid-provider submission must be an explicit development-only
     # compatibility choice. Production defaults to the private workspace.
@@ -186,6 +184,23 @@ def _parse_allowed_origins() -> list[str]:
     return [origin.strip() for origin in raw.split(",") if origin.strip()]
 
 
+def _production_origin_error(origin: str) -> str | None:
+    """Return why a production CORS entry is not an exact HTTPS origin."""
+
+    try:
+        parsed = urlsplit(origin)
+        parsed.port
+    except ValueError:
+        return "is not a valid URL"
+    if parsed.scheme.lower() != "https" or not parsed.hostname:
+        return "must use HTTPS"
+    if parsed.username is not None or parsed.password is not None:
+        return "must not include credentials"
+    if parsed.path or parsed.query or parsed.fragment:
+        return "must be an origin only, without a path, query, or fragment"
+    return None
+
+
 def _validate_production_config() -> None:
     # Validate the enum and deprecation metadata even outside production so a
     # typo cannot silently reopen or hide the compatibility API.
@@ -194,48 +209,19 @@ def _validate_production_config() -> None:
     if not _is_production():
         return
 
-    errors: list[str] = []
-    if not _practical_mode_enabled():
+    errors = production_runtime_errors()
+    if not os.getenv("ALLOWED_ORIGINS", "").strip():
+        errors.append("ALLOWED_ORIGINS is required when ENVIRONMENT=production")
+    if len(os.getenv(PRIVACY_RECEIPT_SECRET_ENV, "").strip()) < 32:
         errors.append(
-            "ENABLE_PRACTICAL_MODE must be true in production; "
-            "the public legacy hunt is development-only"
+            f"{PRIVACY_RECEIPT_SECRET_ENV} must be a stable 32+ character "
+            "secret when ENVIRONMENT=production"
         )
-    required = (
-        "GOOGLE_API_KEY",
-        "PHOENIX_API_KEY",
-        "PHOENIX_COLLECTOR_ENDPOINT",
-        "JOB_HUNT_DATA_KEYS",
-        "ALLOWED_ORIGINS",
-    )
-    for name in required:
-        if not os.getenv(name, "").strip():
-            errors.append(f"{name} is required when ENVIRONMENT=production")
-
-    if not (os.getenv("SERPAPI_API_KEY") or os.getenv("SERPAPI_KEY")):
-        errors.append("SERPAPI_API_KEY or SERPAPI_KEY is required when ENVIRONMENT=production")
-
-    if _env_bool("USE_MOCKS", default=False):
-        errors.append("USE_MOCKS must be false when ENVIRONMENT=production")
-
-    if not _tracing_enabled():
-        errors.append("ENABLE_TRACING must not be false when ENVIRONMENT=production")
-
-    if not _env_bool("GEMINI_PAID_SERVICE_ACK", default=False):
-        errors.append(
-            "GEMINI_PAID_SERVICE_ACK must be true: resumes must not use unpaid Gemini quota"
-        )
-
-    if _env_bool("ENABLE_TRACE_DRAFT_CONTENT", default=False):
-        errors.append("ENABLE_TRACE_DRAFT_CONTENT must be false in production")
 
     if _practical_mode_enabled():
-        for name in ("DATABASE_URL", "JOB_HUNT_OWNER_ID", "JOB_HUNT_OWNER_TOKEN_HASH"):
+        for name in ("JOB_HUNT_OWNER_ID", "JOB_HUNT_OWNER_TOKEN_HASH"):
             if not os.getenv(name, "").strip():
                 errors.append(f"{name} is required when practical mode is enabled")
-        try:
-            resolve_database_url(required=True, production=True)
-        except DatabaseConfigError as exc:
-            errors.append(str(exc))
 
     allowed_origins = _parse_allowed_origins()
     if "*" in allowed_origins:
@@ -244,6 +230,9 @@ def _validate_production_config() -> None:
         if any(marker in origin for marker in LOCAL_ORIGIN_MARKERS):
             errors.append("ALLOWED_ORIGINS must not include localhost in production")
             break
+        origin_error = _production_origin_error(origin)
+        if origin_error is not None:
+            errors.append(f"ALLOWED_ORIGINS entry {origin!r} {origin_error}")
 
     if errors:
         raise RuntimeError("Invalid production config: " + "; ".join(errors))

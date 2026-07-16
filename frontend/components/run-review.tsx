@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
-import { ApiError, cancelRun, deleteRun, getRun } from "@/lib/api";
+import { ApiError, deleteRun, getRun } from "@/lib/api";
 import type { OutreachDraft, RunDetailResponse } from "@/lib/types";
 import { HuntProgress } from "@/components/hunt-progress";
 import { RoleCard } from "@/components/role-card";
@@ -35,7 +35,6 @@ export function RunReview({ runId }: { runId: string }) {
   const [error, setError] = useState<string | null>(null);
   const [pollingWarning, setPollingWarning] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
-  const [cancelling, setCancelling] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -98,25 +97,6 @@ export function RunReview({ runId }: { runId: string }) {
     };
   }, [runId]);
 
-  async function onCancel() {
-    if (!window.confirm("Cancel this queued/running hunt?")) {
-      return;
-    }
-    setCancelling(true);
-    setError(null);
-    try {
-      const state = await cancelRun(runId);
-      setDetail((current) => ({
-        ...(current ?? { hunt_result: null, outcomes: [] }),
-        ...state,
-      }));
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Unable to cancel this run.");
-    } finally {
-      setCancelling(false);
-    }
-  }
-
   async function onDelete() {
     if (!window.confirm("Delete this run and all logged outcomes?")) {
       return;
@@ -158,12 +138,8 @@ export function RunReview({ runId }: { runId: string }) {
   if (ACTIVE_STATUSES.has(detail.status)) {
     return (
       <RunShell
-        runId={runId}
-        detail={detail}
         deleting={deleting}
-        cancelling={cancelling}
         pollingWarning={pollingWarning}
-        onCancel={onCancel}
         onDelete={onDelete}
       >
         <HuntProgress />
@@ -179,12 +155,8 @@ export function RunReview({ runId }: { runId: string }) {
   if (detail.status !== "succeeded") {
     return (
       <RunShell
-        runId={runId}
-        detail={detail}
         deleting={deleting}
-        cancelling={cancelling}
         pollingWarning={pollingWarning}
-        onCancel={onCancel}
         onDelete={onDelete}
       >
         <TerminalRunState detail={detail} />
@@ -206,12 +178,8 @@ export function RunReview({ runId }: { runId: string }) {
 
   return (
     <RunShell
-      runId={runId}
-      detail={detail}
       deleting={deleting}
-      cancelling={cancelling}
       pollingWarning={pollingWarning}
-      onCancel={onCancel}
       onDelete={onDelete}
     >
       <header className="mb-8">
@@ -224,6 +192,14 @@ export function RunReview({ runId }: { runId: string }) {
         <p className="mt-1 font-mono text-[11px] text-zinc-400">
           run_id: {huntResult.run_id}
         </p>
+        {detail.outcomes.length > 0 ? (
+          <Link
+            href={`/runs/${runId}/outcomes`}
+            className="mt-4 inline-flex min-h-10 items-center justify-center rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm font-medium text-zinc-800 transition hover:border-zinc-500 hover:bg-zinc-50 focus:outline-none focus:ring-2 focus:ring-zinc-300 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100 dark:hover:border-zinc-500 dark:hover:bg-zinc-800"
+          >
+            View archived outcomes ({detail.outcomes.length}) →
+          </Link>
+        ) : null}
       </header>
 
       <div className="space-y-6">
@@ -248,25 +224,16 @@ export function RunReview({ runId }: { runId: string }) {
 }
 
 function RunShell({
-  runId,
-  detail,
   deleting,
-  cancelling,
   pollingWarning,
-  onCancel,
   onDelete,
   children,
 }: {
-  runId: string;
-  detail: RunDetailResponse;
   deleting: boolean;
-  cancelling: boolean;
   pollingWarning: string | null;
-  onCancel: () => void;
   onDelete: () => void;
   children: ReactNode;
 }) {
-  const canCancel = ACTIVE_STATUSES.has(detail.status);
   return (
     <main className="mx-auto w-full max-w-5xl flex-1 px-6 py-10">
       <nav className="mb-6 flex flex-wrap items-center justify-between gap-3 text-sm">
@@ -274,19 +241,9 @@ function RunShell({
           href="/hunt"
           className="text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100"
         >
-          ← Legacy hunt
+          ← Legacy archive
         </Link>
         <div className="flex items-center gap-2">
-          {canCancel && (
-            <button
-              type="button"
-              onClick={onCancel}
-              disabled={cancelling}
-              className="inline-flex h-9 items-center rounded-md border border-amber-300 px-4 text-xs font-medium text-amber-800 hover:bg-amber-50 disabled:opacity-60 dark:border-amber-900 dark:text-amber-300 dark:hover:bg-amber-950"
-            >
-              {cancelling ? "Cancelling…" : "Cancel run"}
-            </button>
-          )}
           <button
             type="button"
             onClick={onDelete}
@@ -295,16 +252,15 @@ function RunShell({
           >
             {deleting ? "Deleting…" : "Delete run"}
           </button>
-          {detail.status === "succeeded" && (
-            <Link
-              href={`/runs/${runId}/outcomes`}
-              className="inline-flex h-9 items-center rounded-md bg-indigo-600 px-4 text-xs font-medium text-white hover:bg-indigo-700"
-            >
-              Log outcomes →
-            </Link>
-          )}
         </div>
       </nav>
+      <div
+        role="status"
+        className="mb-6 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-100"
+      >
+        Archived legacy run · read-only. You can review, copy, or permanently
+        delete it, but new provider work and outcome logging are retired.
+      </div>
       {pollingWarning && (
         <div
           role="status"
@@ -327,9 +283,9 @@ function TerminalRunState({ detail }: { detail: RunDetailResponse }) {
         : "Run failed";
   const body =
     detail.status === "dead_letter"
-      ? "The worker retried this hunt up to the configured limit and stopped to avoid unbounded provider work. An operator can inspect and requeue it if the encrypted request is still retained."
+      ? "The worker retried this hunt up to the configured limit and stopped to avoid unbounded provider work. The retained failure remains available for inspection but cannot be requeued from the retired workflow."
       : detail.status === "cancelled"
-        ? "This run was cancelled before a result was committed. Start a new hunt whenever you are ready."
+        ? "This run was cancelled before a result was committed. Use Saved searches for new role discovery."
         : "The worker could not complete this hunt. No outreach outcomes can be logged for a failed run.";
 
   return (
@@ -374,10 +330,10 @@ function PrivateRunError({ message }: { message: string }) {
       >
         <p>{message}</p>
         <Link
-          href="/hunt"
+          href="/today"
           className="mt-4 inline-block font-medium underline underline-offset-2"
         >
-          Start a new hunt
+          Open the practical workspace
         </Link>
       </div>
     </main>

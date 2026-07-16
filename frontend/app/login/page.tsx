@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useState } from "react";
+import { FormEvent, useState, useSyncExternalStore } from "react";
 
 import { createOwnerSession } from "@/lib/session";
 
@@ -8,6 +8,11 @@ export default function LoginPage() {
   const [ownerToken, setOwnerToken] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const workspaceDeleted = useSyncExternalStore(
+    subscribeToLocation,
+    workspaceDeletedSnapshot,
+    () => false,
+  );
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -33,6 +38,16 @@ export default function LoginPage() {
         Enter the private owner token configured on your backend. It is exchanged
         for an HttpOnly session and is never stored in this browser form.
       </p>
+
+      {workspaceDeleted ? (
+        <div
+          role="status"
+          className="mt-6 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900 dark:border-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-100"
+        >
+          Workspace permanently deleted. Its private profile, searches, applications,
+          outreach, and retained legacy runs are no longer available.
+        </div>
+      ) : null}
 
       <form onSubmit={submit} className="mt-8 space-y-5">
         <div>
@@ -81,5 +96,15 @@ export default function LoginPage() {
         until the owner session is active.
       </p>
     </main>
+  );
+}
+
+function subscribeToLocation(): () => void {
+  return () => undefined;
+}
+
+function workspaceDeletedSnapshot(): boolean {
+  return (
+    new URLSearchParams(window.location.search).get("workspace_deleted") === "1"
   );
 }

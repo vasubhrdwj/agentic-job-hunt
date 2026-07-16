@@ -28,6 +28,7 @@ from job_hunt_agent.private_payloads import encrypt_private_payload
 from job_hunt_agent.privacy_repository import (
     PrivacyConflict,
     delete_owner_workspace,
+    external_data_limits,
     export_owner_workspace,
     get_owner_hunt_retention_days,
     preview_owner_deletion,
@@ -48,6 +49,17 @@ def privacy_db(tmp_path: Path) -> Database:
         yield database
     finally:
         database.dispose()
+
+
+def test_external_data_limits_cover_every_production_provider() -> None:
+    limits = external_data_limits()
+    providers = {limit.provider for limit in limits}
+    summaries = {limit.provider: limit.summary for limit in limits}
+
+    assert providers == {"Google Gemini API", "SerpAPI", "Arize Phoenix"}
+    assert all(limit.source_url.startswith("https://") for limit in limits)
+    assert "Local workspace deletion" in summaries["SerpAPI"]
+    assert "local workspace" in summaries["Arize Phoenix"]
 
 
 def _seed_owner(database: Database, owner_id: str) -> None:

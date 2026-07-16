@@ -10,7 +10,6 @@ import {
   createSavedSearch,
   deleteSavedSearch,
   getCandidateProfile,
-  getSavedSearchHuntInput,
   listCareerTracks,
   listResumeVersions,
   listSavedSearches,
@@ -93,7 +92,6 @@ export function SearchesWorkspace() {
     text: string;
   } | null>(null);
   const [runningId, setRunningId] = useState<string | null>(null);
-  const [fullHuntId, setFullHuntId] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [runError, setRunError] = useState<Record<string, string>>({});
@@ -331,30 +329,6 @@ export function SearchesWorkspace() {
     }
   }
 
-  async function runFullHunt(search: SavedSearch) {
-    setFullHuntId(search.id);
-    setRunError((current) => ({ ...current, [search.id]: "" }));
-    try {
-      const projection = await getSavedSearchHuntInput(search.id);
-      if (!projection.ready || !projection.input) {
-        const blockers = projection.blockers.map(blockerLabel).join(" ");
-        setRunError((current) => ({
-          ...current,
-          [search.id]: blockers || "This search is not ready to run.",
-        }));
-        return;
-      }
-      router.push(`/hunt?savedSearch=${encodeURIComponent(search.id)}`);
-    } catch (error) {
-      setRunError((current) => ({
-        ...current,
-        [search.id]: errorText(error, "Unable to prepare this search."),
-      }));
-    } finally {
-      setFullHuntId(null);
-    }
-  }
-
   if (loading) {
     return <p role="status" className="text-sm text-zinc-500">Loading your saved searches…</p>;
   }
@@ -438,7 +412,7 @@ export function SearchesWorkspace() {
                 {EMPLOYMENT_TYPES.map((option) => {
                   const checked = employmentTypes.includes(option.value);
                   return (
-                    <label key={option.value} className={`cursor-pointer rounded-full border px-3 py-2 text-xs font-medium ${checked ? "border-indigo-500 bg-indigo-50 text-indigo-900 dark:bg-indigo-950 dark:text-indigo-100" : "border-zinc-300 dark:border-zinc-700"}`}>
+                    <label key={option.value} className={`cursor-pointer rounded-full border px-3 py-2 text-xs font-medium focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-indigo-600 dark:focus-within:outline-indigo-400 ${checked ? "border-indigo-500 bg-indigo-50 text-indigo-900 dark:bg-indigo-950 dark:text-indigo-100" : "border-zinc-300 dark:border-zinc-700"}`}>
                       <input type="checkbox" className="sr-only" checked={checked} onChange={() => setEmploymentTypes((items) => checked ? items.filter((item) => item !== option.value) : [...items, option.value])} />
                       {option.label}
                     </label>
@@ -474,7 +448,7 @@ export function SearchesWorkspace() {
                   <FormField label="Local time" htmlFor="search-time"><input id="search-time" type="time" step={60} value={localTime} onChange={(event) => setLocalTime(event.target.value)} className={inputClasses} /></FormField>
                 </div>
                 {cadence === "weekly" ? (
-                  <fieldset><legend className="text-sm font-medium">Days</legend><div className="mt-2 flex flex-wrap gap-2">{WEEKDAYS.map((day) => { const checked = days.includes(day.value); return <label key={day.value} className={`cursor-pointer rounded-full border px-3 py-2 text-xs ${checked ? "border-amber-600 bg-white dark:bg-zinc-900" : "border-amber-300 dark:border-amber-800"}`}><input type="checkbox" className="sr-only" checked={checked} onChange={() => setDays((items) => checked ? items.filter((item) => item !== day.value) : [...items, day.value])} />{day.label}</label>; })}</div></fieldset>
+                  <fieldset><legend className="text-sm font-medium">Days</legend><div className="mt-2 flex flex-wrap gap-2">{WEEKDAYS.map((day) => { const checked = days.includes(day.value); return <label key={day.value} className={`cursor-pointer rounded-full border px-3 py-2 text-xs focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-amber-700 dark:focus-within:outline-amber-300 ${checked ? "border-amber-600 bg-white dark:bg-zinc-900" : "border-amber-300 dark:border-amber-800"}`}><input type="checkbox" className="sr-only" checked={checked} onChange={() => setDays((items) => checked ? items.filter((item) => item !== day.value) : [...items, day.value])} />{day.label}</label>; })}</div></fieldset>
                 ) : null}
               </div>
             ) : null}
@@ -485,7 +459,7 @@ export function SearchesWorkspace() {
             </label>
             <label className="flex items-start gap-3 text-sm">
               <input type="checkbox" checked={searchActive} onChange={(event) => setSearchActive(event.target.checked)} className="mt-1" />
-              <span><strong>Keep this search active</strong><br /><span className="text-zinc-500">Inactive searches remain saved but cannot start a role scan or full hunt.</span></span>
+              <span><strong>Keep this search active</strong><br /><span className="text-zinc-500">Inactive searches remain saved but cannot start a role scan.</span></span>
             </label>
             {message ? <StatusMessage kind={message.kind}>{message.text}</StatusMessage> : null}
             <div className="flex flex-wrap gap-3">
@@ -500,10 +474,10 @@ export function SearchesWorkspace() {
       <WorkspaceSection
         eyebrow="Ready when you are"
         title="Your saved searches"
-        description="Scan roles searches configured job sources and saves deduplicated results to Today without contacts, drafting, or model calls. Run full hunt remains a separate provider-consent workflow."
+        description="Scan roles searches configured job sources and saves deduplicated results to Today without contacts, drafting, or model calls. The retired legacy hunt remains read-only."
       >
         {searches.length === 0 ? (
-          <div className="rounded-lg border border-dashed border-zinc-300 p-6 text-center dark:border-zinc-700"><p className="text-sm font-medium">No saved searches yet</p><p className="mt-1 text-sm text-zinc-500">Create one above, or use Legacy hunt for a one-off search.</p></div>
+          <div className="rounded-lg border border-dashed border-zinc-300 p-6 text-center dark:border-zinc-700"><p className="text-sm font-medium">No saved searches yet</p><p className="mt-1 text-sm text-zinc-500">Create one above, then use Scan roles to find opportunities.</p></div>
         ) : (
           <div className="grid gap-4 lg:grid-cols-2">
             {searches.map((search) => {
@@ -516,8 +490,7 @@ export function SearchesWorkspace() {
                   <dl className="mt-3 grid grid-cols-2 gap-3 text-xs"><div><dt className="text-zinc-500">Locations</dt><dd className="mt-1">{search.criteria.location.join(", ")}</dd></div><div><dt className="text-zinc-500">Cadence</dt><dd className="mt-1 capitalize">{search.schedule.cadence}{search.schedule.cadence !== "manual" ? " · preference only" : ""}</dd></div><div><dt className="text-zinc-500">Last scan</dt><dd className="mt-1">{formatDate(search.last_scan_at)}</dd></div><div><dt className="text-zinc-500">Next automatic scan</dt><dd className="mt-1">Not connected yet</dd></div></dl>
                   {runError[search.id] ? <div className="mt-3"><StatusMessage kind="error">{runError[search.id]}</StatusMessage></div> : null}
                   <div className="mt-4 flex flex-wrap gap-2">
-                    <button type="button" disabled={!search.active || runningId === search.id || fullHuntId === search.id} onClick={() => void scanRoles(search)} className={primaryButtonClasses}>{runningId === search.id ? "Starting scan…" : "Scan roles"}</button>
-                    <button type="button" disabled={!search.active || fullHuntId === search.id || runningId === search.id} onClick={() => void runFullHunt(search)} className={secondaryButtonClasses}>{fullHuntId === search.id ? "Preparing…" : "Run full hunt"}</button>
+                    <button type="button" disabled={!search.active || runningId === search.id} onClick={() => void scanRoles(search)} className={primaryButtonClasses}>{runningId === search.id ? "Starting scan…" : "Scan roles"}</button>
                     <button type="button" onClick={() => editSearch(search)} className={secondaryButtonClasses}>Edit</button>
                     {search.last_scan_at ? null : (
                       <button type="button" disabled={deletingId === search.id} onClick={() => void removeSearch(search)} className={secondaryButtonClasses}>{deletingId === search.id ? "Deleting…" : "Delete"}</button>
@@ -536,17 +509,6 @@ export function SearchesWorkspace() {
       </WorkspaceSection>
     </div>
   );
-}
-
-function blockerLabel(value: string): string {
-  const labels: Record<string, string> = {
-    profile_missing: "Complete About you first.",
-    base_resume_missing: "Add a base resume first.",
-    selected_resume_missing: "The selected resume is unavailable; choose another version.",
-    career_track_inactive: "Reactivate or replace the career target.",
-    saved_search_inactive: "This saved search is inactive.",
-  };
-  return labels[value] ?? "This search needs attention before it can run.";
 }
 
 function titleCase(value: string): string {

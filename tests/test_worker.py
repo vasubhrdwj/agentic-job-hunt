@@ -197,6 +197,75 @@ def test_production_worker_rejects_mock_mode_before_claiming_or_touching_databas
         database.dispose()
 
 
+@pytest.mark.parametrize(
+    ("missing_or_unsafe", "value", "message"),
+    [
+        (
+            "GEMINI_PAID_SERVICE_ACK",
+            None,
+            "GEMINI_PAID_SERVICE_ACK must be true",
+        ),
+        (
+            "ENABLE_TRACE_DRAFT_CONTENT",
+            "1",
+            "ENABLE_TRACE_DRAFT_CONTENT must be false",
+        ),
+    ],
+)
+def test_production_worker_enforces_shared_provider_privacy_before_claim(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    missing_or_unsafe: str,
+    value: str | None,
+    message: str,
+) -> None:
+    from job_hunt_agent import worker
+
+    database = _create_practical_database(tmp_path, monkeypatch)
+    try:
+        _run_id, job_id = _enqueue_practical(database, "production-provider-guard")
+        monkeypatch.setenv("ENVIRONMENT", "production")
+        monkeypatch.setenv("ENABLE_PRACTICAL_MODE", "1")
+        monkeypatch.setenv("ENABLE_TRACING", "1")
+        monkeypatch.setenv("ENABLE_TRACE_DRAFT_CONTENT", "0")
+        monkeypatch.setenv("USE_MOCKS", "0")
+        monkeypatch.setenv("GOOGLE_API_KEY", "test-google")
+        monkeypatch.setenv("SERPAPI_API_KEY", "test-serpapi")
+        monkeypatch.setenv("PHOENIX_API_KEY", "test-phoenix")
+        monkeypatch.setenv(
+            "PHOENIX_COLLECTOR_ENDPOINT",
+            "https://app.phoenix.arize.com/s/test",
+        )
+        monkeypatch.setenv("JOB_HUNT_DATA_KEYS", "v1:test-only-key")
+        monkeypatch.setenv("GEMINI_PAID_SERVICE_ACK", "1")
+        monkeypatch.setenv(
+            "DATABASE_URL",
+            "postgresql+psycopg://worker:test@db.invalid/jobs?sslmode=require",
+        )
+        if value is None:
+            monkeypatch.delenv(missing_or_unsafe, raising=False)
+        else:
+            monkeypatch.setenv(missing_or_unsafe, value)
+
+        with pytest.raises(RuntimeError, match=message):
+            worker.run_worker_once(
+                worker_id="production-provider-worker",
+                durable_database=database,
+                practical_mode=True,
+                use_mocks=False,
+                enable_tracing=True,
+            )
+
+        with database.session() as session:
+            job = session.get(BackgroundJob, job_id)
+            heartbeat = session.get(WorkerHeartbeat, "production-provider-worker")
+            assert job is not None and job.status == "queued"
+            assert job.attempt_count == 0
+            assert heartbeat is None
+    finally:
+        database.dispose()
+
+
 def test_worker_failure_retries_then_dead_letters(monkeypatch: pytest.MonkeyPatch) -> None:
     from job_hunt_agent import worker
 

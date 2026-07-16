@@ -26,7 +26,11 @@ from sqlalchemy import select
 from sqlalchemy.engine import make_url
 
 from job_hunt_agent import hunt_repository, privacy_repository
-from job_hunt_agent.database import Database, resolve_database_url
+from job_hunt_agent.database import Database, DatabaseConfigError, resolve_database_url
+from job_hunt_agent.hunt_payloads import (
+    encrypt_hunt_outcome,
+    encrypt_hunt_result,
+)
 from job_hunt_agent.models import (
     BackgroundJob,
     BackgroundJobEvent,
@@ -218,71 +222,103 @@ def _read_source(
     except sqlite3.Error as exc:
         raise LegacyImportError("legacy SQLite source cannot be opened read-only") from exc
     with closing(connection):
-        tables = {
-            str(row[0])
-            for row in connection.execute(
-                "SELECT name FROM sqlite_master WHERE type='table'"
-            )
-        }
-        if "runs" not in tables:
-            raise LegacyImportError("legacy SQLite source has no runs table")
-        security = _security_rows(connection) if "run_security" in tables else {}
-        outcome_rows = _outcome_rows(connection) if "outcomes" in tables else {}
-        rows = connection.execute(
-            "SELECT run_id, payload, created_at FROM runs ORDER BY created_at, run_id"
-        ).fetchall()
-        for row in rows:
-            run_id = str(row["run_id"])
-            state = security.get(run_id)
-            if state is not None and str(state["status"]) != "succeeded":
-                unsupported.append(
-                    {"run_id": run_id, "reason": f"queue status {state['status']!s} is not importable"}
+        try:
+            tables = {
+                str(row[0])
+                for row in connection.execute(
+                    "SELECT name FROM sqlite_master WHERE type='table'"
                 )
-                continue
-            try:
-                result = HuntResult.model_validate_json(row["payload"])
-                if result.run_id != run_id:
-                    raise ValueError("result run_id does not match its row")
-                if RUN_ID_RE.fullmatch(run_id) is None:
-                    raise ValueError("run_id is not compatible with the practical schema")
-                outcomes = tuple(
-                    OutcomeLog.model_validate_json(payload)
-                    for payload in outcome_rows.get(run_id, [])
-                )
-                known_drafts = {draft.draft_id for draft in result.outreach}
-                if any(entry.draft_id not in known_drafts for entry in outcomes):
-                    raise ValueError("outcome references a draft absent from the result")
-                created_at = _datetime(row["created_at"])
-                completed_at = _datetime(
-                    state["completed_at"] if state is not None else row["created_at"]
-                )
-                raw_access_hash = str(state["access_hash"]) if state is not None else ""
-                access_hash = (
-                    raw_access_hash.lower()
-                    if HASH_RE.fullmatch(raw_access_hash)
-                    else hash_access_token(f"legacy-import:{run_id}")
-                )
-                raw_request_hash = str(state["request_hash"] or "") if state is not None else ""
-                request_hash = (
-                    raw_request_hash.lower()
-                    if HASH_RE.fullmatch(raw_request_hash)
-                    else hashlib.sha256(result.model_dump_json().encode("utf-8")).hexdigest()
-                )
-                candidates.append(
-                    LegacyRunRecord(
-                        run_id=run_id,
-                        result=result,
-                        outcomes=outcomes,
-                        created_at=created_at,
-                        completed_at=completed_at,
-                        access_hash=access_hash,
-                        request_hash=request_hash,
-                        attempt_count=max(1, int(state["attempt_count"] or 1)) if state else 1,
-                        max_attempts=max(1, int(state["max_attempts"] or 3)) if state else 3,
+            }
+            if "runs" not in tables:
+                raise LegacyImportError("legacy SQLite source has no runs table")
+            security = _security_rows(connection) if "run_security" in tables else {}
+            outcome_rows = _outcome_rows(connection) if "outcomes" in tables else {}
+            rows = connection.execute(
+                "SELECT run_id, payload, created_at FROM runs ORDER BY created_at, run_id"
+            ).fetchall()
+            for row in rows:
+                run_id = str(row["run_id"])
+                state = security.get(run_id)
+                if state is not None and str(state["status"]) != "succeeded":
+                    unsupported.append(
+                        {
+                            "run_id": run_id,
+                            "reason": (
+                                f"queue status {state['status']!s} is not importable"
+                            ),
+                        }
                     )
-                )
-            except Exception as exc:  # noqa: BLE001 - report invalid legacy rows.
-                failed.append({"run_id": run_id, "reason": str(exc)})
+                    continue
+                try:
+                    result = HuntResult.model_validate_json(row["payload"])
+                    if result.run_id != run_id:
+                        raise ValueError("result run_id does not match its row")
+                    if RUN_ID_RE.fullmatch(run_id) is None:
+                        raise ValueError(
+                            "run_id is not compatible with the practical schema"
+                        )
+                    outcomes = tuple(
+                        OutcomeLog.model_validate_json(payload)
+                        for payload in outcome_rows.get(run_id, [])
+                    )
+                    known_drafts = {draft.draft_id for draft in result.outreach}
+                    if any(entry.draft_id not in known_drafts for entry in outcomes):
+                        raise ValueError(
+                            "outcome references a draft absent from the result"
+                        )
+                    created_at = _datetime(row["created_at"])
+                    completed_at = _datetime(
+                        state["completed_at"]
+                        if state is not None
+                        else row["created_at"]
+                    )
+                    raw_access_hash = (
+                        str(state["access_hash"]) if state is not None else ""
+                    )
+                    access_hash = (
+                        raw_access_hash.lower()
+                        if HASH_RE.fullmatch(raw_access_hash)
+                        else hash_access_token(f"legacy-import:{run_id}")
+                    )
+                    raw_request_hash = (
+                        str(state["request_hash"] or "") if state is not None else ""
+                    )
+                    request_hash = (
+                        raw_request_hash.lower()
+                        if HASH_RE.fullmatch(raw_request_hash)
+                        else hashlib.sha256(
+                            result.model_dump_json().encode("utf-8")
+                        ).hexdigest()
+                    )
+                    candidates.append(
+                        LegacyRunRecord(
+                            run_id=run_id,
+                            result=result,
+                            outcomes=outcomes,
+                            created_at=created_at,
+                            completed_at=completed_at,
+                            access_hash=access_hash,
+                            request_hash=request_hash,
+                            attempt_count=(
+                                max(1, int(state["attempt_count"] or 1))
+                                if state
+                                else 1
+                            ),
+                            max_attempts=(
+                                max(1, int(state["max_attempts"] or 3))
+                                if state
+                                else 3
+                            ),
+                        )
+                    )
+                except Exception as exc:  # noqa: BLE001 - report invalid legacy rows.
+                    failed.append({"run_id": run_id, "reason": str(exc)})
+        except LegacyImportError:
+            raise
+        except sqlite3.Error as exc:
+            raise LegacyImportError(
+                "legacy SQLite source schema cannot be read safely"
+            ) from exc
     return len(rows), candidates, unsupported, failed
 
 
@@ -353,7 +389,12 @@ def _insert_candidate(
     retention_days: int,
 ) -> None:
     job_id = uuid4().hex
-    result_envelope = keyring.encrypt(candidate.result.model_dump_json())
+    result_envelope = encrypt_hunt_result(
+        keyring,
+        owner_id=owner_id,
+        hunt_run_id=candidate.run_id,
+        payload=candidate.result.model_dump(mode="json"),
+    )
     job = BackgroundJob(
         id=job_id,
         kind=hunt_repository.HUNT_JOB_KIND,
@@ -361,7 +402,7 @@ def _insert_candidate(
         dedupe_scope=f"owner:{owner_id}",
         subject_type="hunt_run",
         subject_id=candidate.run_id,
-        payload={"hunt_run_id": candidate.run_id, "imported_from": "legacy_sqlite"},
+        payload={"hunt_run_id": candidate.run_id},
         dedupe_key=f"legacy-import:{candidate.run_id}",
         status="succeeded",
         attempt_count=candidate.attempt_count,
@@ -409,16 +450,32 @@ def _insert_candidate(
     )
     for outcome in reversed(candidate.outcomes):
         logged_at = outcome.logged_at or candidate.completed_at
-        envelope = keyring.encrypt(outcome.model_dump_json())
-        session.add(
-            HuntOutcome(
-                hunt_run_id=candidate.run_id,
-                draft_id=outcome.draft_id,
-                encrypted_payload=envelope.ciphertext,
-                encryption_key_id=envelope.key_id,
-                logged_at=logged_at,
-            )
+        payload = outcome.model_dump(mode="json")
+        placeholder = encrypt_hunt_outcome(
+            keyring,
+            owner_id=owner_id,
+            outcome_id=f"pending:{uuid4().hex}",
+            draft_id=outcome.draft_id,
+            payload=payload,
         )
+        row = HuntOutcome(
+            hunt_run_id=candidate.run_id,
+            draft_id=outcome.draft_id,
+            encrypted_payload=placeholder.ciphertext,
+            encryption_key_id=placeholder.key_id,
+            logged_at=logged_at,
+        )
+        session.add(row)
+        session.flush()
+        envelope = encrypt_hunt_outcome(
+            keyring,
+            owner_id=owner_id,
+            outcome_id=str(row.id),
+            draft_id=row.draft_id,
+            payload=payload,
+        )
+        row.encrypted_payload = envelope.ciphertext
+        row.encryption_key_id = envelope.key_id
     session.flush()
 
 
@@ -478,7 +535,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             apply=args.apply,
             keyring=load_data_keyring(production=production),
         )
-    except (LegacyImportError, SecurityConfigError) as exc:
+    except (DatabaseConfigError, LegacyImportError, SecurityConfigError) as exc:
         print(f"legacy import failed: {exc}", file=sys.stderr)
         return 2
     print(json.dumps(asdict(report), indent=2, sort_keys=True))

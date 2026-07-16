@@ -4,12 +4,16 @@ from __future__ import annotations
 
 from datetime import timedelta
 
+import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import func, select
 
 from job_hunt_agent.auth import create_owner_session
 from job_hunt_agent.database import Database
 from job_hunt_agent.models import HuntRun, Owner, OwnerSession, PrivacyDeletionReceipt
+from job_hunt_agent.routers.privacy import _receipt_secret
+from job_hunt_agent.routers.workspace import WorkspaceApiError
+from job_hunt_agent.security import hash_access_token
 from tests.test_practical_api import (
     ALLOWED_ORIGIN,
     _hunt_payload,
@@ -193,3 +197,22 @@ def test_privacy_openapi_declares_cookie_auth_and_destructive_headers(
     parameters = {item["name"]: item for item in deletion["parameters"]}
     assert parameters["Idempotency-Key"]["in"] == "header"
     assert deletion["requestBody"]["required"] is True
+
+
+def test_receipt_secret_fallback_is_development_only(
+    monkeypatch,
+) -> None:
+    owner_hash = hash_access_token(
+        "development-owner-token-with-more-than-thirty-two-characters"
+    )
+    monkeypatch.delenv("JOB_HUNT_PRIVACY_RECEIPT_SECRET", raising=False)
+    monkeypatch.setenv("JOB_HUNT_OWNER_TOKEN_HASH", owner_hash)
+
+    assert _receipt_secret(production=False) == owner_hash
+    with pytest.raises(WorkspaceApiError) as raised:
+        _receipt_secret(production=True)
+    assert raised.value.status_code == 503
+
+    dedicated = "stable-receipt-secret-with-more-than-thirty-two-characters"
+    monkeypatch.setenv("JOB_HUNT_PRIVACY_RECEIPT_SECRET", dedicated)
+    assert _receipt_secret(production=True) == dedicated

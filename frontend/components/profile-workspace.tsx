@@ -580,7 +580,7 @@ export function ProfileWorkspace() {
 
           <label className="flex items-start gap-3 text-sm">
             <input type="checkbox" checked={trackActive} onChange={(event) => setTrackActive(event.target.checked)} className="mt-1" />
-            <span><strong>Active career target</strong><br /><span className="text-zinc-500">Inactive targets remain saved but cannot power a role scan or full hunt.</span></span>
+            <span><strong>Active career target</strong><br /><span className="text-zinc-500">Inactive targets remain saved but cannot power a role scan.</span></span>
           </label>
 
           <div>
@@ -683,7 +683,7 @@ function ChoiceGroup<T extends string>({
         {options.map((option) => {
           const checked = selected.includes(option.value);
           return (
-            <label key={option.value} className={`cursor-pointer rounded-full border px-3 py-2 text-xs font-medium ${checked ? "border-indigo-500 bg-indigo-50 text-indigo-900 dark:bg-indigo-950 dark:text-indigo-100" : "border-zinc-300 dark:border-zinc-700"}`}>
+            <label key={option.value} className={`cursor-pointer rounded-full border px-3 py-2 text-xs font-medium focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-indigo-600 dark:focus-within:outline-indigo-400 ${checked ? "border-indigo-500 bg-indigo-50 text-indigo-900 dark:bg-indigo-950 dark:text-indigo-100" : "border-zinc-300 dark:border-zinc-700"}`}>
               <input type="checkbox" className="sr-only" checked={checked} onChange={() => onToggle(option.value)} />
               {option.label}
             </label>

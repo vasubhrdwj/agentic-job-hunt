@@ -14,7 +14,12 @@ from alembic import command
 from alembic.config import Config
 from alembic.script import ScriptDirectory
 
-from job_hunt_agent.database import MIGRATION_HEAD, Database, resolve_database_url
+from job_hunt_agent.database import (
+    MIGRATION_HEAD,
+    Database,
+    DatabaseConfigError,
+    resolve_database_url,
+)
 from scripts.database_backup import BackupError, database_identity_hash, verify_backup
 
 
@@ -151,11 +156,23 @@ def main(argv: Sequence[str] | None = None) -> int:
                 args.verified_backup,
                 apply=args.apply,
             )
-    except (MigrationGateError, BackupError) as exc:
+    except (MigrationGateError, BackupError, DatabaseConfigError) as exc:
+        print(f"migration gate failed: {exc}", file=sys.stderr)
+        return 2
+    except RuntimeError as exc:
+        if args.command != "downgrade" or not _is_data_loss_refusal(exc):
+            raise
         print(f"migration gate failed: {exc}", file=sys.stderr)
         return 2
     print(json.dumps(result, sort_keys=True))
     return 0
+
+
+def _is_data_loss_refusal(exc: RuntimeError) -> bool:
+    message = str(exc).strip().lower()
+    return message.startswith("cannot downgrade ") or message.startswith(
+        "refusing privacy-controls downgrade"
+    )
 
 
 if __name__ == "__main__":

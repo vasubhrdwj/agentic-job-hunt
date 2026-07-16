@@ -52,9 +52,10 @@ succeeds does the API return a minimal receipt and expire the browser cookie.
 For safe retries, the database retains a payload-free deletion receipt with a
 random deletion ID, time, request fingerprint, idempotency-key hash, and a
 domain-separated HMAC of the owner ID. It has no foreign key to the deleted
-owner and contains no raw owner ID or private payload. Configure the stable
-`JOB_HUNT_PRIVACY_RECEIPT_SECRET` when owner credentials may rotate; otherwise
-the app falls back to the configured high-entropy owner-token digest.
+owner and contains no raw owner ID or private payload. Production requires a
+stable `JOB_HUNT_PRIVACY_RECEIPT_SECRET` so owner credential rotation cannot
+change deletion identity. Development alone may fall back to the configured
+owner-token digest.
 
 The `20260715_0018` downgrade refuses to discard any retention setting or
 deletion receipt. An operator must deliberately preserve and clear that state

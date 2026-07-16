@@ -205,9 +205,35 @@ export function ApplicationInterviewPreparation({
             The questions come only from the exact role, submitted application, and evidence you approved. STAR fields start blank and only contain what you write.
           </p>
         </div>
-        <button type="button" disabled={saving} onClick={() => void load()} className={secondaryButtonClasses}>
-          Refresh context
-        </button>
+        <div className="max-w-xs sm:text-right">
+          <button
+            type="button"
+            disabled={saving}
+            aria-describedby={dirty ? "interview-refresh-warning" : undefined}
+            onClick={() => {
+              if (
+                dirty &&
+                !window.confirm(
+                  "Refresh interview context and discard your unsaved STAR edits?",
+                )
+              ) {
+                return;
+              }
+              void load();
+            }}
+            className={secondaryButtonClasses}
+          >
+            {dirty ? "Discard edits & refresh" : "Refresh context"}
+          </button>
+          {dirty ? (
+            <p
+              id="interview-refresh-warning"
+              className="mt-2 text-xs leading-5 text-amber-700 dark:text-amber-300"
+            >
+              Refreshing replaces unsaved STAR text. You will be asked to confirm first.
+            </p>
+          ) : null}
+        </div>
       </div>
 
       <div className="mt-6 space-y-5">

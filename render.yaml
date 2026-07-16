@@ -8,7 +8,8 @@ services:
     # worker is fresh. This web-only blueprint is intentionally not a complete
     # practical deployment; add a paid background worker before using it.
     healthCheckPath: /ready
-    autoDeploy: true
+    # Do not deploy a commit until the linked branch's required CI checks pass.
+    autoDeployTrigger: checksPass
     envVars:
       - key: ENVIRONMENT
         value: production
@@ -75,7 +76,7 @@ services:
         sync: false
       - key: PHOENIX_COLLECTOR_ENDPOINT
         sync: false
-      # Must be the exact production Vercel URL; startup rejects '*' and
-      # localhost when ENVIRONMENT=production.
+      # Configure the exact HTTPS production Vercel origin, without a trailing
+      # slash. Startup rejects wildcards and localhost entries.
       - key: ALLOWED_ORIGINS
         sync: false

@@ -559,6 +559,7 @@ def test_production_config_fails_loudly_when_required_env_is_missing(
         "DATABASE_URL",
         "JOB_HUNT_OWNER_ID",
         "JOB_HUNT_OWNER_TOKEN_HASH",
+        "JOB_HUNT_PRIVACY_RECEIPT_SECRET",
         "ENABLE_PRACTICAL_MODE",
     ):
         monkeypatch.delenv(name, raising=False)
@@ -598,12 +599,21 @@ def test_production_config_accepts_required_env(
     monkeypatch.setenv("ALLOWED_ORIGINS", "https://job-hunt-agent.vercel.app")
     monkeypatch.setenv(
         "DATABASE_URL",
-        "postgresql+psycopg://job_hunt:secret@postgres.invalid/job_hunt",
+        "postgresql+psycopg://job_hunt:secret@postgres.invalid/job_hunt?sslmode=require",
     )
     monkeypatch.setenv("JOB_HUNT_OWNER_ID", "owner")
     monkeypatch.setenv(
         "JOB_HUNT_OWNER_TOKEN_HASH",
         hash_access_token("production-owner-token-with-more-than-32-characters"),
+    )
+    with pytest.raises(
+        RuntimeError,
+        match="JOB_HUNT_PRIVACY_RECEIPT_SECRET must be a stable 32\\+ character",
+    ):
+        importlib.reload(api_mod)
+    monkeypatch.setenv(
+        "JOB_HUNT_PRIVACY_RECEIPT_SECRET",
+        "stable-production-receipt-secret-with-more-than-32-characters",
     )
 
     api_mod = importlib.reload(api_mod)
@@ -616,6 +626,22 @@ def test_production_config_accepts_required_env(
 
     monkeypatch.delenv("ENVIRONMENT", raising=False)
     importlib.reload(api_mod)
+
+
+@pytest.mark.parametrize(
+    "origin",
+    [
+        "http://job-hunt-agent.vercel.app",
+        "https://job-hunt-agent.vercel.app/path",
+        "https://user:pass@job-hunt-agent.vercel.app",
+        "https://job-hunt-agent.vercel.app?preview=1",
+    ],
+)
+def test_production_origin_validation_requires_exact_https_origin(origin: str) -> None:
+    from job_hunt_agent.api import _production_origin_error
+
+    assert _production_origin_error(origin) is not None
+    assert _production_origin_error("https://job-hunt-agent.vercel.app") is None
 
 
 def test_production_rejects_public_legacy_hunt_mode(

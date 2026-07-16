@@ -42,7 +42,7 @@ def downgrade() -> None:
 
 def _add_activity_correction_target_identity() -> None:
     with op.batch_alter_table(
-        "application_activity_events", recreate="always"
+        "application_activity_events", recreate=_batch_recreate_mode()
     ) as batch_op:
         batch_op.create_unique_constraint(
             "uq_application_activity_events_owner_application_id",
@@ -52,7 +52,7 @@ def _add_activity_correction_target_identity() -> None:
 
 def _remove_activity_correction_target_identity() -> None:
     with op.batch_alter_table(
-        "application_activity_events", recreate="always"
+        "application_activity_events", recreate=_batch_recreate_mode()
     ) as batch_op:
         batch_op.drop_constraint(
             "uq_application_activity_events_owner_application_id",
@@ -186,6 +186,12 @@ def _create_application_milestone_corrections() -> None:
         "application_milestone_corrections",
         ["owner_id", "application_id", "activity_event_id", "correction_number"],
     )
+
+
+def _batch_recreate_mode() -> str:
+    """Recreate tables only where SQLite requires batch-copy DDL."""
+
+    return "always" if op.get_bind().dialect.name == "sqlite" else "auto"
 
 
 def _assert_downgrade_is_lossless() -> None:

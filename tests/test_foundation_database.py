@@ -34,6 +34,22 @@ def test_production_rejects_non_postgres_database() -> None:
         resolve_database_url("sqlite+pysqlite:///:memory:", production=True)
 
 
+def test_production_postgres_requires_explicit_tls() -> None:
+    insecure = "postgresql+psycopg://user:pass@db.example/jobs"
+    with pytest.raises(DatabaseConfigError, match="must require PostgreSQL TLS"):
+        resolve_database_url(insecure, production=True)
+    with pytest.raises(DatabaseConfigError, match="must require PostgreSQL TLS"):
+        resolve_database_url(f"{insecure}?sslmode=disable", production=True)
+    for sslmode in ("require", "verify-ca", "verify-full"):
+        assert (
+            resolve_database_url(
+                f"{insecure}?sslmode={sslmode}",
+                production=True,
+            )
+            == f"{insecure}?sslmode={sslmode}"
+        )
+
+
 def test_empty_database_upgrades_to_foundation_head(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

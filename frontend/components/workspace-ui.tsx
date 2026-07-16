@@ -1,4 +1,10 @@
-import type { ReactNode } from "react";
+import {
+  Children,
+  cloneElement,
+  isValidElement,
+  type ReactElement,
+  type ReactNode,
+} from "react";
 
 import { WorkspaceApiError } from "@/lib/workspace-api";
 
@@ -46,17 +52,51 @@ export function FormField({
   hint?: string;
   children: ReactNode;
 }) {
+  const hintId = hint ? `${htmlFor}-hint` : undefined;
   return (
     <div className="space-y-2">
       <label htmlFor={htmlFor} className="block text-sm font-medium">
         {label}
       </label>
-      {children}
+      {hintId ? describeFormControls(children, hintId) : children}
       {hint ? (
-        <p className="text-xs leading-5 text-zinc-500 dark:text-zinc-400">{hint}</p>
+        <p id={hintId} className="text-xs leading-5 text-zinc-500 dark:text-zinc-400">
+          {hint}
+        </p>
       ) : null}
     </div>
   );
+}
+
+type DescribedElementProps = {
+  children?: ReactNode;
+  "aria-describedby"?: string;
+};
+
+function describeFormControls(children: ReactNode, hintId: string): ReactNode {
+  return Children.map(children, (child) => {
+    if (!isValidElement<DescribedElementProps>(child)) return child;
+
+    const isNativeControl =
+      typeof child.type === "string" &&
+      ["input", "select", "textarea"].includes(child.type);
+    const nestedChildren = child.props.children
+      ? describeFormControls(child.props.children, hintId)
+      : child.props.children;
+    const describedBy = isNativeControl
+      ? [child.props["aria-describedby"], hintId].filter(Boolean).join(" ")
+      : undefined;
+
+    if (!isNativeControl && nestedChildren === child.props.children) return child;
+
+    return cloneElement(
+      child as ReactElement<DescribedElementProps>,
+      {
+        ...(isNativeControl ? { "aria-describedby": describedBy } : {}),
+        ...(child.props.children ? { children: nestedChildren } : {}),
+      },
+    );
+  });
 }
 
 export function StatusMessage({

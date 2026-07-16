@@ -193,7 +193,7 @@ def create_privacy_router(
         idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
     ) -> WorkspaceDeletionReceipt:
         required_idempotency_key = _required_idempotency_key(idempotency_key)
-        secret = _receipt_secret()
+        secret = _receipt_secret(production=production)
         db = require_migrated_database(database)
         try:
             with db.session() as session:
@@ -226,14 +226,13 @@ def create_privacy_router(
     return router
 
 
-def _receipt_secret() -> str:
-    """Prefer a rotation-independent key and safely fall back in development."""
+def _receipt_secret(*, production: bool) -> str:
+    """Require a rotation-independent receipt key in production."""
 
     secret = os.getenv(PRIVACY_RECEIPT_SECRET_ENV, "").strip()
-    if not secret:
-        # The configured owner-token digest is already a high-entropy secret and
-        # keeps raw owner identifiers out of tombstones. Deployments that rotate
-        # owner credentials should configure the dedicated stable secret.
+    if not secret and not production:
+        # Development remains convenient, but production receipt identity must
+        # never change when the owner-login credential is rotated.
         secret = os.getenv(OWNER_TOKEN_HASH_ENV, "").strip()
     if len(secret) < 32:
         raise WorkspaceApiError(

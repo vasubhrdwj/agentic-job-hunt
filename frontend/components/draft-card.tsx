@@ -77,7 +77,11 @@ export function DraftCard({ draft }: { draft: OutreachDraft }) {
         {draft.person.why_relevant}
       </p>
 
+      <label htmlFor={`legacy-draft-${draft.draft_id}`} className="sr-only">
+        Editable outreach draft for {draft.person.name}
+      </label>
       <textarea
+        id={`legacy-draft-${draft.draft_id}`}
         ref={textareaRef}
         value={message}
         onChange={(e) => setMessage(e.target.value)}

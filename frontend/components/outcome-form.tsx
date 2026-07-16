@@ -130,7 +130,7 @@ export function OutcomeForm({
                   return (
                     <label
                       key={opt.value}
-                      className={`inline-flex h-9 cursor-pointer items-center rounded-full border px-3 text-xs ${
+                      className={`inline-flex h-9 cursor-pointer items-center rounded-full border px-3 text-xs focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-indigo-600 dark:focus-within:outline-indigo-400 ${
                         checked
                           ? "border-indigo-500 bg-indigo-50 text-indigo-900 dark:border-indigo-400 dark:bg-indigo-950 dark:text-indigo-100"
                           : "border-zinc-300 hover:bg-zinc-50 dark:border-zinc-700 dark:hover:bg-zinc-800"
@@ -152,7 +152,14 @@ export function OutcomeForm({
                 })}
               </div>
 
+              <label
+                htmlFor={`outcome-notes-${draft.draft_id}`}
+                className="sr-only"
+              >
+                Outcome notes for {draft.person.name} at {draft.role.company}
+              </label>
               <textarea
+                id={`outcome-notes-${draft.draft_id}`}
                 value={cur.notes}
                 onChange={(e) =>
                   update(draft.draft_id, { notes: e.target.value })

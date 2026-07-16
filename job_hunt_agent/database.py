@@ -21,6 +21,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 DATABASE_URL_ENV = "DATABASE_URL"
 MIGRATION_HEAD = "20260715_0018"
+PRODUCTION_POSTGRES_SSL_MODES = frozenset({"require", "verify-ca", "verify-full"})
 
 
 class DatabaseConfigError(RuntimeError):
@@ -65,6 +66,14 @@ def resolve_database_url(
     )
     if is_production and url.get_backend_name() != "postgresql":
         raise DatabaseConfigError("production DATABASE_URL must use PostgreSQL")
+    if is_production:
+        sslmode = str(url.query.get("sslmode", "")).strip().lower()
+        if sslmode not in PRODUCTION_POSTGRES_SSL_MODES:
+            allowed = ", ".join(sorted(PRODUCTION_POSTGRES_SSL_MODES))
+            raise DatabaseConfigError(
+                "production DATABASE_URL must require PostgreSQL TLS with "
+                f"sslmode={allowed.replace(', ', ', sslmode=')}"
+            )
     return normalized
 
 

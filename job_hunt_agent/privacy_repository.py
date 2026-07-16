@@ -13,6 +13,11 @@ from uuid import uuid4
 from sqlalchemy import Table, delete, func, select, update
 from sqlalchemy.orm import Session
 
+from .hunt_payloads import (
+    decrypt_hunt_outcome,
+    decrypt_hunt_request,
+    decrypt_hunt_result,
+)
 from .models import (
     BackgroundJob,
     Base,
@@ -35,7 +40,7 @@ from .privacy_schemas import (
     WorkspaceDeletionReceipt,
     WorkspaceExportResponse,
 )
-from .security import DataKeyring, DecryptionError, EncryptedEnvelope, hash_access_token
+from .security import DataKeyring, DecryptionError, hash_access_token
 
 
 DEFAULT_HUNT_RETENTION_DAYS = 30
@@ -131,9 +136,10 @@ class PrivacyConflict(RuntimeError):
 
 
 def external_data_limits() -> list[ExternalDataLimit]:
-    """Provider-side limits verified for the product's configured AI provider."""
+    """Provider-side limits verified for every configured production provider."""
 
-    verified_on = datetime(2026, 7, 15, tzinfo=timezone.utc).date()
+    gemini_verified_on = datetime(2026, 7, 15, tzinfo=timezone.utc).date()
+    search_and_trace_verified_on = datetime(2026, 7, 16, tzinfo=timezone.utc).date()
     return [
         ExternalDataLimit(
             provider="Google Gemini API",
@@ -144,7 +150,7 @@ def external_data_limits() -> list[ExternalDataLimit]:
                 "mandatory policy-enforcement retention still applies."
             ),
             source_url="https://ai.google.dev/gemini-api/terms",
-            verified_on=verified_on,
+            verified_on=gemini_verified_on,
         ),
         ExternalDataLimit(
             provider="Google Gemini API",
@@ -154,7 +160,7 @@ def external_data_limits() -> list[ExternalDataLimit]:
                 "output for up to 55 days. Local deletion cannot erase those logs."
             ),
             source_url="https://ai.google.dev/gemini-api/docs/usage-policies",
-            verified_on=verified_on,
+            verified_on=gemini_verified_on,
         ),
         ExternalDataLimit(
             provider="Google Gemini API",
@@ -165,7 +171,7 @@ def external_data_limits() -> list[ExternalDataLimit]:
                 "sharing changes the applicable data-use terms."
             ),
             source_url="https://ai.google.dev/gemini-api/docs/logs-policy",
-            verified_on=verified_on,
+            verified_on=gemini_verified_on,
         ),
         ExternalDataLimit(
             provider="Google Gemini API",
@@ -176,7 +182,31 @@ def external_data_limits() -> list[ExternalDataLimit]:
                 "storage terms, currently including a 30-day period."
             ),
             source_url="https://ai.google.dev/gemini-api/docs/zdr",
-            verified_on=verified_on,
+            verified_on=gemini_verified_on,
+        ),
+        ExternalDataLimit(
+            provider="SerpAPI",
+            category="search_archive_retention",
+            summary=(
+                "Standard searches retain their JSON and raw HTML files for 31 "
+                "days. Local workspace deletion cannot remove that provider "
+                "archive. Enterprise ZeroTrace is a separate opt-in mode and is "
+                "not enabled by this product."
+            ),
+            source_url="https://serpapi.com/faq",
+            verified_on=search_and_trace_verified_on,
+        ),
+        ExternalDataLimit(
+            provider="Arize Phoenix",
+            category="trace_retention",
+            summary=(
+                "Phoenix stores traces under the configured project retention "
+                "policy; its default policy is indefinite. Operators can configure "
+                "retention or delete traces in Phoenix, but deleting this local "
+                "workspace does not remove remote trace data."
+            ),
+            source_url="https://arize.com/docs/phoenix/settings/data-retention",
+            verified_on=search_and_trace_verified_on,
         ),
     ]
 
@@ -248,7 +278,12 @@ def export_owner_workspace(
         ).mappings()
     )
     tables["hunt_outcomes"] = [
-        _export_hunt_outcome(row, keyring=keyring, omissions=omissions)
+        _export_hunt_outcome(
+            row,
+            owner_id=owner_id,
+            keyring=keyring,
+            omissions=omissions,
+        )
         for row in outcome_rows
     ]
 
@@ -604,10 +639,24 @@ def _export_hunt_run(
             omissions[("hunt_runs", cipher_field, "decryption_failed")] += 1
             continue
         try:
-            plaintext = keyring.decrypt(
-                EncryptedEnvelope(key_id=str(key_id), ciphertext=str(ciphertext))
-            )
-            result[output_field] = json.loads(plaintext)
+            if cipher_field == "encrypted_request":
+                plaintext = decrypt_hunt_request(
+                    keyring,
+                    owner_id=str(result["owner_id"]),
+                    hunt_run_id=str(result["id"]),
+                    request_hash=str(result["request_hash"]),
+                    encryption_key_id=str(key_id),
+                    ciphertext=str(ciphertext),
+                )
+                result[output_field] = json.loads(plaintext)
+            else:
+                result[output_field] = decrypt_hunt_result(
+                    keyring,
+                    owner_id=str(result["owner_id"]),
+                    hunt_run_id=str(result["id"]),
+                    encryption_key_id=str(key_id),
+                    ciphertext=str(ciphertext),
+                )
         except (DecryptionError, UnicodeError, json.JSONDecodeError, TypeError, ValueError):
             omissions[("hunt_runs", cipher_field, "decryption_failed")] += 1
     return _sanitize_row("hunt_runs", result, omissions)
@@ -616,6 +665,7 @@ def _export_hunt_run(
 def _export_hunt_outcome(
     row: dict[str, Any],
     *,
+    owner_id: str,
     keyring: DataKeyring,
     omissions: dict[tuple[str, str | None, str], int],
 ) -> dict[str, Any]:
@@ -624,10 +674,14 @@ def _export_hunt_outcome(
     key_id = result.pop("encryption_key_id", None)
     if ciphertext is not None and key_id is not None:
         try:
-            plaintext = keyring.decrypt(
-                EncryptedEnvelope(key_id=str(key_id), ciphertext=str(ciphertext))
+            result["outcome"] = decrypt_hunt_outcome(
+                keyring,
+                owner_id=owner_id,
+                outcome_id=str(result["id"]),
+                draft_id=str(result["draft_id"]),
+                encryption_key_id=str(key_id),
+                ciphertext=str(ciphertext),
             )
-            result["outcome"] = json.loads(plaintext)
         except (DecryptionError, UnicodeError, json.JSONDecodeError, TypeError, ValueError):
             omissions[("hunt_outcomes", "encrypted_payload", "decryption_failed")] += 1
     else:

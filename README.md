@@ -150,6 +150,8 @@ not connected yet.
 For the private local workspace:
 
 ```bash
+cp .env.example .env
+# Replace POSTGRES_PASSWORD= with the output of: openssl rand -hex 24
 .venv/bin/python scripts/generate_owner_token.py  # save token; copy printed env values
 docker compose build migrate web worker
 docker compose up -d postgres
@@ -159,6 +161,18 @@ docker compose up web worker frontend
 
 Open <http://localhost:3000>, enter the one-time owner token, and keep
 `ENABLE_PRACTICAL_MODE=1` whenever real provider calls are possible.
+
+If `postgres_data` already exists from the old fixed-password setup, PostgreSQL
+does not change that stored role password merely because `.env` changed. Start
+only `postgres`, open `psql`, and set the `job_hunt` role to the same generated
+value saved in `.env` before starting web or worker:
+
+```bash
+docker compose up -d postgres
+docker compose exec postgres psql -U job_hunt -d job_hunt
+# In psql: \password job_hunt
+# Enter the POSTGRES_PASSWORD value twice, then run: \q
+```
 
 ## Run
 
@@ -370,58 +384,33 @@ in-place operations and require a migration-current, identity-matched archive.
 
 ## Hosted deployment status
 
-`render.yaml` is now fail-closed: its health check uses `/ready`, while the
-web-only free blueprint still lacks a migration predeploy step and a background
-worker service. The application code now has a shared Postgres run repository,
-but the blueprint must not report a healthy practical deployment until that
-worker topology is added. [Render background workers do not have a free
-plan](https://render.com/docs/blueprint-spec), so adding one is an explicit
-hosting-cost decision rather than a silent default.
-The notes below document the earlier demo deployment only; they are not current
-production instructions.
+`render.yaml` deliberately defines only the web service. It does not silently
+create a paid background worker, managed database, or migration service. As a
+result, the blueprint is a staging scaffold rather than a complete practical
+deployment: `/ready` stays unhealthy until the database is migrated and a
+compatible worker is alive.
 
-A8 deploys the FastAPI backend to Render (free tier) and the Next.js frontend
-to Vercel. Render's free tier has no persistent disk, so SQLite lives on the
-ephemeral filesystem at `/tmp/outcomes.db`: outcomes persist across requests,
-but a redeploy, restart, or idle spin-down wipes them. Two operational rules
-follow from that:
+Before routing production traffic:
 
-> The included free-tier blueprint is for demos and controlled personal use,
-> not a practical production service. This branch has a durable Postgres queue
-> and worker for local use, but a hosted deployment still needs a deployed
-> worker and migration step sharing the same managed Postgres.
+1. Provision managed Postgres and require TLS in `DATABASE_URL` with
+   `sslmode=require`, `verify-ca`, or `verify-full`.
+2. Run `python -m alembic upgrade head` as a one-shot release step.
+3. Deploy a background worker from the same commit and give web and worker the
+   same database, encryption keys, provider credentials, and owner identity.
+4. Configure the required Render environment variables, including an exact
+   HTTPS `ALLOWED_ORIGINS` entry with no trailing slash.
+5. Require the GitHub quality checks. Render is configured with
+   `autoDeployTrigger: checksPass`, so a failing commit is not auto-deployed.
+6. Monitor `https://<service>.onrender.com/ready`. Use `/health` only to
+   diagnose whether the web process itself is alive; it is not a production
+   readiness signal.
 
-- A keep-alive ping on `/health` every 5 minutes prevents the 15-minute idle
-  spin-down (which would both wipe state and add a ~1-minute cold start for
-  the next visitor).
-- Freeze deploys once the demo is recorded — every push redeploys and resets
-  the DB. Phoenix traces are the durable record either way.
-
-One-time Render setup:
-
-1. Push the branch containing `render.yaml` to GitHub.
-2. Render dashboard → **New → Blueprint** → pick this repo. Render reads
-   `render.yaml` and creates the `job-hunt-agent` web service (Docker runtime,
-   free plan, Singapore region, health check on `/health`).
-3. Fill the required env vars when prompted: `GOOGLE_API_KEY`,
-   `SERPAPI_API_KEY`, `PHOENIX_API_KEY`, `PHOENIX_COLLECTOR_ENDPOINT`,
-   `DATABASE_URL`, `JOB_HUNT_OWNER_TOKEN_HASH`, `JOB_HUNT_DATA_KEYS`,
-   `GEMINI_PAID_SERVICE_ACK`, plus `ALLOWED_ORIGINS`. Generate
-   `JOB_HUNT_DATA_KEYS` as described above. For `ALLOWED_ORIGINS` use the
-   production Vercel URL once it exists (production startup rejects `*` and
-   localhost — use a placeholder like `https://pending.invalid` until the
-   Vercel URL is known, then update).
-4. Deploys are automatic on every push to the connected branch.
-5. Add a free UptimeRobot (or cron-job.org) monitor on
-   `https://<service>.onrender.com/health` at a 5-minute interval.
-
-The blueprint sets `ENVIRONMENT=production`, `ENABLE_PRACTICAL_MODE=1`,
-`ENABLE_TRACING=1`,
-`ENABLE_TRACE_DRAFT_CONTENT=0`, `RETENTION_CLEANUP_INTERVAL_SECONDS=3600`,
-`PHOENIX_QUERY_TRANSPORT=rest`, and a 720-hour Phoenix lookback for seeded demo
-traces. Startup fails loudly in production if required secrets are missing,
-localhost CORS is configured, mocks are enabled, draft content tracing is
-enabled, or the database is not Postgres.
+Render background workers and pre-deploy commands require an explicit hosting
+cost decision. Follow [the deployment runbook](docs/runbooks/deploy-rollback.md)
+when that topology is available. Production startup rejects missing secrets,
+non-Postgres databases, localhost or wildcard CORS origins, mocks, and private
+draft-content tracing. Operators must additionally use TLS-only database and
+HTTPS origin settings.
 
 One-time Vercel setup:
 
@@ -435,8 +424,8 @@ vercel --prod
 
 Set the server-only `API_BASE_URL` to `https://<service>.onrender.com` (shown at
 the top of the Render service page). After Vercel prints the production URL,
-update Render's `ALLOWED_ORIGINS` env var to that exact URL — Render restarts
-the service automatically when env vars change.
+update Render's `ALLOWED_ORIGINS` env var to that exact HTTPS origin without a
+trailing slash.
 
 Queued smoke test:
 
@@ -470,8 +459,8 @@ curl -X POST $API/api/runs/$RUN_ID/outcomes \
 
 `/api/hunt` should return queued state promptly. The final `GET` should move
 from `queued`/`running` to `succeeded` after a worker processes the run, and the
-outcome POST should work only after success. The current free-tier Render
-blueprint runs only the web service, so an end-to-end hosted smoke requires a
+outcome POST should work only after success. The current Render blueprint runs
+only the web service, so an end-to-end hosted smoke requires a
 separate background worker and migration step.
 
 ## Abridged response shape

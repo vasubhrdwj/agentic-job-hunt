@@ -48,7 +48,7 @@ def downgrade() -> None:
         table_name="application_activity_events",
     )
     with op.batch_alter_table(
-        "application_activity_events", recreate="always"
+        "application_activity_events", recreate=_batch_recreate_mode()
     ) as batch_op:
         batch_op.drop_constraint(
             op.f("ck_application_activity_events_event_shape"), type_="check"
@@ -90,7 +90,9 @@ def downgrade() -> None:
 
     _restore_action_kinds()
 
-    with op.batch_alter_table("applications", recreate="always") as batch_op:
+    with op.batch_alter_table(
+        "applications", recreate=_batch_recreate_mode()
+    ) as batch_op:
         batch_op.drop_constraint(
             op.f("ck_applications_outcome_shape"), type_="check"
         )
@@ -208,7 +210,9 @@ def _create_application_outcomes() -> None:
 
 
 def _allow_application_progress() -> None:
-    with op.batch_alter_table("applications", recreate="always") as batch_op:
+    with op.batch_alter_table(
+        "applications", recreate=_batch_recreate_mode()
+    ) as batch_op:
         batch_op.drop_constraint(op.f("ck_applications_stage"), type_="check")
         batch_op.add_column(
             sa.Column("outcome_id", sa.String(length=32), nullable=True)
@@ -234,7 +238,9 @@ def _allow_application_progress() -> None:
 
 
 def _allow_progress_action_kinds() -> None:
-    with op.batch_alter_table("action_items", recreate="always") as batch_op:
+    with op.batch_alter_table(
+        "action_items", recreate=_batch_recreate_mode()
+    ) as batch_op:
         batch_op.drop_constraint(op.f("ck_action_items_kind"), type_="check")
         batch_op.create_check_constraint(
             op.f("ck_action_items_kind"),
@@ -245,7 +251,9 @@ def _allow_progress_action_kinds() -> None:
 
 
 def _restore_action_kinds() -> None:
-    with op.batch_alter_table("action_items", recreate="always") as batch_op:
+    with op.batch_alter_table(
+        "action_items", recreate=_batch_recreate_mode()
+    ) as batch_op:
         batch_op.drop_constraint(op.f("ck_action_items_kind"), type_="check")
         batch_op.create_check_constraint(
             op.f("ck_action_items_kind"),
@@ -256,7 +264,7 @@ def _restore_action_kinds() -> None:
 
 def _allow_progress_activity() -> None:
     with op.batch_alter_table(
-        "application_activity_events", recreate="always"
+        "application_activity_events", recreate=_batch_recreate_mode()
     ) as batch_op:
         batch_op.drop_constraint(
             op.f("ck_application_activity_events_event_shape"), type_="check"
@@ -365,6 +373,12 @@ def _create_progress_activity_indexes() -> None:
         postgresql_where=sa.text("outcome_id IS NOT NULL"),
         sqlite_where=sa.text("outcome_id IS NOT NULL"),
     )
+
+
+def _batch_recreate_mode() -> str:
+    """Recreate tables only where SQLite requires batch-copy DDL."""
+
+    return "always" if op.get_bind().dialect.name == "sqlite" else "auto"
 
 
 def _assert_downgrade_is_lossless() -> None:

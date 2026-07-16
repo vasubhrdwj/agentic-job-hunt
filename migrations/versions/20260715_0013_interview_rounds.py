@@ -198,7 +198,9 @@ def _create_interview_rounds() -> None:
 
 
 def _link_actions_to_rounds() -> None:
-    with op.batch_alter_table("action_items", recreate="always") as batch_op:
+    with op.batch_alter_table(
+        "action_items", recreate=_batch_recreate_mode()
+    ) as batch_op:
         batch_op.add_column(
             sa.Column("interview_round_id", sa.String(length=32), nullable=True)
         )
@@ -217,7 +219,9 @@ def _link_actions_to_rounds() -> None:
 
 
 def _unlink_actions_from_rounds() -> None:
-    with op.batch_alter_table("action_items", recreate="always") as batch_op:
+    with op.batch_alter_table(
+        "action_items", recreate=_batch_recreate_mode()
+    ) as batch_op:
         batch_op.drop_constraint(
             op.f("ck_action_items_interview_round_kind"), type_="check"
         )
@@ -400,7 +404,7 @@ def _create_interview_round_events() -> None:
 
 def _link_application_activity_to_rounds() -> None:
     with op.batch_alter_table(
-        "application_activity_events", recreate="always"
+        "application_activity_events", recreate=_batch_recreate_mode()
     ) as batch_op:
         batch_op.drop_constraint(
             op.f("ck_application_activity_events_event_shape"), type_="check"
@@ -424,7 +428,7 @@ def _link_application_activity_to_rounds() -> None:
 
 def _restore_application_activity() -> None:
     with op.batch_alter_table(
-        "application_activity_events", recreate="always"
+        "application_activity_events", recreate=_batch_recreate_mode()
     ) as batch_op:
         batch_op.drop_constraint(
             op.f("ck_application_activity_events_event_shape"), type_="check"
@@ -490,6 +494,12 @@ def _activity_shape(*, with_round: bool) -> str:
         "AND submission_id IS NULL AND effective_on IS NOT NULL "
         f"AND outcome_id IS NOT NULL{no_round})"
     )
+
+
+def _batch_recreate_mode() -> str:
+    """Recreate tables only where SQLite requires batch-copy DDL."""
+
+    return "always" if op.get_bind().dialect.name == "sqlite" else "auto"
 
 
 def _assert_downgrade_is_lossless() -> None:
