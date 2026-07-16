@@ -4,10 +4,9 @@ services:
     runtime: docker
     plan: free
     region: singapore
-    # Fail deployment health until Postgres is migrated and a compatible
-    # worker is fresh. This web-only blueprint is intentionally not a complete
-    # practical deployment; add a paid background worker before using it.
-    healthCheckPath: /ready
+    # Web traffic is safe once Postgres is reachable and migrated. Full `/ready`
+    # separately reports whether provider jobs also have a compatible worker.
+    healthCheckPath: /web-ready
     # Do not deploy a commit until the linked branch's required CI checks pass.
     autoDeployTrigger: checksPass
     envVars:

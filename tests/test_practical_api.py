@@ -846,6 +846,11 @@ def test_readiness_requires_current_migration_and_fresh_worker(
     practical_client: tuple[TestClient, Database],
 ) -> None:
     client, database = practical_client
+    web_ready = client.get("/web-ready")
+    assert web_ready.status_code == 200
+    assert web_ready.json()["ok"] is True
+    assert "worker" not in web_ready.json()
+
     before = client.get("/ready")
     assert before.status_code == 503
     assert before.json()["migrations"]["current"] is True
@@ -957,6 +962,7 @@ def test_legacy_liveness_remains_available_without_durable_database(
         assert client.get("/health").status_code == 200
         assert client.head("/health").status_code == 200
         assert client.get("/ready").status_code == 503
+        assert client.get("/web-ready").status_code == 503
         assert client.get("/api/me/profile").status_code == 404
         assert client.get("/api/career-tracks").status_code == 404
         assert client.get("/api/saved-searches").status_code == 404

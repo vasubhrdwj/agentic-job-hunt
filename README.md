@@ -315,6 +315,7 @@ POST   /api/applications/{id}/outreach-sequences/{sequence_id}/messages
 POST   /api/applications/{id}/outreach-sequences/{sequence_id}/events
                                     → record copy, manual send, outcome, pause/resume, or stop
 GET    /health                      → { ok: true }
+GET    /web-ready                   → DB + migration readiness for web traffic
 GET    /ready                       → DB migration + compatible worker readiness
 ```
 
@@ -386,10 +387,10 @@ in-place operations and require a migration-current, identity-matched archive.
 ## Hosted deployment status
 
 `render.yaml` deliberately defines only the web service. It does not silently
-create a paid background worker, managed database, or migration service. As a
-result, the blueprint is a staging scaffold rather than a complete practical
-deployment: `/ready` stays unhealthy until the database is migrated and a
-compatible worker is alive.
+create a background worker, managed database, or migration service.
+`/web-ready` gates web traffic on a reachable, migrated database; `/ready`
+remains the stronger end-to-end signal and stays unhealthy until a compatible
+worker is alive.
 
 Before routing production traffic:
 
@@ -402,9 +403,9 @@ Before routing production traffic:
    HTTPS `ALLOWED_ORIGINS` entry with no trailing slash.
 5. Require the GitHub quality checks. Render is configured with
    `autoDeployTrigger: checksPass`, so a failing commit is not auto-deployed.
-6. Monitor `https://<service>.onrender.com/ready`. Use `/health` only to
-   diagnose whether the web process itself is alive; it is not a production
-   readiness signal.
+6. Monitor `https://<service>.onrender.com/web-ready` for web availability and
+   `/ready` for provider-job availability. Use `/health` only to diagnose
+   whether the process itself is alive.
 
 Render background workers and pre-deploy commands require an explicit hosting
 cost decision. Follow [the deployment runbook](docs/runbooks/deploy-rollback.md)

@@ -28,7 +28,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from . import hunt_repository, persistence, privacy_repository
 from .database import DatabaseConfigError, database_from_env
 from .requests import HuntRequestPayload, canonical_request_json
-from .production_runtime import production_runtime_errors
+from .production_runtime import production_core_errors
 from .routers.health import create_health_router
 from .routers.privacy import PRIVACY_RECEIPT_SECRET_ENV, create_privacy_router
 from .routers.applications import create_application_router
@@ -209,7 +209,7 @@ def _validate_production_config() -> None:
     if not _is_production():
         return
 
-    errors = production_runtime_errors()
+    errors = production_core_errors()
     if not os.getenv("ALLOWED_ORIGINS", "").strip():
         errors.append("ALLOWED_ORIGINS is required when ENVIRONMENT=production")
     if len(os.getenv(PRIVACY_RECEIPT_SECRET_ENV, "").strip()) < 32:

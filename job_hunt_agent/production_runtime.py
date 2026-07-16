@@ -8,13 +8,12 @@ from .config import env_bool, is_production, practical_mode_enabled
 from .database import DatabaseConfigError, resolve_database_url
 
 
-def production_runtime_errors(
+def production_core_errors(
     *,
     practical_mode: bool | None = None,
     use_mocks: bool | None = None,
-    enable_tracing: bool | None = None,
 ) -> list[str]:
-    """Return common production errors without opening a database connection."""
+    """Return errors that make the private web workspace unsafe to start."""
 
     if not is_production():
         return []
@@ -23,11 +22,6 @@ def production_runtime_errors(
         practical_mode_enabled() if practical_mode is None else practical_mode
     )
     mocks = env_bool("USE_MOCKS", default=False) if use_mocks is None else use_mocks
-    tracing = (
-        env_bool("ENABLE_TRACING", default=True)
-        if enable_tracing is None
-        else enable_tracing
-    )
 
     errors: list[str] = []
     if not practical:
@@ -36,31 +30,10 @@ def production_runtime_errors(
             "the public legacy hunt is development-only"
         )
 
-    for name in (
-        "GOOGLE_API_KEY",
-        "PHOENIX_API_KEY",
-        "PHOENIX_COLLECTOR_ENDPOINT",
-        "JOB_HUNT_DATA_KEYS",
-    ):
-        if not os.getenv(name, "").strip():
-            errors.append(f"{name} is required when ENVIRONMENT=production")
-
-    if not any(
-        os.getenv(name, "").strip()
-        for name in ("SERPAPI_API_KEY", "SERPAPI_KEY")
-    ):
-        errors.append(
-            "SERPAPI_API_KEY or SERPAPI_KEY is required when ENVIRONMENT=production"
-        )
+    if not os.getenv("JOB_HUNT_DATA_KEYS", "").strip():
+        errors.append("JOB_HUNT_DATA_KEYS is required when ENVIRONMENT=production")
     if mocks:
         errors.append("USE_MOCKS must be false when ENVIRONMENT=production")
-    if not tracing:
-        errors.append("ENABLE_TRACING must not be false when ENVIRONMENT=production")
-    if not env_bool("GEMINI_PAID_SERVICE_ACK", default=False):
-        errors.append(
-            "GEMINI_PAID_SERVICE_ACK must be true: "
-            "resumes must not use unpaid Gemini quota"
-        )
     if env_bool("ENABLE_TRACE_DRAFT_CONTENT", default=False):
         errors.append("ENABLE_TRACE_DRAFT_CONTENT must be false in production")
 
@@ -71,6 +44,56 @@ def production_runtime_errors(
             errors.append(str(exc))
 
     return errors
+
+
+def production_provider_errors(
+    *,
+    enable_tracing: bool | None = None,
+) -> list[str]:
+    """Return errors that must block provider-consuming worker processes."""
+
+    if not is_production():
+        return []
+
+    tracing = (
+        env_bool("ENABLE_TRACING", default=True)
+        if enable_tracing is None
+        else enable_tracing
+    )
+    errors: list[str] = []
+    for name in ("GOOGLE_API_KEY", "PHOENIX_API_KEY", "PHOENIX_COLLECTOR_ENDPOINT"):
+        if not os.getenv(name, "").strip():
+            errors.append(f"{name} is required for the production worker")
+    if not any(
+        os.getenv(name, "").strip()
+        for name in ("SERPAPI_API_KEY", "SERPAPI_KEY")
+    ):
+        errors.append("SERPAPI_API_KEY or SERPAPI_KEY is required for the production worker")
+    if not tracing:
+        errors.append("ENABLE_TRACING must not be false for the production worker")
+    if not env_bool("GEMINI_PAID_SERVICE_ACK", default=False):
+        errors.append(
+            "GEMINI_PAID_SERVICE_ACK must be true: "
+            "resumes must not use unpaid Gemini quota"
+        )
+    return errors
+
+
+def production_runtime_errors(
+    *,
+    practical_mode: bool | None = None,
+    use_mocks: bool | None = None,
+    enable_tracing: bool | None = None,
+) -> list[str]:
+    """Return the complete production-worker configuration errors."""
+
+    return [
+        *production_core_errors(
+            practical_mode=practical_mode,
+            use_mocks=use_mocks,
+        ),
+        *production_provider_errors(enable_tracing=enable_tracing),
+    ]
 
 
 def validate_production_runtime(
@@ -90,4 +113,9 @@ def validate_production_runtime(
         raise RuntimeError("Invalid production runtime config: " + "; ".join(errors))
 
 
-__all__ = ["production_runtime_errors", "validate_production_runtime"]
+__all__ = [
+    "production_core_errors",
+    "production_provider_errors",
+    "production_runtime_errors",
+    "validate_production_runtime",
+]

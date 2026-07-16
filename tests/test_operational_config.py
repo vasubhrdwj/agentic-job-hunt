@@ -31,11 +31,11 @@ def test_compose_restarts_durable_services_and_health_gates_frontend() -> None:
     assert services["postgres"]["ports"] == ["127.0.0.1:5432:5432"]
 
 
-def test_render_is_fail_closed_on_readiness_and_legacy_writes() -> None:
+def test_render_gates_web_traffic_on_database_readiness_and_legacy_writes() -> None:
     render = _yaml("render.yaml")
     web = render["services"][0]
     env = {item["key"]: item for item in web["envVars"]}
-    assert web["healthCheckPath"] == "/ready"
+    assert web["healthCheckPath"] == "/web-ready"
     assert web["autoDeployTrigger"] == "checksPass"
     assert "autoDeploy" not in web
     assert env["LEGACY_HUNT_API_MODE"]["value"] == "read_only"
@@ -91,5 +91,6 @@ def test_operational_runbook_set_and_manual_browser_matrix_are_present() -> None
 
     readme = (ROOT / "README.md").read_text(encoding="utf-8")
     hosted_status = readme.split("## Hosted deployment status", maxsplit=1)[1]
-    assert "onrender.com/ready" in hosted_status
+    assert "onrender.com/web-ready" in hosted_status
+    assert "`/ready` for provider-job availability" in hosted_status
     assert "onrender.com/health" not in hosted_status

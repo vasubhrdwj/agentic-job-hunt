@@ -39,6 +39,15 @@ def create_health_router(database: Database | None) -> APIRouter:
             headers={"Cache-Control": "no-store, max-age=0"},
         )
 
+    @router.get("/web-ready", include_in_schema=False)
+    def web_readiness() -> JSONResponse:
+        snapshot = web_readiness_snapshot(database)
+        return JSONResponse(
+            status_code=200 if snapshot["ok"] else 503,
+            content=snapshot,
+            headers={"Cache-Control": "no-store, max-age=0"},
+        )
+
     @router.get("/api/health")
     def owner_health(
         request: Request,
@@ -67,10 +76,9 @@ def readiness_snapshot(
     now: datetime | None = None,
 ) -> dict[str, object]:
     current = _as_utc(now or datetime.now(timezone.utc))
-    configured = database is not None
-    reachable = configured and database.reachable()
-    revision = database.current_migration_revision() if reachable and database else None
-    migrations_current = revision == MIGRATION_HEAD
+    database_snapshot = _database_snapshot(database)
+    reachable = bool(database_snapshot["database"]["reachable"])
+    migrations_current = bool(database_snapshot["migrations"]["current"])
     worker_payload: dict[str, object] = {
         "fresh": False,
         "worker_id": None,
@@ -143,13 +151,35 @@ def readiness_snapshot(
     )
     return {
         "ok": ok,
+        **database_snapshot,
+        "worker": worker_payload,
+    }
+
+
+def web_readiness_snapshot(database: Database | None) -> dict[str, object]:
+    """Report whether the API can safely serve private workspace requests."""
+
+    snapshot = _database_snapshot(database)
+    return {
+        "ok": bool(
+            snapshot["database"]["reachable"]
+            and snapshot["migrations"]["current"]
+        ),
+        **snapshot,
+    }
+
+
+def _database_snapshot(database: Database | None) -> dict[str, object]:
+    configured = database is not None
+    reachable = configured and database.reachable()
+    revision = database.current_migration_revision() if reachable and database else None
+    return {
         "database": {"configured": configured, "reachable": bool(reachable)},
         "migrations": {
-            "current": migrations_current,
+            "current": revision == MIGRATION_HEAD,
             "revision": revision,
             "expected_revision": MIGRATION_HEAD,
         },
-        "worker": worker_payload,
     }
 
 

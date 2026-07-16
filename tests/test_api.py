@@ -580,12 +580,17 @@ def test_production_config_accepts_required_env(
     from job_hunt_agent import api as api_mod
 
     monkeypatch.setenv("ENVIRONMENT", "production")
-    monkeypatch.setenv("ENABLE_TRACING", "1")
+    monkeypatch.setenv("ENABLE_TRACING", "0")
     monkeypatch.setenv("USE_MOCKS", "0")
-    monkeypatch.setenv("GOOGLE_API_KEY", "fake-google")
-    monkeypatch.setenv("SERPAPI_API_KEY", "fake-serpapi")
-    monkeypatch.setenv("PHOENIX_API_KEY", "fake-phoenix")
-    monkeypatch.setenv("PHOENIX_COLLECTOR_ENDPOINT", "https://app.phoenix.arize.com/s/demo")
+    for name in (
+        "GOOGLE_API_KEY",
+        "SERPAPI_API_KEY",
+        "SERPAPI_KEY",
+        "PHOENIX_API_KEY",
+        "PHOENIX_COLLECTOR_ENDPOINT",
+        "GEMINI_PAID_SERVICE_ACK",
+    ):
+        monkeypatch.delenv(name, raising=False)
     monkeypatch.setenv("JOB_HUNT_DB_PATH", str(tmp_path / "data" / "outcomes.db"))
     from cryptography.fernet import Fernet
 
@@ -594,7 +599,6 @@ def test_production_config_accepts_required_env(
         f"v1:{Fernet.generate_key().decode('ascii')}",
     )
     monkeypatch.setenv("JOB_HUNT_OPERATOR_TOKEN_HASH", hash_access_token("operator"))
-    monkeypatch.setenv("GEMINI_PAID_SERVICE_ACK", "1")
     monkeypatch.setenv("ENABLE_TRACE_DRAFT_CONTENT", "0")
     monkeypatch.setenv("ALLOWED_ORIGINS", "https://job-hunt-agent.vercel.app")
     monkeypatch.setenv(
