@@ -236,7 +236,7 @@ export function ProfileWorkspace() {
     try {
       const saved = await saveCandidateProfile(
         payload,
-        profile?.etag ?? '"0"',
+        profile?.data.version ?? 0,
       );
       setProfile(saved);
       hydrateProfile(saved.data);

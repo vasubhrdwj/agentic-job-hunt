@@ -131,11 +131,11 @@ export async function getCandidateProfile(): Promise<Versioned<CandidateProfile>
 
 export async function saveCandidateProfile(
   payload: CandidateProfileWrite,
-  etag: string,
+  expectedVersion: number,
 ): Promise<Versioned<CandidateProfile>> {
   const response = await fetch("/api/me/profile", {
     method: "PUT",
-    headers: mutationHeaders({ "If-Match": etag }),
+    headers: mutationHeaders({ "If-Match": versionEtag(expectedVersion) }),
     body: JSON.stringify(payload),
   });
   const data = await expectJson<CandidateProfile>(response);
