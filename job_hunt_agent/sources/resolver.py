@@ -33,6 +33,71 @@ LOGGER = logging.getLogger(__name__)
 TRACER = trace.get_tracer(__name__)
 
 _RELATIVE_AGE = re.compile(r"(\d+)\+?\s+(minute|hour|day|week|month)s?\s+ago")
+_JUNIOR_MAX_REQUIRED_YEARS = 2.0
+_ADVANCED_TITLE_TOKENS = frozenset(
+    {
+        "architect",
+        "director",
+        "fellow",
+        "head",
+        "lead",
+        "manager",
+        "principal",
+        "senior",
+        "sr",
+        "staff",
+    }
+)
+_ADVANCED_TITLE_LEVEL = re.compile(
+    r"\b(?:software\s+development\s+engineer|software\s+engineer|"
+    r"engineer|developer|sde)\s+(?:level\s+)?(?:l?[3-9]|iii|iv|v|vi|vii|viii|ix|x)\b"
+    r"|\b(?:level\s+)?(?:l?[3-9]|iii|iv|v|vi|vii|viii|ix|x)\s+"
+    r"(?:software\s+development\s+engineer|software\s+engineer|"
+    r"engineer|developer|sde)\b"
+)
+_ADVANCED_ROLE_DESCRIPTION = re.compile(
+    r"(?:\b(?:hiring|looking\s+for|seeking|role\s+is|position\s+is)\b.{0,80}"
+    r"\b(?:intermediate|mid\s+level|senior|sr|staff|principal|lead|manager)\b"
+    r".{0,40}\b(?:engineer|developer)\b)"
+    r"|(?:\b(?:intermediate|mid\s+level|senior|sr|staff|principal|lead|manager)\b"
+    r".{0,40}\b(?:engineer|developer)\b.{0,20}\b(?:opening|position|role)\b)"
+)
+_YEAR_VALUE = r"(?:\d{1,2}(?:\.\d+)?|one|two|three|four|five|six|seven|eight|nine|ten)"
+_YEAR_UNIT = r"(?:years?|yrs?)"
+_EXPERIENCE_RANGE = re.compile(
+    rf"\b(?P<low>{_YEAR_VALUE})\s*(?:-|to)\s*(?P<high>{_YEAR_VALUE})\s*"
+    rf"{_YEAR_UNIT}\b"
+)
+_EXPERIENCE_BETWEEN = re.compile(
+    rf"\bbetween\s+(?P<low>{_YEAR_VALUE})\s+and\s+(?P<high>{_YEAR_VALUE})\s*"
+    rf"{_YEAR_UNIT}\b"
+)
+_EXPERIENCE_SINGLE = re.compile(
+    rf"\b(?:(?P<qualifier>at\s+least|minimum(?:\s+of)?|more\s+than|over)\s+)?"
+    rf"(?P<years>{_YEAR_VALUE})\s*(?P<plus>\+|or\s+more)?\s*{_YEAR_UNIT}\b"
+)
+_EXPERIENCE_CONTEXT = re.compile(
+    r"\b(?:experience|experienced|qualifications?|requirements?|requires?|required|"
+    r"minimum|must|need(?:ed|s)?|should\s+have|you\s+have|looking\s+for)\b"
+)
+_OPTIONAL_EXPERIENCE_CONTEXT = re.compile(
+    r"\b(?:bonus|desirable|ideally|nice\s+to\s+have|preferred)\b"
+)
+_UPPER_BOUND_EXPERIENCE_CONTEXT = re.compile(
+    r"\b(?:at\s+most|less\s+than|maximum(?:\s+of)?|no\s+more\s+than|up\s+to)\s*$"
+)
+_WORD_YEAR_VALUES = {
+    "one": 1.0,
+    "two": 2.0,
+    "three": 3.0,
+    "four": 4.0,
+    "five": 5.0,
+    "six": 6.0,
+    "seven": 7.0,
+    "eight": 8.0,
+    "nine": 9.0,
+    "ten": 10.0,
+}
 
 
 class SourceResolver:
@@ -445,26 +510,80 @@ def _matches_role_intent(role: Role, criteria: JobCriteria) -> bool:
 def _matches_seniority_evidence(role: Role, criteria: JobCriteria) -> bool:
     if criteria.seniority != "junior":
         return True
-    evidence = " ".join(
-        [
-            role.title,
-            role.raw_description or "",
-        ]
-    ).casefold()
-    if re.search(
-        r"\b(?:senior|staff|principal|lead|manager|intermediate|mid-level)\b.{0,30}"
-        r"\b(?:engineer|developer)\b",
-        evidence,
+    if _title_is_above_junior(role.title):
+        return False
+    description = " ".join(
+        value
+        for value in (role.summary, role.raw_description or "")
+        if value.strip()
+    )
+    if _description_names_advanced_role(description):
+        return False
+    return not _requires_above_junior_experience(description)
+
+
+def _title_is_above_junior(title: str) -> bool:
+    normalized = _normalized(title)
+    tokens = set(normalized.split())
+    if tokens.intersection(_ADVANCED_TITLE_TOKENS):
+        return True
+    if "intermediate" in tokens or ({"mid", "level"} <= tokens):
+        return True
+    return bool(_ADVANCED_TITLE_LEVEL.search(normalized))
+
+
+def _description_names_advanced_role(description: str) -> bool:
+    normalized = _normalized(description)
+    return bool(_ADVANCED_ROLE_DESCRIPTION.search(normalized))
+
+
+def _requires_above_junior_experience(description: str) -> bool:
+    normalized = re.sub(r"\s+", " ", description.casefold())
+    normalized = normalized.replace("–", "-").replace("—", "-")
+    range_spans: list[tuple[int, int]] = []
+    for pattern in (_EXPERIENCE_RANGE, _EXPERIENCE_BETWEEN):
+        for match in pattern.finditer(normalized):
+            range_spans.append(match.span())
+            if not _is_required_experience_mention(normalized, match):
+                continue
+            if _year_value(match.group("low")) > _JUNIOR_MAX_REQUIRED_YEARS:
+                return True
+    for match in _EXPERIENCE_SINGLE.finditer(normalized):
+        if any(
+            start <= match.start() and match.end() <= end
+            for start, end in range_spans
+        ):
+            continue
+        if not _is_required_experience_mention(normalized, match):
+            continue
+        years = _year_value(match.group("years"))
+        qualifier = " ".join((match.group("qualifier") or "").split())
+        if qualifier in {"more than", "over"}:
+            if years >= _JUNIOR_MAX_REQUIRED_YEARS:
+                return True
+        elif years > _JUNIOR_MAX_REQUIRED_YEARS:
+            return True
+    return False
+
+
+def _is_required_experience_mention(text: str, match: re.Match[str]) -> bool:
+    before = text[max(0, match.start() - 80) : match.start()]
+    after = text[match.end() : match.end() + 80]
+    nearby_before = before[-40:]
+    nearby_after = after[:40]
+    if _UPPER_BOUND_EXPERIENCE_CONTEXT.search(nearby_before):
+        return False
+    if _OPTIONAL_EXPERIENCE_CONTEXT.search(nearby_before) or (
+        _OPTIONAL_EXPERIENCE_CONTEXT.search(nearby_after)
+        and not _EXPERIENCE_CONTEXT.search(nearby_before)
     ):
         return False
-    years = [
-        int(value)
-        for value in re.findall(
-            r"\b(?:at least\s+|minimum\s+)?(\d{1,2})\+?\s+years?\b",
-            evidence,
-        )
-    ]
-    return not years or min(years) <= 2
+    return bool(_EXPERIENCE_CONTEXT.search(f"{before} {after}"))
+
+
+def _year_value(value: str) -> float:
+    word_value = _WORD_YEAR_VALUES.get(value)
+    return word_value if word_value is not None else float(value)
 
 
 __all__ = ["SourceResolver", "is_first_party_role"]

@@ -16,6 +16,7 @@ from job_hunt_agent.schemas import (
 from job_hunt_agent.sources import lever
 from job_hunt_agent.sources.base import SourceAdapter
 from job_hunt_agent.sources.lever import LeverAdapter, LeverSourceAdapter
+from job_hunt_agent.sources.resolver import SourceResolver
 
 
 FIXTURE_PATH = Path(__file__).parent / "fixtures" / "adapters" / "lever.json"
@@ -398,6 +399,60 @@ def test_junior_filter_rejects_engineering_manager(
                 "seniority": "junior",
             },
         ),
+    )
+
+    assert roles == []
+
+
+def test_resolver_rejects_junior_sde_iii_with_structured_experience_requirement(
+    monkeypatch: pytest.MonkeyPatch,
+    company: Company,
+) -> None:
+    meesho = company.model_copy(
+        update={
+            "name": "Meesho",
+            "slug": "meesho",
+            "source_token": "meesho",
+            "hire_locations": ["India", "Bengaluru"],
+        }
+    )
+    payload = [
+        {
+            "id": "sde-iii-data",
+            "text": "Software Development Engineer III Data",
+            "applyUrl": "https://jobs.lever.co/meesho/sde-iii-data/apply",
+            "hostedUrl": "https://jobs.lever.co/meesho/sde-iii-data",
+            "categories": {
+                "commitment": "Full-time",
+                "location": "Bengaluru, Karnataka, India",
+            },
+            "descriptionPlain": "Build reliable data products at scale.",
+            "lists": [
+                {
+                    "text": "Requirements",
+                    "content": "<ul><li>5 - 8 yrs of relevant experience.</li></ul>",
+                }
+            ],
+        }
+    ]
+    monkeypatch.setattr(
+        lever,
+        "urlopen",
+        Mock(return_value=_Response(json.dumps(payload).encode("utf-8"))),
+    )
+    criteria = JobCriteria(
+        role_keywords=["software"],
+        seniority="junior",
+        location=["India"],
+        employment_types=[EmploymentType.full_time],
+        country="in",
+    )
+
+    roles = SourceResolver([LeverAdapter()]).fetch_company_roles(
+        meesho,
+        criteria,
+        use_cache=False,
+        allow_fallback=False,
     )
 
     assert roles == []

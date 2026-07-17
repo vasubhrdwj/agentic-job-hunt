@@ -334,6 +334,126 @@ def test_junior_backend_intent_rejects_frontend_mobile_and_high_experience():
     assert [role.title for role in roles] == ["Backend Engineer"]
 
 
+def test_junior_filter_rejects_meesho_sde_iii_and_structured_range_requirement():
+    primary = FakeAdapter(
+        name="lever",
+        supported_source=CompanySource.lever,
+        roles=[
+            _role(
+                company="Meesho",
+                title="Software Development Engineer III Data",
+                url="https://jobs.lever.co/meesho/sde-iii-data",
+                source=CompanySource.lever,
+            ).model_copy(
+                update={
+                    # Lever keeps structured list content in the normalized
+                    # summary while descriptionPlain may contain only an intro.
+                    "summary": "Requirements: 5 - 8 yrs of relevant experience.",
+                    "raw_description": "Build reliable data products at scale.",
+                }
+            ),
+        ],
+    )
+    company = _company(
+        name="Meesho",
+        slug="meesho",
+        source=CompanySource.lever,
+    ).model_copy(update={"careers_domains": ["jobs.lever.co"]})
+    resolver = SourceResolver([primary], fallback=FakeAdapter(name="google_jobs"))
+
+    junior_roles = resolver.fetch_company_roles(
+        company,
+        _criteria(),
+        use_cache=False,
+        allow_fallback=False,
+    )
+    mid_roles = resolver.fetch_company_roles(
+        company,
+        _criteria(seniority="mid"),
+        use_cache=False,
+        allow_fallback=False,
+    )
+
+    assert junior_roles == []
+    assert [role.title for role in mid_roles] == [
+        "Software Development Engineer III Data"
+    ]
+
+
+def test_junior_filter_uses_structured_summary_experience_when_description_is_sparse():
+    primary = FakeAdapter(
+        name="lever",
+        supported_source=CompanySource.lever,
+        roles=[
+            _role(
+                title="Software Engineer Data",
+                source=CompanySource.lever,
+            ).model_copy(
+                update={
+                    "summary": "Requirements: 5 - 8 yrs of relevant experience.",
+                    "raw_description": "Build reliable data products at scale.",
+                }
+            )
+        ],
+    )
+    resolver = SourceResolver([primary], fallback=FakeAdapter(name="google_jobs"))
+
+    roles = resolver.fetch_company_roles(
+        _company(source=CompanySource.lever),
+        _criteria(),
+        use_cache=False,
+        allow_fallback=False,
+    )
+
+    assert roles == []
+
+
+def test_junior_filter_rejects_only_explicitly_ineligible_experience():
+    descriptions = {
+        "range": "Requirements: 5–8 years of backend experience.",
+        "minimum": "Minimum of three years of professional experience.",
+        "more-than": "Requires more than 2 yrs of production experience.",
+        "plus": "You should have 3+ years building distributed systems.",
+        "unknown": "Build reliable backend services.",
+        "missing": None,
+        "junior-range": "Requires 1-3 years of backend experience.",
+        "junior-plus": "Requires 2+ years of Python experience.",
+        "upper-bound": "This opening is for candidates with up to 5 years of experience.",
+        "optional": "Five years of Kafka experience preferred.",
+        "company-age": "The product launched 5 years ago and now serves India.",
+    }
+    roles = [
+        _role(
+            title=f"Backend Engineer {label}",
+            url=f"https://acme.example/jobs/{label}",
+        ).model_copy(update={"raw_description": description})
+        for label, description in descriptions.items()
+    ]
+    primary = FakeAdapter(
+        name="greenhouse",
+        supported_source=CompanySource.greenhouse,
+        roles=roles,
+    )
+    resolver = SourceResolver([primary], fallback=FakeAdapter(name="google_jobs"))
+
+    matched = resolver.fetch_company_roles(
+        _company(),
+        _criteria(),
+        use_cache=False,
+        allow_fallback=False,
+    )
+
+    assert [role.title for role in matched] == [
+        "Backend Engineer unknown",
+        "Backend Engineer missing",
+        "Backend Engineer junior-range",
+        "Backend Engineer junior-plus",
+        "Backend Engineer upper-bound",
+        "Backend Engineer optional",
+        "Backend Engineer company-age",
+    ]
+
+
 def test_registry_aggregation_preserves_distinct_requisitions_and_dedupes_urls():
     acme = _company()
     beta = _company(name="Beta", slug="beta")
