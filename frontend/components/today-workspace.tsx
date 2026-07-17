@@ -31,6 +31,7 @@ import {
 } from "./workspace-ui";
 
 const TERMINAL_SCAN_STATES = new Set(["succeeded", "partial", "failed", "cancelled"]);
+const COVERAGE_WARNING_CODES = new Set(["source_incomplete", "source_fallback_used"]);
 
 interface UndoState {
   opportunityId: string;
@@ -278,29 +279,46 @@ export function TodayWorkspace({
   if (!today) return null;
 
   const warnings = uniqueWarnings([...(today.scan_health.warnings ?? []), ...(scan?.warnings ?? [])]);
+  const coverageWarnings = warnings.filter(isCoverageWarning);
+  const operationalWarnings = warnings.filter((warning) => (
+    !isCoverageWarning(warning) && !isRedundantLimitedScanWarning(warning, scan)
+  ));
+  const limitedSourceCount = scan?.counts.sources_degraded
+    ?? uniqueSourceCount(coverageWarnings);
   return (
     <div className="min-w-0 space-y-6" aria-busy={refreshing}>
-      <TodaySummaryStrip today={today} view={view} onView={(next) => updateFilter("view", next)} />
+      <TodaySummaryStrip today={today} scan={scan} view={view} onView={(next) => updateFilter("view", next)} />
 
       {scanId ? <ScanProgress scan={scan} error={scanError} /> : null}
-      {today.scan_health.state === "degraded" || warnings.length > 0 ? (
+      {coverageWarnings.length > 0 ? (
+        <aside aria-labelledby="coverage-title" className="rounded-xl border border-blue-200 bg-blue-50 p-4 dark:border-blue-900 dark:bg-blue-950/25">
+          <h2 id="coverage-title" className="font-semibold text-blue-950 dark:text-blue-100">
+            Scan finished with limited coverage
+          </h2>
+          <p className="mt-1 text-sm text-blue-900 dark:text-blue-200">
+            {limitedSourceCount > 0 ? `${limitedSourceCount} source search${limitedSourceCount === 1 ? "" : "es"} used limited coverage. ` : ""}
+            The scan applied your saved criteria without verifying every company&apos;s full job inventory. Returned roles are still useful for discovery; this limitation does not mean those sources failed.
+          </p>
+        </aside>
+      ) : null}
+      {operationalWarnings.length > 0 ? (
         <aside aria-labelledby="source-health-title" className="rounded-xl border border-amber-200 bg-amber-50 p-4 dark:border-amber-900 dark:bg-amber-950/25">
           <h2 id="source-health-title" className="font-semibold text-amber-950 dark:text-amber-100">
-            Some sources could not be fully refreshed
+            Some sources need attention
           </h2>
           <p className="mt-1 text-sm text-amber-900 dark:text-amber-200">
-            Last-confirmed roles remain visible. A failed or incomplete source does not close or hide them.
+            Failed or interrupted sources do not close or hide previously confirmed roles.
           </p>
           <ul className="mt-3 space-y-2 text-xs text-amber-900 dark:text-amber-200">
-            {warnings.slice(0, 8).map((warning) => (
+            {operationalWarnings.slice(0, 8).map((warning) => (
               <li key={`${warning.scope}:${warning.code}:${warning.company_slug ?? "scan"}`} className="break-words">
                 <span className="font-medium">{warning.company_slug ? `${warning.company_slug}: ` : ""}</span>
                 {warning.message}
               </li>
             ))}
-            {warnings.length > 8 ? (
+            {operationalWarnings.length > 8 ? (
               <li className="font-medium">
-                {warnings.length - 8} more source warning{warnings.length - 8 === 1 ? "" : "s"} are retained in the scan record.
+                {operationalWarnings.length - 8} more warning{operationalWarnings.length - 8 === 1 ? "" : "s"} are retained in the scan record.
               </li>
             ) : null}
           </ul>
@@ -380,7 +398,7 @@ export function TodayWorkspace({
   );
 }
 
-function TodaySummaryStrip({ today, view, onView }: { today: TodayResponse; view: TodayView; onView: (view: TodayView) => void }) {
+function TodaySummaryStrip({ today, scan, view, onView }: { today: TodayResponse; scan: ScanStatusResponse | null; view: TodayView; onView: (view: TodayView) => void }) {
   const cards: Array<{ label: string; value: number; target: TodayView }> = [
     { label: "Needs review", value: today.summary.needs_decision, target: "inbox" },
     { label: "Watching", value: today.summary.watching, target: "watching" },
@@ -401,9 +419,9 @@ function TodaySummaryStrip({ today, view, onView }: { today: TodayResponse; view
         </button>
       ))}
       <div className="min-h-24 rounded-xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900/70">
-        <span className="text-sm font-semibold capitalize">{today.scan_health.state.replaceAll("_", " ")}</span>
+        <span className="text-sm font-semibold">{scanHealthLabel(today.scan_health.state, scan)}</span>
         <span className="mt-2 block text-xs leading-5 text-zinc-500">
-          Last success: {formatDate(today.scan_health.last_success_at)}
+          Last usable scan: {formatDate(today.scan_health.last_success_at)}
         </span>
       </div>
     </section>
@@ -414,14 +432,21 @@ function ScanProgress({ scan, error }: { scan: ScanStatusResponse | null; error:
   if (error && !scan) return <StatusMessage kind="error">{error} Existing inbox data is unchanged.</StatusMessage>;
   if (!scan) return <StatusMessage kind="info">Loading persisted scan progress… Existing roles remain available below.</StatusMessage>;
   const active = !TERMINAL_SCAN_STATES.has(scan.status);
-  const kind = scan.status === "failed" ? "error" : scan.status === "succeeded" ? "success" : "info";
+  const kind = scan.status === "failed" || scan.status === "cancelled" || scan.counts.sources_failed > 0
+    ? "error"
+    : scan.status === "succeeded"
+      ? "success"
+      : "info";
   return (
     <StatusMessage kind={kind}>
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <span>
-          <strong>{active ? "Scanning roles" : `Scan ${scan.status}`}</strong>{" "}
-          · {scan.stage.replaceAll("_", " ")} · {scan.counts.sources_completed}/{scan.counts.sources_total} sources
-        </span>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <strong>{scanProgressTitle(scan, active)}</strong>
+          {active ? <span> · {scan.stage.replaceAll("_", " ")}</span> : null}
+          <p className="mt-1 text-xs leading-5">
+            {scan.counts.sources_completed}/{scan.counts.sources_total} checked · {scan.counts.sources_succeeded} succeeded · {scan.counts.sources_degraded} limited · {scan.counts.sources_failed} failed
+          </p>
+        </div>
         <span>{scan.counts.new_opportunities} new · {scan.counts.changed_postings} changed</span>
       </div>
       {error ? <p className="mt-2">{error}</p> : null}
@@ -511,4 +536,59 @@ function uniqueWarnings(warnings: ScanStatusResponse["warnings"]): ScanStatusRes
     seen.add(key);
     return true;
   });
+}
+
+function isCoverageWarning(warning: ScanStatusResponse["warnings"][number]): boolean {
+  return COVERAGE_WARNING_CODES.has(warning.code);
+}
+
+function isRedundantLimitedScanWarning(
+  warning: ScanStatusResponse["warnings"][number],
+  scan: ScanStatusResponse | null,
+): boolean {
+  return Boolean(
+    scan
+    && scan.status === "partial"
+    && scan.counts.sources_failed === 0
+    && warning.scope === "scan"
+    && warning.code === "scan_interrupted",
+  );
+}
+
+function uniqueSourceCount(warnings: ScanStatusResponse["warnings"]): number {
+  return new Set(
+    warnings
+      .filter((warning) => warning.scope === "source")
+      .map((warning) => `${warning.company_slug ?? ""}:${warning.source ?? ""}`),
+  ).size;
+}
+
+function scanProgressTitle(scan: ScanStatusResponse, active: boolean): string {
+  if (active) return "Scanning roles";
+  if (scan.status === "succeeded") return "Scan finished";
+  if (scan.status === "partial" && scan.counts.sources_failed === 0) {
+    return "Scan finished with limited coverage";
+  }
+  if (scan.status === "partial") return "Scan finished with source issues";
+  if (scan.status === "cancelled") return "Scan cancelled";
+  return "Scan failed";
+}
+
+function scanHealthLabel(
+  state: TodayResponse["scan_health"]["state"],
+  scan: ScanStatusResponse | null,
+): string {
+  if (scan && TERMINAL_SCAN_STATES.has(scan.status)) {
+    if (scan.status === "succeeded") return "Healthy";
+    if (scan.status === "partial" && scan.counts.sources_failed === 0) {
+      return "Limited coverage";
+    }
+    if (scan.status === "partial") return "Source issues";
+    if (scan.status === "failed") return "Scan failed";
+    return "Scan cancelled";
+  }
+  if (state === "healthy") return "Healthy";
+  if (state === "running") return "Scan running";
+  if (state === "degraded") return "Latest scan needs review";
+  return "Not scanned yet";
 }
