@@ -129,6 +129,7 @@ export interface TransparentMatchSummary {
     | "insufficient_data"
     | null;
   confidence: "high" | "medium" | "low" | null;
+  eligibility: "eligible" | "uncertain" | "likely_ineligible" | null;
   matched_terms: string[];
   representative_requirement: string | null;
   approved_evidence_ids: string[];

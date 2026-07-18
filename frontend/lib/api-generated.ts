@@ -3507,6 +3507,11 @@ export interface components {
             version: number;
         };
         /**
+         * OpportunityEligibility
+         * @enum {string}
+         */
+        OpportunityEligibility: "eligible" | "uncertain" | "likely_ineligible";
+        /**
          * OpportunityFactField
          * @enum {string}
          */
@@ -5204,6 +5209,7 @@ export interface components {
             /** Assessment Saved Search Id */
             assessment_saved_search_id?: string | null;
             confidence?: components["schemas"]["AssessmentConfidence"] | null;
+            eligibility?: components["schemas"]["OpportunityEligibility"] | null;
             fit_band?: components["schemas"]["OpportunityFitBand"] | null;
             /** Gaps */
             gaps?: string[];

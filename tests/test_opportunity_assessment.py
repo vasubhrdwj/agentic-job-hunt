@@ -1,4 +1,5 @@
 from job_hunt_agent.opportunity_assessment import (
+    AssessmentAuthorization,
     AssessmentEvidence,
     AssessmentPosting,
     AssessmentProfile,
@@ -21,6 +22,7 @@ TARGET = AssessmentTarget(
 PROFILE = AssessmentProfile(
     current_location="Gurugram, India",
     employment_types=("full_time",),
+    years_of_experience=1,
 )
 RESUME = """
 Software Engineer building Node.js and TypeScript backend services on AWS.
@@ -61,6 +63,7 @@ def test_backend_role_gets_a_strong_explainable_assessment() -> None:
 
     assert result.fit_band == "strong"
     assert result.confidence == "high"
+    assert result.eligibility == "eligible"
     assert {"Node.js", "AWS", "Kafka", "REST"} <= set(result.matched_terms)
     assert result.approved_evidence_ids == ("xapi", "kafka")
     assert result.representative_requirement is not None
@@ -69,7 +72,7 @@ def test_backend_role_gets_a_strong_explainable_assessment() -> None:
         "services. Work with Node.js, AWS, REST APIs, Kafka, PostgreSQL, "
         "distributed systems, CI/CD, and Docker. " * 4
     )
-    assert any("experience requirement" in gap for gap in result.gaps)
+    assert all("experience requirement" not in gap for gap in result.gaps)
     assert all(len(item) <= 200 for item in (*result.strengths, *result.gaps))
 
 
@@ -163,8 +166,10 @@ def test_explicit_employment_conflict_is_low_but_unknown_location_is_not_a_failu
     )
 
     assert conflict.fit_band == "low"
-    assert unknown_location.fit_band == "strong"
-    assert all("location" not in gap.casefold() for gap in unknown_location.gaps)
+    assert conflict.eligibility == "likely_ineligible"
+    assert unknown_location.fit_band == "promising"
+    assert unknown_location.eligibility == "uncertain"
+    assert any("location" in gap.casefold() for gap in unknown_location.gaps)
 
 
 def test_no_approved_evidence_cannot_receive_the_strong_band() -> None:
@@ -184,3 +189,215 @@ def test_no_approved_evidence_cannot_receive_the_strong_band() -> None:
     assert result.fit_band == "promising"
     assert result.confidence == "high"
     assert result.approved_evidence_ids == ()
+
+
+def test_remote_us_and_onsite_mode_conflicts_cannot_score_as_matches() -> None:
+    remote_us = assess_opportunity(
+        posting=AssessmentPosting(
+            title="Backend Engineer",
+            description="Build Node.js AWS Kafka REST PostgreSQL services. " * 15,
+            location="Remote — United States",
+            employment_type="full_time",
+        ),
+        target=TARGET,
+        profile=PROFILE,
+        resume_text=RESUME,
+        evidence=EVIDENCE,
+    )
+    onsite = assess_opportunity(
+        posting=AssessmentPosting(
+            title="Backend Engineer",
+            description="Build Node.js AWS Kafka REST PostgreSQL services. " * 15,
+            location="India (Onsite)",
+            employment_type="full_time",
+        ),
+        target=TARGET,
+        profile=AssessmentProfile(
+            current_location="Gurugram, India",
+            work_modes=("remote",),
+            employment_types=("full_time",),
+            years_of_experience=1,
+        ),
+        resume_text=RESUME,
+        evidence=EVIDENCE,
+    )
+
+    assert (remote_us.fit_band, remote_us.eligibility) == ("low", "likely_ineligible")
+    assert (onsite.fit_band, onsite.eligibility) == ("low", "likely_ineligible")
+
+
+def test_indiana_is_not_mistaken_for_india() -> None:
+    result = assess_opportunity(
+        posting=AssessmentPosting(
+            title="Backend Engineer",
+            description="Build Node.js AWS Kafka REST PostgreSQL services. " * 15,
+            location="Indianapolis, Indiana (Onsite)",
+            employment_type="full_time",
+        ),
+        target=TARGET,
+        profile=PROFILE,
+        resume_text=RESUME,
+        evidence=EVIDENCE,
+    )
+
+    assert result.fit_band != "strong"
+    assert result.eligibility == "uncertain"
+
+
+def test_unmet_experience_and_authorization_are_eligibility_failures() -> None:
+    experience = assess_opportunity(
+        posting=AssessmentPosting(
+            title="Backend Engineer",
+            description="Required: 10+ years building Node.js AWS Kafka REST services. " * 12,
+            location="India",
+            employment_type="full_time",
+        ),
+        target=TARGET,
+        profile=PROFILE,
+        resume_text=RESUME,
+        evidence=EVIDENCE,
+    )
+    authorization = assess_opportunity(
+        posting=AssessmentPosting(
+            title="Backend Engineer",
+            description="Build Node.js AWS Kafka REST PostgreSQL services. " * 15,
+            location="Remote - United States",
+            employment_type="full_time",
+        ),
+        target=AssessmentTarget(
+            role_families=TARGET.role_families,
+            seniority_levels=TARGET.seniority_levels,
+            target_locations=("United States",),
+        ),
+        profile=AssessmentProfile(
+            current_location="Gurugram, India",
+            employment_types=("full_time",),
+            years_of_experience=1,
+            work_authorizations=(AssessmentAuthorization("US", "not_authorized"),),
+        ),
+        resume_text=RESUME,
+        evidence=EVIDENCE,
+    )
+
+    assert (experience.fit_band, experience.eligibility) == ("low", "likely_ineligible")
+    assert (authorization.fit_band, authorization.eligibility) == ("low", "likely_ineligible")
+
+
+def test_blank_or_sparse_descriptions_remain_insufficient_data() -> None:
+    for description in ("", "Node.js AWS REST"):
+        result = assess_opportunity(
+            posting=AssessmentPosting(
+                title="Backend Engineer",
+                description=description,
+                location="India",
+                employment_type="full_time",
+            ),
+            target=TARGET,
+            profile=PROFILE,
+            resume_text=RESUME,
+            evidence=EVIDENCE,
+        )
+        assert result.fit_band == "insufficient_data"
+        assert result.confidence == "low"
+
+
+def test_explicit_frontend_and_product_roles_conflict_with_backend_target() -> None:
+    for title in (
+        "Frontend Software Development Engineer",
+        "Product Manager, Developer APIs",
+    ):
+        result = assess_opportunity(
+            posting=AssessmentPosting(
+                title=title,
+                description="Build Node.js AWS Kafka REST PostgreSQL services. " * 15,
+                location="India",
+                employment_type="full_time",
+            ),
+            target=TARGET,
+            profile=PROFILE,
+            resume_text=RESUME,
+            evidence=EVIDENCE,
+        )
+        assert result.fit_band == "low"
+
+
+def test_unusual_engineering_title_is_unknown_instead_of_rejected() -> None:
+    result = assess_opportunity(
+        posting=AssessmentPosting(
+            title="Member of Technical Staff",
+            description="Build Node.js AWS Kafka REST PostgreSQL services. " * 15,
+            location="Bengaluru",
+            employment_type="full_time",
+        ),
+        target=TARGET,
+        profile=PROFILE,
+        resume_text=RESUME,
+        evidence=EVIDENCE,
+    )
+
+    assert result.fit_band != "low"
+    assert result.eligibility == "eligible"
+
+
+def test_company_age_is_not_mistaken_for_required_experience() -> None:
+    result = assess_opportunity(
+        posting=AssessmentPosting(
+            title="Backend Engineer",
+            description=(
+                "We have served customers for 20 years across global markets. "
+                "Required: 1+ years of experience building Node.js AWS REST services. " * 10
+            ),
+            location="India",
+            employment_type="full_time",
+        ),
+        target=TARGET,
+        profile=PROFILE,
+        resume_text=RESUME,
+        evidence=EVIDENCE,
+    )
+
+    assert result.eligibility == "eligible"
+    assert all("20" not in gap for gap in result.gaps)
+
+
+def test_ambiguous_ordinary_words_do_not_become_technical_skills() -> None:
+    result = assess_opportunity(
+        posting=AssessmentPosting(
+            title="Backend Engineer",
+            description=(
+                "Express ideas clearly during Spring 2027 and help the rest of the team "
+                "organize shipping containers. " * 8
+            ),
+            location="India",
+            employment_type="full_time",
+        ),
+        target=TARGET,
+        profile=PROFILE,
+        resume_text=RESUME,
+        evidence=EVIDENCE,
+    )
+
+    assert result.matched_terms == ()
+    assert result.fit_band == "insufficient_data"
+
+
+def test_duplicate_aws_evidence_does_not_fake_broad_requirement_coverage() -> None:
+    duplicate_evidence = (
+        AssessmentEvidence("aws-one", "Used AWS in production.", ("AWS",)),
+        AssessmentEvidence("aws-two", "Deployed another service on AWS.", ("AWS",)),
+    )
+    result = assess_opportunity(
+        posting=AssessmentPosting(
+            title="Backend Engineer",
+            description="Build Node.js services using AWS and REST APIs. " * 15,
+            location="India",
+            employment_type="full_time",
+        ),
+        target=TARGET,
+        profile=PROFILE,
+        resume_text=RESUME,
+        evidence=duplicate_evidence,
+    )
+
+    assert result.fit_band == "promising"
+    assert result.approved_evidence_ids == ("aws-one",)

@@ -357,11 +357,12 @@ def test_saved_search_provenance_is_ordered_and_deduplicated() -> None:
 def test_match_summary_is_transparent_or_explicitly_not_assessed() -> None:
     assessed = TransparentMatchSummary(
         state="assessed",
-        algorithm_version="backend-opportunity-fit-v1",
+        algorithm_version="backend-opportunity-fit-v2",
         resume_version_id="resume1",
         assessment_saved_search_id="search1",
         fit_band="strong",
         confidence="high",
+        eligibility="eligible",
         matched_terms=["SCIM", "identity"],
         representative_requirement="Build identity lifecycle services.",
         approved_evidence_ids=["evidence1"],
@@ -369,6 +370,7 @@ def test_match_summary_is_transparent_or_explicitly_not_assessed() -> None:
         gaps=["Work authorization was not provided."],
     )
     assert assessed.fit_band.value == "strong"
+    assert assessed.eligibility.value == "eligible"
     assert assessed.matched_terms == ["SCIM", "identity"]
 
     with pytest.raises(ValidationError, match="not-assessed"):
@@ -388,11 +390,12 @@ def test_match_summary_is_transparent_or_explicitly_not_assessed() -> None:
     with pytest.raises(ValidationError, match="strengths must not contain duplicates"):
         TransparentMatchSummary(
             state="assessed",
-            algorithm_version="backend-opportunity-fit-v1",
+            algorithm_version="backend-opportunity-fit-v2",
             resume_version_id="resume1",
             assessment_saved_search_id="search1",
             fit_band="promising",
             confidence="medium",
+            eligibility="uncertain",
             strengths=["Supported by AWS evidence.", "supported by aws evidence."],
         )
 

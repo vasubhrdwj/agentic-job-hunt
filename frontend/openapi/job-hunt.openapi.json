@@ -6727,6 +6727,15 @@
         "title": "OpportunityDetailResponse",
         "type": "object"
       },
+      "OpportunityEligibility": {
+        "enum": [
+          "eligible",
+          "uncertain",
+          "likely_ineligible"
+        ],
+        "title": "OpportunityEligibility",
+        "type": "string"
+      },
       "OpportunityFactField": {
         "enum": [
           "location",
@@ -11054,6 +11063,16 @@
             "anyOf": [
               {
                 "$ref": "#/components/schemas/AssessmentConfidence"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "eligibility": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OpportunityEligibility"
               },
               {
                 "type": "null"

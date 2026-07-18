@@ -206,6 +206,12 @@ class AssessmentConfidence(str, Enum):
     low = "low"
 
 
+class OpportunityEligibility(str, Enum):
+    eligible = "eligible"
+    uncertain = "uncertain"
+    likely_ineligible = "likely_ineligible"
+
+
 class NotAssessedReason(str, Enum):
     assessment_pending = "assessment_pending"
     resume_unavailable = "resume_unavailable"
@@ -509,6 +515,7 @@ class TransparentMatchSummary(ContractModel):
     assessment_saved_search_id: OpaqueId | None = None
     fit_band: OpportunityFitBand | None = None
     confidence: AssessmentConfidence | None = None
+    eligibility: OpportunityEligibility | None = None
     matched_terms: list[ShortText] = Field(default_factory=list, max_length=20)
     representative_requirement: str | None = Field(
         default=None,
@@ -538,6 +545,7 @@ class TransparentMatchSummary(ContractModel):
                 or self.assessment_saved_search_id is None
                 or self.fit_band is None
                 or self.confidence is None
+                or self.eligibility is None
                 or self.not_assessed_reason is not None
             ):
                 raise ValueError(
@@ -550,6 +558,7 @@ class TransparentMatchSummary(ContractModel):
             or self.assessment_saved_search_id is not None
             or self.fit_band is not None
             or self.confidence is not None
+            or self.eligibility is not None
             or self.matched_terms
             or self.representative_requirement is not None
             or self.approved_evidence_ids
@@ -978,6 +987,7 @@ __all__ = [
     "OpportunityDecisionState",
     "OpportunityDetailResponse",
     "OpportunityFactField",
+    "OpportunityEligibility",
     "OpportunityFitBand",
     "OpportunityFacts",
     "OpportunityLane",

@@ -161,7 +161,12 @@ export function OpportunityFactGrid({ facts }: { facts: OpportunityFacts }) {
 
 export function MatchEvidence({ opportunity }: { opportunity: TodayOpportunityItem }) {
   const match = opportunity.match;
-  if (match.state === "not_assessed" || !match.fit_band || !match.confidence) {
+  if (
+    match.state === "not_assessed"
+    || !match.fit_band
+    || !match.confidence
+    || !match.eligibility
+  ) {
     return (
       <section className="mt-5 rounded-xl border border-zinc-200 p-4 dark:border-zinc-800">
         <h3 className="text-sm font-semibold">Automatic fit assessment</h3>
@@ -181,9 +186,14 @@ export function MatchEvidence({ opportunity }: { opportunity: TodayOpportunityIt
           </p>
           <h3 className="mt-1 text-lg font-semibold">{presentation.label}</h3>
         </div>
-        <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${presentation.badgeClasses}`}>
-          {titleCase(match.confidence)} confidence
-        </span>
+        <div className="flex flex-wrap gap-2">
+          <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${presentation.badgeClasses}`}>
+            {titleCase(match.confidence)} confidence
+          </span>
+          <span className="rounded-full bg-white/80 px-2.5 py-1 text-xs font-medium text-zinc-700 dark:bg-zinc-900/70 dark:text-zinc-200">
+            {eligibilityLabel(match.eligibility)}
+          </span>
+        </div>
       </div>
       <p className="mt-2 text-sm leading-6 text-zinc-700 dark:text-zinc-300">
         {presentation.guidance}
@@ -281,6 +291,14 @@ function notAssessedLabel(reason: TransparentMatchSummary["not_assessed_reason"]
     not_requested: "This role has not been compared with your saved profile yet.",
   };
   return reason ? labels[reason] : "This role has not been assessed.";
+}
+
+function eligibilityLabel(
+  eligibility: NonNullable<TransparentMatchSummary["eligibility"]>,
+): string {
+  if (eligibility === "eligible") return "Eligibility checks passed";
+  if (eligibility === "likely_ineligible") return "Likely ineligible";
+  return "Eligibility needs verification";
 }
 
 function titleCase(value: string): string {
