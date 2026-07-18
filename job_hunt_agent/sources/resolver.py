@@ -35,7 +35,6 @@ TRACER = trace.get_tracer(__name__)
 _RELATIVE_AGE = re.compile(r"(\d+)\+?\s+(minute|hour|day|week|month)s?\s+ago")
 _JUNIOR_MAX_REQUIRED_YEARS = 2.0
 _BACKEND_ROLE_FAMILY_ALIASES = (
-    "Application Engineer",
     "Site Reliability Engineer",
     "SDE",
     "Backend Developer",
@@ -45,6 +44,25 @@ _BACKEND_ROLE_FAMILY_ALIASES = (
     "Software Engineer",
     "Software Development Engineer",
     "Platform Engineer",
+)
+_BACKEND_TITLE_ROLE_NOUNS = frozenset(
+    {
+        "developer",
+        "developers",
+        "engineer",
+        "engineers",
+        "sde",
+    }
+)
+_ENGINEERING_EARLY_CAREER_NOUNS = frozenset(
+    {
+        "apprentice",
+        "apprenticeship",
+        "graduate",
+        "intern",
+        "internship",
+        "trainee",
+    }
 )
 _ADVANCED_TITLE_TOKENS = frozenset(
     {
@@ -385,17 +403,7 @@ def _criteria_with_backend_role_aliases(criteria: JobCriteria) -> JobCriteria:
     """Return source-only criteria with conservative backend title aliases."""
 
     normalized_keywords = [_normalized(value) for value in criteria.role_keywords]
-    keyword_token_sets = [set(value.split()) for value in normalized_keywords if value]
-    is_backend_role_search = any(
-        "backend" in tokens
-        or "sde" in tokens
-        or (
-            "software" in tokens
-            and bool(tokens.intersection({"developer", "engineer", "engineering"}))
-        )
-        for tokens in keyword_token_sets
-    )
-    if not is_backend_role_search:
+    if not _is_backend_role_family_search(criteria):
         return criteria.model_copy(deep=True)
 
     expanded = list(criteria.role_keywords)
@@ -544,11 +552,52 @@ def _matches_role_intent(role: Role, criteria: JobCriteria) -> bool:
         for token in _normalized(keyword).split()
     }
     title = set(_normalized(role.title).split())
+    if _is_backend_role_family_search(criteria):
+        if (
+            {"application", "engineer"} <= title
+            and not _explicitly_requests_application_engineer(criteria)
+        ):
+            return False
+        if not _is_backend_role_title(title):
+            return False
     if "backend" in requested and title.intersection(
         {"frontend", "android", "ios", "mobile"}
     ):
         return False
     return True
+
+
+def _is_backend_role_family_search(criteria: JobCriteria) -> bool:
+    keyword_token_sets = [
+        set(_normalized(value).split())
+        for value in criteria.role_keywords
+        if value.strip()
+    ]
+    return any(
+        "backend" in tokens
+        or "sde" in tokens
+        or (
+            not {"application", "engineer"} <= tokens
+            and "software" in tokens
+            and bool(tokens.intersection({"developer", "engineer", "engineering"}))
+        )
+        for tokens in keyword_token_sets
+    )
+
+
+def _explicitly_requests_application_engineer(criteria: JobCriteria) -> bool:
+    return any(
+        {"application", "engineer"} <= set(_normalized(keyword).split())
+        for keyword in criteria.role_keywords
+    )
+
+
+def _is_backend_role_title(title_tokens: set[str]) -> bool:
+    if title_tokens.intersection(_BACKEND_TITLE_ROLE_NOUNS):
+        return True
+    return "engineering" in title_tokens and bool(
+        title_tokens.intersection(_ENGINEERING_EARLY_CAREER_NOUNS)
+    )
 
 
 def _matches_seniority_evidence(role: Role, criteria: JobCriteria) -> bool:

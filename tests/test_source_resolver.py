@@ -242,14 +242,18 @@ def test_backend_search_expands_source_vocabulary_and_accepts_alias_titles():
         supported_source=CompanySource.greenhouse,
         roles=[
             _role(
-                company="Twilio",
-                title="Associate Application Engineer",
-                url="https://acme.example/jobs/application-engineer",
+                company="Stable Money",
+                title="Software Engineer I (Backend)",
+                url="https://acme.example/jobs/software-engineer-backend",
             ),
             _role(
                 company="Redwood Software",
                 title="Site Reliability Engineer",
                 url="https://acme.example/jobs/site-reliability-engineer",
+            ),
+            _role(
+                title="Software Engineering Intern",
+                url="https://acme.example/jobs/software-engineering-intern",
             ),
         ],
     )
@@ -263,13 +267,13 @@ def test_backend_search_expands_source_vocabulary_and_accepts_alias_titles():
     )
 
     assert [role.title for role in roles] == [
-        "Associate Application Engineer",
+        "Software Engineer I (Backend)",
         "Site Reliability Engineer",
+        "Software Engineering Intern",
     ]
     assert requested.role_keywords == ["Backend Engineer"]
     assert primary.criteria_calls[0].role_keywords == [
         "Backend Engineer",
-        "Application Engineer",
         "Site Reliability Engineer",
         "SDE",
         "Backend Developer",
@@ -281,6 +285,61 @@ def test_backend_search_expands_source_vocabulary_and_accepts_alias_titles():
     ]
 
 
+def test_explicit_application_engineer_search_is_not_rewritten_or_blocked():
+    requested = _criteria(role_keywords=["Application Engineer"])
+    primary = FakeAdapter(
+        name="greenhouse",
+        supported_source=CompanySource.greenhouse,
+        roles=[
+            _role(
+                company="Twilio",
+                title="Associate Application Engineer",
+                url="https://acme.example/jobs/application-engineer",
+            )
+        ],
+    )
+    resolver = SourceResolver([primary], fallback=FakeAdapter(name="google_jobs"))
+
+    roles = resolver.fetch_company_roles(
+        _company(),
+        requested,
+        use_cache=False,
+        allow_fallback=False,
+    )
+
+    assert [role.title for role in roles] == ["Associate Application Engineer"]
+    assert primary.criteria_calls[0].role_keywords == ["Application Engineer"]
+
+
+def test_backend_search_rejects_incidental_application_engineer_body_matches():
+    primary = FakeAdapter(
+        name="greenhouse",
+        supported_source=CompanySource.greenhouse,
+        roles=[
+            _role(
+                company="Twilio",
+                title="Associate Application Engineer",
+                url="https://acme.example/jobs/application-engineer",
+            ),
+            _role(
+                company="Amazon",
+                title="Software Application Engineer",
+                url="https://acme.example/jobs/software-application-engineer",
+            ),
+        ],
+    )
+    resolver = SourceResolver([primary], fallback=FakeAdapter(name="google_jobs"))
+
+    roles = resolver.fetch_company_roles(
+        _company(),
+        _criteria(role_keywords=["Software Engineer", "Backend Engineer"]),
+        use_cache=False,
+        allow_fallback=False,
+    )
+
+    assert roles == []
+
+
 def test_custom_keyword_search_is_not_broadened_into_backend_role_family():
     requested = _criteria(
         role_keywords=["SCIM", "identity", "IAM", "software security"],
@@ -288,17 +347,18 @@ def test_custom_keyword_search_is_not_broadened_into_backend_role_family():
     primary = FakeAdapter(
         name="greenhouse",
         supported_source=CompanySource.greenhouse,
-        roles=[_role(title="Identity Platform Engineer")],
+        roles=[_role(title="SCIM Integration Specialist")],
     )
     resolver = SourceResolver([primary], fallback=FakeAdapter(name="google_jobs"))
 
-    resolver.fetch_company_roles(
+    roles = resolver.fetch_company_roles(
         _company(),
         requested,
         use_cache=False,
         allow_fallback=False,
     )
 
+    assert [role.title for role in roles] == ["SCIM Integration Specialist"]
     assert primary.criteria_calls[0].role_keywords == [
         "SCIM",
         "identity",
@@ -313,21 +373,64 @@ def test_custom_keyword_search_is_not_broadened_into_backend_role_family():
     ]
 
 
+def test_backend_title_gate_rejects_recruiting_roles_matched_from_description():
+    primary = FakeAdapter(
+        name="bespoke",
+        supported_source=CompanySource.bespoke,
+        roles=[
+            _role(
+                company="Amazon",
+                title=(
+                    "Full Lifecycle Recruiter-II, "
+                    "Amazon University Talent Acquisition"
+                ),
+                url="https://amazon.example/jobs/recruiter-ii",
+                source=CompanySource.bespoke,
+            ),
+            _role(
+                company="Amazon",
+                title="Full Lifecycle Recruiter, Stores TA",
+                url="https://amazon.example/jobs/stores-recruiter",
+                source=CompanySource.bespoke,
+            ),
+            _role(
+                company="Amazon",
+                title="Software Engineering Recruiter",
+                url="https://amazon.example/jobs/engineering-recruiter",
+                source=CompanySource.bespoke,
+            ),
+        ],
+    )
+    resolver = SourceResolver([primary], fallback=FakeAdapter(name="google_jobs"))
+
+    roles = resolver.fetch_company_roles(
+        _company(source=CompanySource.bespoke),
+        _criteria(role_keywords=["Software Engineer", "Backend Engineer"]),
+        use_cache=False,
+        allow_fallback=False,
+    )
+
+    assert roles == []
+
+
 def test_filters_known_stale_and_wrong_type_but_preserves_unknown_dates():
     primary = FakeAdapter(
         name="greenhouse",
         supported_source=CompanySource.greenhouse,
         roles=[
-            _role(title="Fresh", posted_at="2 days ago"),
-            _role(title="Stale", posted_at="90 days ago"),
-            _role(title="Contract", employment_type=EmploymentType.contract),
+            _role(title="Backend Engineer Fresh", posted_at="2 days ago"),
+            _role(title="Backend Engineer Stale", posted_at="90 days ago"),
             _role(
-                title="Undated",
+                title="Backend Engineer Contract",
+                employment_type=EmploymentType.contract,
+            ),
+            _role(
+                title="Backend Engineer Undated",
                 url="https://acme.example/jobs/undated",
                 posted_at=None,
             ),
             _role(
-                title="Unparseable date",
+                title="Backend Engineer Unparseable date",
                 url="https://acme.example/jobs/unparseable-date",
                 posted_at="not-a-date",
             ),
@@ -342,9 +445,9 @@ def test_filters_known_stale_and_wrong_type_but_preserves_unknown_dates():
     )
 
     assert [role.title for role in roles] == [
-        "Fresh",
-        "Undated",
-        "Unparseable date",
+        "Backend Engineer Fresh",
+        "Backend Engineer Undated",
+        "Backend Engineer Unparseable date",
     ]
 
 
@@ -354,7 +457,7 @@ def test_full_time_filter_preserves_unknown_employment_type():
         supported_source=CompanySource.greenhouse,
         roles=[
             _role(
-                title="Unknown type",
+                title="Backend Engineer Unknown type",
                 employment_type=EmploymentType.unknown,
             )
         ],
@@ -625,9 +728,9 @@ def test_registry_can_require_company_careers_domain():
         name="greenhouse",
         supported_source=CompanySource.greenhouse,
         roles=[
-            _role(title="Trusted"),
+            _role(title="Backend Engineer Trusted"),
             _role(
-                title="Aggregator",
+                title="Backend Engineer Aggregator",
                 url="https://jobs.example.net/acme/aggregator",
             ),
         ],
@@ -641,7 +744,7 @@ def test_registry_can_require_company_careers_domain():
         require_first_party=True,
     )
 
-    assert [role.title for role in roles] == ["Trusted"]
+    assert [role.title for role in roles] == ["Backend Engineer Trusted"]
 
 
 def test_first_party_url_requires_safe_https_domain():
