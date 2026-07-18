@@ -7,6 +7,7 @@ import logging
 from datetime import datetime, timezone
 from pathlib import Path
 from urllib.error import HTTPError
+from urllib.parse import parse_qs, urlsplit
 
 import pytest
 
@@ -125,6 +126,56 @@ def test_maps_real_list_and_detail_fixture(
     assert "q=Kubernetes" in list_request.full_url
     assert timeout == common.REQUEST_TIMEOUT_SECONDS
     assert calls[1][0].full_url.endswith("/postings/744000132768109")
+
+
+def test_paginates_each_keyword_and_fetches_duplicate_posting_once(
+    monkeypatch: pytest.MonkeyPatch,
+    fixture: dict[str, object],
+    company: Company,
+    criteria: JobCriteria,
+) -> None:
+    calls: list[object] = []
+
+    def fake(request: object, *, timeout: int) -> _Response:
+        calls.append((request, timeout))
+        if "/postings?" in request.full_url:
+            return _Response({**fixture["list"], "totalFound": 2})
+        posting_id = request.full_url.rsplit("/", 1)[-1]
+        return _Response(fixture["details"][posting_id])
+
+    monkeypatch.setattr(common, "urlopen", fake)
+
+    roles = SmartRecruitersAdapter().fetch_open_roles(
+        company,
+        criteria.model_copy(
+            update={
+                "role_keywords": [" Kubernetes ", "reliability", "kubernetes"],
+            },
+        ),
+    )
+
+    list_requests = [
+        request
+        for request, _timeout in calls
+        if "/postings?" in request.full_url
+    ]
+    detail_requests = [
+        request
+        for request, _timeout in calls
+        if "/postings?" not in request.full_url
+    ]
+    list_queries = [
+        parse_qs(urlsplit(request.full_url).query) for request in list_requests
+    ]
+    assert [query["q"][0] for query in list_queries] == [
+        "Kubernetes",
+        "Kubernetes",
+        "reliability",
+        "reliability",
+    ]
+    assert [query["offset"][0] for query in list_queries] == ["0", "1", "0", "1"]
+    assert len(detail_requests) == 1
+    assert len(roles) == 1
 
 
 def test_protocol_support_and_alias(company: Company) -> None:

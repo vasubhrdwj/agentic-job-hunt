@@ -132,6 +132,58 @@ def test_maps_real_fixture_and_request_shape(
     assert "/wday/cxs/browserstack/External/job/" in calls[1][0].full_url
 
 
+def test_paginates_each_keyword_and_fetches_duplicate_posting_once(
+    monkeypatch: pytest.MonkeyPatch,
+    fixture: dict[str, object],
+    company: Company,
+    criteria: JobCriteria,
+) -> None:
+    calls: list[object] = []
+
+    def fake(request: object, *, timeout: int) -> _Response:
+        calls.append((request, timeout))
+        if request.full_url.endswith("/jobs"):
+            return _Response({**fixture["list"], "total": 2})
+        path = request.full_url.split("/External", 1)[1]
+        return _Response(fixture["details"][path])
+
+    monkeypatch.setattr(common, "urlopen", fake)
+
+    roles = WorkdayAdapter().fetch_open_roles(
+        company,
+        criteria.model_copy(
+            update={
+                "role_keywords": [
+                    " strategic customers ",
+                    "Sales",
+                    "sales",
+                ],
+            },
+        ),
+    )
+
+    list_requests = [
+        request
+        for request, _timeout in calls
+        if request.full_url.endswith("/jobs")
+    ]
+    detail_requests = [
+        request
+        for request, _timeout in calls
+        if not request.full_url.endswith("/jobs")
+    ]
+    list_bodies = [json.loads(request.data) for request in list_requests]
+    assert [body["searchText"] for body in list_bodies] == [
+        "strategic customers",
+        "strategic customers",
+        "Sales",
+        "Sales",
+    ]
+    assert [body["offset"] for body in list_bodies] == [0, 1, 0, 1]
+    assert len(detail_requests) == 1
+    assert len(roles) == 1
+
+
 def test_protocol_support_requires_token_and_workday_domain(company: Company) -> None:
     adapter = WorkdayAdapter()
     assert isinstance(adapter, SourceAdapter)

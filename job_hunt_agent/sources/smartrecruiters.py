@@ -136,43 +136,76 @@ def _fetch_postings(
     criteria: JobCriteria,
     company_slug: str,
 ) -> list[Any] | None:
-    offset = 0
     postings: list[Any] = []
-    query = " ".join(value.strip() for value in criteria.role_keywords if value.strip())
-    while True:
-        params: dict[str, Any] = {
-            "limit": PAGE_SIZE,
-            "offset": offset,
-        }
-        if query:
-            params["q"] = query
-        url = (
-            SMARTRECRUITERS_POSTINGS_ENDPOINT.format(
-                company=quote(token, safe=""),
+    seen_posting_ids: set[str] = set()
+    for query in _search_queries(criteria):
+        offset = 0
+        fetched_for_query = 0
+        while True:
+            params: dict[str, Any] = {
+                "limit": PAGE_SIZE,
+                "offset": offset,
+            }
+            if query:
+                params["q"] = query
+            url = (
+                SMARTRECRUITERS_POSTINGS_ENDPOINT.format(
+                    company=quote(token, safe=""),
+                )
+                + "?"
+                + urlencode(params)
             )
-            + "?"
-            + urlencode(params)
-        )
-        payload = _common._request_json(
-            url,
-            source="SmartRecruiters",
-            company_slug=company_slug,
-        )
-        if payload is None:
-            return None
-        if not isinstance(payload, dict) or not isinstance(payload.get("content"), list):
-            LOGGER.warning(
-                "SmartRecruiters returned a malformed postings payload for %s.",
-                company_slug,
+            payload = _common._request_json(
+                url,
+                source="SmartRecruiters",
+                company_slug=company_slug,
             )
-            return None
-        page = payload["content"]
-        postings.extend(page)
-        total = payload.get("totalFound")
-        if not isinstance(total, int) or len(postings) >= total or not page:
-            break
-        offset += len(page)
+            if payload is None:
+                return None
+            if not isinstance(payload, dict) or not isinstance(
+                payload.get("content"),
+                list,
+            ):
+                LOGGER.warning(
+                    "SmartRecruiters returned a malformed postings payload for %s.",
+                    company_slug,
+                )
+                return None
+            page = payload["content"]
+            fetched_for_query += len(page)
+            for posting in page:
+                posting_id = (
+                    _common._clean_text(posting.get("id"))
+                    if isinstance(posting, dict)
+                    else ""
+                )
+                if posting_id:
+                    if posting_id in seen_posting_ids:
+                        continue
+                    seen_posting_ids.add(posting_id)
+                postings.append(posting)
+            total = payload.get("totalFound")
+            if (
+                not isinstance(total, int)
+                or fetched_for_query >= total
+                or not page
+            ):
+                break
+            offset += len(page)
     return postings
+
+
+def _search_queries(criteria: JobCriteria) -> list[str]:
+    queries: list[str] = []
+    seen: set[str] = set()
+    for keyword in criteria.role_keywords:
+        query = _common._clean_text(keyword)
+        key = query.casefold()
+        if not query or key in seen:
+            continue
+        seen.add(key)
+        queries.append(query)
+    return queries or [""]
 
 
 def _role_from_detail(

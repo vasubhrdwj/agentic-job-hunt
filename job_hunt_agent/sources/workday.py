@@ -130,43 +130,71 @@ def _fetch_postings(
     criteria: JobCriteria,
     company_slug: str,
 ) -> list[Any] | None:
-    offset = 0
     postings: list[Any] = []
-    search_text = " ".join(
-        value.strip() for value in criteria.role_keywords if value.strip()
-    )
-    while True:
-        body = json.dumps(
-            {
-                "limit": PAGE_SIZE,
-                "offset": offset,
-                "searchText": search_text,
-            },
-        ).encode("utf-8")
-        payload = _common._request_json(
-            base + "/jobs",
-            source="Workday",
-            company_slug=company_slug,
-            data=body,
-        )
-        if payload is None:
-            return None
-        if not isinstance(payload, dict) or not isinstance(
-            payload.get("jobPostings"),
-            list,
-        ):
-            LOGGER.warning(
-                "Workday returned a malformed jobs payload for %s.",
-                company_slug,
+    seen_external_paths: set[str] = set()
+    for search_text in _search_queries(criteria):
+        offset = 0
+        fetched_for_query = 0
+        while True:
+            body = json.dumps(
+                {
+                    "limit": PAGE_SIZE,
+                    "offset": offset,
+                    "searchText": search_text,
+                },
+            ).encode("utf-8")
+            payload = _common._request_json(
+                base + "/jobs",
+                source="Workday",
+                company_slug=company_slug,
+                data=body,
             )
-            return None
-        page = payload["jobPostings"]
-        postings.extend(page)
-        total = payload.get("total")
-        if not isinstance(total, int) or len(postings) >= total or not page:
-            break
-        offset += len(page)
+            if payload is None:
+                return None
+            if not isinstance(payload, dict) or not isinstance(
+                payload.get("jobPostings"),
+                list,
+            ):
+                LOGGER.warning(
+                    "Workday returned a malformed jobs payload for %s.",
+                    company_slug,
+                )
+                return None
+            page = payload["jobPostings"]
+            fetched_for_query += len(page)
+            for posting in page:
+                external_path = (
+                    _common._clean_text(posting.get("externalPath"))
+                    if isinstance(posting, dict)
+                    else ""
+                )
+                if external_path:
+                    if external_path in seen_external_paths:
+                        continue
+                    seen_external_paths.add(external_path)
+                postings.append(posting)
+            total = payload.get("total")
+            if (
+                not isinstance(total, int)
+                or fetched_for_query >= total
+                or not page
+            ):
+                break
+            offset += len(page)
     return postings
+
+
+def _search_queries(criteria: JobCriteria) -> list[str]:
+    queries: list[str] = []
+    seen: set[str] = set()
+    for keyword in criteria.role_keywords:
+        query = _common._clean_text(keyword)
+        key = query.casefold()
+        if not query or key in seen:
+            continue
+        seen.add(key)
+        queries.append(query)
+    return queries or [""]
 
 
 def _role_from_detail(
