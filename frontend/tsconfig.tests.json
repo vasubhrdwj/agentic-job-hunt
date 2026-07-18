@@ -9,8 +9,10 @@
     "rootDir": "."
   },
   "include": [
+    "lib/application-dossier-layout.ts",
     "lib/application-undo-pursuit.ts",
     "lib/today-company-balance.ts",
+    "tests/application-dossier-layout.test.ts",
     "tests/application-undo-pursuit.test.ts",
     "tests/today-company-balance.test.ts"
   ]

@@ -1,10 +1,15 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
+import { Fragment, useCallback, useEffect, useState } from "react";
 
 import { getApplication } from "@/lib/application-api";
 import type { ApplicationArtifactsResponse } from "@/lib/application-artifact-types";
+import {
+  applicationDossierLayout,
+  interviewHistoryIsKnownEmpty,
+  type ApplicationDossierSection,
+} from "@/lib/application-dossier-layout";
 import type { InterviewHistoryState } from "@/lib/application-interview-types";
 import type {
   ApplicationDetailResponse,
@@ -42,6 +47,7 @@ export function ApplicationDossier({
   const [currentArtifacts, setCurrentArtifacts] = useState<ApplicationArtifactsResponse | null>(null);
   const [interviewHistoryState, setInterviewHistoryState] =
     useState<InterviewHistoryState>("checking");
+  const [secondaryLoaded, setSecondaryLoaded] = useState(false);
 
   const load = useCallback(async (): Promise<boolean> => {
     setError(null);
@@ -92,6 +98,94 @@ export function ApplicationDossier({
 
   const application = detail.application;
   const posting = application.posting;
+  const layout = applicationDossierLayout(application.stage);
+  const effectiveInterviewHistoryState = interviewHistoryIsKnownEmpty(application.stage)
+    ? "none"
+    : interviewHistoryState;
+
+  function renderSection(section: ApplicationDossierSection) {
+    if (section === "application_pack") {
+      return (
+        <ApplicationPack
+          key={`pack:${application.id}`}
+          applicationId={application.id}
+          applicationVersion={application.version}
+          applicationStage={application.stage}
+        />
+      );
+    }
+    if (section === "application_materials") {
+      return (
+        <ApplicationMaterials
+          key={`materials:${application.id}`}
+          applicationId={application.id}
+          applicationVersion={application.version}
+          applicationStage={application.stage}
+          onArtifactsChanged={setCurrentArtifacts}
+        />
+      );
+    }
+    if (section === "application_submission") {
+      return (
+        <ApplicationSubmission
+          applicationId={application.id}
+          applicationVersion={application.version}
+          stage={application.stage}
+          postingState={posting.state}
+          ownerLocalDate={ownerLocalDate}
+          currentArtifacts={currentArtifacts}
+          onApplicationChanged={refreshApplication}
+        />
+      );
+    }
+    if (section === "people") {
+      return (
+        <ApplicationPeople
+          key={`people:${application.id}`}
+          applicationId={application.id}
+          applicationVersion={application.version}
+          applicationStage={application.stage}
+          postingState={posting.state}
+          ownerLocalDate={ownerLocalDate}
+          ownerTimezone={ownerTimezone}
+          interviewHistoryState={effectiveInterviewHistoryState}
+        />
+      );
+    }
+    if (section === "interview_rounds") {
+      return (
+        <ApplicationInterviewRounds
+          applicationId={application.id}
+          applicationVersion={application.version}
+          applicationStage={application.stage}
+          ownerLocalDate={ownerLocalDate}
+          ownerTimezone={ownerTimezone}
+          onApplicationChanged={load}
+          onHistoryChanged={setInterviewHistoryState}
+        />
+      );
+    }
+    if (section === "interview_preparation") {
+      return (
+        <ApplicationInterviewPreparation
+          key={`interview-preparation:${application.id}:${application.version}`}
+          applicationId={application.id}
+        />
+      );
+    }
+    return (
+      <ApplicationProgress
+        applicationId={application.id}
+        applicationVersion={application.version}
+        stage={application.stage}
+        outcome={application.outcome}
+        scheduledInterviewRoundId={application.current_action?.interview_round_id ?? null}
+        ownerLocalDate={ownerLocalDate}
+        onApplicationChanged={refreshApplication}
+      />
+    );
+  }
+
   return (
     <div className="min-w-0 space-y-6">
       <Link
@@ -169,105 +263,81 @@ export function ApplicationDossier({
         </StatusMessage>
       ) : null}
 
-      <ApplicationUndoPursuit
-        applicationId={application.id}
-        stage={application.stage}
-        onApplicationChanged={refreshApplication}
-      />
+      {layout.primary.map((section) => (
+        <Fragment key={section}>{renderSection(section)}</Fragment>
+      ))}
 
-      <ApplicationInterviewRounds
-        applicationId={application.id}
-        applicationVersion={application.version}
-        applicationStage={application.stage}
-        ownerLocalDate={ownerLocalDate}
-        ownerTimezone={ownerTimezone}
-        onApplicationChanged={load}
-        onHistoryChanged={setInterviewHistoryState}
-      />
-
-      <ApplicationInterviewPreparation
-        key={`interview-preparation:${application.id}:${application.version}`}
-        applicationId={application.id}
-      />
-
-      <ApplicationProgress
-        applicationId={application.id}
-        applicationVersion={application.version}
-        stage={application.stage}
-        outcome={application.outcome}
-        scheduledInterviewRoundId={application.current_action?.interview_round_id ?? null}
-        ownerLocalDate={ownerLocalDate}
-        onApplicationChanged={refreshApplication}
-      />
-
-      <ApplicationActivity
-        key={`activity:${application.id}`}
-        applicationId={application.id}
-        applicationVersion={application.version}
-        activity={detail.activity}
-        ownerLocalDate={ownerLocalDate}
-        onApplicationChanged={load}
-      />
-
-      <ApplicationPack
-        key={`pack:${application.id}`}
-        applicationId={application.id}
-        applicationVersion={application.version}
-        applicationStage={application.stage}
-      />
-
-      <ApplicationMaterials
-        key={`materials:${application.id}`}
-        applicationId={application.id}
-        applicationVersion={application.version}
-        applicationStage={application.stage}
-        onArtifactsChanged={setCurrentArtifacts}
-      />
-
-      <ApplicationSubmission
-        applicationId={application.id}
-        applicationVersion={application.version}
-        stage={application.stage}
-        postingState={posting.state}
-        ownerLocalDate={ownerLocalDate}
-        currentArtifacts={currentArtifacts}
-        onApplicationChanged={refreshApplication}
-      />
-
-      <ApplicationPeople
-        key={`people:${application.id}`}
-        applicationId={application.id}
-        applicationVersion={application.version}
-        applicationStage={application.stage}
-        postingState={posting.state}
-        ownerLocalDate={ownerLocalDate}
-        ownerTimezone={ownerTimezone}
-        interviewHistoryState={interviewHistoryState}
-      />
-
-      <section className="rounded-2xl border border-zinc-200 bg-white p-5 sm:p-6 dark:border-zinc-800 dark:bg-zinc-900/70">
-        <h2 className="font-semibold">Role record</h2>
-        <dl className="mt-4 grid gap-4 text-sm sm:grid-cols-3">
-          <div>
-            <dt className="text-xs font-medium uppercase tracking-wide text-zinc-500">Company</dt>
-            <dd className="mt-1 break-words font-medium">{posting.company}</dd>
+      <details
+        className="group rounded-2xl border border-zinc-200 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-900/70"
+        onToggle={(event) => {
+          if (event.currentTarget.open) {
+            setSecondaryLoaded(true);
+          }
+        }}
+      >
+        <summary className="cursor-pointer list-none px-5 py-5 sm:px-6 [&::-webkit-details-marker]:hidden">
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <h2 className="font-semibold">Other actions, history, and saved records</h2>
+              <p className="mt-1 text-sm leading-6 text-zinc-500">
+                Review older materials, correct the record, or inspect saved role details.
+              </p>
+            </div>
+            <span aria-hidden="true" className="text-zinc-400 transition group-open:rotate-180">
+              ↓
+            </span>
           </div>
-          <div>
-            <dt className="text-xs font-medium uppercase tracking-wide text-zinc-500">Posting status</dt>
-            <dd className="mt-1 capitalize">{posting.state}</dd>
-          </div>
-          <div>
-            <dt className="text-xs font-medium uppercase tracking-wide text-zinc-500">Captured version</dt>
-            <dd className="mt-1 break-all font-mono text-xs">{application.pursued_posting_version_id}</dd>
-          </div>
-        </dl>
-        <Link
-          href={`/jobs/${encodeURIComponent(application.opportunity_id)}`}
-          className={`${secondaryButtonClasses} mt-5`}
-        >
-          Review saved opportunity
-        </Link>
-      </section>
+        </summary>
+
+        <div className="space-y-6 border-t border-zinc-200 px-5 py-6 sm:px-6 dark:border-zinc-800">
+          {secondaryLoaded ? (
+            <>
+              {layout.secondary.map((section) => (
+                <Fragment key={section}>{renderSection(section)}</Fragment>
+              ))}
+
+              <ApplicationUndoPursuit
+                applicationId={application.id}
+                stage={application.stage}
+                onApplicationChanged={refreshApplication}
+              />
+
+              <ApplicationActivity
+                key={`activity:${application.id}`}
+                applicationId={application.id}
+                applicationVersion={application.version}
+                activity={detail.activity}
+                ownerLocalDate={ownerLocalDate}
+                onApplicationChanged={load}
+              />
+            </>
+          ) : null}
+
+          <section className="rounded-2xl border border-zinc-200 bg-white p-5 sm:p-6 dark:border-zinc-800 dark:bg-zinc-900/70">
+            <h2 className="font-semibold">Role record</h2>
+            <dl className="mt-4 grid gap-4 text-sm sm:grid-cols-3">
+              <div>
+                <dt className="text-xs font-medium uppercase tracking-wide text-zinc-500">Company</dt>
+                <dd className="mt-1 break-words font-medium">{posting.company}</dd>
+              </div>
+              <div>
+                <dt className="text-xs font-medium uppercase tracking-wide text-zinc-500">Posting status</dt>
+                <dd className="mt-1 capitalize">{posting.state}</dd>
+              </div>
+              <div>
+                <dt className="text-xs font-medium uppercase tracking-wide text-zinc-500">Captured version</dt>
+                <dd className="mt-1 break-all font-mono text-xs">{application.pursued_posting_version_id}</dd>
+              </div>
+            </dl>
+            <Link
+              href={`/jobs/${encodeURIComponent(application.opportunity_id)}`}
+              className={`${secondaryButtonClasses} mt-5`}
+            >
+              Review saved opportunity
+            </Link>
+          </section>
+        </div>
+      </details>
 
     </div>
   );
