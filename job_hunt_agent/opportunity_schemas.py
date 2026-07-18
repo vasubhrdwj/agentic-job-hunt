@@ -192,10 +192,25 @@ class MatchAssessmentState(str, Enum):
     not_assessed = "not_assessed"
 
 
+class OpportunityFitBand(str, Enum):
+    strong = "strong"
+    promising = "promising"
+    stretch = "stretch"
+    low = "low"
+    insufficient_data = "insufficient_data"
+
+
+class AssessmentConfidence(str, Enum):
+    high = "high"
+    medium = "medium"
+    low = "low"
+
+
 class NotAssessedReason(str, Enum):
     assessment_pending = "assessment_pending"
     resume_unavailable = "resume_unavailable"
     description_unavailable = "description_unavailable"
+    assessment_unavailable = "assessment_unavailable"
     not_requested = "not_requested"
 
 
@@ -491,6 +506,9 @@ class TransparentMatchSummary(ContractModel):
         pattern=r"^[A-Za-z0-9][A-Za-z0-9_.-]*$",
     )
     resume_version_id: OpaqueId | None = None
+    assessment_saved_search_id: OpaqueId | None = None
+    fit_band: OpportunityFitBand | None = None
+    confidence: AssessmentConfidence | None = None
     matched_terms: list[ShortText] = Field(default_factory=list, max_length=20)
     representative_requirement: str | None = Field(
         default=None,
@@ -498,6 +516,8 @@ class TransparentMatchSummary(ContractModel):
         max_length=500,
     )
     approved_evidence_ids: list[OpaqueId] = Field(default_factory=list, max_length=20)
+    strengths: list[ShortText] = Field(default_factory=list, max_length=3)
+    gaps: list[ShortText] = Field(default_factory=list, max_length=3)
     not_assessed_reason: NotAssessedReason | None = None
 
     @model_validator(mode="after")
@@ -508,22 +528,33 @@ class TransparentMatchSummary(ContractModel):
             raise ValueError("matched_terms must not contain duplicates")
         if len(self.approved_evidence_ids) != len(set(self.approved_evidence_ids)):
             raise ValueError("approved_evidence_ids must not contain duplicates")
+        for field, values in (("strengths", self.strengths), ("gaps", self.gaps)):
+            if len(values) != len({value.casefold() for value in values}):
+                raise ValueError(f"{field} must not contain duplicates")
         if self.state is MatchAssessmentState.assessed:
             if (
                 self.algorithm_version is None
                 or self.resume_version_id is None
+                or self.assessment_saved_search_id is None
+                or self.fit_band is None
+                or self.confidence is None
                 or self.not_assessed_reason is not None
             ):
                 raise ValueError(
-                    "assessed matches require algorithm and resume versions only"
+                    "assessed matches require algorithm, input versions, band, and confidence"
                 )
         elif (
             self.not_assessed_reason is None
             or self.algorithm_version is not None
             or self.resume_version_id is not None
+            or self.assessment_saved_search_id is not None
+            or self.fit_band is not None
+            or self.confidence is not None
             or self.matched_terms
             or self.representative_requirement is not None
             or self.approved_evidence_ids
+            or self.strengths
+            or self.gaps
         ):
             raise ValueError(
                 "not-assessed matches require a reason and no assessment evidence"
@@ -926,6 +957,7 @@ class TodayListResponse(ContractModel):
 
 __all__ = [
     "ApplicationAcquisitionSource",
+    "AssessmentConfidence",
     "CompensationEvidenceFact",
     "CompensationPeriod",
     "CompensationValue",
@@ -946,6 +978,7 @@ __all__ = [
     "OpportunityDecisionState",
     "OpportunityDetailResponse",
     "OpportunityFactField",
+    "OpportunityFitBand",
     "OpportunityFacts",
     "OpportunityLane",
     "OpportunityPosting",

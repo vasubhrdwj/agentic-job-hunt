@@ -70,6 +70,7 @@ def test_backend_role_gets_a_strong_explainable_assessment() -> None:
         "distributed systems, CI/CD, and Docker. " * 4
     )
     assert any("experience requirement" in gap for gap in result.gaps)
+    assert all(len(item) <= 200 for item in (*result.strengths, *result.gaps))
 
 
 def test_infrastructure_role_with_major_skill_gaps_is_a_stretch() -> None:

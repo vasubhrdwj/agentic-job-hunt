@@ -357,12 +357,18 @@ def test_saved_search_provenance_is_ordered_and_deduplicated() -> None:
 def test_match_summary_is_transparent_or_explicitly_not_assessed() -> None:
     assessed = TransparentMatchSummary(
         state="assessed",
-        algorithm_version="resume-overlap-v1",
+        algorithm_version="backend-opportunity-fit-v1",
         resume_version_id="resume1",
+        assessment_saved_search_id="search1",
+        fit_band="strong",
+        confidence="high",
         matched_terms=["SCIM", "identity"],
         representative_requirement="Build identity lifecycle services.",
         approved_evidence_ids=["evidence1"],
+        strengths=["Approved SCIM evidence supports this requirement."],
+        gaps=["Work authorization was not provided."],
     )
+    assert assessed.fit_band.value == "strong"
     assert assessed.matched_terms == ["SCIM", "identity"]
 
     with pytest.raises(ValidationError, match="not-assessed"):
@@ -371,8 +377,24 @@ def test_match_summary_is_transparent_or_explicitly_not_assessed() -> None:
             not_assessed_reason="assessment_pending",
             matched_terms=["invented"],
         )
-    with pytest.raises(ValidationError, match="algorithm and resume"):
+    with pytest.raises(ValidationError, match="algorithm, input versions"):
         TransparentMatchSummary(state="assessed")
+    with pytest.raises(ValidationError, match="not-assessed"):
+        TransparentMatchSummary(
+            state="not_assessed",
+            not_assessed_reason="resume_unavailable",
+            fit_band="insufficient_data",
+        )
+    with pytest.raises(ValidationError, match="strengths must not contain duplicates"):
+        TransparentMatchSummary(
+            state="assessed",
+            algorithm_version="backend-opportunity-fit-v1",
+            resume_version_id="resume1",
+            assessment_saved_search_id="search1",
+            fit_band="promising",
+            confidence="medium",
+            strengths=["Supported by AWS evidence.", "supported by aws evidence."],
+        )
 
 
 @pytest.mark.parametrize(

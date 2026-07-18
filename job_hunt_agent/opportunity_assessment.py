@@ -408,7 +408,7 @@ def _experience_requirement(description: str) -> str | None:
     for sentence in _sentences(description):
         match = _EXPERIENCE.search(sentence)
         if match:
-            return _trim_sentence(sentence, 220)
+            return _trim_sentence(sentence, 150)
     return None
 
 

@@ -3252,6 +3252,15 @@
         "title": "AppliedTransitionCreate",
         "type": "object"
       },
+      "AssessmentConfidence": {
+        "enum": [
+          "high",
+          "medium",
+          "low"
+        ],
+        "title": "AssessmentConfidence",
+        "type": "string"
+      },
       "CandidateProfileResponse": {
         "additionalProperties": false,
         "properties": {
@@ -6334,6 +6343,7 @@
           "assessment_pending",
           "resume_unavailable",
           "description_unavailable",
+          "assessment_unavailable",
           "not_requested"
         ],
         "title": "NotAssessedReason",
@@ -6751,6 +6761,17 @@
         ],
         "title": "OpportunityFacts",
         "type": "object"
+      },
+      "OpportunityFitBand": {
+        "enum": [
+          "strong",
+          "promising",
+          "stretch",
+          "low",
+          "insufficient_data"
+        ],
+        "title": "OpportunityFitBand",
+        "type": "string"
       },
       "OpportunityLane": {
         "enum": [
@@ -11017,6 +11038,48 @@
             "title": "Approved Evidence Ids",
             "type": "array"
           },
+          "assessment_saved_search_id": {
+            "anyOf": [
+              {
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Assessment Saved Search Id"
+          },
+          "confidence": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AssessmentConfidence"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "fit_band": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OpportunityFitBand"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "gaps": {
+            "items": {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            "maxItems": 3,
+            "title": "Gaps",
+            "type": "array"
+          },
           "matched_terms": {
             "items": {
               "maxLength": 200,
@@ -11064,6 +11127,16 @@
           },
           "state": {
             "$ref": "#/components/schemas/MatchAssessmentState"
+          },
+          "strengths": {
+            "items": {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            "maxItems": 3,
+            "title": "Strengths",
+            "type": "array"
           }
         },
         "required": [

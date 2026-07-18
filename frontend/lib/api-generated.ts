@@ -2213,6 +2213,11 @@ export interface components {
              */
             to_stage: "applied";
         };
+        /**
+         * AssessmentConfidence
+         * @enum {string}
+         */
+        AssessmentConfidence: "high" | "medium" | "low";
         /** CandidateProfileResponse */
         CandidateProfileResponse: {
             base_resume?: components["schemas"]["ResumeVersionSummary"] | null;
@@ -3380,7 +3385,7 @@ export interface components {
          * NotAssessedReason
          * @enum {string}
          */
-        NotAssessedReason: "assessment_pending" | "resume_unavailable" | "description_unavailable" | "not_requested";
+        NotAssessedReason: "assessment_pending" | "resume_unavailable" | "description_unavailable" | "assessment_unavailable" | "not_requested";
         /** OfferTransitionCreate */
         OfferTransitionCreate: {
             /**
@@ -3513,6 +3518,11 @@ export interface components {
             location: components["schemas"]["TextEvidenceFact"];
             posted_date: components["schemas"]["DateEvidenceFact"];
         };
+        /**
+         * OpportunityFitBand
+         * @enum {string}
+         */
+        OpportunityFitBand: "strong" | "promising" | "stretch" | "low" | "insufficient_data";
         /**
          * OpportunityLane
          * @enum {string}
@@ -5191,6 +5201,12 @@ export interface components {
             algorithm_version?: string | null;
             /** Approved Evidence Ids */
             approved_evidence_ids?: string[];
+            /** Assessment Saved Search Id */
+            assessment_saved_search_id?: string | null;
+            confidence?: components["schemas"]["AssessmentConfidence"] | null;
+            fit_band?: components["schemas"]["OpportunityFitBand"] | null;
+            /** Gaps */
+            gaps?: string[];
             /** Matched Terms */
             matched_terms?: string[];
             not_assessed_reason?: components["schemas"]["NotAssessedReason"] | null;
@@ -5199,6 +5215,8 @@ export interface components {
             /** Resume Version Id */
             resume_version_id?: string | null;
             state: components["schemas"]["MatchAssessmentState"];
+            /** Strengths */
+            strengths?: string[];
         };
         /**
          * UnknownReasonCode
