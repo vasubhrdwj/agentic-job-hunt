@@ -19,7 +19,15 @@ import type {
   ApplicationPackResponse,
   ApplicationPackRevisionCreate,
 } from "@/lib/application-pack-types";
-import { prepareRequirementProposals } from "@/lib/application-pack-preparation";
+import {
+  buildPreparedAssessmentReviewRows,
+  prepareRequirementProposals,
+} from "@/lib/application-pack-preparation";
+import {
+  preparedReviewDecisionsFromPayload,
+  preparedRevisionWasReviewed,
+  revisionMatchesPayload,
+} from "@/lib/application-pack-review";
 import {
   createIdempotencyKey,
   listResumeVersions,
@@ -49,7 +57,7 @@ interface RequirementDraft {
 }
 
 interface PendingMutation {
-  intent: "start" | "save" | "review";
+  intent: "start" | "save" | "approve" | "review";
   key: string;
   fingerprint: string;
   expectedVersion: number;
@@ -552,6 +560,40 @@ export function ApplicationPack({
     });
   }
 
+  async function approvePreparedAssessment() {
+    const pack = projection?.pack;
+    const draftPayload = buildRevisionPayload(projection, draftsRef.current);
+    if (!pack || !draftPayload) {
+      setActionError(
+        "Partial requirements need at least one currently approved achievement.",
+      );
+      return;
+    }
+    const payload: ApplicationPackRevisionCreate = {
+      ...draftPayload,
+      confirm_requirements_reviewed: true,
+    };
+    await runMutation({
+      intent: "approve",
+      fingerprint: JSON.stringify(payload),
+      expectedVersion: pack.version,
+      execute: (pending) => createApplicationPackRevision(
+        applicationId,
+        pack.id,
+        pending.expectedVersion,
+        pending.key,
+        payload,
+      ),
+      applied: (next) => preparedRevisionWasReviewed(next, payload),
+      successMessage: "Prepared assessment saved and its exact revision approved.",
+      ambiguousMessage: "The prepared-assessment approval could not be verified.",
+      onConfirmed: (next) => {
+        setEditingReviewed(false);
+        hydrateDrafts(next, true);
+      },
+    });
+  }
+
   async function markReviewed() {
     const pack = projection?.pack;
     const revision = projection?.current_revision;
@@ -628,6 +670,9 @@ export function ApplicationPack({
   const saveActionLocked = Boolean(
     stageLocked || busy || (unresolvedIntent && unresolvedIntent !== "save"),
   );
+  const approveActionLocked = Boolean(
+    stageLocked || busy || (unresolvedIntent && unresolvedIntent !== "approve"),
+  );
   const reviewActionLocked = Boolean(
     stageLocked || busy || (unresolvedIntent && unresolvedIntent !== "review"),
   );
@@ -649,8 +694,17 @@ export function ApplicationPack({
     })),
   });
   const hasPreparedAssessment = preparedPlan.proposals.length > 0;
+  const draftRevisionPayload = buildRevisionPayload(projection, drafts);
+  const preparedReviewDecisions = preparedReviewDecisionsFromPayload(
+    draftRevisionPayload,
+  );
+  const preparedReviewRows = buildPreparedAssessmentReviewRows(
+    preparedReviewDecisions,
+    revision?.requirements ?? [],
+    projection.current_approved_evidence,
+  );
   const readOnlyReviewed = stageLocked || (projection.status === "reviewed" && !editingReviewed);
-  const payloadReady = buildRevisionPayload(projection, drafts) !== null;
+  const payloadReady = draftRevisionPayload !== null;
   const everyRequirementReviewed = Boolean(
     revision &&
     revision.requirements.length > 0 &&
@@ -664,12 +718,26 @@ export function ApplicationPack({
     ) &&
     payloadReady
   );
+  const everyRequirementIncluded = Boolean(
+    revision &&
+    revision.requirements.length > 0 &&
+    revision.requirements.every((requirement) => drafts[requirement.id]?.included),
+  );
   const canConfirmReview = Boolean(
     projection.status === "draft" &&
     !dirty &&
     everyRequirementReviewed &&
     !projection.blockers.includes("requirements_need_review") &&
     !projection.blockers.includes("mapped_evidence_changed") &&
+    !stageLocked &&
+    !postingClosed
+  );
+  const canApprovePreparedAssessment = Boolean(
+    hasPreparedAssessment &&
+    dirty &&
+    everyRequirementReviewed &&
+    everyRequirementIncluded &&
+    payloadReady &&
     !stageLocked &&
     !postingClosed
   );
@@ -838,7 +906,7 @@ export function ApplicationPack({
                     </h3>
                     <p className="mt-1 text-sm text-zinc-500">
                       {hasPreparedAssessment
-                        ? "A conservative first pass is ready. Save it as-is, or open Adjust assessment if something is wrong."
+                        ? "A conservative first pass is ready. Approve it as-is in one action, or open Adjust assessment if something is wrong."
                         : "Required and preferred statements are exact source spans. A genuine gap is a valid review outcome."}
                     </p>
                   </div>
@@ -855,7 +923,9 @@ export function ApplicationPack({
                 </div>
 
                 {hasPreparedAssessment && !readOnlyReviewed ? (
-                  <PreparedAssessmentSummary plan={preparedPlan} />
+                  <PreparedAssessmentSummary
+                    rows={preparedReviewRows}
+                  />
                 ) : null}
 
                 {hasPreparedAssessment && !readOnlyReviewed ? (
@@ -921,55 +991,75 @@ export function ApplicationPack({
                     Supported and Partial requirements need at least one currently approved achievement before this revision can be saved.
                   </StatusMessage>
                 ) : null}
-                <div className="flex flex-wrap gap-3">
-                  <button
-                    type="button"
-                    disabled={saveActionLocked || postingClosed || !dirty || !payloadReady}
-                    onClick={() => void saveRevision()}
-                    className={primaryButtonClasses}
-                  >
-                    {busy === "save"
-                      ? "Saving immutable revision…"
-                      : unresolvedIntent === "save"
-                        ? "Retry unchanged save"
-                        : hasPreparedAssessment
-                          ? "Save prepared assessment"
-                          : "Save as new immutable review version"}
-                  </button>
-                  {editingReviewed && !dirty ? (
+                {hasPreparedAssessment && dirty && everyRequirementReviewed && everyRequirementIncluded && payloadReady ? (
+                  <div className="rounded-xl border border-indigo-200 bg-indigo-50/70 p-4 dark:border-indigo-900 dark:bg-indigo-950/25">
+                    <p className="text-sm leading-6 text-zinc-700 dark:text-zinc-300">
+                      One approval saves a new immutable revision and records your review of that exact revision together. Nothing is submitted to the employer.
+                    </p>
                     <button
                       type="button"
-                      disabled={controlsLocked || postingClosed}
-                      onClick={() => setEditingReviewed(false)}
-                      className={secondaryButtonClasses}
+                      disabled={!canApprovePreparedAssessment || approveActionLocked}
+                      onClick={() => void approvePreparedAssessment()}
+                      className={`${primaryButtonClasses} mt-4`}
                     >
-                      Cancel review changes
+                      {busy === "approve"
+                        ? "Saving and approving exact revision…"
+                        : unresolvedIntent === "approve"
+                          ? "Retry unchanged approval"
+                          : "Approve prepared assessment"}
                     </button>
-                  ) : null}
-                </div>
+                  </div>
+                ) : (
+                  <>
+                    <div className="flex flex-wrap gap-3">
+                      <button
+                        type="button"
+                        disabled={saveActionLocked || postingClosed || !dirty || !payloadReady}
+                        onClick={() => void saveRevision()}
+                        className={primaryButtonClasses}
+                      >
+                        {busy === "save"
+                          ? "Saving immutable revision…"
+                          : unresolvedIntent === "save"
+                            ? "Retry unchanged save"
+                            : "Save as new immutable review version"}
+                      </button>
+                      {editingReviewed && !dirty ? (
+                        <button
+                          type="button"
+                          disabled={controlsLocked || postingClosed}
+                          onClick={() => setEditingReviewed(false)}
+                          className={secondaryButtonClasses}
+                        >
+                          Cancel review changes
+                        </button>
+                      ) : null}
+                    </div>
 
-                <fieldset
-                  aria-disabled={!canConfirmReview || controlsLocked || postingClosed}
-                  className={`rounded-xl border border-zinc-200 p-4 dark:border-zinc-800 ${!canConfirmReview || controlsLocked || postingClosed ? "opacity-60" : ""}`}
-                >
-                  <legend className="px-1 text-sm font-semibold">Confirm the exact saved revision</legend>
-                  <p className="text-sm leading-6 text-zinc-600 dark:text-zinc-400">
-                    This records that you checked revision {revision.revision_number}, including its Partial matches and Unsupported gaps, against currently approved evidence.
-                  </p>
-                  {!canConfirmReview ? (
-                    <p className="mt-2 text-xs text-zinc-500">
-                      Save local changes and resolve every Needs review or changed-evidence blocker first.
-                    </p>
-                  ) : null}
-                  <button
-                    type="button"
-                    disabled={!canConfirmReview || reviewActionLocked || postingClosed}
-                    onClick={() => void markReviewed()}
-                    className={`${primaryButtonClasses} mt-4`}
-                  >
-                    {busy === "review" ? "Confirming exact revision…" : unresolvedIntent === "review" ? "Retry unchanged confirmation" : `Mark revision ${revision.revision_number} reviewed`}
-                  </button>
-                </fieldset>
+                    <fieldset
+                      aria-disabled={!canConfirmReview || controlsLocked || postingClosed}
+                      className={`rounded-xl border border-zinc-200 p-4 dark:border-zinc-800 ${!canConfirmReview || controlsLocked || postingClosed ? "opacity-60" : ""}`}
+                    >
+                      <legend className="px-1 text-sm font-semibold">Confirm the exact saved revision</legend>
+                      <p className="text-sm leading-6 text-zinc-600 dark:text-zinc-400">
+                        This records that you checked revision {revision.revision_number}, including its Partial matches and Unsupported gaps, against currently approved evidence.
+                      </p>
+                      {!canConfirmReview ? (
+                        <p className="mt-2 text-xs text-zinc-500">
+                          Save local changes and resolve every Needs review or changed-evidence blocker first.
+                        </p>
+                      ) : null}
+                      <button
+                        type="button"
+                        disabled={!canConfirmReview || reviewActionLocked || postingClosed}
+                        onClick={() => void markReviewed()}
+                        className={`${primaryButtonClasses} mt-4`}
+                      >
+                        {busy === "review" ? "Confirming exact revision…" : unresolvedIntent === "review" ? "Retry unchanged confirmation" : `Mark revision ${revision.revision_number} reviewed`}
+                      </button>
+                    </fieldset>
+                  </>
+                )}
               </div>
             ) : (
               <StatusMessage kind="success">
@@ -986,26 +1076,56 @@ export function ApplicationPack({
 }
 
 function PreparedAssessmentSummary({
-  plan,
+  rows,
 }: {
-  plan: ReturnType<typeof prepareRequirementProposals>;
+  rows: ReturnType<typeof buildPreparedAssessmentReviewRows>;
 }) {
+  const supportedCount = rows.filter((row) => row.coverage === "supported").length;
+  const partialCount = rows.filter((row) => row.coverage === "partial").length;
+  const unsupportedCount = rows.filter((row) => row.coverage === "unsupported").length;
   return (
     <div className="rounded-xl border border-indigo-200 bg-indigo-50/70 p-4 dark:border-indigo-900 dark:bg-indigo-950/25">
       <div className="flex flex-wrap items-center gap-2">
         <span className="rounded-full bg-blue-100 px-2.5 py-1 text-xs font-semibold text-blue-900 dark:bg-blue-950 dark:text-blue-100">
-          {plan.partialCount} Partial match{plan.partialCount === 1 ? "" : "es"}
+          {partialCount} Partial match{partialCount === 1 ? "" : "es"}
         </span>
         <span className="rounded-full bg-zinc-200 px-2.5 py-1 text-xs font-semibold text-zinc-800 dark:bg-zinc-800 dark:text-zinc-200">
-          {plan.unsupportedCount} proposed gap{plan.unsupportedCount === 1 ? "" : "s"}
+          {unsupportedCount} proposed gap{unsupportedCount === 1 ? "" : "s"}
         </span>
-        <span className="text-xs text-zinc-500">
-          {plan.matchedEvidenceCount} approved achievement{plan.matchedEvidenceCount === 1 ? "" : "s"} linked
-        </span>
+        {supportedCount > 0 ? (
+          <span className="rounded-full bg-emerald-100 px-2.5 py-1 text-xs font-semibold text-emerald-900 dark:bg-emerald-950 dark:text-emerald-100">
+            {supportedCount} manually Supported
+          </span>
+        ) : null}
       </div>
       <p className="mt-3 text-sm leading-6 text-zinc-700 dark:text-zinc-300">
-        Exact approved skill-tag matches are prepared as Partial, never Supported. Requirements with no exact tag match are only proposed as Unsupported and remain unsaved until you save this assessment.
+        Conservative approved skill-concept matches are prepared as Partial, never Supported. There is no fuzzy or synonym matching; requirements without a bounded match are proposed as Unsupported and remain unsaved until you approve.
       </p>
+      <p className="mt-4 text-xs font-semibold uppercase tracking-wide text-zinc-500">
+        What your approval will record
+      </p>
+      <ol className="mt-2 divide-y divide-indigo-200 rounded-lg border border-indigo-200 bg-white/70 px-3 dark:divide-indigo-900 dark:border-indigo-900 dark:bg-zinc-950/30">
+        {rows.map((row) => (
+          <li key={row.requirementId} className="py-3">
+            <div className="flex min-w-0 flex-wrap items-start gap-2">
+              <span className="shrink-0 text-xs font-medium text-zinc-500">
+                {row.ordinal}.
+              </span>
+              <p className="min-w-0 flex-1 whitespace-pre-wrap break-words text-sm leading-5 text-zinc-800 dark:text-zinc-200">
+                {row.requirementExcerpt}
+              </p>
+              <CoverageBadge coverage={row.coverage} />
+            </div>
+            <p className="mt-1 pl-5 text-xs leading-5 text-zinc-500">
+              {row.coverage === "unsupported"
+                ? "No approved achievement linked."
+                : row.linkedEvidenceStatements.length > 0
+                  ? `${row.linkedEvidenceCount} linked: ${row.linkedEvidenceStatements[0]}${row.linkedEvidenceCount > 1 ? ` (+${row.linkedEvidenceCount - 1} more)` : ""}`
+                  : `${row.linkedEvidenceCount} approved achievement${row.linkedEvidenceCount === 1 ? "" : "s"} linked.`}
+            </p>
+          </li>
+        ))}
+      </ol>
     </div>
   );
 }
@@ -1389,35 +1509,6 @@ function buildRevisionPayload(
   return requirements.length > 0
     ? { parent_revision_id: revision.id, requirements }
     : null;
-}
-
-function revisionMatchesPayload(
-  response: ApplicationPackResponse,
-  payload: ApplicationPackRevisionCreate,
-): boolean {
-  const revision = response.current_revision;
-  if (
-    !revision ||
-    revision.parent_revision_id !== payload.parent_revision_id ||
-    revision.source !== "edited" ||
-    revision.requirements.length !== payload.requirements.length
-  ) return false;
-  return revision.requirements.every((requirement, index) => {
-    const expected = payload.requirements[index];
-    if (
-      !expected ||
-      requirement.id !== expected.id ||
-      requirement.ordinal !== expected.ordinal ||
-      requirement.importance !== expected.importance ||
-      requirement.text !== expected.text ||
-      requirement.source_start !== expected.source_start ||
-      requirement.source_end !== expected.source_end ||
-      requirement.coverage !== expected.coverage
-    ) return false;
-    const actualRefs = requirement.evidence.map((item) => `${item.id}:${item.version}`).sort();
-    const expectedRefs = expected.evidence_refs.map((item) => `${item.id}:${item.version}`).sort();
-    return JSON.stringify(actualRefs) === JSON.stringify(expectedRefs);
-  });
 }
 
 function packErrorText(reason: unknown): string {

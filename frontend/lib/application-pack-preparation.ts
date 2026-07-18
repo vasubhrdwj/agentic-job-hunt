@@ -36,13 +36,30 @@ export interface PreparedRequirementPlan {
   matchedEvidenceCount: number;
 }
 
+export interface PreparedAssessmentReviewRow {
+  requirementId: string;
+  ordinal: number;
+  requirementExcerpt: string;
+  coverage: "supported" | PreparedCoverage;
+  linkedEvidenceCount: number;
+  linkedEvidenceStatements: string[];
+}
+
+export interface PreparedAssessmentReviewDecision {
+  requirementId: string;
+  ordinal: number;
+  coverage: "supported" | PreparedCoverage;
+  evidenceIds: readonly string[];
+}
+
 /**
  * Prepares conservative local proposals for a brand-new extracted review.
  *
- * A proposal is never stronger than Partial: an exact skill-tag phrase is only
- * a reason to attach approved evidence for the owner to inspect. No synonym,
- * resume-text, or statement-text matching happens here. The caller decides
- * whether and when to persist these proposals.
+ * A proposal is never stronger than Partial: bounded skill concepts, plus a
+ * narrow allowlist of AWS service-to-platform relationships, are only reasons
+ * to attach approved evidence for inspection. No fuzzy synonym, resume-text,
+ * or statement-text matching happens here. The caller decides whether and
+ * when to persist these proposals.
  */
 export function prepareRequirementProposals(
   request: RequirementPreparationRequest,
@@ -99,6 +116,40 @@ export function prepareRequirementProposals(
   };
 }
 
+export function buildPreparedAssessmentReviewRows(
+  decisions: readonly PreparedAssessmentReviewDecision[],
+  requirements: readonly { id: string; text: string }[],
+  evidence: readonly { id: string; statement: string }[],
+): PreparedAssessmentReviewRow[] {
+  const requirementById = new Map<string, string>();
+  for (const requirement of requirements) {
+    if (!requirementById.has(requirement.id)) {
+      requirementById.set(requirement.id, requirement.text);
+    }
+  }
+  const evidenceById = new Map<string, string>();
+  for (const item of evidence) {
+    if (!evidenceById.has(item.id)) evidenceById.set(item.id, item.statement);
+  }
+
+  return decisions.flatMap((decision) => {
+    const text = requirementById.get(decision.requirementId);
+    if (text === undefined) return [];
+    const linkedEvidenceStatements = decision.evidenceIds.flatMap((id) => {
+      const statement = evidenceById.get(id);
+      return statement === undefined ? [] : [conciseExcerpt(statement, 120)];
+    });
+    return [{
+      requirementId: decision.requirementId,
+      ordinal: decision.ordinal,
+      requirementExcerpt: conciseExcerpt(text, 180),
+      coverage: decision.coverage,
+      linkedEvidenceCount: decision.evidenceIds.length,
+      linkedEvidenceStatements,
+    }];
+  });
+}
+
 function emptyPlan(): PreparedRequirementPlan {
   return {
     proposals: [],
@@ -109,21 +160,13 @@ function emptyPlan(): PreparedRequirementPlan {
 }
 
 export function containsExactSkillTag(text: string, skillTag: string): boolean {
-  const haystack = normalizePhrase(text);
-  const needle = normalizeSkillTag(skillTag);
-  if (!haystack || !needle) return false;
+  const requirementTokens = tokenizeSkillConcept(text);
+  const skillTokens = tokenizeSkillConcept(skillTag);
+  if (requirementTokens.length === 0 || skillTokens.length === 0) return false;
 
-  let offset = 0;
-  while (offset <= haystack.length - needle.length) {
-    const index = haystack.indexOf(needle, offset);
-    if (index < 0) return false;
-    const previous = index > 0 ? haystack[index - 1] : undefined;
-    const nextIndex = index + needle.length;
-    const next = nextIndex < haystack.length ? haystack[nextIndex] : undefined;
-    if (!isWordCharacter(previous) && !isWordCharacter(next)) return true;
-    offset = index + 1;
-  }
-  return false;
+  if (containsTokenSequence(requirementTokens, skillTokens)) return true;
+
+  return isAllowlistedUmbrellaMatch(requirementTokens, skillTokens);
 }
 
 function dedupeRequirements(
@@ -164,6 +207,59 @@ function normalizeSkillTag(value: string): string {
   return normalizePhrase(value);
 }
 
-function isWordCharacter(value: string | undefined): boolean {
-  return value !== undefined && /[a-z0-9]/i.test(value);
+const IGNORED_SKILL_CONNECTORS = new Set(["and"]);
+
+const AWS_SERVICE_CONCEPTS = [
+  ["alb"],
+  ["api", "gateway"],
+  ["cloudwatch"],
+  ["dynamodb"],
+  ["ec2"],
+  ["ecs"],
+  ["eks"],
+  ["iam"],
+  ["kinesis"],
+  ["lambda"],
+  ["msk"],
+  ["rds"],
+  ["s3"],
+  ["sns"],
+  ["sqs"],
+  ["step", "functions"],
+] as const;
+
+function tokenizeSkillConcept(value: string): string[] {
+  const tokens = value
+    .normalize("NFKC")
+    .toLocaleLowerCase("en-US")
+    .match(/[.]?[a-z0-9]+(?:[.][a-z0-9]+|[+#]+[a-z0-9]*)*/g);
+  return (tokens ?? []).filter((token) => !IGNORED_SKILL_CONNECTORS.has(token));
+}
+
+function containsTokenSequence(haystack: readonly string[], needle: readonly string[]): boolean {
+  if (needle.length > haystack.length) return false;
+  for (let start = 0; start <= haystack.length - needle.length; start += 1) {
+    if (needle.every((token, offset) => haystack[start + offset] === token)) return true;
+  }
+  return false;
+}
+
+function isAllowlistedUmbrellaMatch(
+  requirementTokens: readonly string[],
+  skillTokens: readonly string[],
+): boolean {
+  if (!containsTokenSequence(requirementTokens, ["aws"])) return false;
+  if (skillTokens[0] !== "aws") return false;
+
+  const serviceTokens = skillTokens.slice(1);
+  return AWS_SERVICE_CONCEPTS.some(
+    (service) =>
+      service.length === serviceTokens.length &&
+      service.every((token, index) => serviceTokens[index] === token),
+  );
+}
+
+function conciseExcerpt(value: string, maxLength: number): string {
+  if (value.length <= maxLength) return value;
+  return `${value.slice(0, maxLength - 1).trimEnd()}…`;
 }
