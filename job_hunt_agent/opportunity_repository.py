@@ -1351,8 +1351,10 @@ def _upsert_owner_opportunity(
 ) -> tuple[OwnerOpportunity, bool]:
     opportunity = _owner_opportunity(session, owner_id, posting.id)
     if opportunity is not None:
-        opportunity.last_surfaced_at = max(_as_utc(opportunity.last_surfaced_at), now)
         if changed:
+            opportunity.last_surfaced_at = max(
+                _as_utc(opportunity.last_surfaced_at), now
+            )
             opportunity.version += 1
             opportunity.updated_at = now
         return opportunity, False

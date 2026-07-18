@@ -442,6 +442,9 @@ def test_repeated_and_changed_sightings_version_one_stable_opportunity(
             now=NOW + timedelta(hours=1),
         )
         assert not unchanged.version_created and not unchanged.posting_changed
+        opportunity = session.get(OwnerOpportunity, first.opportunity_id)
+        assert opportunity is not None
+        assert opportunity.last_surfaced_at.replace(tzinfo=timezone.utc) == NOW
 
         _seed_scan_source(session, "owner-a", "search-a", "scan-a3", "source-a3")
         changed = persist_scan_source_role(
@@ -459,6 +462,9 @@ def test_repeated_and_changed_sightings_version_one_stable_opportunity(
         assert changed.posting_id == first.posting_id
         assert changed.opportunity_id == first.opportunity_id
         assert changed.version_created and changed.posting_changed
+        assert opportunity.last_surfaced_at.replace(
+            tzinfo=timezone.utc
+        ) == NOW + timedelta(hours=2)
 
         _seed_scan_source(session, "owner-a", "search-a", "scan-a4", "source-a4")
         reverted = persist_scan_source_role(
