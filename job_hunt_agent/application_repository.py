@@ -16,7 +16,8 @@ from datetime import date, datetime, timedelta, timezone
 from uuid import uuid4
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from sqlalchemy import and_, func, or_, select
+from sqlalchemy import and_, delete, func, or_, select
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
 from .application_schemas import (
@@ -42,21 +43,40 @@ from .models import (
     ActionItem,
     Application,
     ApplicationActivityEvent,
+    ApplicationArtifactEvent,
+    ApplicationArtifactRevision,
     ApplicationInterviewRound,
     ApplicationMetricSnapshot,
     ApplicationMilestoneCorrection,
     ApplicationOutcome,
+    ApplicationPack,
+    ApplicationPackEvent,
+    ApplicationPackRevision,
+    ApplicationSubmission,
+    BackgroundJob,
     CareerTrack,
+    ContactPlan,
     JobObservation,
     JobPosting,
     JobPostingVersion,
     OpportunityDecisionEvent as OpportunityDecisionEventRow,
+    OutreachEvent,
+    OutreachMessageVersion,
+    OutreachReply,
+    OutreachSequence,
     Owner,
+    OwnerMutationReceipt,
     OwnerOpportunity,
     SavedSearch,
     SavedSearchMatch,
 )
-from .mutation_receipts import claim_owner_mutation, complete_owner_mutation
+from .mutation_receipts import (
+    MutationPending,
+    MutationReplay,
+    claim_owner_mutation,
+    complete_owner_mutation,
+)
+from .contact_search_repository import CONTACT_SEARCH_JOB_KIND
 from .opportunity_repository import DecisionIdempotencyConflict, OpportunityNotFound
 from .opportunity_schemas import (
     ApplicationAcquisitionSource,
@@ -84,6 +104,194 @@ _ACTIVE_ACTION_KIND_BY_STAGE = {
 
 class ApplicationRepositoryError(RuntimeError):
     """A safe application graph invariant failed."""
+
+
+def undo_application_pursuit(
+    session: Session,
+    owner_id: str,
+    application_id: str,
+    expected_application_version: int,
+    idempotency_key: str,
+    now: datetime | None = None,
+) -> OpportunityDecisionResponse | None:
+    """Discard a pre-submission pursuit and compensate its decision safely.
+
+    This is intentionally narrower than deleting an application.  Once the
+    owner records any external action or hiring progress, the immutable
+    history wins and the mutation fails closed.
+    """
+
+    current = _as_utc(now or utcnow())
+    normalized_key = idempotency_key.strip()
+    if not normalized_key or len(normalized_key) > 200:
+        raise ValueError("idempotency key must be 1-200 characters")
+    namespace = f"application.undo_pursuit:{application_id}"
+    request = {
+        "application_id": application_id,
+        "expected_application_version": expected_application_version,
+    }
+
+    # A completed delete has no Application row to lock.  Consult an existing
+    # receipt first, but never create a receipt for a missing/foreign id.
+    replayed = _existing_undo_pursuit_replay(
+        session,
+        owner_id=owner_id,
+        application_id=application_id,
+        namespace=namespace,
+        idempotency_key=normalized_key,
+        request=request,
+        now=current,
+    )
+    if replayed is not None:
+        return replayed
+
+    application, opportunity, contact_jobs = _lock_undo_application_graph(
+        session,
+        owner_id=owner_id,
+        application_id=application_id,
+    )
+    if application is None:
+        # A concurrent matching Undo may have committed while we waited for a
+        # queue lock.  Return its stable replay rather than a transient 404.
+        replayed = _existing_undo_pursuit_replay(
+            session,
+            owner_id=owner_id,
+            application_id=application_id,
+            namespace=namespace,
+            idempotency_key=normalized_key,
+            request=request,
+            now=current,
+        )
+        if replayed is not None:
+            return replayed
+        return None
+    if opportunity is None:  # pragma: no cover - graph locker enforces this.
+        raise ApplicationRepositoryError("application opportunity is unavailable")
+
+    require_version(
+        "application",
+        application.id,
+        expected=expected_application_version,
+        actual=application.version,
+    )
+    blocker = _undo_pursuit_blocker(
+        session,
+        owner_id=owner_id,
+        application=application,
+    )
+    if blocker is not None:
+        raise ResourceConflict(blocker)
+
+    if (
+        opportunity.job_posting_id != application.job_posting_id
+        or opportunity.decision != "pursued"
+    ):
+        raise ApplicationRepositoryError(
+            "application and opportunity pursuit disagree"
+        )
+    pursued_event = session.scalar(
+        select(OpportunityDecisionEventRow)
+        .where(
+            OpportunityDecisionEventRow.owner_id == owner_id,
+            OpportunityDecisionEventRow.owner_opportunity_id == opportunity.id,
+        )
+        .order_by(
+            OpportunityDecisionEventRow.occurred_at.desc(),
+            OpportunityDecisionEventRow.created_at.desc(),
+            OpportunityDecisionEventRow.id.desc(),
+        )
+        .limit(1)
+        .with_for_update()
+    )
+    if (
+        pursued_event is None
+        or pursued_event.new_decision != "pursued"
+        or pursued_event.job_posting_id != application.job_posting_id
+    ):
+        raise ApplicationRepositoryError(
+            "application has no current pursued decision event"
+        )
+    latest_version = _latest_posting_version(
+        session,
+        owner_id=owner_id,
+        posting_id=application.job_posting_id,
+    )
+    if latest_version is None:
+        raise ApplicationRepositoryError("opportunity posting has no version")
+
+    # Claim only after every fail-closed precondition passes.  Besides avoiding
+    # stale pending receipts, this keeps rejected external-history mutations
+    # write-free even on SQLite's savepoint implementation.
+    claim = claim_owner_mutation(
+        session,
+        owner_id=owner_id,
+        namespace=namespace,
+        idempotency_key=normalized_key,
+        request=request,
+        now=current,
+    )
+    if claim.replay is not None:
+        return _replay_undo_application_pursuit(
+            session,
+            owner_id=owner_id,
+            application_id=application_id,
+            replay=claim.replay,
+        )
+
+    event = OpportunityDecisionEventRow(
+        id=uuid4().hex,
+        owner_id=owner_id,
+        owner_opportunity_id=opportunity.id,
+        job_posting_id=application.job_posting_id,
+        posting_version_id=latest_version.id,
+        previous_decision="pursued",
+        new_decision="inbox",
+        reason_code=None,
+        encrypted_note=None,
+        note_key_id=None,
+        compensates_event_id=pursued_event.id,
+        # Decision-event keys are not namespaced in their table.  Deriving a
+        # domain-specific hash prevents a key reused for Pursue from colliding.
+        idempotency_key_hash=_sha256(
+            f"application.undo_pursuit\0{application.id}\0{normalized_key}"
+        ),
+        request_hash=_sha256(_canonical_json(request)),
+        occurred_at=current,
+        created_at=current,
+    )
+    session.add(event)
+    opportunity.decision = "inbox"
+    opportunity.decision_reason_code = None
+    opportunity.reviewed_posting_version_id = latest_version.id
+    opportunity.decision_updated_at = current
+    opportunity.version += 1
+    opportunity.updated_at = current
+    session.flush()
+
+    # Reviewed pack/artifact and unsent outreach graphs contain internal
+    # RESTRICT edges, so remove their leaves in an explicit safe order before
+    # relying on the application's normal cascades for the remaining children.
+    _delete_discardable_application_children(
+        session,
+        owner_id=owner_id,
+        application_id=application.id,
+    )
+    session.delete(application)
+    session.flush()
+    for job in contact_jobs:
+        session.delete(job)
+    session.flush()
+    complete_owner_mutation(
+        session,
+        owner_id=owner_id,
+        receipt_id=claim.receipt_id,
+        resource_type="opportunity_decision_event",
+        resource_id=event.id,
+        result_version=opportunity.version,
+        deleted=True,
+        now=current,
+    )
+    return _undo_pursuit_response(opportunity=opportunity, event=event)
 
 
 def pursue_owner_opportunity(
@@ -172,6 +380,16 @@ def pursue_owner_opportunity(
             .with_for_update()
         )
         if application is None:
+            current_application = _application_for_opportunity(
+                session,
+                owner_id=owner_id,
+                opportunity_id=opportunity.id,
+                for_update=True,
+            )
+            if current_application is not None or opportunity.decision != "pursued":
+                raise ResourceConflict(
+                    "this pursuit was undone or superseded by a newer decision"
+                )
             raise ApplicationRepositoryError("pursuit receipt has no application")
         event = _creation_decision_event(
             session,
@@ -214,6 +432,16 @@ def pursue_owner_opportunity(
             for_update=True,
         )
         if application is None:
+            current_application = _application_for_opportunity(
+                session,
+                owner_id=owner_id,
+                opportunity_id=opportunity.id,
+                for_update=True,
+            )
+            if current_application is not None or opportunity.decision != "pursued":
+                raise ResourceConflict(
+                    "this pursuit was undone or superseded by a newer decision"
+                )
             raise ApplicationRepositoryError("pursuit event has no application")
         complete_owner_mutation(
             session,
@@ -1175,6 +1403,519 @@ def _decision_event_response(
     )
 
 
+def _undo_pursuit_response(
+    *,
+    opportunity: OwnerOpportunity,
+    event: OpportunityDecisionEventRow,
+) -> OpportunityDecisionResponse:
+    if opportunity.decision != "inbox" or event.new_decision != "inbox":
+        raise ApplicationRepositoryError("undo decision did not restore the inbox")
+    return OpportunityDecisionResponse(
+        opportunity_id=opportunity.id,
+        opportunity_version=opportunity.version,
+        state=OpportunityDecisionState.inbox,
+        event=OpportunityDecisionEvent(
+            id=event.id,
+            opportunity_id=event.owner_opportunity_id,
+            action=OpportunityDecisionAction.restore_to_inbox,
+            previous_state=OpportunityDecisionState.pursued,
+            state=OpportunityDecisionState.inbox,
+            restores_event_id=event.compensates_event_id,
+            created_at=_as_utc(event.occurred_at),
+        ),
+    )
+
+
+def _existing_undo_pursuit_replay(
+    session: Session,
+    *,
+    owner_id: str,
+    application_id: str,
+    namespace: str,
+    idempotency_key: str,
+    request: dict[str, object],
+    now: datetime,
+) -> OpportunityDecisionResponse | None:
+    receipt_exists = session.scalar(
+        select(OwnerMutationReceipt.id).where(
+            OwnerMutationReceipt.owner_id == owner_id,
+            OwnerMutationReceipt.namespace == namespace,
+            OwnerMutationReceipt.idempotency_key_hash == _sha256(idempotency_key),
+        )
+    )
+    if receipt_exists is None:
+        return None
+    claim = claim_owner_mutation(
+        session,
+        owner_id=owner_id,
+        namespace=namespace,
+        idempotency_key=idempotency_key,
+        request=request,
+        now=now,
+    )
+    if claim.replay is None:  # pragma: no cover - locked receipt guards this.
+        raise ApplicationRepositoryError("undo-pursuit receipt is incomplete")
+    return _replay_undo_application_pursuit(
+        session,
+        owner_id=owner_id,
+        application_id=application_id,
+        replay=claim.replay,
+    )
+
+
+def _lock_undo_application_graph(
+    session: Session,
+    *,
+    owner_id: str,
+    application_id: str,
+) -> tuple[Application | None, OwnerOpportunity | None, list[BackgroundJob]]:
+    """Lock every concurrent writer boundary in one global order.
+
+    The order is ContactJob -> OutreachSequence -> Opportunity -> Application
+    -> ApplicationPack -> ContactPlan. Application and ApplicationPack are
+    acquired with NOWAIT: pack/ready writers can keep Application -> Posting,
+    pack-content writers can keep ApplicationPack -> Posting, and Undo cannot
+    close either three-transaction cycle through a scan's Posting ->
+    Opportunity order. A related contact worker is serialized first by its Job
+    lock. Outreach event/reply writers lock Sequence, so holding those rows
+    makes the external-history check stable through deletion.
+    """
+
+    snapshot = session.execute(
+        select(
+            Application.job_posting_id,
+            Application.owner_opportunity_id,
+        ).where(
+            Application.owner_id == owner_id,
+            Application.id == application_id,
+        )
+    ).one_or_none()
+    if snapshot is None:
+        return None, None, []
+    posting_id = str(snapshot.job_posting_id)
+    opportunity_id = str(snapshot.owner_opportunity_id)
+    initial_job_ids = tuple(
+        sorted(
+            session.scalars(
+                select(ContactPlan.background_job_id).where(
+                    ContactPlan.owner_id == owner_id,
+                    ContactPlan.application_id == application_id,
+                    ContactPlan.background_job_id.is_not(None),
+                )
+            )
+        )
+    )
+    jobs = (
+        list(
+            session.scalars(
+                select(BackgroundJob)
+                .where(BackgroundJob.id.in_(initial_job_ids))
+                .order_by(BackgroundJob.id)
+                .with_for_update()
+            )
+        )
+        if initial_job_ids
+        else []
+    )
+    initial_sequence_ids = tuple(
+        sorted(
+            session.scalars(
+                select(OutreachSequence.id).where(
+                    OutreachSequence.owner_id == owner_id,
+                    OutreachSequence.application_id == application_id,
+                )
+            )
+        )
+    )
+    sequences = (
+        list(
+            session.scalars(
+                select(OutreachSequence)
+                .where(OutreachSequence.id.in_(initial_sequence_ids))
+                .order_by(OutreachSequence.id)
+                .with_for_update()
+            )
+        )
+        if initial_sequence_ids
+        else []
+    )
+    opportunity = session.scalar(
+        select(OwnerOpportunity)
+        .where(
+            OwnerOpportunity.owner_id == owner_id,
+            OwnerOpportunity.id == opportunity_id,
+        )
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    )
+    try:
+        application = session.scalar(
+            select(Application)
+            .where(
+                Application.owner_id == owner_id,
+                Application.id == application_id,
+            )
+            # Never wait here while holding Opportunity. Pack creation and
+            # ready-to-apply transitions hold Application before Posting,
+            # while scans hold Posting before Opportunity; waiting would close
+            # a three-transaction deadlock cycle.
+            .with_for_update(nowait=True)
+            .execution_options(populate_existing=True)
+        )
+    except OperationalError as exc:
+        if _is_postgres_lock_not_available(exc):
+            raise MutationPending(
+                "application is being updated; retry undo"
+            ) from exc
+        raise
+    if application is None:
+        return None, opportunity, jobs
+    if opportunity is None:
+        raise ApplicationRepositoryError("application pursuit graph is unavailable")
+    if (
+        application.owner_opportunity_id != opportunity.id
+        or opportunity.job_posting_id != posting_id
+        or application.job_posting_id != posting_id
+        or application.owner_opportunity_id != opportunity_id
+    ):
+        raise ApplicationRepositoryError("application pursuit identity changed")
+    try:
+        application_pack = session.scalar(
+            select(ApplicationPack)
+            .where(
+                ApplicationPack.owner_id == owner_id,
+                ApplicationPack.application_id == application_id,
+            )
+            # Pack revision/review and artifact writers lock this aggregate
+            # before Posting. Never wait on it while holding Opportunity.
+            .with_for_update(nowait=True)
+            .execution_options(populate_existing=True)
+        )
+    except OperationalError as exc:
+        if _is_postgres_lock_not_available(exc):
+            raise MutationPending(
+                "application materials are being updated; retry undo"
+            ) from exc
+        raise
+    if application_pack is not None and (
+        application_pack.application_id != application.id
+        or application_pack.job_posting_id != application.job_posting_id
+        or application_pack.posting_version_id
+        != application.pursued_posting_version_id
+    ):
+        raise ApplicationRepositoryError(
+            "application pack pursuit identity is inconsistent"
+        )
+    plans = list(
+        session.scalars(
+            select(ContactPlan)
+            .where(
+                ContactPlan.owner_id == owner_id,
+                ContactPlan.application_id == application_id,
+            )
+            .order_by(ContactPlan.id)
+            .with_for_update()
+        )
+    )
+    current_job_ids = tuple(
+        sorted(
+            plan.background_job_id
+            for plan in plans
+            if plan.background_job_id is not None
+        )
+    )
+    if current_job_ids != initial_job_ids:
+        raise ResourceConflict(
+            "contact-search state changed while undoing; retry the undo"
+        )
+    current_sequence_ids = tuple(
+        sorted(
+            session.scalars(
+                select(OutreachSequence.id).where(
+                    OutreachSequence.owner_id == owner_id,
+                    OutreachSequence.application_id == application_id,
+                )
+            )
+        )
+    )
+    if current_sequence_ids != initial_sequence_ids or {
+        sequence.id for sequence in sequences
+    } != set(current_sequence_ids):
+        raise ResourceConflict(
+            "outreach state changed while undoing; retry the undo"
+        )
+    jobs_by_id = {job.id: job for job in jobs}
+    if set(jobs_by_id) != set(current_job_ids):
+        raise ApplicationRepositoryError(
+            "application contact-search queue data is unavailable"
+        )
+    for plan in plans:
+        if plan.background_job_id is None:
+            continue
+        job = jobs_by_id[plan.background_job_id]
+        if (
+            job.owner_id != owner_id
+            or job.kind != CONTACT_SEARCH_JOB_KIND
+            or job.subject_type != "contact_plan"
+            or job.subject_id != plan.id
+        ):
+            raise ApplicationRepositoryError(
+                "application contact-search queue identity is inconsistent"
+            )
+        if job.status == "running":
+            raise ResourceConflict(
+                "contact discovery is currently running; retry undo after it finishes"
+            )
+    return application, opportunity, jobs
+
+
+def _is_postgres_lock_not_available(exc: OperationalError) -> bool:
+    return (
+        getattr(exc.orig, "sqlstate", None)
+        or getattr(exc.orig, "pgcode", None)
+    ) == "55P03"
+
+
+def _delete_discardable_application_children(
+    session: Session,
+    *,
+    owner_id: str,
+    application_id: str,
+) -> None:
+    owned = (
+        lambda model: (
+            model.owner_id == owner_id,
+            model.application_id == application_id,
+        )
+    )
+
+    # Outreach replies and sent/outcome events were rejected while every
+    # sequence row was locked.  The remaining rows are unsent preparation.
+    session.execute(delete(OutreachEvent).where(*owned(OutreachEvent)))
+    session.execute(
+        delete(OutreachMessageVersion).where(*owned(OutreachMessageVersion))
+    )
+    session.execute(delete(OutreachSequence).where(*owned(OutreachSequence)))
+
+    # Approval events reference artifact revisions with RESTRICT.  Artifact
+    # revisions reference grounding revisions, and both revision tables can
+    # have RESTRICT parent chains, so delete leaves newest-first.
+    session.execute(
+        delete(ApplicationArtifactEvent).where(*owned(ApplicationArtifactEvent))
+    )
+    artifact_ids = list(
+        session.scalars(
+            select(ApplicationArtifactRevision.id)
+            .where(*owned(ApplicationArtifactRevision))
+            .order_by(
+                ApplicationArtifactRevision.revision_number.desc(),
+                ApplicationArtifactRevision.id.desc(),
+            )
+        )
+    )
+    for artifact_id in artifact_ids:
+        session.execute(
+            delete(ApplicationArtifactRevision).where(
+                ApplicationArtifactRevision.owner_id == owner_id,
+                ApplicationArtifactRevision.id == artifact_id,
+            )
+        )
+
+    session.execute(delete(ApplicationPackEvent).where(*owned(ApplicationPackEvent)))
+    pack_revision_ids = list(
+        session.scalars(
+            select(ApplicationPackRevision.id)
+            .where(*owned(ApplicationPackRevision))
+            .order_by(
+                ApplicationPackRevision.revision_number.desc(),
+                ApplicationPackRevision.id.desc(),
+            )
+        )
+    )
+    for revision_id in pack_revision_ids:
+        session.execute(
+            delete(ApplicationPackRevision).where(
+                ApplicationPackRevision.owner_id == owner_id,
+                ApplicationPackRevision.id == revision_id,
+            )
+        )
+    session.execute(delete(ApplicationPack).where(*owned(ApplicationPack)))
+    session.flush()
+
+
+def _replay_undo_application_pursuit(
+    session: Session,
+    *,
+    owner_id: str,
+    application_id: str,
+    replay: MutationReplay,
+) -> OpportunityDecisionResponse:
+    result_version = replay.result_version
+    if (
+        replay.resource_type != "opportunity_decision_event"
+        or not replay.deleted
+        or isinstance(result_version, bool)
+        or not isinstance(result_version, int)
+        or result_version < 1
+    ):
+        raise ApplicationRepositoryError(
+            "undo-pursuit receipt has inconsistent result metadata"
+        )
+    event = session.scalar(
+        select(OpportunityDecisionEventRow).where(
+            OpportunityDecisionEventRow.owner_id == owner_id,
+            OpportunityDecisionEventRow.id == replay.resource_id,
+        )
+    )
+    if (
+        event is None
+        or event.previous_decision != "pursued"
+        or event.new_decision != "inbox"
+        or event.compensates_event_id is None
+    ):
+        raise ApplicationRepositoryError(
+            "undo-pursuit receipt has no compensating decision event"
+        )
+    pursued_event = session.scalar(
+        select(OpportunityDecisionEventRow.id).where(
+            OpportunityDecisionEventRow.owner_id == owner_id,
+            OpportunityDecisionEventRow.owner_opportunity_id
+            == event.owner_opportunity_id,
+            OpportunityDecisionEventRow.id == event.compensates_event_id,
+            OpportunityDecisionEventRow.new_decision == "pursued",
+        )
+    )
+    if pursued_event is None:
+        raise ApplicationRepositoryError(
+            "undo-pursuit compensation target is unavailable"
+        )
+    opportunity = session.scalar(
+        select(OwnerOpportunity)
+        .where(
+            OwnerOpportunity.owner_id == owner_id,
+            OwnerOpportunity.id == event.owner_opportunity_id,
+        )
+        .with_for_update()
+    )
+    if opportunity is None:
+        raise ApplicationRepositoryError("undo-pursuit opportunity is unavailable")
+    latest_event_id = session.scalar(
+        select(OpportunityDecisionEventRow.id)
+        .where(
+            OpportunityDecisionEventRow.owner_id == owner_id,
+            OpportunityDecisionEventRow.owner_opportunity_id == opportunity.id,
+        )
+        .order_by(
+            OpportunityDecisionEventRow.occurred_at.desc(),
+            OpportunityDecisionEventRow.created_at.desc(),
+            OpportunityDecisionEventRow.id.desc(),
+        )
+        .limit(1)
+    )
+    if opportunity.decision != "inbox" or latest_event_id != event.id:
+        raise ResourceConflict(
+            "undo-pursuit replay was superseded by a newer opportunity decision"
+        )
+    if opportunity.version < result_version:
+        raise ApplicationRepositoryError(
+            "undo-pursuit receipt version is ahead of its opportunity"
+        )
+    application_exists = session.scalar(
+        select(Application.id).where(
+            Application.owner_id == owner_id,
+            Application.id == application_id,
+        )
+    )
+    if application_exists is not None:
+        raise ApplicationRepositoryError(
+            "undo-pursuit receipt still has an application"
+        )
+    return _undo_pursuit_response(opportunity=opportunity, event=event)
+
+
+def _undo_pursuit_blocker(
+    session: Session,
+    *,
+    owner_id: str,
+    application: Application,
+) -> str | None:
+    application_id = application.id
+    submission = session.scalar(
+        select(ApplicationSubmission.id)
+        .where(
+            ApplicationSubmission.owner_id == owner_id,
+            ApplicationSubmission.application_id == application_id,
+        )
+        .limit(1)
+    )
+    if submission is not None:
+        return "submitted applications cannot be returned to the opportunity inbox"
+
+    sent_or_outcome = session.scalar(
+        select(OutreachEvent.id)
+        .where(
+            OutreachEvent.owner_id == owner_id,
+            OutreachEvent.application_id == application_id,
+            OutreachEvent.event_type.in_(("marked_sent", "outcome_recorded")),
+        )
+        .limit(1)
+    )
+    reply = session.scalar(
+        select(OutreachReply.id)
+        .where(
+            OutreachReply.owner_id == owner_id,
+            OutreachReply.application_id == application_id,
+        )
+        .limit(1)
+    )
+    if sent_or_outcome is not None or reply is not None:
+        return "applications with sent outreach or replies cannot be undone"
+
+    outcome = session.scalar(
+        select(ApplicationOutcome.id)
+        .where(
+            ApplicationOutcome.owner_id == owner_id,
+            ApplicationOutcome.application_id == application_id,
+        )
+        .limit(1)
+    )
+    if outcome is not None:
+        return "applications with a recorded outcome cannot be undone"
+
+    interview_round = session.scalar(
+        select(ApplicationInterviewRound.id)
+        .where(
+            ApplicationInterviewRound.owner_id == owner_id,
+            ApplicationInterviewRound.application_id == application_id,
+        )
+        .limit(1)
+    )
+    milestone = session.scalar(
+        select(ApplicationActivityEvent.id)
+        .where(
+            ApplicationActivityEvent.owner_id == owner_id,
+            ApplicationActivityEvent.application_id == application_id,
+            ApplicationActivityEvent.event_type.in_(
+                (
+                    "application_applied",
+                    "application_screening",
+                    "application_interviewing",
+                    "application_offer",
+                    "application_closed",
+                )
+            ),
+        )
+        .limit(1)
+    )
+    if (
+        application.stage not in {"pursuing", "ready_to_apply"}
+        or interview_round is not None
+        or milestone is not None
+    ):
+        return "applications with hiring progress cannot be undone"
+    return None
+
+
 def _application_for_opportunity(
     session: Session,
     *,
@@ -1240,9 +1981,9 @@ def _creation_decision_event(
             OpportunityDecisionEventRow.new_decision == "pursued",
         )
         .order_by(
-            OpportunityDecisionEventRow.occurred_at,
-            OpportunityDecisionEventRow.created_at,
-            OpportunityDecisionEventRow.id,
+            OpportunityDecisionEventRow.occurred_at.desc(),
+            OpportunityDecisionEventRow.created_at.desc(),
+            OpportunityDecisionEventRow.id.desc(),
         )
         .limit(1)
     )
@@ -1418,4 +2159,5 @@ __all__ = [
     "list_today_application_actions",
     "load_application_detail",
     "pursue_owner_opportunity",
+    "undo_application_pursuit",
 ]

@@ -349,10 +349,13 @@ def reconcile_terminal_contact_plans(
     """
 
     current = _as_utc(now or _utcnow())
-    rows = list(
-        session.execute(
-            select(ContactPlan, BackgroundJob)
-            .join(BackgroundJob, ContactPlan.background_job_id == BackgroundJob.id)
+    # Discover without locking, then acquire every queue row before any plan
+    # row.  PostgreSQL does not promise a lock order for a joined FOR UPDATE;
+    # the explicit Job -> Plan order matches workers and application Undo.
+    candidate_job_ids = tuple(
+        session.scalars(
+            select(BackgroundJob.id)
+            .join(ContactPlan, ContactPlan.background_job_id == BackgroundJob.id)
             .where(
                 ContactPlan.owner_id == BackgroundJob.owner_id,
                 BackgroundJob.kind == CONTACT_SEARCH_JOB_KIND,
@@ -361,10 +364,47 @@ def reconcile_terminal_contact_plans(
                 BackgroundJob.status.in_(TERMINAL_JOB_STATUSES),
                 ContactPlan.status.in_({"queued", "running"}),
             )
+            .order_by(BackgroundJob.id)
+        )
+    )
+    if not candidate_job_ids:
+        return 0
+    jobs = list(
+        session.scalars(
+            select(BackgroundJob)
+            .where(
+                BackgroundJob.id.in_(candidate_job_ids),
+                BackgroundJob.kind == CONTACT_SEARCH_JOB_KIND,
+                BackgroundJob.subject_type == "contact_plan",
+                BackgroundJob.status.in_(TERMINAL_JOB_STATUSES),
+            )
+            .order_by(BackgroundJob.id)
             .with_for_update()
         )
     )
-    for plan, job in rows:
+    jobs_by_id = {job.id: job for job in jobs}
+    plans = list(
+        session.scalars(
+            select(ContactPlan)
+            .where(
+                ContactPlan.background_job_id.in_(tuple(jobs_by_id)),
+                ContactPlan.status.in_({"queued", "running"}),
+            )
+            .order_by(ContactPlan.id)
+            .with_for_update()
+        )
+    )
+    reconciled = 0
+    for plan in plans:
+        if plan.background_job_id is None:
+            continue
+        job = jobs_by_id.get(plan.background_job_id)
+        if (
+            job is None
+            or job.owner_id != plan.owner_id
+            or job.subject_id != plan.id
+        ):
+            continue
         cancelled = job.status == "cancelled"
         plan.status = "cancelled" if cancelled else "failed"
         plan.coverage_status = "pending"
@@ -380,8 +420,9 @@ def reconcile_terminal_contact_plans(
         plan.finalized_at = current
         plan.updated_at = current
         plan.version += 1
+        reconciled += 1
     session.flush()
-    return len(rows)
+    return reconciled
 
 
 def _start_contact_search(

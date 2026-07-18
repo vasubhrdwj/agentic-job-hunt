@@ -24,6 +24,7 @@ from .contact_workspace import ContactWorkspaceStore
 from .interview_round_workspace import InterviewRoundWorkspaceStore
 from .interview_preparation_workspace import InterviewPreparationWorkspaceStore
 from .outreach_workspace import OutreachWorkspaceStore
+from .opportunity_schemas import OpportunityDecisionResponse
 from .weekly_review_workspace import WeeklyReviewWorkspaceStore
 
 
@@ -60,6 +61,15 @@ class ApplicationWorkspaceStore(
         owner_id: str,
         application_id: str,
     ) -> ApplicationDetailResponse | None: ...
+
+    def undo_application_pursuit(
+        self,
+        *,
+        owner_id: str,
+        application_id: str,
+        expected_application_version: int,
+        idempotency_key: str,
+    ) -> OpportunityDecisionResponse | None: ...
 
     def list_activity(
         self,

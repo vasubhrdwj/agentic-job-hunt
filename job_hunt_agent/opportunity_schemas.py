@@ -683,6 +683,7 @@ class OpportunityDecisionEvent(ContractModel):
                 not in {
                     OpportunityDecisionState.watch,
                     OpportunityDecisionState.dismiss,
+                    OpportunityDecisionState.pursued,
                 }
                 or self.dismiss_reason is not None
                 or self.note is not None

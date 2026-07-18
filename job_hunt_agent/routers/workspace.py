@@ -609,7 +609,12 @@ def _invoke(operation: Callable[..., T], **kwargs: object) -> T:
     except WorkspaceNotFound as exc:
         raise WorkspaceApiError(404, "resource_not_found", "resource not found") from exc
     except WorkspaceConflict as exc:
-        raise WorkspaceApiError(409, exc.code, str(exc)) from exc
+        raise WorkspaceApiError(
+            409,
+            exc.code,
+            str(exc),
+            retryable=exc.code == "mutation_pending",
+        ) from exc
     except WorkspaceInputError as exc:
         fields = (
             [ProblemFieldError(field=exc.field, message=str(exc))]

@@ -526,17 +526,18 @@ def test_non_pursue_response_cannot_smuggle_a_pursuit_bundle() -> None:
         )
 
 
-def test_restore_cannot_reopen_a_pursued_opportunity() -> None:
-    with pytest.raises(ValidationError, match="restore events"):
-        OpportunityDecisionEvent(
-            id="event2",
-            opportunity_id="opportunity1",
-            action="restore_to_inbox",
-            previous_state="pursued",
-            state="inbox",
-            restores_event_id="decision1",
-            created_at=NOW,
-        )
+def test_restore_can_compensate_an_accidental_pursuit() -> None:
+    event = OpportunityDecisionEvent(
+        id="event2",
+        opportunity_id="opportunity1",
+        action="restore_to_inbox",
+        previous_state="pursued",
+        state="inbox",
+        restores_event_id="decision1",
+        created_at=NOW,
+    )
+    assert event.previous_state.value == "pursued"
+    assert event.restores_event_id == "decision1"
 
 
 def test_decision_response_is_bound_to_one_opportunity_and_state() -> None:

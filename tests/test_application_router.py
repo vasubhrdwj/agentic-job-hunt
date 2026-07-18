@@ -26,6 +26,10 @@ from job_hunt_agent.application_schemas import (
 from job_hunt_agent.contact_schemas import ApplicationContactBenchResponse
 from job_hunt_agent.database import Database
 from job_hunt_agent.owner_workspace import WorkspaceConflict, WorkspaceUnavailable
+from job_hunt_agent.opportunity_schemas import (
+    OpportunityDecisionEvent,
+    OpportunityDecisionResponse,
+)
 from job_hunt_agent.routers.applications import create_application_router
 from job_hunt_agent.routers.session import create_session_router
 from job_hunt_agent.routers.workspace import install_workspace_error_handler
@@ -90,6 +94,7 @@ class FakeApplicationStore:
     calls: list[tuple[str, str]] = field(default_factory=list)
     last_list_query: tuple[int, str | None] | None = None
     last_contact_search: tuple[str, int, str] | None = None
+    last_undo: tuple[str, int, str] | None = None
     unavailable: bool = False
     conflict: WorkspaceConflict | None = None
 
@@ -118,6 +123,41 @@ class FakeApplicationStore:
         return ApplicationDetailResponse(
             application=_application(),
             activity=[_activity()],
+        )
+
+    def undo_application_pursuit(
+        self,
+        *,
+        owner_id: str,
+        application_id: str,
+        expected_application_version: int,
+        idempotency_key: str,
+    ) -> OpportunityDecisionResponse | None:
+        self.calls.append(("undo_application_pursuit", owner_id))
+        self.last_undo = (
+            application_id,
+            expected_application_version,
+            idempotency_key,
+        )
+        if self.unavailable:
+            raise WorkspaceUnavailable("PRIVATE_APPLICATION_DATABASE_HOST")
+        if self.conflict is not None:
+            raise self.conflict
+        if application_id != "application1":
+            return None
+        return OpportunityDecisionResponse(
+            opportunity_id="opportunity1",
+            opportunity_version=3,
+            state="inbox",
+            event=OpportunityDecisionEvent(
+                id="undoevent1",
+                opportunity_id="opportunity1",
+                action="restore_to_inbox",
+                previous_state="pursued",
+                state="inbox",
+                restores_event_id="pursuedevent1",
+                created_at=NOW,
+            ),
         )
 
     def list_activity(
@@ -351,6 +391,112 @@ def test_application_validation_and_storage_failures_use_safe_problem_responses(
     assert "PRIVATE_CONTACT_DATABASE_HOST" not in json.dumps(contact_body)
 
 
+def test_undo_pursuit_requires_mutation_security_and_restores_the_opportunity(
+    application_client: tuple[TestClient, FakeApplicationStore],
+) -> None:
+    client, store = application_client
+    path = "/api/applications/application1/undo-pursuit"
+    valid_headers = {
+        "Origin": ORIGIN,
+        "If-Match": '"1"',
+        "Idempotency-Key": "undo-application1-v1",
+    }
+
+    _assert_problem(
+        client.post(path, headers=valid_headers),
+        status_code=401,
+        code="owner_session_required",
+    )
+    _login(client)
+    _assert_problem(
+        client.post(
+            path,
+            headers={**valid_headers, "Origin": "https://attacker.invalid"},
+        ),
+        status_code=403,
+        code="origin_forbidden",
+    )
+    _assert_problem(
+        client.post(
+            path,
+            headers={
+                "Origin": ORIGIN,
+                "Idempotency-Key": "undo-application1-v1",
+            },
+        ),
+        status_code=428,
+        code="precondition_required",
+    )
+    _assert_problem(
+        client.post(path, headers={"Origin": ORIGIN, "If-Match": '"1"'}),
+        status_code=400,
+        code="idempotency_key_required",
+    )
+
+    restored = client.post(path, headers=valid_headers)
+    assert restored.status_code == 200, restored.text
+    assert restored.json()["state"] == "inbox"
+    assert restored.json()["event"]["previous_state"] == "pursued"
+    assert restored.json()["event"]["restores_event_id"] == "pursuedevent1"
+    assert restored.headers["etag"] == '"3"'
+    assert restored.headers["cache-control"] == "no-store, max-age=0"
+    assert store.last_undo == ("application1", 1, "undo-application1-v1")
+
+
+@pytest.mark.parametrize(
+    ("conflict", "code", "retryable"),
+    [
+        (
+            WorkspaceConflict("application changed", code="version_conflict"),
+            "version_conflict",
+            False,
+        ),
+        (WorkspaceConflict("outreach was sent"), "resource_conflict", False),
+        (
+            WorkspaceConflict("key reused", code="idempotency_conflict"),
+            "idempotency_conflict",
+            False,
+        ),
+        (
+            WorkspaceConflict("application is busy", code="mutation_pending"),
+            "mutation_pending",
+            True,
+        ),
+    ],
+)
+def test_undo_pursuit_masks_missing_applications_and_preserves_conflict_codes(
+    application_client: tuple[TestClient, FakeApplicationStore],
+    conflict: WorkspaceConflict,
+    code: str,
+    retryable: bool,
+) -> None:
+    client, store = application_client
+    _login(client)
+    headers = {
+        "Origin": ORIGIN,
+        "If-Match": '"1"',
+        "Idempotency-Key": f"undo-{code}",
+    }
+    missing = client.post(
+        "/api/applications/foreignapplication/undo-pursuit",
+        headers=headers,
+    )
+    missing_body = _assert_problem(
+        missing,
+        status_code=404,
+        code="resource_not_found",
+    )
+    assert "foreignapplication" not in json.dumps(missing_body)
+
+    store.conflict = conflict
+    response = client.post(
+        "/api/applications/application1/undo-pursuit",
+        headers=headers,
+    )
+    body = _assert_problem(response, status_code=409, code=code)
+    assert body["retryable"] is retryable
+
+
 def test_contact_search_requires_mutation_security_and_returns_queued_bench(
     application_client: tuple[TestClient, FakeApplicationStore],
 ) -> None:
@@ -474,6 +620,13 @@ def test_application_openapi_declares_cookie_auth_and_problem_contracts(
         ): (
             "list_owner_application_activity_api_applications__application_id__"
             "activity_get"
+        ),
+        (
+            "/api/applications/{application_id}/undo-pursuit",
+            "post",
+        ): (
+            "undo_owner_application_pursuit_api_applications__application_id__"
+            "undo_pursuit_post"
         ),
         (
             "/api/applications/{application_id}/contacts",

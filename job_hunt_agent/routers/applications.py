@@ -61,6 +61,7 @@ from ..outreach_schemas import (
     OutreachMessageCreate,
     OutreachReplyCreate,
 )
+from ..opportunity_schemas import OpportunityDecisionResponse
 from ..weekly_review_schemas import (
     ApplicationActionReviewCreate,
     ApplicationActionReviewMutationResponse,
@@ -187,6 +188,36 @@ def create_application_router(
             _not_found("application")
         _set_etag(response, application.application.version)
         return application
+
+    @router.post(
+        "/api/applications/{application_id}/undo-pursuit",
+        response_model=OpportunityDecisionResponse,
+        description=(
+            "Undo an accidental, pre-submission pursuit. This discards only the "
+            "application-owned preparation graph and restores the retained "
+            "opportunity to the inbox. It fails closed after submission, sent "
+            "outreach or replies, a hiring milestone, or an outcome."
+        ),
+        responses=COMMON_ERROR_RESPONSES,
+    )
+    def undo_owner_application_pursuit(
+        application_id: OpaqueId,
+        response: Response,
+        owner: AuthenticatedOwner = Security(require_mutation_owner),
+        if_match: str | None = Header(default=None, alias="If-Match"),
+        idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+    ) -> OpportunityDecisionResponse:
+        decision = _invoke(
+            _store(store).undo_application_pursuit,
+            owner_id=owner.owner_id,
+            application_id=application_id,
+            expected_application_version=_expected_version(if_match),
+            idempotency_key=_required_idempotency_key(idempotency_key),
+        )
+        if decision is None:
+            _not_found("application")
+        _set_etag(response, decision.opportunity_version)
+        return decision
 
     @router.get(
         "/api/applications/{application_id}/activity",

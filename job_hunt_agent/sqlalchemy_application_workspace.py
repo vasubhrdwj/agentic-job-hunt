@@ -42,6 +42,7 @@ from .application_repository import (
     list_applications,
     list_today_application_actions,
     load_application_detail,
+    undo_application_pursuit,
 )
 from .application_schemas import (
     ApplicationActivityListResponse,
@@ -104,6 +105,7 @@ from .owner_workspace import (
     WorkspaceInputError,
     WorkspaceUnavailable,
 )
+from .opportunity_schemas import OpportunityDecisionResponse
 from .private_payloads import PrivatePayloadBindingError
 from .repository_errors import ResourceConflict, VersionConflict
 from .security import DataKeyring, DecryptionError
@@ -191,6 +193,23 @@ class SqlAlchemyApplicationWorkspaceStore(SqlAlchemyContactWorkspaceStore):
                 session,
                 owner_id=owner_id,
                 application_id=application_id,
+            )
+
+    def undo_application_pursuit(
+        self,
+        *,
+        owner_id: str,
+        application_id: str,
+        expected_application_version: int,
+        idempotency_key: str,
+    ) -> OpportunityDecisionResponse | None:
+        with _application_undo_errors(), self.database.session() as session:
+            return undo_application_pursuit(
+                session,
+                owner_id=owner_id,
+                application_id=application_id,
+                expected_application_version=expected_application_version,
+                idempotency_key=idempotency_key,
             )
 
     def list_activity(
@@ -593,6 +612,42 @@ def _application_errors() -> Iterator[None]:
     except ValidationError as exc:
         raise WorkspaceUnavailable(
             "stored application data failed contract validation"
+        ) from exc
+    except SQLAlchemyError as exc:
+        raise WorkspaceUnavailable(
+            "application workspace database is unavailable"
+        ) from exc
+
+
+@contextmanager
+def _application_undo_errors() -> Iterator[None]:
+    try:
+        yield
+    except WorkspaceUnavailable:
+        raise
+    except WorkspaceConflict:
+        raise
+    except WorkspaceInputError:
+        raise
+    except VersionConflict as exc:
+        raise WorkspaceConflict(str(exc), code="version_conflict") from exc
+    except MutationIdempotencyConflict as exc:
+        raise WorkspaceConflict(str(exc), code="idempotency_conflict") from exc
+    except MutationPending as exc:
+        raise WorkspaceConflict(str(exc), code="mutation_pending") from exc
+    except ResourceConflict as exc:
+        raise WorkspaceConflict(str(exc)) from exc
+    except ApplicationRepositoryError as exc:
+        raise WorkspaceUnavailable("application data is inconsistent") from exc
+    except ValidationError as exc:
+        raise WorkspaceUnavailable(
+            "stored application data failed contract validation"
+        ) from exc
+    except ValueError as exc:
+        raise WorkspaceInputError(str(exc)) from exc
+    except IntegrityError as exc:
+        raise WorkspaceConflict(
+            "undo pursuit conflicts with existing application state"
         ) from exc
     except SQLAlchemyError as exc:
         raise WorkspaceUnavailable(
