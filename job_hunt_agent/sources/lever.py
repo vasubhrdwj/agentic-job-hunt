@@ -42,6 +42,12 @@ _ADVANCED_LEVELS = {
     "head",
 }
 _JUNIOR_LEVELS = {"junior", "jr", "associate", "entry", "graduate"}
+_REQUIREMENTS_SUMMARY_SIGNAL = re.compile(
+    r"\b(?:requirements?|qualifications?|must\s+have|minimum|at\s+least)\b"
+    r"|\b\d+(?:\.\d+)?(?:\s*(?:-|–|—|to)\s*\d+(?:\.\d+)?)?"
+    r"\+?\s*(?:years?|yrs?)\b",
+    re.IGNORECASE,
+)
 
 
 class LeverAdapter:
@@ -290,6 +296,9 @@ def _summary_from_posting(
 
     if sections:
         return _truncate(" ".join(sections), SUMMARY_LIMIT)
+    additional = _additional_description(posting)
+    if additional:
+        return _requirements_summary(additional)
     return _description_summary(raw_description)
 
 
@@ -319,11 +328,14 @@ def _full_description_from_posting(posting: dict[str, Any]) -> str:
                 # additionalPlain. Track its unheaded body as the same content.
                 seen.add(_description_identity(content))
 
-    additional = _clean_description(posting.get("additionalPlain"))
-    if not additional:
-        additional = _html_to_text(posting.get("additional"))
+    additional = _additional_description(posting)
     _append_description_part(parts, seen, additional)
     return "\n\n".join(parts)
+
+
+def _additional_description(posting: dict[str, Any]) -> str:
+    additional = _clean_description(posting.get("additionalPlain"))
+    return additional or _html_to_text(posting.get("additional"))
 
 
 def _append_description_part(
@@ -349,6 +361,18 @@ def _description_summary(description: str) -> str:
         return ""
     sentences = re.split(r"(?<=[.!?])\s+", _normalize_space(description))
     return _truncate(" ".join(sentences[:2]), SUMMARY_LIMIT)
+
+
+def _requirements_summary(description: str) -> str:
+    sentences = re.split(r"(?<=[.!?])\s+", _normalize_space(description))
+    requirements = [
+        sentence
+        for sentence in sentences
+        if _REQUIREMENTS_SUMMARY_SIGNAL.search(sentence)
+    ]
+    if requirements:
+        return _truncate(" ".join(requirements[:2]), SUMMARY_LIMIT)
+    return _description_summary(description)
 
 
 def _match_reason(

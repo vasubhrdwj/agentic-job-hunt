@@ -408,7 +408,11 @@ def test_lists_empty_uses_additional_plain_for_search_and_full_description(
                 "commitment": "Full-time",
                 "location": "Bengaluru, Karnataka, India",
             },
-            "descriptionPlain": "Stable Money builds simple fixed-income products.",
+            "descriptionPlain": (
+                "Stable Money builds simple fixed-income products. "
+                "We help customers make confident investment decisions. "
+                "Our platform makes wealth-building transparent and accessible."
+            ),
             "lists": [],
             "additionalPlain": (
                 "What you'll do: Build reliable APIs in Python. "
@@ -436,11 +440,13 @@ def test_lists_empty_uses_additional_plain_for_search_and_full_description(
     assert len(roles) == 1
     role = roles[0]
     assert role.summary == (
-        "Stable Money builds simple fixed-income products. "
-        "What you'll do: Build reliable APIs in Python."
+        "Requirements: 1-2 years of backend engineering experience."
     )
+    assert "1-2 years" in role.summary
     assert role.raw_description == (
-        "Stable Money builds simple fixed-income products.\n\n"
+        "Stable Money builds simple fixed-income products. We help customers make "
+        "confident investment decisions. Our platform makes wealth-building "
+        "transparent and accessible.\n\n"
         "What you'll do: Build reliable APIs in Python. Requirements: 1-2 years "
         "of backend engineering experience."
     )
