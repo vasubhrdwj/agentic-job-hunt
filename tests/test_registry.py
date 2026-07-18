@@ -13,16 +13,18 @@ def _write_pack(tmp_path: Path, text: str) -> Path:
     return path
 
 
-def test_backend_india_pack_loads_twenty_active_companies():
+def test_backend_india_pack_loads_curated_active_companies():
     registry = load_company_pack("backend_india")
 
     assert registry.name == "backend_india"
-    assert len(registry) == 20
-    assert len(registry.active_companies) == 20
-    assert len({company.slug for company in registry}) == 20
+    assert len(registry) == 22
+    assert len(registry.active_companies) == 22
+    assert len({company.slug for company in registry}) == 22
     assert all(company.source is not CompanySource.google_jobs for company in registry)
     assert registry.get("rubrik").source_token == "rubrik"
     assert registry.get("amazon").source_token == "amazon"
+    assert registry.get("stable-money").source_token == "stable-money1"
+    assert registry.get("redwood-software").source_token == "redwoodsoftware"
     assert "job-boards.eu.greenhouse.io" in registry.get("groww").careers_domains
 
 
@@ -39,6 +41,16 @@ def test_registry_get_and_select():
         "phonepe",
         "stripe",
         "zeta",
+        "stable-money",
+    }
+
+    early_career = registry.select(
+        tags=["backend", "early-career"],
+        locations=["India"],
+    )
+    assert {company.slug for company in early_career} == {
+        "redwood-software",
+        "stable-money",
     }
 
 
@@ -198,7 +210,7 @@ def test_verifier_default_mode_is_hermetic(monkeypatch, capsys):
 
     assert verify_registry.main(["--pack", "backend_india"]) == 0
     output = capsys.readouterr().out
-    assert "configured=20 active=20 inactive=0" in output
+    assert "configured=22 active=22 inactive=0" in output
     assert "invalid=0 live_checks=not_requested" in output
 
 

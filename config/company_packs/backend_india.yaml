@@ -137,6 +137,22 @@ companies:
     hire_locations: [India, Bengaluru, Hyderabad, Mumbai]
     tags: [backend, fintech, banking]
 
+  - name: Stable Money
+    slug: stable-money
+    source: lever
+    source_token: stable-money1
+    careers_domains: [stablemoney.in, jobs.lever.co]
+    hire_locations: [India, Bengaluru]
+    tags: [backend, fintech, early-career]
+
+  - name: Redwood Software
+    slug: redwood-software
+    source: greenhouse
+    source_token: redwoodsoftware
+    careers_domains: [redwood.com, job-boards.greenhouse.io]
+    hire_locations: [India, Hyderabad]
+    tags: [backend, automation, early-career]
+
   - name: Databricks
     slug: databricks
     source: greenhouse
