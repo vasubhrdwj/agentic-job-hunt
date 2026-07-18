@@ -566,14 +566,22 @@ def test_decision_response_is_bound_to_one_opportunity_and_state() -> None:
 
 
 def test_today_query_enforces_opaque_filters_cursor_and_page_limit() -> None:
-    query = TodayQuery(view="watching", cursor="abc_123-Z", limit=50)
+    query = TodayQuery(
+        view="watching",
+        scan_id="scan_123-Z",
+        cursor="abc_123-Z",
+        limit=50,
+    )
     assert query.limit == 50
+    assert query.scan_id == "scan_123-Z"
     with pytest.raises(ValidationError):
         TodayQuery(cursor="not a cursor")
     with pytest.raises(ValidationError):
         TodayQuery(limit=51)
     with pytest.raises(ValidationError):
         TodayQuery(saved_search_id="../../other-owner")
+    with pytest.raises(ValidationError):
+        TodayQuery(scan_id="../../other-owner")
 
 
 def test_today_list_is_explicitly_database_only() -> None:

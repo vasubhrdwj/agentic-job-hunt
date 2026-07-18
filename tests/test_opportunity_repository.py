@@ -554,6 +554,68 @@ def test_unknown_source_date_and_employment_type_remain_visible(
         ]
 
 
+def test_today_scan_filter_returns_only_owner_observations_from_that_scan(
+    radar: tuple[Database, DataKeyring],
+) -> None:
+    database, keyring = radar
+    with database.session() as session:
+        first = persist_scan_source_role(
+            session,
+            owner_id="owner-a",
+            scan_source_id="source-a1",
+            role=_role(source_job_id="first", url="https://jobs.acme.example/first"),
+            first_party_url_verified=True,
+            now=NOW,
+        )
+        _seed_scan_source(session, "owner-a", "search-a", "scan-a2", "source-a2")
+        second = persist_scan_source_role(
+            session,
+            owner_id="owner-a",
+            scan_source_id="source-a2",
+            role=_role(source_job_id="second", url="https://jobs.acme.example/second"),
+            first_party_url_verified=True,
+            now=NOW + timedelta(minutes=1),
+        )
+
+        first_scan = list_today_opportunities(
+            session,
+            owner_id="owner-a",
+            query=TodayQuery(scan_id="scan-a1"),
+            keyring=keyring,
+            now=NOW + timedelta(minutes=2),
+        )
+        second_scan = list_today_opportunities(
+            session,
+            owner_id="owner-a",
+            query=TodayQuery(scan_id="scan-a2"),
+            keyring=keyring,
+            now=NOW + timedelta(minutes=2),
+        )
+        foreign_owner = list_today_opportunities(
+            session,
+            owner_id="owner-b",
+            query=TodayQuery(scan_id="scan-a1"),
+            keyring=keyring,
+            now=NOW + timedelta(minutes=2),
+        )
+        missing_scan = list_today_opportunities(
+            session,
+            owner_id="owner-a",
+            query=TodayQuery(scan_id="does-not-exist"),
+            keyring=keyring,
+            now=NOW + timedelta(minutes=2),
+        )
+
+        assert [item.id for item in first_scan.items] == [first.opportunity_id]
+        assert [item.id for item in second_scan.items] == [second.opportunity_id]
+        assert first_scan.summary.needs_decision == 1
+        assert second_scan.summary.needs_decision == 1
+        assert foreign_owner.items == []
+        assert foreign_owner.summary.needs_decision == 0
+        assert missing_scan.items == []
+        assert missing_scan.summary.needs_decision == 0
+
+
 def test_late_lock_with_older_scan_time_keeps_posting_history_monotonic(
     radar: tuple[Database, DataKeyring],
 ) -> None:

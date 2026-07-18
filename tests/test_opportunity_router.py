@@ -472,6 +472,7 @@ def test_today_query_validation_is_safe_and_valid_filters_reach_store(
         "/api/today",
         params={
             "view": "watching",
+            "scan_id": "scan1",
             "saved_search_id": "search1",
             "lane": "core",
             "cursor": "cursor_123-Z",
@@ -481,6 +482,7 @@ def test_today_query_validation_is_safe_and_valid_filters_reach_store(
     assert valid.status_code == 200, valid.text
     assert store.last_today_query == TodayQuery(
         view="watching",
+        scan_id="scan1",
         saved_search_id="search1",
         lane="core",
         cursor="cursor_123-Z",
@@ -497,6 +499,9 @@ def test_today_query_validation_is_safe_and_valid_filters_reach_store(
         code="invalid_request",
     )
     assert "unsafe cursor" not in json.dumps(body)
+
+    invalid_scan = client.get("/api/today", params={"scan_id": "../foreign"})
+    _assert_problem(invalid_scan, status_code=422, code="invalid_request")
 
 
 def test_decision_enforces_origin_preconditions_etag_and_safe_validation(

@@ -62,6 +62,7 @@ export async function getOpportunityScan(scanId: string): Promise<ScanStatusResp
 
 export async function getToday(query: TodayQuery): Promise<TodayResponse> {
   const params = new URLSearchParams({ view: query.view });
+  if (query.scanId) params.set("scan_id", query.scanId);
   if (query.savedSearchId) params.set("saved_search_id", query.savedSearchId);
   if (query.lane) params.set("lane", query.lane);
   if (query.cursor) params.set("cursor", query.cursor);

@@ -71,8 +71,8 @@ export function TodayWorkspace({
   const decisionKeys = useRef<Record<string, string>>({});
 
   const query = useMemo(
-    () => ({ view, savedSearchId, lane, limit: 20 }),
-    [view, savedSearchId, lane],
+    () => ({ view, scanId, savedSearchId, lane, limit: 20 }),
+    [view, scanId, savedSearchId, lane],
   );
 
   const loadToday = useCallback(async (preserve: boolean) => {
@@ -290,6 +290,19 @@ export function TodayWorkspace({
       <TodaySummaryStrip today={today} scan={scan} view={view} onView={(next) => updateFilter("view", next)} />
 
       {scanId ? <ScanProgress scan={scan} error={scanError} /> : null}
+      {scanId ? (
+        <aside aria-label="Scan result scope" className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900/70">
+          <div>
+            <p className="font-semibold">Showing roles from this scan</p>
+            <p className="mt-1 text-sm text-zinc-500">
+              Older saved roles are hidden here so this scan&apos;s results are easy to review.
+            </p>
+          </div>
+          <Link href="/today" className={secondaryButtonClasses}>
+            View all saved roles
+          </Link>
+        </aside>
+      ) : null}
       {coverageWarnings.length > 0 ? (
         <aside aria-labelledby="coverage-title" className="rounded-xl border border-blue-200 bg-blue-50 p-4 dark:border-blue-900 dark:bg-blue-950/25">
           <h2 id="coverage-title" className="font-semibold text-blue-950 dark:text-blue-100">
@@ -348,7 +361,7 @@ export function TodayWorkspace({
       {today.items.length === 0 ? (
         <TodayEmptyState
           view={view}
-          filtered={Boolean(savedSearchId || lane)}
+          filtered={Boolean(scanId || savedSearchId || lane)}
           savedSearchCount={savedSearches?.length ?? null}
           totalOpportunityCount={today.summary.needs_decision + today.summary.watching + today.summary.dismissed}
           scanHealth={today.scan_health.state}

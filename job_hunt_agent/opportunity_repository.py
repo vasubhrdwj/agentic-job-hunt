@@ -511,6 +511,15 @@ def list_today_opportunities(
         statement = statement.where(
             OwnerOpportunity.decision == decision_by_view[query.view]
         )
+    if query.scan_id is not None:
+        statement = statement.where(
+            OwnerOpportunity.job_posting_id.in_(
+                select(JobObservation.job_posting_id).where(
+                    JobObservation.owner_id == owner_id,
+                    JobObservation.opportunity_scan_id == query.scan_id,
+                )
+            )
+        )
     if query.saved_search_id is not None:
         statement = statement.where(
             OwnerOpportunity.job_posting_id.in_(
@@ -551,7 +560,7 @@ def list_today_opportunities(
     return TodayListResponse(
         data_source="database",
         as_of=current,
-        summary=_today_summary(session, owner_id),
+        summary=_today_summary(session, owner_id, scan_id=query.scan_id),
         scan_health=_today_scan_health(session, owner_id),
         items=items,
         next_cursor=next_cursor,
@@ -962,13 +971,27 @@ def _parse_posted_date(value: str | None) -> date | None:
         return None
 
 
-def _today_summary(session: Session, owner_id: str) -> TodaySummary:
+def _today_summary(
+    session: Session,
+    owner_id: str,
+    *,
+    scan_id: str | None = None,
+) -> TodaySummary:
+    statement = select(
+        OwnerOpportunity.decision,
+        func.count(OwnerOpportunity.id),
+    ).where(OwnerOpportunity.owner_id == owner_id)
+    if scan_id is not None:
+        statement = statement.where(
+            OwnerOpportunity.job_posting_id.in_(
+                select(JobObservation.job_posting_id).where(
+                    JobObservation.owner_id == owner_id,
+                    JobObservation.opportunity_scan_id == scan_id,
+                )
+            )
+        )
     counts = dict(
-        session.execute(
-            select(OwnerOpportunity.decision, func.count(OwnerOpportunity.id))
-            .where(OwnerOpportunity.owner_id == owner_id)
-            .group_by(OwnerOpportunity.decision)
-        ).all()
+        session.execute(statement.group_by(OwnerOpportunity.decision)).all()
     )
     return TodaySummary(
         needs_decision=int(counts.get("inbox", 0)),

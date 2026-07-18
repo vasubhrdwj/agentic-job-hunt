@@ -230,6 +230,7 @@ export interface OpportunityDecisionResponse {
 
 export interface TodayQuery {
   view: TodayView;
+  scanId?: string;
   savedSearchId?: string;
   lane?: OpportunityLane;
   cursor?: string;

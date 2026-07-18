@@ -907,6 +907,7 @@ class TodayScanHealth(ContractModel):
 
 class TodayQuery(ContractModel):
     view: TodayView = TodayView.inbox
+    scan_id: OpaqueId | None = None
     saved_search_id: OpaqueId | None = None
     lane: OpportunityLane | None = None
     cursor: CursorToken | None = None

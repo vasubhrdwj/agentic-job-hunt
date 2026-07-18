@@ -140,6 +140,7 @@ def create_opportunity_router(
     )
     def list_today(
         view: TodayView = Query(default=TodayView.inbox),
+        scan_id: OpaqueId | None = Query(default=None),
         saved_search_id: OpaqueId | None = Query(default=None),
         lane: OpportunityLane | None = Query(default=None),
         cursor: CursorToken | None = Query(default=None),
@@ -148,6 +149,7 @@ def create_opportunity_router(
     ) -> TodayListResponse:
         query = TodayQuery(
             view=view,
+            scan_id=scan_id,
             saved_search_id=saved_search_id,
             lane=lane,
             cursor=cursor,

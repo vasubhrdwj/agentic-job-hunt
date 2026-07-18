@@ -11199,6 +11199,7 @@ export interface operations {
         parameters: {
             query?: {
                 view?: components["schemas"]["TodayView"];
+                scan_id?: string | null;
                 saved_search_id?: string | null;
                 lane?: components["schemas"]["OpportunityLane"] | null;
                 cursor?: string | null;
