@@ -194,7 +194,7 @@ def _role_from_posting(
 
     location = _location_from_categories(categories)
     commitment = _normalize_space(categories.get("commitment"))
-    raw_description = _clean_description(posting.get("descriptionPlain"))
+    raw_description = _full_description_from_posting(posting)
     summary = _summary_from_posting(posting, raw_description=raw_description)
     searchable = _normalize_for_match(f"{title} {raw_description} {summary}")
     matched_keywords = _matched_keywords(criteria.role_keywords, searchable)
@@ -291,6 +291,57 @@ def _summary_from_posting(
     if sections:
         return _truncate(" ".join(sections), SUMMARY_LIMIT)
     return _description_summary(raw_description)
+
+
+def _full_description_from_posting(posting: dict[str, Any]) -> str:
+    """Compose all public Lever description fields into one plain-text JD."""
+
+    parts: list[str] = []
+    seen: set[str] = set()
+
+    description = _clean_description(posting.get("descriptionPlain"))
+    if not description:
+        description = _html_to_text(posting.get("description"))
+    _append_description_part(parts, seen, description)
+
+    raw_lists = posting.get("lists")
+    if isinstance(raw_lists, list):
+        for raw_section in raw_lists:
+            if not isinstance(raw_section, dict):
+                continue
+            heading = _normalize_space(raw_section.get("text"))
+            content = _html_to_text(raw_section.get("content"))
+            if not content:
+                continue
+            section = f"{heading}: {content}" if heading else content
+            if _append_description_part(parts, seen, section):
+                # Some Lever payloads repeat a structured list verbatim in
+                # additionalPlain. Track its unheaded body as the same content.
+                seen.add(_description_identity(content))
+
+    additional = _clean_description(posting.get("additionalPlain"))
+    if not additional:
+        additional = _html_to_text(posting.get("additional"))
+    _append_description_part(parts, seen, additional)
+    return "\n\n".join(parts)
+
+
+def _append_description_part(
+    parts: list[str],
+    seen: set[str],
+    value: str,
+) -> bool:
+    cleaned = _normalize_space(value)
+    identity = _description_identity(cleaned)
+    if not identity or identity in seen:
+        return False
+    parts.append(cleaned)
+    seen.add(identity)
+    return True
+
+
+def _description_identity(value: str) -> str:
+    return _normalize_for_match(value)
 
 
 def _description_summary(description: str) -> str:

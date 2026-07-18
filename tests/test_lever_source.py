@@ -135,6 +135,8 @@ def test_maps_recorded_lever_posting_without_network(
     assert "Core Responsibilities:" in role.summary
     assert "What We Value:" in role.summary
     assert "Palantir builds the world’s leading software" in role.raw_description
+    assert "Core Responsibilities:" in role.raw_description
+    assert "What We Value:" in role.raw_description
     assert role.employment_type is EmploymentType.full_time
     assert role.source is CompanySource.lever
     assert role.company_slug == "palantir"
@@ -375,6 +377,168 @@ def test_keyword_matching_requires_token_or_phrase_boundaries(
 
     assert substring_roles == []
     assert len(token_roles) == 1
+
+
+def test_lists_empty_uses_additional_plain_for_search_and_full_description(
+    monkeypatch: pytest.MonkeyPatch,
+    company: Company,
+    criteria: JobCriteria,
+) -> None:
+    stable_money = company.model_copy(
+        update={
+            "name": "Stable Money",
+            "slug": "stable-money",
+            "source_token": "stable-money1",
+            "hire_locations": ["India", "Bengaluru"],
+        },
+    )
+    payload = [
+        {
+            "id": "bfcb73b0-353c-4b78-b489-02db4ccaa637",
+            "text": "Software Engineer I (Backend)",
+            "applyUrl": (
+                "https://jobs.lever.co/stable-money1/"
+                "bfcb73b0-353c-4b78-b489-02db4ccaa637/apply"
+            ),
+            "hostedUrl": (
+                "https://jobs.lever.co/stable-money1/"
+                "bfcb73b0-353c-4b78-b489-02db4ccaa637"
+            ),
+            "categories": {
+                "commitment": "Full-time",
+                "location": "Bengaluru, Karnataka, India",
+            },
+            "descriptionPlain": "Stable Money builds simple fixed-income products.",
+            "lists": [],
+            "additionalPlain": (
+                "What you'll do: Build reliable APIs in Python. "
+                "Requirements: 1-2 years of backend engineering experience."
+            ),
+        },
+    ]
+    monkeypatch.setattr(
+        lever,
+        "urlopen",
+        Mock(return_value=_Response(json.dumps(payload).encode("utf-8"))),
+    )
+
+    roles = LeverAdapter().fetch_open_roles(
+        stable_money,
+        criteria.model_copy(
+            update={
+                "role_keywords": ["Python"],
+                "seniority": "junior",
+                "location": ["India"],
+            },
+        ),
+    )
+
+    assert len(roles) == 1
+    role = roles[0]
+    assert role.summary == (
+        "Stable Money builds simple fixed-income products. "
+        "What you'll do: Build reliable APIs in Python."
+    )
+    assert role.raw_description == (
+        "Stable Money builds simple fixed-income products.\n\n"
+        "What you'll do: Build reliable APIs in Python. Requirements: 1-2 years "
+        "of backend engineering experience."
+    )
+    assert 'requested keyword "Python"' in role.match_reason
+
+
+@pytest.mark.parametrize(
+    ("experience_requirement", "expected_count"),
+    [
+        ("1-2 years", 1),
+        ("3+ years", 0),
+    ],
+)
+def test_resolver_reads_experience_from_additional_plain_when_lists_are_empty(
+    monkeypatch: pytest.MonkeyPatch,
+    company: Company,
+    experience_requirement: str,
+    expected_count: int,
+) -> None:
+    payload = [
+        {
+            "id": "backend-1",
+            "text": "Backend Engineer",
+            "applyUrl": "https://jobs.lever.co/palantir/backend-1/apply",
+            "hostedUrl": "https://jobs.lever.co/palantir/backend-1",
+            "categories": {
+                "commitment": "Full-time",
+                "location": "Bengaluru, Karnataka, India",
+            },
+            "descriptionPlain": "Build reliable services.",
+            "lists": [],
+            "additionalPlain": (
+                f"Requirements: {experience_requirement} of backend experience."
+            ),
+        },
+    ]
+    monkeypatch.setattr(
+        lever,
+        "urlopen",
+        Mock(return_value=_Response(json.dumps(payload).encode("utf-8"))),
+    )
+    india_company = company.model_copy(update={"hire_locations": ["India"]})
+    junior_criteria = JobCriteria(
+        role_keywords=["backend"],
+        seniority="junior",
+        location=["India"],
+        employment_types=[EmploymentType.full_time],
+        country="in",
+    )
+
+    roles = SourceResolver([LeverAdapter()]).fetch_company_roles(
+        india_company,
+        junior_criteria,
+        use_cache=False,
+        allow_fallback=False,
+    )
+
+    assert len(roles) == expected_count
+
+
+def test_full_description_dedupes_structured_and_plain_repetitions(
+    monkeypatch: pytest.MonkeyPatch,
+    company: Company,
+    criteria: JobCriteria,
+) -> None:
+    payload = [
+        {
+            "id": "dedupe-1",
+            "text": "Automation Engineer",
+            "applyUrl": "https://jobs.lever.co/palantir/dedupe-1/apply",
+            "hostedUrl": "https://jobs.lever.co/palantir/dedupe-1",
+            "categories": {
+                "commitment": "Full-time",
+                "location": "Palo Alto, CA",
+            },
+            "descriptionPlain": "Build automation for production teams.",
+            "lists": [
+                {
+                    "text": "Requirements",
+                    "content": "<ul><li>Two years of Python experience.</li></ul>",
+                },
+            ],
+            "additionalPlain": "Two years of Python experience.",
+        },
+    ]
+    monkeypatch.setattr(
+        lever,
+        "urlopen",
+        Mock(return_value=_Response(json.dumps(payload).encode("utf-8"))),
+    )
+
+    role = LeverAdapter().fetch_open_roles(company, criteria)[0]
+
+    assert role.raw_description == (
+        "Build automation for production teams.\n\n"
+        "Requirements: Two years of Python experience."
+    )
+    assert role.raw_description.count("Two years of Python experience.") == 1
 
 
 def test_junior_filter_rejects_engineering_manager(
