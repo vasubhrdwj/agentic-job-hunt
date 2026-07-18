@@ -10,6 +10,7 @@
   },
   "include": [
     "lib/application-dossier-layout.ts",
+    "lib/application-materials-auto-generation.ts",
     "lib/application-pack-preparation.ts",
     "lib/application-pack-review.ts",
     "lib/application-undo-pursuit.ts",
@@ -18,6 +19,7 @@
     "lib/today-company-balance.ts",
     "lib/workspace-types.ts",
     "tests/application-dossier-layout.test.ts",
+    "tests/application-materials-auto-generation.test.ts",
     "tests/application-pack-preparation.test.ts",
     "tests/application-pack-review.test.ts",
     "tests/application-undo-pursuit.test.ts",

@@ -45,6 +45,7 @@ export function ApplicationDossier({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [currentArtifacts, setCurrentArtifacts] = useState<ApplicationArtifactsResponse | null>(null);
+  const [materialsRefreshNonce, setMaterialsRefreshNonce] = useState(0);
   const [interviewHistoryState, setInterviewHistoryState] =
     useState<InterviewHistoryState>("checking");
   const [secondaryLoaded, setSecondaryLoaded] = useState(false);
@@ -65,6 +66,10 @@ export function ApplicationDossier({
   const refreshApplication = useCallback(async (): Promise<void> => {
     await load();
   }, [load]);
+
+  const refreshMaterialsAfterReview = useCallback(() => {
+    setMaterialsRefreshNonce((current) => current + 1);
+  }, []);
 
   useEffect(() => {
     const timer = setTimeout(() => void load(), 0);
@@ -111,13 +116,14 @@ export function ApplicationDossier({
           applicationId={application.id}
           applicationVersion={application.version}
           applicationStage={application.stage}
+          onReviewed={refreshMaterialsAfterReview}
         />
       );
     }
     if (section === "application_materials") {
       return (
         <ApplicationMaterials
-          key={`materials:${application.id}`}
+          key={`materials:${application.id}:${materialsRefreshNonce}`}
           applicationId={application.id}
           applicationVersion={application.version}
           applicationStage={application.stage}

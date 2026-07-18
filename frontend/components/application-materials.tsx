@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
 
 import {
   createApplicationArtifactRevision,
@@ -16,6 +16,7 @@ import type {
   ApplicationArtifactsResponse,
 } from "@/lib/application-artifact-types";
 import type { ApplicationStage } from "@/lib/application-types";
+import { buildInitialMaterialsGenerationPlan } from "@/lib/application-materials-auto-generation";
 import {
   buildGroundedFitStory,
   type GroundedFitStory,
@@ -56,6 +57,7 @@ interface PendingMutation {
 
 interface MutationOptions {
   intent: MutationIntent;
+  idempotencyKey?: string;
   fingerprint: string;
   expectedVersion: number;
   execute: (pending: PendingMutation) => Promise<ApplicationArtifactsResponse>;
@@ -112,6 +114,7 @@ export function ApplicationMaterials({
   const projectionRef = useRef<ApplicationArtifactsResponse | null>(null);
   const dirtyRef = useRef(false);
   const pendingRef = useRef<PendingMutation | null>(null);
+  const autoAttemptedKeyRef = useRef<string | null>(null);
   const requestGeneration = useRef(0);
 
   const setDirty = useCallback((value: boolean) => {
@@ -235,7 +238,8 @@ export function ApplicationMaterials({
       intent: options.intent,
       fingerprint: options.fingerprint,
       expectedVersion: options.expectedVersion,
-      key: createIdempotencyKey(`application-artifacts:${applicationId}:${options.intent}`),
+      key: options.idempotencyKey ??
+        createIdempotencyKey(`application-artifacts:${applicationId}:${options.intent}`),
       applied: options.applied,
       successMessage: options.successMessage,
       onConfirmed: options.onConfirmed,
@@ -377,6 +381,61 @@ export function ApplicationMaterials({
     }
     return result;
   }
+
+  const questionPayloadValid = buildQuestions() !== null;
+  const initialGenerationPlan = useMemo(() => buildInitialMaterialsGenerationPlan({
+    applicationId,
+    applicationStage,
+    projection,
+    selectedEvidenceIds,
+    questionCount: questions.length,
+    questionsValid: questionPayloadValid,
+    inputsDirty,
+  }), [
+    applicationId,
+    applicationStage,
+    inputsDirty,
+    projection,
+    questionPayloadValid,
+    questions.length,
+    selectedEvidenceIds,
+  ]);
+
+  const runInitialMutation = useEffectEvent(runMutation);
+
+  useEffect(() => {
+    if (
+      !initialGenerationPlan ||
+      busy ||
+      unresolvedIntent ||
+      autoAttemptedKeyRef.current === initialGenerationPlan.idempotencyKey
+    ) return;
+    autoAttemptedKeyRef.current = initialGenerationPlan.idempotencyKey;
+    const { payload } = initialGenerationPlan;
+    void runInitialMutation({
+      intent: "generate",
+      idempotencyKey: initialGenerationPlan.idempotencyKey,
+      fingerprint: JSON.stringify(payload),
+      expectedVersion: initialGenerationPlan.expectedPackVersion,
+      execute: (pending) => createApplicationArtifactRevision(
+        applicationId,
+        initialGenerationPlan.packId,
+        pending.expectedVersion,
+        pending.key,
+        payload,
+      ),
+      applied: (next) => revisionMatchesPayload(next.current_revision, payload),
+      successMessage: "Grounded application materials were prepared automatically.",
+      ambiguousMessage: "The automatic materials version may already be saved.",
+      onConfirmed: (next) => hydrateInputs(next, true),
+    });
+  }, [
+    applicationId,
+    busy,
+    hydrateInputs,
+    initialGenerationPlan,
+    unresolvedIntent,
+  ]);
 
   async function generateRevision() {
     if (!projection?.pack || !sourceCatalog?.reviewed_grounding_revision_id) return;
@@ -529,7 +588,6 @@ export function ApplicationMaterials({
   const revision = projection.current_revision;
   const postingClosed = projection.blockers.includes("posting_closed");
   const stageLocked = applicationStage !== "pursuing";
-  const questionPayloadValid = buildQuestions() !== null;
   const controlsLocked = Boolean(busy || unresolvedIntent || stageLocked);
   const canGenerate = Boolean(
     projection.pack &&

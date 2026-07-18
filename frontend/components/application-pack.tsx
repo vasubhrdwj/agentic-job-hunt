@@ -125,10 +125,12 @@ export function ApplicationPack({
   applicationId,
   applicationVersion,
   applicationStage,
+  onReviewed,
 }: {
   applicationId: string;
   applicationVersion: number;
   applicationStage: ApplicationStage;
+  onReviewed?: (projection: ApplicationPackResponse) => void;
 }) {
   const [projection, setProjection] = useState<ApplicationPackResponse | null>(null);
   const [resumes, setResumes] = useState<ResumeVersionSummary[]>([]);
@@ -556,6 +558,7 @@ export function ApplicationPack({
       onConfirmed: (next) => {
         setEditingReviewed(false);
         hydrateDrafts(next, true);
+        onReviewed?.(next);
       },
     });
   }
@@ -621,8 +624,9 @@ export function ApplicationPack({
       ),
       successMessage: `Revision ${revision.revision_number} is marked reviewed.`,
       ambiguousMessage: "The exact-revision review confirmation could not be verified.",
-      onConfirmed: () => {
+      onConfirmed: (next) => {
         setEditingReviewed(false);
+        onReviewed?.(next);
       },
     });
   }
