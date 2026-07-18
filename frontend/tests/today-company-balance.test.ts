@@ -64,6 +64,36 @@ test("an expanded company reveals only its own overflow", () => {
   ]);
 });
 
+test("loaded pagination increases visible diversity without losing company overflow", () => {
+  const firstPage = [
+    role("amazon-1", "Amazon", "amazon"),
+    role("stable-1", "Stable Money", "stable-money"),
+    role("amazon-2", "Amazon", "amazon"),
+    role("amazon-3", "Amazon", "amazon"),
+  ];
+  const appended = [
+    role("zeta-1", "Zeta", "zeta"),
+    role("amazon-4", "Amazon", "amazon"),
+  ];
+
+  const first = balanceTodayCompanies(firstPage, new Set());
+  const afterLoadMore = balanceTodayCompanies([...firstPage, ...appended], new Set());
+
+  assert.deepEqual(first.visibleItems.map((item) => item.id), [
+    "amazon-1",
+    "stable-1",
+    "amazon-2",
+  ]);
+  assert.equal(first.overflows[0]?.hiddenCount, 1);
+  assert.deepEqual(afterLoadMore.visibleItems.map((item) => item.id), [
+    "amazon-1",
+    "stable-1",
+    "amazon-2",
+    "zeta-1",
+  ]);
+  assert.equal(afterLoadMore.overflows[0]?.hiddenCount, 2);
+});
+
 test("the company limit rejects invalid configuration", () => {
   assert.throws(() => balanceTodayCompanies([], new Set(), 0), RangeError);
 });

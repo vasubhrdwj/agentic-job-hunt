@@ -42,6 +42,13 @@ interface UndoState {
   expiresAt: number;
 }
 
+interface CompanyExpansionState {
+  scopeKey: string;
+  companySlugs: Set<string>;
+}
+
+const NO_EXPANDED_COMPANIES = new Set<string>();
+
 export function TodayWorkspace({
   ownerLocalDate,
   ownerTimezone,
@@ -55,6 +62,7 @@ export function TodayWorkspace({
   const savedSearchId = searchParams.get("search") || undefined;
   const lane = validLane(searchParams.get("lane"));
   const scanId = searchParams.get("scan") || undefined;
+  const companyScopeKey = [view, scanId ?? "", savedSearchId ?? "", lane ?? ""].join(":");
 
   const [today, setToday] = useState<TodayResponse | null>(null);
   const [savedSearches, setSavedSearches] = useState<SavedSearch[] | null>(null);
@@ -69,8 +77,8 @@ export function TodayWorkspace({
   const [undo, setUndo] = useState<UndoState | null>(null);
   const [undoPending, setUndoPending] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
-  const [expandedCompanySlugs, setExpandedCompanySlugs] = useState<Set<string>>(
-    () => new Set(),
+  const [companyExpansion, setCompanyExpansion] = useState<CompanyExpansionState>(
+    () => ({ scopeKey: companyScopeKey, companySlugs: new Set() }),
   );
   const decisionKeys = useRef<Record<string, string>>({});
 
@@ -282,6 +290,9 @@ export function TodayWorkspace({
   }
   if (!today) return null;
 
+  const expandedCompanySlugs = companyExpansion.scopeKey === companyScopeKey
+    ? companyExpansion.companySlugs
+    : NO_EXPANDED_COMPANIES;
   const companyBalance = balanceTodayCompanies(today.items, expandedCompanySlugs);
   const warnings = uniqueWarnings([...(today.scan_health.warnings ?? []), ...(scan?.warnings ?? [])]);
   const coverageWarnings = warnings.filter(isCoverageWarning);
@@ -379,11 +390,15 @@ export function TodayWorkspace({
               overflows={companyBalance.overflows}
               expandedCompanySlugs={expandedCompanySlugs}
               onToggle={(companySlug) => {
-                setExpandedCompanySlugs((current) => {
-                  const next = new Set(current);
+                setCompanyExpansion((current) => {
+                  const next = new Set(
+                    current.scopeKey === companyScopeKey
+                      ? current.companySlugs
+                      : NO_EXPANDED_COMPANIES,
+                  );
                   if (next.has(companySlug)) next.delete(companySlug);
                   else next.add(companySlug);
-                  return next;
+                  return { scopeKey: companyScopeKey, companySlugs: next };
                 });
               }}
             />
@@ -454,7 +469,7 @@ function CompanyBalanceControls({
         Keeping your results varied
       </h2>
       <p className="mt-1 text-sm leading-6 text-indigo-900 dark:text-indigo-200">
-        Showing at most two roles per company by default{hiddenCount > 0 ? `; ${hiddenCount} repetitive role${hiddenCount === 1 ? " is" : "s are"} collapsed` : ""}. Nothing is deleted.
+        Showing at most two roles per company by default{hiddenCount > 0 ? `; ${hiddenCount} additional loaded role${hiddenCount === 1 ? " is" : "s are"} collapsed` : ""}. Nothing is deleted.
       </p>
       <div className="mt-3 flex flex-wrap gap-2">
         {overflows.map((group) => {
@@ -463,7 +478,7 @@ function CompanyBalanceControls({
             <button
               key={group.companySlug}
               type="button"
-              aria-pressed={expanded}
+              aria-expanded={expanded}
               onClick={() => onToggle(group.companySlug)}
               className="min-h-10 rounded-lg border border-indigo-300 bg-white px-3 py-2 text-xs font-medium text-indigo-800 hover:bg-indigo-100 dark:border-indigo-800 dark:bg-indigo-950 dark:text-indigo-200 dark:hover:bg-indigo-900"
             >
