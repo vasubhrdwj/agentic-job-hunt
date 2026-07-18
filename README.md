@@ -194,7 +194,7 @@ Add `--trace` to emit OpenTelemetry spans to your Phoenix project, or `--use-moc
 
 ## V2 evidence rules
 
-- `backend_india` contains 20 curated companies with live-verified ATS or first-party career sources.
+- `backend_india` contains 22 curated companies with live-verified ATS or first-party career sources.
 - Curated hunts do not fall back to paid aggregators. A failed company board degrades to an empty result and a warning.
 - Known employment-type mismatches are filtered. A posting with no explicit
   employment evidence remains visible as `unknown` so missing source metadata
