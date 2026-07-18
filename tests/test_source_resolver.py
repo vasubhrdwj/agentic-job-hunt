@@ -75,13 +75,14 @@ class FakeAdapter:
     supported_source: CompanySource | None = None
     raises: Exception | None = None
     calls: int = 0
+    criteria_calls: list[JobCriteria] = field(default_factory=list)
 
     def supports(self, company: Company) -> bool:
         return self.supported_source is None or company.source is self.supported_source
 
     def fetch_open_roles(self, company: Company, criteria: JobCriteria) -> list[Role]:
-        del criteria
         self.calls += 1
+        self.criteria_calls.append(criteria.model_copy(deep=True))
         if self.raises is not None:
             raise self.raises
         roles = self.roles_by_slug.get(company.slug, self.roles)
@@ -232,6 +233,84 @@ def test_cache_separates_fallback_enabled_and_disabled_results():
     assert with_fallback.used_fallback
     assert primary.calls == 2
     assert fallback.calls == 1
+
+
+def test_backend_search_expands_source_vocabulary_and_accepts_alias_titles():
+    requested = _criteria(role_keywords=["Backend Engineer"])
+    primary = FakeAdapter(
+        name="greenhouse",
+        supported_source=CompanySource.greenhouse,
+        roles=[
+            _role(
+                company="Twilio",
+                title="Associate Application Engineer",
+                url="https://acme.example/jobs/application-engineer",
+            ),
+            _role(
+                company="Redwood Software",
+                title="Site Reliability Engineer",
+                url="https://acme.example/jobs/site-reliability-engineer",
+            ),
+        ],
+    )
+    resolver = SourceResolver([primary], fallback=FakeAdapter(name="google_jobs"))
+
+    roles = resolver.fetch_company_roles(
+        _company(),
+        requested,
+        use_cache=False,
+        allow_fallback=False,
+    )
+
+    assert [role.title for role in roles] == [
+        "Associate Application Engineer",
+        "Site Reliability Engineer",
+    ]
+    assert requested.role_keywords == ["Backend Engineer"]
+    assert primary.criteria_calls[0].role_keywords == [
+        "Backend Engineer",
+        "Application Engineer",
+        "Site Reliability Engineer",
+        "SDE",
+        "Backend Developer",
+        "Infrastructure Engineer",
+        "Associate Software Engineer",
+        "Software Engineer",
+        "Software Development Engineer",
+        "Platform Engineer",
+    ]
+
+
+def test_custom_keyword_search_is_not_broadened_into_backend_role_family():
+    requested = _criteria(
+        role_keywords=["SCIM", "identity", "IAM", "software security"],
+    )
+    primary = FakeAdapter(
+        name="greenhouse",
+        supported_source=CompanySource.greenhouse,
+        roles=[_role(title="Identity Platform Engineer")],
+    )
+    resolver = SourceResolver([primary], fallback=FakeAdapter(name="google_jobs"))
+
+    resolver.fetch_company_roles(
+        _company(),
+        requested,
+        use_cache=False,
+        allow_fallback=False,
+    )
+
+    assert primary.criteria_calls[0].role_keywords == [
+        "SCIM",
+        "identity",
+        "IAM",
+        "software security",
+    ]
+    assert requested.role_keywords == [
+        "SCIM",
+        "identity",
+        "IAM",
+        "software security",
+    ]
 
 
 def test_filters_known_stale_and_wrong_type_but_preserves_unknown_dates():

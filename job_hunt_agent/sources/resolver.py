@@ -34,6 +34,18 @@ TRACER = trace.get_tracer(__name__)
 
 _RELATIVE_AGE = re.compile(r"(\d+)\+?\s+(minute|hour|day|week|month)s?\s+ago")
 _JUNIOR_MAX_REQUIRED_YEARS = 2.0
+_BACKEND_ROLE_FAMILY_ALIASES = (
+    "Application Engineer",
+    "Site Reliability Engineer",
+    "SDE",
+    "Backend Developer",
+    "Infrastructure Engineer",
+    "Associate Software Engineer",
+    "Backend Engineer",
+    "Software Engineer",
+    "Software Development Engineer",
+    "Platform Engineer",
+)
 _ADVANCED_TITLE_TOKENS = frozenset(
     {
         "architect",
@@ -151,10 +163,14 @@ class SourceResolver:
         non-authoritative for posting closure.
         """
 
-        criteria = JobCriteria.model_validate(criteria)
+        requested_criteria = JobCriteria.model_validate(criteria)
+        # The saved/requested criteria remains the canonical user snapshot and
+        # cache identity. Source adapters receive a derived vocabulary so common
+        # backend titles are discoverable without rewriting the user's search.
+        source_criteria = _criteria_with_backend_role_aliases(requested_criteria)
         cache_key = (
             company.model_dump_json(),
-            criteria.model_dump_json(),
+            requested_criteria.model_dump_json(),
             date.today().isoformat(),
             allow_fallback,
         )
@@ -173,7 +189,7 @@ class SourceResolver:
             span.set_attribute("job_source.company_slug", company.slug)
             span.set_attribute("job_source.configured_source", company.source.value)
             adapter = self._adapter_for(company)
-            roles, source_failed = self._fetch(adapter, company, criteria)
+            roles, source_failed = self._fetch(adapter, company, source_criteria)
             warning_codes = ["source_fetch_failed"] if source_failed else []
             used_fallback = False
             if (
@@ -186,12 +202,12 @@ class SourceResolver:
                 roles, fallback_failed = self._fetch(
                     self._fallback,
                     company,
-                    criteria,
+                    source_criteria,
                 )
                 if fallback_failed:
                     warning_codes.append("fallback_source_fetch_failed")
 
-            normalized = _filter_and_dedupe(roles, criteria)
+            normalized = _filter_and_dedupe(roles, source_criteria)
             selected_adapter = self._fallback if used_fallback else adapter
             span.set_attribute(
                 "job_source.selected_source",
@@ -363,6 +379,34 @@ def _default_adapters() -> tuple[SourceAdapter, ...]:
         AmazonAdapter(),
         GoogleJobsAdapter(),
     )
+
+
+def _criteria_with_backend_role_aliases(criteria: JobCriteria) -> JobCriteria:
+    """Return source-only criteria with conservative backend title aliases."""
+
+    normalized_keywords = [_normalized(value) for value in criteria.role_keywords]
+    keyword_token_sets = [set(value.split()) for value in normalized_keywords if value]
+    is_backend_role_search = any(
+        "backend" in tokens
+        or "sde" in tokens
+        or (
+            "software" in tokens
+            and bool(tokens.intersection({"developer", "engineer", "engineering"}))
+        )
+        for tokens in keyword_token_sets
+    )
+    if not is_backend_role_search:
+        return criteria.model_copy(deep=True)
+
+    expanded = list(criteria.role_keywords)
+    seen = {normalized for normalized in normalized_keywords if normalized}
+    for alias in _BACKEND_ROLE_FAMILY_ALIASES:
+        normalized_alias = _normalized(alias)
+        if normalized_alias in seen:
+            continue
+        expanded.append(alias)
+        seen.add(normalized_alias)
+    return criteria.model_copy(update={"role_keywords": expanded}, deep=True)
 
 
 def _filter_and_dedupe(roles: Iterable[Role], criteria: JobCriteria) -> list[Role]:
