@@ -19,6 +19,7 @@ import type {
   ApplicationPackResponse,
   ApplicationPackRevisionCreate,
 } from "@/lib/application-pack-types";
+import { prepareRequirementProposals } from "@/lib/application-pack-preparation";
 import {
   createIdempotencyKey,
   listResumeVersions,
@@ -128,7 +129,6 @@ export function ApplicationPack({
   const [drafts, setDrafts] = useState<Record<string, RequirementDraft>>({});
   const [dirty, setDirty] = useState(false);
   const [editingReviewed, setEditingReviewed] = useState(false);
-  const [reviewConfirmed, setReviewConfirmed] = useState(false);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<PendingMutation["intent"] | null>(null);
   const [unresolvedIntent, setUnresolvedIntent] = useState<PendingMutation["intent"] | null>(null);
@@ -160,21 +160,34 @@ export function ApplicationPack({
     force = false,
   ) => {
     if (!next.current_revision || (!force && dirtyRef.current)) return;
+    const prepared = prepareRequirementProposals({
+      packStatus: next.status,
+      revisionSource: next.current_revision.source,
+      hasReviewEvent: next.review_event !== null,
+      requirements: next.current_revision.requirements,
+      evidence: next.current_approved_evidence.map((item) => ({
+        id: item.id,
+        approvalState: item.approval_state,
+        skills: item.skills,
+      })),
+    });
+    const preparedByRequirementId = new Map(
+      prepared.proposals.map((proposal) => [proposal.requirementId, proposal]),
+    );
     const hydrated = Object.fromEntries(
-      next.current_revision.requirements.map((requirement) => [
-        requirement.id,
-        {
+      next.current_revision.requirements.map((requirement) => {
+        const proposal = preparedByRequirementId.get(requirement.id);
+        return [requirement.id, {
           included: true,
           importance: requirement.importance,
-          coverage: requirement.coverage,
-          evidenceIds: requirement.evidence.map((item) => item.id),
-        } satisfies RequirementDraft,
-      ]),
+          coverage: proposal?.coverage ?? requirement.coverage,
+          evidenceIds: proposal?.evidenceIds ?? requirement.evidence.map((item) => item.id),
+        } satisfies RequirementDraft];
+      }),
     );
     draftsRef.current = hydrated;
     setDrafts(hydrated);
-    setDirtyState(false);
-    setReviewConfirmed(false);
+    setDirtyState(prepared.proposals.length > 0);
   }, [setDirtyState]);
 
   const acceptResponse = useCallback((
@@ -460,7 +473,6 @@ export function ApplicationPack({
     draftsRef.current = next;
     setDrafts(next);
     setDirtyState(true);
-    setReviewConfirmed(false);
   }
 
   function toggleRequirementIncluded(requirementId: string) {
@@ -473,7 +485,6 @@ export function ApplicationPack({
     draftsRef.current = next;
     setDrafts(next);
     setDirtyState(true);
-    setReviewConfirmed(false);
   }
 
   function changeImportance(
@@ -489,7 +500,6 @@ export function ApplicationPack({
     draftsRef.current = next;
     setDrafts(next);
     setDirtyState(true);
-    setReviewConfirmed(false);
   }
 
   function toggleEvidence(requirementId: string, evidenceId: string) {
@@ -510,7 +520,6 @@ export function ApplicationPack({
     draftsRef.current = next;
     setDrafts(next);
     setDirtyState(true);
-    setReviewConfirmed(false);
   }
 
   async function saveRevision() {
@@ -546,7 +555,7 @@ export function ApplicationPack({
   async function markReviewed() {
     const pack = projection?.pack;
     const revision = projection?.current_revision;
-    if (!pack || !revision || dirty || !reviewConfirmed) return;
+    if (!pack || !revision || dirty) return;
     const payload = {
       event_type: "reviewed" as const,
       revision_id: revision.id,
@@ -571,7 +580,6 @@ export function ApplicationPack({
       successMessage: `Revision ${revision.revision_number} is marked reviewed.`,
       ambiguousMessage: "The exact-revision review confirmation could not be verified.",
       onConfirmed: () => {
-        setReviewConfirmed(false);
         setEditingReviewed(false);
       },
     });
@@ -629,6 +637,18 @@ export function ApplicationPack({
   const postingClosed = projection.blockers.includes("posting_closed");
   const selectedResume = resumes.find((resume) => resume.id === selectedResumeId) ?? null;
   const revision = projection.current_revision;
+  const preparedPlan = prepareRequirementProposals({
+    packStatus: projection.status,
+    revisionSource: revision?.source ?? null,
+    hasReviewEvent: projection.review_event !== null,
+    requirements: revision?.requirements ?? [],
+    evidence: projection.current_approved_evidence.map((item) => ({
+      id: item.id,
+      approvalState: item.approval_state,
+      skills: item.skills,
+    })),
+  });
+  const hasPreparedAssessment = preparedPlan.proposals.length > 0;
   const readOnlyReviewed = stageLocked || (projection.status === "reviewed" && !editingReviewed);
   const payloadReady = buildRevisionPayload(projection, drafts) !== null;
   const everyRequirementReviewed = Boolean(
@@ -813,9 +833,13 @@ export function ApplicationPack({
               <div className="space-y-4">
                 <div className="flex flex-wrap items-end justify-between gap-3">
                   <div>
-                    <h3 className="font-semibold">Requirements and honest coverage</h3>
+                    <h3 className="font-semibold">
+                      {hasPreparedAssessment ? "Prepared requirement assessment" : "Requirements and honest coverage"}
+                    </h3>
                     <p className="mt-1 text-sm text-zinc-500">
-                      Required and preferred statements are exact source spans. A genuine gap is a valid review outcome.
+                      {hasPreparedAssessment
+                        ? "A conservative first pass is ready. Save it as-is, or open Adjust assessment if something is wrong."
+                        : "Required and preferred statements are exact source spans. A genuine gap is a valid review outcome."}
                     </p>
                   </div>
                   {projection.status === "reviewed" && !editingReviewed && !stageLocked ? (
@@ -830,25 +854,48 @@ export function ApplicationPack({
                   ) : null}
                 </div>
 
-                <ol className="space-y-4">
-                  {revision.requirements.map((requirement) => (
-                    <RequirementCard
-                      key={requirement.id}
-                      requirement={requirement}
-                      draft={drafts[requirement.id]}
+                {hasPreparedAssessment && !readOnlyReviewed ? (
+                  <PreparedAssessmentSummary plan={preparedPlan} />
+                ) : null}
+
+                {hasPreparedAssessment && !readOnlyReviewed ? (
+                  <details className="min-w-0 rounded-xl border border-zinc-200 p-4 dark:border-zinc-800">
+                    <summary className="cursor-pointer text-sm font-semibold">Adjust assessment</summary>
+                    <p className="mt-2 text-xs leading-5 text-zinc-500">
+                      Change a proposal only after checking the exact requirement and approved evidence. No proposal is marked Supported automatically.
+                    </p>
+                    <RequirementList
+                      className="mt-4"
+                      revision={revision}
+                      drafts={drafts}
                       currentEvidence={projection.current_approved_evidence}
                       readOnly={readOnlyReviewed}
                       reviewDisabled={controlsLocked || postingClosed}
                       copyDisabled={Boolean(busy)}
-                      copied={copiedRequirementId === requirement.id}
-                      onCopy={() => void copyRequirement(requirement)}
-                      onIncluded={() => toggleRequirementIncluded(requirement.id)}
-                      onImportance={(importance) => changeImportance(requirement.id, importance)}
-                      onCoverage={(coverage) => changeCoverage(requirement.id, coverage)}
-                      onEvidence={(evidenceId) => toggleEvidence(requirement.id, evidenceId)}
+                      copiedRequirementId={copiedRequirementId}
+                      onCopy={(requirement) => void copyRequirement(requirement)}
+                      onIncluded={toggleRequirementIncluded}
+                      onImportance={changeImportance}
+                      onCoverage={changeCoverage}
+                      onEvidence={toggleEvidence}
                     />
-                  ))}
-                </ol>
+                  </details>
+                ) : (
+                  <RequirementList
+                    revision={revision}
+                    drafts={drafts}
+                    currentEvidence={projection.current_approved_evidence}
+                    readOnly={readOnlyReviewed}
+                    reviewDisabled={controlsLocked || postingClosed}
+                    copyDisabled={Boolean(busy)}
+                    copiedRequirementId={copiedRequirementId}
+                    onCopy={(requirement) => void copyRequirement(requirement)}
+                    onIncluded={toggleRequirementIncluded}
+                    onImportance={changeImportance}
+                    onCoverage={changeCoverage}
+                    onEvidence={toggleEvidence}
+                  />
+                )}
               </div>
             )}
 
@@ -877,11 +924,17 @@ export function ApplicationPack({
                 <div className="flex flex-wrap gap-3">
                   <button
                     type="button"
-                      disabled={saveActionLocked || postingClosed || !dirty || !payloadReady}
+                    disabled={saveActionLocked || postingClosed || !dirty || !payloadReady}
                     onClick={() => void saveRevision()}
                     className={primaryButtonClasses}
                   >
-                    {busy === "save" ? "Saving immutable revision…" : unresolvedIntent === "save" ? "Retry unchanged save" : "Save as new immutable review version"}
+                    {busy === "save"
+                      ? "Saving immutable revision…"
+                      : unresolvedIntent === "save"
+                        ? "Retry unchanged save"
+                        : hasPreparedAssessment
+                          ? "Save prepared assessment"
+                          : "Save as new immutable review version"}
                   </button>
                   {editingReviewed && !dirty ? (
                     <button
@@ -900,18 +953,9 @@ export function ApplicationPack({
                   className={`rounded-xl border border-zinc-200 p-4 dark:border-zinc-800 ${!canConfirmReview || controlsLocked || postingClosed ? "opacity-60" : ""}`}
                 >
                   <legend className="px-1 text-sm font-semibold">Confirm the exact saved revision</legend>
-                  <label className="flex items-start gap-3 text-sm leading-6">
-                    <input
-                      type="checkbox"
-                      className="mt-1"
-                      disabled={!canConfirmReview || controlsLocked || postingClosed}
-                      checked={reviewConfirmed}
-                      onChange={(event) => setReviewConfirmed(event.target.checked)}
-                    />
-                    <span>
-                      I reviewed every requirement in revision {revision.revision_number}, including all Partial and Unsupported gaps, against currently approved evidence.
-                    </span>
-                  </label>
+                  <p className="text-sm leading-6 text-zinc-600 dark:text-zinc-400">
+                    This records that you checked revision {revision.revision_number}, including its Partial matches and Unsupported gaps, against currently approved evidence.
+                  </p>
                   {!canConfirmReview ? (
                     <p className="mt-2 text-xs text-zinc-500">
                       Save local changes and resolve every Needs review or changed-evidence blocker first.
@@ -919,7 +963,7 @@ export function ApplicationPack({
                   ) : null}
                   <button
                     type="button"
-                    disabled={!canConfirmReview || !reviewConfirmed || reviewActionLocked || postingClosed}
+                    disabled={!canConfirmReview || reviewActionLocked || postingClosed}
                     onClick={() => void markReviewed()}
                     className={`${primaryButtonClasses} mt-4`}
                   >
@@ -938,6 +982,89 @@ export function ApplicationPack({
         )}
       </div>
     </section>
+  );
+}
+
+function PreparedAssessmentSummary({
+  plan,
+}: {
+  plan: ReturnType<typeof prepareRequirementProposals>;
+}) {
+  return (
+    <div className="rounded-xl border border-indigo-200 bg-indigo-50/70 p-4 dark:border-indigo-900 dark:bg-indigo-950/25">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="rounded-full bg-blue-100 px-2.5 py-1 text-xs font-semibold text-blue-900 dark:bg-blue-950 dark:text-blue-100">
+          {plan.partialCount} Partial match{plan.partialCount === 1 ? "" : "es"}
+        </span>
+        <span className="rounded-full bg-zinc-200 px-2.5 py-1 text-xs font-semibold text-zinc-800 dark:bg-zinc-800 dark:text-zinc-200">
+          {plan.unsupportedCount} proposed gap{plan.unsupportedCount === 1 ? "" : "s"}
+        </span>
+        <span className="text-xs text-zinc-500">
+          {plan.matchedEvidenceCount} approved achievement{plan.matchedEvidenceCount === 1 ? "" : "s"} linked
+        </span>
+      </div>
+      <p className="mt-3 text-sm leading-6 text-zinc-700 dark:text-zinc-300">
+        Exact approved skill-tag matches are prepared as Partial, never Supported. Requirements with no exact tag match are only proposed as Unsupported and remain unsaved until you save this assessment.
+      </p>
+    </div>
+  );
+}
+
+function RequirementList({
+  className = "",
+  revision,
+  drafts,
+  currentEvidence,
+  readOnly,
+  reviewDisabled,
+  copyDisabled,
+  copiedRequirementId,
+  onCopy,
+  onIncluded,
+  onImportance,
+  onCoverage,
+  onEvidence,
+}: {
+  className?: string;
+  revision: NonNullable<ApplicationPackResponse["current_revision"]>;
+  drafts: Record<string, RequirementDraft>;
+  currentEvidence: AchievementEvidence[];
+  readOnly: boolean;
+  reviewDisabled: boolean;
+  copyDisabled: boolean;
+  copiedRequirementId: string | null;
+  onCopy: (requirement: ApplicationPackRequirementResponse) => void;
+  onIncluded: (requirementId: string) => void;
+  onImportance: (
+    requirementId: string,
+    importance: ApplicationPackRequirementImportance,
+  ) => void;
+  onCoverage: (
+    requirementId: string,
+    coverage: ApplicationPackRequirementCoverage,
+  ) => void;
+  onEvidence: (requirementId: string, evidenceId: string) => void;
+}) {
+  return (
+    <ol className={`space-y-4 ${className}`.trim()}>
+      {revision.requirements.map((requirement) => (
+        <RequirementCard
+          key={requirement.id}
+          requirement={requirement}
+          draft={drafts[requirement.id]}
+          currentEvidence={currentEvidence}
+          readOnly={readOnly}
+          reviewDisabled={reviewDisabled}
+          copyDisabled={copyDisabled}
+          copied={copiedRequirementId === requirement.id}
+          onCopy={() => onCopy(requirement)}
+          onIncluded={() => onIncluded(requirement.id)}
+          onImportance={(importance) => onImportance(requirement.id, importance)}
+          onCoverage={(coverage) => onCoverage(requirement.id, coverage)}
+          onEvidence={(evidenceId) => onEvidence(requirement.id, evidenceId)}
+        />
+      ))}
+    </ol>
   );
 }
 
