@@ -108,6 +108,27 @@ def test_full_revision_rejects_duplicate_ids_ordinals_and_spans() -> None:
         )
 
 
+@pytest.mark.parametrize("value", [False, 1, "true"])
+def test_inline_review_confirmation_requires_json_boolean_true(value: object) -> None:
+    with pytest.raises(ValidationError, match="boolean true"):
+        ApplicationPackRevisionCreate.model_validate(
+            {
+                "parent_revision_id": "revision1",
+                "requirements": [_requirement()],
+                "confirm_requirements_reviewed": value,
+            }
+        )
+
+    confirmed = ApplicationPackRevisionCreate.model_validate(
+        {
+            "parent_revision_id": "revision1",
+            "requirements": [_requirement()],
+            "confirm_requirements_reviewed": True,
+        }
+    )
+    assert confirmed.confirm_requirements_reviewed is True
+
+
 def test_revision_response_binds_requirement_to_exact_description_span() -> None:
     revision = _revision()
     requirement = revision.requirements[0]

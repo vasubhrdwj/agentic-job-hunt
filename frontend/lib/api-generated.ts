@@ -1989,6 +1989,11 @@ export interface components {
         };
         /** ApplicationPackRevisionCreate */
         ApplicationPackRevisionCreate: {
+            /**
+             * Confirm Requirements Reviewed
+             * @description When true, atomically records review of the exact immutable revision created by this request.
+             */
+            confirm_requirements_reviewed?: true | null;
             /** Parent Revision Id */
             parent_revision_id: string;
             /** Requirements */

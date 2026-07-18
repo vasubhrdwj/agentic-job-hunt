@@ -2685,6 +2685,19 @@
       "ApplicationPackRevisionCreate": {
         "additionalProperties": false,
         "properties": {
+          "confirm_requirements_reviewed": {
+            "anyOf": [
+              {
+                "const": true,
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "When true, atomically records review of the exact immutable revision created by this request.",
+            "title": "Confirm Requirements Reviewed"
+          },
           "parent_revision_id": {
             "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
             "title": "Parent Revision Id",

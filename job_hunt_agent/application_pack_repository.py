@@ -273,7 +273,9 @@ def create_application_pack_revision(
         namespace=f"application_pack.revision:{pack.id}",
         idempotency_key=idempotency_key,
         request={
-            "payload": payload.model_dump(mode="json"),
+            # Keep the legacy unconfirmed request hash stable while allowing an
+            # explicit atomic save-and-review command.
+            "payload": payload.model_dump(mode="json", exclude_none=True),
             "expected_pack_version": expected_pack_version,
         },
         now=current,
@@ -317,6 +319,16 @@ def create_application_pack_revision(
         description=stored[1],
         keyring=keyring,
     )
+    if payload.confirm_requirements_reviewed is True:
+        _require_reviewable_requirements(requirements)
+        if not _mapped_evidence_is_current(
+            session,
+            owner_id=owner_id,
+            requirements=requirements,
+            keyring=keyring,
+            lock=True,
+        ):
+            raise ResourceConflict("mapped evidence changed; reload approved evidence")
     revision_id = uuid4().hex
     revision = _add_revision(
         session,
@@ -331,6 +343,14 @@ def create_application_pack_revision(
         keyring=keyring,
         now=current,
     )
+    if payload.confirm_requirements_reviewed is True:
+        _add_review_event(
+            session,
+            pack=pack,
+            revision=revision,
+            idempotency_key=idempotency_key,
+            now=current,
+        )
     pack.version += 1
     pack.updated_at = current
     session.flush()
@@ -420,13 +440,7 @@ def record_application_pack_event(
         raise ResourceConflict("this application-pack revision is already reviewed")
     stored = _load_revision_payload(revision, keyring=keyring)
     requirements = stored[2]
-    if not requirements:
-        raise ResourceConflict("at least one requirement must be reviewed")
-    if any(
-        item.coverage is ApplicationPackRequirementCoverage.needs_review
-        for item in requirements
-    ):
-        raise ResourceConflict("every requirement must be reviewed before confirmation")
+    _require_reviewable_requirements(requirements)
     if not _mapped_evidence_is_current(
         session,
         owner_id=owner_id,
@@ -436,28 +450,13 @@ def record_application_pack_event(
     ):
         raise ResourceConflict("mapped evidence changed; create a fresh review revision")
 
-    next_sequence = int(
-        session.scalar(
-            select(func.max(ApplicationPackEvent.sequence_number)).where(
-                ApplicationPackEvent.owner_id == owner_id,
-                ApplicationPackEvent.application_pack_id == pack.id,
-            )
-        )
-        or 0
-    ) + 1
-    event = ApplicationPackEvent(
-        id=uuid4().hex,
-        owner_id=owner_id,
-        application_id=application_id,
-        application_pack_id=pack.id,
-        revision_id=revision.id,
-        sequence_number=next_sequence,
-        event_type="reviewed",
-        occurred_at=current,
-        idempotency_key_hash=_sha256(idempotency_key.strip()),
-        created_at=current,
+    _add_review_event(
+        session,
+        pack=pack,
+        revision=revision,
+        idempotency_key=idempotency_key,
+        now=current,
     )
-    session.add(event)
     pack.version += 1
     pack.updated_at = current
     session.flush()
@@ -839,6 +838,51 @@ def _mapped_evidence_is_current(
         if current != expected:
             return False
     return True
+
+
+def _require_reviewable_requirements(
+    requirements: list[ApplicationPackRequirementResponse],
+) -> None:
+    if not requirements:
+        raise ResourceConflict("at least one requirement must be reviewed")
+    if any(
+        item.coverage is ApplicationPackRequirementCoverage.needs_review
+        for item in requirements
+    ):
+        raise ResourceConflict("every requirement must be reviewed before confirmation")
+
+
+def _add_review_event(
+    session: Session,
+    *,
+    pack: ApplicationPack,
+    revision: ApplicationPackRevision,
+    idempotency_key: str,
+    now: datetime,
+) -> ApplicationPackEvent:
+    next_sequence = int(
+        session.scalar(
+            select(func.max(ApplicationPackEvent.sequence_number)).where(
+                ApplicationPackEvent.owner_id == pack.owner_id,
+                ApplicationPackEvent.application_pack_id == pack.id,
+            )
+        )
+        or 0
+    ) + 1
+    event = ApplicationPackEvent(
+        id=uuid4().hex,
+        owner_id=pack.owner_id,
+        application_id=pack.application_id,
+        application_pack_id=pack.id,
+        revision_id=revision.id,
+        sequence_number=next_sequence,
+        event_type="reviewed",
+        occurred_at=now,
+        idempotency_key_hash=_sha256(idempotency_key.strip()),
+        created_at=now,
+    )
+    session.add(event)
+    return event
 
 
 def _evidence_snapshot(

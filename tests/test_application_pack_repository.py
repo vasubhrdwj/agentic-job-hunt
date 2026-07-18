@@ -205,7 +205,12 @@ def _create(
         )
 
 
-def _review_payload(created, *, needs_review: bool = False) -> ApplicationPackRevisionCreate:
+def _review_payload(
+    created,
+    *,
+    needs_review: bool = False,
+    confirm: bool = False,
+) -> ApplicationPackRevisionCreate:
     assert created.current_revision is not None
     evidence = created.current_approved_evidence[0]
     requirements = []
@@ -241,6 +246,7 @@ def _review_payload(created, *, needs_review: bool = False) -> ApplicationPackRe
     return ApplicationPackRevisionCreate(
         parent_revision_id=created.current_revision.id,
         requirements=requirements,
+        confirm_requirements_reviewed=True if confirm else None,
     )
 
 
@@ -408,6 +414,126 @@ def test_review_revisions_are_immutable_and_latest_review_event_wins(
         assert session.scalar(select(func.count(ApplicationPackEvent.id))) == 2
 
 
+def test_prepared_review_is_saved_and_confirmed_atomically_and_idempotently(
+    pack_workspace: tuple[Database, DataKeyring, str],
+) -> None:
+    database, keyring, resume_id = pack_workspace
+    created = _create(database, keyring, resume_id)
+    assert created is not None and created.pack is not None
+    payload = _review_payload(created, confirm=True)
+
+    with database.session() as session:
+        reviewed = create_application_pack_revision(
+            session,
+            owner_id="owner-a",
+            application_id="application1",
+            pack_id=created.pack.id,
+            payload=payload,
+            expected_pack_version=1,
+            idempotency_key="prepared-review",
+            keyring=keyring,
+            now=NOW + timedelta(minutes=3),
+        )
+
+    assert reviewed is not None and reviewed.pack is not None
+    assert reviewed.pack.version == 2
+    assert reviewed.status.value == "reviewed"
+    assert reviewed.current_revision is not None
+    assert reviewed.current_revision.revision_number == 2
+    assert reviewed.reviewed_revision is not None
+    assert reviewed.reviewed_revision.id == reviewed.current_revision.id
+    assert reviewed.review_event is not None
+    assert reviewed.review_event.revision_id == reviewed.current_revision.id
+
+    with database.session() as session:
+        replayed = create_application_pack_revision(
+            session,
+            owner_id="owner-a",
+            application_id="application1",
+            pack_id=created.pack.id,
+            payload=payload,
+            expected_pack_version=1,
+            idempotency_key="prepared-review",
+            keyring=keyring,
+            now=NOW + timedelta(minutes=4),
+        )
+    assert replayed is not None and replayed.review_event is not None
+    assert replayed.review_event.id == reviewed.review_event.id
+
+    with pytest.raises(MutationIdempotencyConflict):
+        with database.session() as session:
+            create_application_pack_revision(
+                session,
+                owner_id="owner-a",
+                application_id="application1",
+                pack_id=created.pack.id,
+                payload=_review_payload(created, confirm=False),
+                expected_pack_version=1,
+                idempotency_key="prepared-review",
+                keyring=keyring,
+            )
+
+    with database.session() as session:
+        assert session.scalar(select(func.count(ApplicationPackRevision.id))) == 2
+        assert session.scalar(select(func.count(ApplicationPackEvent.id))) == 1
+
+
+def test_atomic_review_rejects_needs_review_and_stale_evidence_without_partial_writes(
+    pack_workspace: tuple[Database, DataKeyring, str],
+) -> None:
+    database, keyring, resume_id = pack_workspace
+    created = _create(database, keyring, resume_id)
+    assert created is not None and created.pack is not None
+
+    with pytest.raises(ResourceConflict, match="every requirement"):
+        with database.session() as session:
+            create_application_pack_revision(
+                session,
+                owner_id="owner-a",
+                application_id="application1",
+                pack_id=created.pack.id,
+                payload=_review_payload(created, needs_review=True, confirm=True),
+                expected_pack_version=1,
+                idempotency_key="incomplete-prepared-review",
+                keyring=keyring,
+            )
+
+    with database.session() as session:
+        evidence = session.scalar(
+            select(AchievementEvidence).where(AchievementEvidence.owner_id == "owner-a")
+        )
+        assert evidence is not None
+        retired = update_achievement_evidence(
+            session,
+            owner_id="owner-a",
+            evidence_id=evidence.id,
+            patch=AchievementEvidencePatch(approval_state="retired"),
+            expected_version=evidence.version,
+            keyring=keyring,
+            now=NOW + timedelta(minutes=5),
+        )
+        assert retired is not None
+
+    with pytest.raises(ResourceConflict, match="mapped evidence changed|currently approved"):
+        with database.session() as session:
+            create_application_pack_revision(
+                session,
+                owner_id="owner-a",
+                application_id="application1",
+                pack_id=created.pack.id,
+                payload=_review_payload(created, confirm=True),
+                expected_pack_version=1,
+                idempotency_key="stale-prepared-review",
+                keyring=keyring,
+            )
+
+    with database.session() as session:
+        pack = session.get(ApplicationPack, created.pack.id)
+        assert pack is not None and pack.version == 1
+        assert session.scalar(select(func.count(ApplicationPackRevision.id))) == 1
+        assert session.scalar(select(func.count(ApplicationPackEvent.id))) == 0
+
+
 def test_review_blocks_needs_review_stale_evidence_and_stale_pack_version(
     pack_workspace: tuple[Database, DataKeyring, str],
 ) -> None:
@@ -421,7 +547,7 @@ def test_review_blocks_needs_review_stale_evidence_and_stale_pack_version(
                 owner_id="owner-a",
                 application_id="application1",
                 pack_id=created.pack.id,
-                payload=_review_payload(created),
+                payload=_review_payload(created, confirm=True),
                 expected_pack_version=99,
                 idempotency_key="stale-revision",
                 keyring=keyring,
@@ -608,7 +734,7 @@ def test_closed_posting_is_readable_but_all_pack_mutations_are_blocked(
                 owner_id="owner-a",
                 application_id="application1",
                 pack_id=created.pack.id,
-                payload=_review_payload(created),
+                payload=_review_payload(created, confirm=True),
                 expected_pack_version=1,
                 idempotency_key="closed-revision",
                 keyring=keyring,

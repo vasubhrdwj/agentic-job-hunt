@@ -145,7 +145,10 @@ class FakeApplicationPackStore:
         )
         if application_id != "application1" or pack_id != "pack1":
             return None
-        return _response(version=4)
+        return _response(
+            version=4,
+            reviewed=payload.confirm_requirements_reviewed is True,
+        )
 
     def record_application_pack_event(
         self,
@@ -268,11 +271,17 @@ def test_pack_mutations_forward_versions_keys_and_strict_payloads(
     revision = client.post(
         "/api/applications/application1/application-packs/pack1/revisions",
         headers={**headers, "If-Match": '"3"', "Idempotency-Key": "revision"},
-        json={"parent_revision_id": "revision1", "requirements": [requirement]},
+        json={
+            "parent_revision_id": "revision1",
+            "requirements": [requirement],
+            "confirm_requirements_reviewed": True,
+        },
     )
     assert revision.status_code == 201, revision.text
+    assert revision.json()["status"] == "reviewed"
     assert revision.headers["etag"] == '"4"'
     assert store.calls[-1][1]["expected_pack_version"] == 3
+    assert store.calls[-1][1]["payload"].confirm_requirements_reviewed is True
 
     reviewed = client.post(
         "/api/applications/application1/application-packs/pack1/events",

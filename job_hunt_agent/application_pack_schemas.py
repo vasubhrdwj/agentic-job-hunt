@@ -137,6 +137,20 @@ class ApplicationPackRevisionCreate(ApplicationPackContractModel):
         min_length=1,
         max_length=MAX_APPLICATION_PACK_REQUIREMENTS,
     )
+    confirm_requirements_reviewed: Literal[True] | None = Field(
+        default=None,
+        description=(
+            "When true, atomically records review of the exact immutable revision "
+            "created by this request."
+        ),
+    )
+
+    @field_validator("confirm_requirements_reviewed", mode="before")
+    @classmethod
+    def inline_confirmation_is_boolean_true(cls, value: object) -> object:
+        if value is not None and value is not True:
+            raise ValueError("confirm_requirements_reviewed must be the boolean true")
+        return value
 
     @model_validator(mode="after")
     def full_review_is_unique(self) -> Self:

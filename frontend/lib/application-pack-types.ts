@@ -54,6 +54,7 @@ export interface ApplicationPackRequirementReview {
 export interface ApplicationPackRevisionCreate {
   parent_revision_id: string;
   requirements: ApplicationPackRequirementReview[];
+  confirm_requirements_reviewed?: true;
 }
 
 export interface ApplicationPackReviewedEventCreate {
