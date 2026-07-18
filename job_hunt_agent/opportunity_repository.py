@@ -135,6 +135,20 @@ class PersistedRole:
     replayed: bool
 
 
+@dataclass(frozen=True)
+class _LegacyTodayCursor:
+    surfaced_at: datetime
+    opportunity_id: str
+
+
+@dataclass(frozen=True)
+class _DiverseTodayCursor:
+    snapshot_at: datetime
+    company_position: int
+    surfaced_at: datetime
+    opportunity_id: str
+
+
 def canonicalize_posting_url(value: str) -> str:
     """Return a stable HTTPS identity URL or reject an unsafe posting URL.
 
@@ -506,13 +520,13 @@ def list_today_opportunities(
         TodayView.watching: "watch",
         TodayView.dismissed: "dismiss",
     }
-    statement = select(OwnerOpportunity).where(OwnerOpportunity.owner_id == owner_id)
+    filters = [OwnerOpportunity.owner_id == owner_id]
     if query.view is not TodayView.all:
-        statement = statement.where(
+        filters.append(
             OwnerOpportunity.decision == decision_by_view[query.view]
         )
     if query.scan_id is not None:
-        statement = statement.where(
+        filters.append(
             OwnerOpportunity.job_posting_id.in_(
                 select(JobObservation.job_posting_id).where(
                     JobObservation.owner_id == owner_id,
@@ -521,7 +535,7 @@ def list_today_opportunities(
             )
         )
     if query.saved_search_id is not None:
-        statement = statement.where(
+        filters.append(
             OwnerOpportunity.job_posting_id.in_(
                 select(SavedSearchMatch.job_posting_id).where(
                     SavedSearchMatch.owner_id == owner_id,
@@ -530,33 +544,104 @@ def list_today_opportunities(
             )
         )
     cursor = _decode_cursor(query.cursor) if query.cursor else None
-    if cursor is not None:
-        cursor_time, cursor_id = cursor
-        statement = statement.where(
-            (OwnerOpportunity.last_surfaced_at < cursor_time)
-            | (
-                (OwnerOpportunity.last_surfaced_at == cursor_time)
-                & (OwnerOpportunity.id < cursor_id)
+    company_positions: list[int] = []
+    if isinstance(cursor, _LegacyTodayCursor):
+        # Cursors issued before company-diverse ordering must finish traversing
+        # the old recency order. Switching order mid-pagination can duplicate or
+        # omit rows, so legacy tokens deliberately retain legacy semantics.
+        legacy_statement = (
+            select(OwnerOpportunity)
+            .where(*filters)
+            .where(
+                (OwnerOpportunity.last_surfaced_at < cursor.surfaced_at)
+                | (
+                    (OwnerOpportunity.last_surfaced_at == cursor.surfaced_at)
+                    & (OwnerOpportunity.id < cursor.opportunity_id)
+                )
             )
+            .order_by(
+                OwnerOpportunity.last_surfaced_at.desc(),
+                OwnerOpportunity.id.desc(),
+            )
+            .limit(query.limit + 1)
         )
-    statement = statement.order_by(
-        OwnerOpportunity.last_surfaced_at.desc(),
-        OwnerOpportunity.id.desc(),
-    ).limit(query.limit + 1)
-    rows = list(session.scalars(statement))
+        rows = list(session.scalars(legacy_statement))
+    else:
+        snapshot_at = cursor.snapshot_at if cursor is not None else current
+        company_position = func.row_number().over(
+            partition_by=JobPosting.company_slug,
+            order_by=(
+                OwnerOpportunity.last_surfaced_at.desc(),
+                OwnerOpportunity.id.desc(),
+            ),
+        ).label("company_position")
+        ranked = (
+            select(
+                OwnerOpportunity.id.label("opportunity_id"),
+                OwnerOpportunity.last_surfaced_at.label("surfaced_at"),
+                company_position,
+            )
+            .join(
+                JobPosting,
+                (JobPosting.owner_id == OwnerOpportunity.owner_id)
+                & (JobPosting.id == OwnerOpportunity.job_posting_id),
+            )
+            .where(*filters)
+            .where(OwnerOpportunity.last_surfaced_at <= snapshot_at)
+            .cte("ranked_today_opportunities")
+        )
+        diverse_statement = select(
+            OwnerOpportunity,
+            ranked.c.company_position,
+        ).join(
+            ranked,
+            ranked.c.opportunity_id == OwnerOpportunity.id,
+        )
+        if cursor is not None:
+            diverse_statement = diverse_statement.where(
+                (ranked.c.company_position > cursor.company_position)
+                | (
+                    (ranked.c.company_position == cursor.company_position)
+                    & (ranked.c.surfaced_at < cursor.surfaced_at)
+                )
+                | (
+                    (ranked.c.company_position == cursor.company_position)
+                    & (ranked.c.surfaced_at == cursor.surfaced_at)
+                    & (ranked.c.opportunity_id < cursor.opportunity_id)
+                )
+            )
+        diverse_statement = diverse_statement.order_by(
+            ranked.c.company_position.asc(),
+            ranked.c.surfaced_at.desc(),
+            ranked.c.opportunity_id.desc(),
+        ).limit(query.limit + 1)
+        ranked_rows = list(session.execute(diverse_statement))
+        rows = [row[0] for row in ranked_rows]
+        company_positions = [int(row[1]) for row in ranked_rows]
     if query.lane not in (None, OpportunityLane.unassigned):
         rows = []
+        company_positions = []
     has_more = len(rows) > query.limit
     selected = rows[: query.limit]
+    selected_company_positions = company_positions[: query.limit]
     items = [
         _today_item(session, opportunity=row, keyring=keyring)
         for row in selected
     ]
-    next_cursor = (
-        _encode_cursor(selected[-1].last_surfaced_at, selected[-1].id)
-        if has_more and selected
-        else None
-    )
+    next_cursor = None
+    if has_more and selected:
+        if isinstance(cursor, _LegacyTodayCursor):
+            next_cursor = _encode_cursor(
+                selected[-1].last_surfaced_at,
+                selected[-1].id,
+            )
+        else:
+            next_cursor = _encode_diverse_cursor(
+                snapshot_at=snapshot_at,
+                company_position=selected_company_positions[-1],
+                surfaced_at=selected[-1].last_surfaced_at,
+                opportunity_id=selected[-1].id,
+            )
     return TodayListResponse(
         data_source="database",
         as_of=current,
@@ -1097,17 +1182,60 @@ def _encode_cursor(value: datetime, opportunity_id: str) -> str:
     return base64.urlsafe_b64encode(raw).decode("ascii").rstrip("=")
 
 
-def _decode_cursor(value: str) -> tuple[datetime, str]:
+def _encode_diverse_cursor(
+    *,
+    snapshot_at: datetime,
+    company_position: int,
+    surfaced_at: datetime,
+    opportunity_id: str,
+) -> str:
+    raw = _canonical_json(
+        [
+            "company_round_robin_v1",
+            _as_utc(snapshot_at).isoformat(),
+            company_position,
+            _as_utc(surfaced_at).isoformat(),
+            opportunity_id,
+        ]
+    ).encode("utf-8")
+    return base64.urlsafe_b64encode(raw).decode("ascii").rstrip("=")
+
+
+def _decode_cursor(value: str) -> _LegacyTodayCursor | _DiverseTodayCursor:
     try:
         padded = value + "=" * (-len(value) % 4)
         decoded = json.loads(base64.urlsafe_b64decode(padded).decode("utf-8"))
-        timestamp, opportunity_id = decoded
-        parsed = datetime.fromisoformat(timestamp)
+        if not isinstance(decoded, list):
+            raise ValueError("cursor is invalid")
+        if len(decoded) == 2:
+            timestamp, opportunity_id = decoded
+            return _LegacyTodayCursor(
+                surfaced_at=_as_utc(datetime.fromisoformat(timestamp)),
+                opportunity_id=_valid_cursor_opportunity_id(opportunity_id),
+            )
+        if len(decoded) == 5 and decoded[0] == "company_round_robin_v1":
+            _, snapshot, company_position, timestamp, opportunity_id = decoded
+            if (
+                not isinstance(company_position, int)
+                or isinstance(company_position, bool)
+                or company_position < 1
+            ):
+                raise ValueError("cursor is invalid")
+            return _DiverseTodayCursor(
+                snapshot_at=_as_utc(datetime.fromisoformat(snapshot)),
+                company_position=company_position,
+                surfaced_at=_as_utc(datetime.fromisoformat(timestamp)),
+                opportunity_id=_valid_cursor_opportunity_id(opportunity_id),
+            )
+        raise ValueError("cursor is invalid")
     except (TypeError, ValueError, UnicodeError, json.JSONDecodeError) as exc:
         raise ValueError("cursor is invalid") from exc
-    if not isinstance(opportunity_id, str) or not opportunity_id:
+
+
+def _valid_cursor_opportunity_id(value: object) -> str:
+    if not isinstance(value, str) or not value:
         raise ValueError("cursor is invalid")
-    return _as_utc(parsed), opportunity_id
+    return value
 
 
 def _trimmed(value: str | None, limit: int) -> str | None:

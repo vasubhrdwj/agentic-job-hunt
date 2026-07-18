@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import hashlib
 import json
 from datetime import datetime, timedelta, timezone
@@ -620,6 +621,194 @@ def test_today_scan_filter_returns_only_owner_observations_from_that_scan(
         assert foreign_owner.summary.needs_decision == 0
         assert missing_scan.items == []
         assert missing_scan.summary.needs_decision == 0
+
+
+def test_today_round_robins_companies_and_paginates_without_loss(
+    radar: tuple[Database, DataKeyring],
+) -> None:
+    database, keyring = radar
+    with database.session() as session:
+        _seed_scan_source(
+            session,
+            "owner-a",
+            "search-a",
+            "scan-amazon",
+            "source-amazon",
+            company_slug="amazon",
+        )
+        amazon_source = session.get(OpportunityScanSource, "source-amazon")
+        assert amazon_source is not None
+        amazon_source.observed_count = 25
+        amazon_source.returned_count = 25
+        expected_ids: set[str] = set()
+        newest_amazon: tuple[str, datetime] | None = None
+        for index in range(25):
+            surfaced_at = NOW + timedelta(minutes=60 + index)
+            persisted = persist_scan_source_role(
+                session,
+                owner_id="owner-a",
+                scan_source_id="source-amazon",
+                role=_role(
+                    company="Amazon",
+                    company_slug="amazon",
+                    source_job_id=f"amazon-{index}",
+                    url=f"https://jobs.amazon.example/{index}",
+                    title=f"Software Development Engineer {index}",
+                ),
+                first_party_url_verified=True,
+                now=surfaced_at,
+            )
+            expected_ids.add(persisted.opportunity_id)
+            newest_amazon = (persisted.opportunity_id, surfaced_at)
+
+        for company, minute in (("beta", 10), ("gamma", 8)):
+            scan_id = f"scan-{company}"
+            source_id = f"source-{company}"
+            _seed_scan_source(
+                session,
+                "owner-a",
+                "search-a",
+                scan_id,
+                source_id,
+                company_slug=company,
+            )
+            company_source = session.get(OpportunityScanSource, source_id)
+            assert company_source is not None
+            company_source.observed_count = 2
+            company_source.returned_count = 2
+            for index in range(2):
+                persisted = persist_scan_source_role(
+                    session,
+                    owner_id="owner-a",
+                    scan_source_id=source_id,
+                    role=_role(
+                        company=company.title(),
+                        company_slug=company,
+                        source_job_id=f"{company}-{index}",
+                        url=f"https://jobs.{company}.example/{index}",
+                        title=f"Backend Engineer {index}",
+                    ),
+                    first_party_url_verified=True,
+                    now=NOW + timedelta(minutes=minute - index),
+                )
+                expected_ids.add(persisted.opportunity_id)
+
+        _seed_scan_source(
+            session,
+            "owner-b",
+            "search-b",
+            "scan-b-private",
+            "source-b-private",
+            company_slug="private-company",
+        )
+        foreign = persist_scan_source_role(
+            session,
+            owner_id="owner-b",
+            scan_source_id="source-b-private",
+            role=_role(
+                company="Private Company",
+                company_slug="private-company",
+                source_job_id="private-role",
+                url="https://jobs.private.example/private-role",
+            ),
+            first_party_url_verified=True,
+            now=NOW + timedelta(minutes=100),
+        )
+
+        page_now = NOW + timedelta(hours=2)
+        first = list_today_opportunities(
+            session,
+            owner_id="owner-a",
+            query=TodayQuery(limit=7),
+            keyring=keyring,
+            now=page_now,
+        )
+        repeated_first = list_today_opportunities(
+            session,
+            owner_id="owner-a",
+            query=TodayQuery(limit=7),
+            keyring=keyring,
+            now=page_now,
+        )
+
+        assert {item.posting.company_slug for item in first.items[:3]} == {
+            "amazon",
+            "beta",
+            "gamma",
+        }
+        assert [item.id for item in repeated_first.items] == [
+            item.id for item in first.items
+        ]
+        assert repeated_first.next_cursor == first.next_cursor
+        assert foreign.opportunity_id not in {item.id for item in first.items}
+
+        # A role arriving after page one belongs to the next fresh inbox load,
+        # not in the cursor's stable snapshot.
+        _seed_scan_source(
+            session,
+            "owner-a",
+            "search-a",
+            "scan-after-page",
+            "source-after-page",
+            company_slug="amazon",
+        )
+        later = persist_scan_source_role(
+            session,
+            owner_id="owner-a",
+            scan_source_id="source-after-page",
+            role=_role(
+                company="Amazon",
+                company_slug="amazon",
+                source_job_id="amazon-later",
+                url="https://jobs.amazon.example/later",
+            ),
+            first_party_url_verified=True,
+            now=NOW + timedelta(hours=3),
+        )
+
+        seen = [item.id for item in first.items]
+        cursor = first.next_cursor
+        page_count = 1
+        while cursor is not None:
+            page = list_today_opportunities(
+                session,
+                owner_id="owner-a",
+                query=TodayQuery(limit=7, cursor=cursor),
+                keyring=keyring,
+                now=NOW + timedelta(hours=4),
+            )
+            seen.extend(item.id for item in page.items)
+            cursor = page.next_cursor
+            page_count += 1
+            assert page_count <= 6
+
+        assert len(seen) == len(expected_ids) == 29
+        assert len(seen) == len(set(seen))
+        assert set(seen) == expected_ids
+        assert later.opportunity_id not in seen
+
+        # Pre-deploy two-field cursors remain valid and keep the former recency
+        # order rather than changing sort semantics halfway through traversal.
+        assert newest_amazon is not None
+        legacy_payload = json.dumps(
+            [newest_amazon[1].isoformat(), newest_amazon[0]],
+            separators=(",", ":"),
+        ).encode("utf-8")
+        legacy_cursor = (
+            base64.urlsafe_b64encode(legacy_payload).decode("ascii").rstrip("=")
+        )
+        legacy_page = list_today_opportunities(
+            session,
+            owner_id="owner-a",
+            query=TodayQuery(limit=3, cursor=legacy_cursor),
+            keyring=keyring,
+            now=NOW + timedelta(hours=4),
+        )
+        assert [item.posting.company_slug for item in legacy_page.items] == [
+            "amazon",
+            "amazon",
+            "amazon",
+        ]
 
 
 def test_late_lock_with_older_scan_time_keeps_posting_history_monotonic(
