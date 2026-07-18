@@ -120,13 +120,25 @@ export interface TransparentMatchSummary {
   state: "assessed" | "not_assessed";
   algorithm_version: string | null;
   resume_version_id: string | null;
+  assessment_saved_search_id: string | null;
+  fit_band:
+    | "strong"
+    | "promising"
+    | "stretch"
+    | "low"
+    | "insufficient_data"
+    | null;
+  confidence: "high" | "medium" | "low" | null;
   matched_terms: string[];
   representative_requirement: string | null;
   approved_evidence_ids: string[];
+  strengths: string[];
+  gaps: string[];
   not_assessed_reason:
     | "assessment_pending"
     | "resume_unavailable"
     | "description_unavailable"
+    | "assessment_unavailable"
     | "not_requested"
     | null;
 }

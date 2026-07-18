@@ -7,6 +7,7 @@ import type {
   TodayOpportunityItem,
   TransparentMatchSummary,
 } from "@/lib/opportunity-types";
+import { opportunityFitPresentation } from "@/lib/opportunity-fit";
 import { OpportunityActions } from "./opportunity-actions";
 
 export function OpportunityCard({
@@ -31,6 +32,11 @@ export function OpportunityCard({
       <div className="flex min-w-0 flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2 text-xs">
+            {opportunity.match.state === "assessed" && opportunity.match.fit_band ? (
+              <span className={`rounded-full px-2 py-1 font-semibold ${opportunityFitPresentation(opportunity.match.fit_band).badgeClasses}`}>
+                {opportunityFitPresentation(opportunity.match.fit_band).label}
+              </span>
+            ) : null}
             <StateBadge>{titleCase(opportunity.lane)}</StateBadge>
             <StateBadge>{titleCase(posting.change_kind)}</StateBadge>
             <span className="text-zinc-500">First seen {relativeDate(posting.first_seen_at)}</span>
@@ -155,21 +161,55 @@ export function OpportunityFactGrid({ facts }: { facts: OpportunityFacts }) {
 
 export function MatchEvidence({ opportunity }: { opportunity: TodayOpportunityItem }) {
   const match = opportunity.match;
-  if (match.state === "not_assessed") {
+  if (match.state === "not_assessed" || !match.fit_band || !match.confidence) {
     return (
       <section className="mt-5 rounded-xl border border-zinc-200 p-4 dark:border-zinc-800">
-        <h3 className="text-sm font-semibold">Resume evidence</h3>
+        <h3 className="text-sm font-semibold">Automatic fit assessment</h3>
         <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
-          {notAssessedLabel(match.not_assessed_reason)} No fit score has been invented.
+          {notAssessedLabel(match.not_assessed_reason)}
         </p>
       </section>
     );
   }
+  const presentation = opportunityFitPresentation(match.fit_band);
   return (
-    <section className="mt-5 rounded-xl border border-zinc-200 p-4 dark:border-zinc-800">
-      <h3 className="text-sm font-semibold">Transparent resume match</h3>
+    <section className={`mt-5 rounded-xl border p-4 ${presentation.panelClasses}`}>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[0.12em] text-zinc-500">
+            Automatic fit assessment
+          </p>
+          <h3 className="mt-1 text-lg font-semibold">{presentation.label}</h3>
+        </div>
+        <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${presentation.badgeClasses}`}>
+          {titleCase(match.confidence)} confidence
+        </span>
+      </div>
+      <p className="mt-2 text-sm leading-6 text-zinc-700 dark:text-zinc-300">
+        {presentation.guidance}
+      </p>
+      {match.strengths.length > 0 ? (
+        <div className="mt-4">
+          <h4 className="text-xs font-semibold uppercase tracking-wide text-zinc-600 dark:text-zinc-300">
+            Why it fits
+          </h4>
+          <ul className="mt-2 space-y-1 text-sm leading-6 text-zinc-700 dark:text-zinc-300">
+            {match.strengths.map((strength) => <li key={strength}>✓ {strength}</li>)}
+          </ul>
+        </div>
+      ) : null}
+      {match.gaps.length > 0 ? (
+        <div className="mt-4">
+          <h4 className="text-xs font-semibold uppercase tracking-wide text-zinc-600 dark:text-zinc-300">
+            What to verify
+          </h4>
+          <ul className="mt-2 space-y-1 text-sm leading-6 text-zinc-700 dark:text-zinc-300">
+            {match.gaps.map((gap) => <li key={gap}>• {gap}</li>)}
+          </ul>
+        </div>
+      ) : null}
       {match.matched_terms.length > 0 ? (
-        <div className="mt-3 flex flex-wrap gap-2" aria-label="Matched resume terms">
+        <div className="mt-4 flex flex-wrap gap-2" aria-label="Supported job-description skills">
           {match.matched_terms.map((term) => (
             <span key={term} className="rounded-full bg-emerald-50 px-2.5 py-1 text-xs text-emerald-800 dark:bg-emerald-950 dark:text-emerald-200">
               {term}
@@ -177,8 +217,8 @@ export function MatchEvidence({ opportunity }: { opportunity: TodayOpportunityIt
           ))}
         </div>
       ) : (
-        <p className="mt-2 text-sm text-zinc-600 dark:text-zinc-400">
-          The deterministic comparison found no meaningful overlap. Review manually.
+        <p className="mt-4 text-sm text-zinc-600 dark:text-zinc-400">
+          No meaningful technical overlap was found in the saved résumé and approved evidence.
         </p>
       )}
       {match.representative_requirement ? (
@@ -188,7 +228,7 @@ export function MatchEvidence({ opportunity }: { opportunity: TodayOpportunityIt
         </p>
       ) : null}
       <p className="mt-2 text-[11px] text-zinc-500">
-        Local method: {match.algorithm_version}. Approved evidence links: {match.approved_evidence_ids.length}.
+        Local rule-based method: {match.algorithm_version}. Approved evidence links: {match.approved_evidence_ids.length}. No paid model or invented percentage.
       </p>
     </section>
   );
@@ -237,7 +277,8 @@ function notAssessedLabel(reason: TransparentMatchSummary["not_assessed_reason"]
     assessment_pending: "The saved local comparison is still pending.",
     resume_unavailable: "No usable resume version was available for comparison.",
     description_unavailable: "The source did not provide enough job-description text.",
-    not_requested: "A local comparison was not requested for this role.",
+    assessment_unavailable: "The saved private inputs could not be read safely, so no recommendation was produced.",
+    not_requested: "This role has not been compared with your saved profile yet.",
   };
   return reason ? labels[reason] : "This role has not been assessed.";
 }
