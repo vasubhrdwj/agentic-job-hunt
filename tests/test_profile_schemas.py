@@ -135,6 +135,7 @@ def test_profile_write_rejects_defaults_only_but_legacy_data_remains_readable() 
         CandidateProfileWrite(onboarding_step="complete")
 
     legacy = CandidateProfileData()
+    assert legacy.years_of_experience is None
     assert legacy.employment_types == ["full_time"]
     assert legacy.onboarding_step == "profile"
 
@@ -144,6 +145,8 @@ def test_profile_write_rejects_defaults_only_but_legacy_data_remains_readable() 
     [
         {"current_title": "Backend Engineer"},
         {"current_location": "Bengaluru"},
+        {"years_of_experience": 0},
+        {"years_of_experience": 1.5},
         {"career_thesis": "Build reliable developer infrastructure."},
         {"work_modes": ["remote"]},
         {
@@ -158,6 +161,12 @@ def test_profile_write_accepts_each_meaningful_detail(
     payload: dict[str, object],
 ) -> None:
     assert CandidateProfileWrite.model_validate(payload)
+
+
+@pytest.mark.parametrize("years", [-0.1, 60.1, float("inf"), float("nan")])
+def test_profile_rejects_invalid_years_of_experience(years: float) -> None:
+    with pytest.raises(ValidationError):
+        CandidateProfileWrite(years_of_experience=years)
 
 
 def test_evidence_is_pending_by_contract_until_explicit_patch() -> None:

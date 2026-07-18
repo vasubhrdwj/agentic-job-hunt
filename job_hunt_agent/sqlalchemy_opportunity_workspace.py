@@ -345,6 +345,7 @@ class SqlAlchemyOpportunityWorkspaceStore:
         *,
         owner_id: str,
         opportunity_id: str,
+        saved_search_id: str | None = None,
     ) -> OpportunityDetailResponse | None:
         with _opportunity_errors(), self.database.session() as session:
             return load_opportunity_detail(
@@ -352,6 +353,7 @@ class SqlAlchemyOpportunityWorkspaceStore:
                 owner_id=owner_id,
                 opportunity_id=opportunity_id,
                 keyring=self.keyring,
+                selected_saved_search_id=saved_search_id,
             )
 
     def decide_opportunity(

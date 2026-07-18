@@ -121,6 +121,7 @@ export interface TransparentMatchSummary {
   algorithm_version: string | null;
   resume_version_id: string | null;
   assessment_saved_search_id: string | null;
+  assessment_input_fingerprint: string | null;
   fit_band:
     | "strong"
     | "promising"

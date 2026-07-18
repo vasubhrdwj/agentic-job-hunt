@@ -72,9 +72,15 @@ export async function getToday(query: TodayQuery): Promise<TodayResponse> {
   );
 }
 
-export async function getOpportunity(id: string): Promise<OpportunityDetail> {
+export async function getOpportunity(
+  id: string,
+  savedSearchId?: string | null,
+): Promise<OpportunityDetail> {
+  const params = new URLSearchParams();
+  if (savedSearchId) params.set("saved_search_id", savedSearchId);
+  const query = params.size ? `?${params.toString()}` : "";
   return json<OpportunityDetail>(
-    await fetch(`/api/opportunities/${encodeURIComponent(id)}`, { cache: "no-store" }),
+    await fetch(`/api/opportunities/${encodeURIComponent(id)}${query}`, { cache: "no-store" }),
   );
 }
 

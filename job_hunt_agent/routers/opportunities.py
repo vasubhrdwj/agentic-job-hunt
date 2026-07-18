@@ -165,12 +165,14 @@ def create_opportunity_router(
     def get_opportunity(
         opportunity_id: OpaqueId,
         response: Response,
+        saved_search_id: OpaqueId | None = Query(default=None),
         owner: AuthenticatedOwner = Security(require_read_owner),
     ) -> OpportunityDetailResponse:
         opportunity = _invoke(
             _store(store).get_opportunity,
             owner_id=owner.owner_id,
             opportunity_id=opportunity_id,
+            saved_search_id=saved_search_id,
         )
         if opportunity is None:
             _not_found("opportunity")

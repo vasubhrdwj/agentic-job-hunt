@@ -357,9 +357,10 @@ def test_saved_search_provenance_is_ordered_and_deduplicated() -> None:
 def test_match_summary_is_transparent_or_explicitly_not_assessed() -> None:
     assessed = TransparentMatchSummary(
         state="assessed",
-        algorithm_version="backend-opportunity-fit-v2",
+        algorithm_version="backend-opportunity-fit-v3",
         resume_version_id="resume1",
         assessment_saved_search_id="search1",
+        assessment_input_fingerprint="a" * 64,
         fit_band="strong",
         confidence="high",
         eligibility="eligible",
@@ -390,13 +391,43 @@ def test_match_summary_is_transparent_or_explicitly_not_assessed() -> None:
     with pytest.raises(ValidationError, match="strengths must not contain duplicates"):
         TransparentMatchSummary(
             state="assessed",
-            algorithm_version="backend-opportunity-fit-v2",
+            algorithm_version="backend-opportunity-fit-v3",
             resume_version_id="resume1",
             assessment_saved_search_id="search1",
+            assessment_input_fingerprint="a" * 64,
             fit_band="promising",
             confidence="medium",
             eligibility="uncertain",
             strengths=["Supported by AWS evidence.", "supported by aws evidence."],
+        )
+
+    common = {
+        "state": "assessed",
+        "algorithm_version": "backend-opportunity-fit-v3",
+        "resume_version_id": "resume1",
+        "assessment_saved_search_id": "search1",
+        "assessment_input_fingerprint": "b" * 64,
+    }
+    with pytest.raises(ValidationError, match="strong matches"):
+        TransparentMatchSummary(
+            **common,
+            fit_band="strong",
+            confidence="low",
+            eligibility="eligible",
+        )
+    with pytest.raises(ValidationError, match="likely-ineligible"):
+        TransparentMatchSummary(
+            **common,
+            fit_band="promising",
+            confidence="medium",
+            eligibility="likely_ineligible",
+        )
+    with pytest.raises(ValidationError, match="insufficient-data"):
+        TransparentMatchSummary(
+            **common,
+            fit_band="insufficient_data",
+            confidence="high",
+            eligibility="eligible",
         )
 
 

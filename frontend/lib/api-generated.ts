@@ -2255,6 +2255,8 @@ export interface components {
             work_authorizations?: components["schemas"]["WorkAuthorization"][];
             /** Work Modes */
             work_modes?: ("remote" | "hybrid" | "onsite")[];
+            /** Years Of Experience */
+            years_of_experience?: number | null;
         };
         /** CandidateProfileWrite */
         CandidateProfileWrite: {
@@ -2278,6 +2280,8 @@ export interface components {
             work_authorizations?: components["schemas"]["WorkAuthorization"][];
             /** Work Modes */
             work_modes?: ("remote" | "hybrid" | "onsite")[];
+            /** Years Of Experience */
+            years_of_experience?: number | null;
         };
         /** CareerPriorities */
         CareerPriorities: {
@@ -5206,6 +5210,8 @@ export interface components {
             algorithm_version?: string | null;
             /** Approved Evidence Ids */
             approved_evidence_ids?: string[];
+            /** Assessment Input Fingerprint */
+            assessment_input_fingerprint?: string | null;
             /** Assessment Saved Search Id */
             assessment_saved_search_id?: string | null;
             confidence?: components["schemas"]["AssessmentConfidence"] | null;
@@ -9509,7 +9515,9 @@ export interface operations {
     };
     get_opportunity_api_opportunities__opportunity_id__get: {
         parameters: {
-            query?: never;
+            query?: {
+                saved_search_id?: string | null;
+            };
             header?: never;
             path: {
                 opportunity_id: string;

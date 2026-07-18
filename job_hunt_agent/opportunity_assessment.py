@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from typing import Literal
 
 
-ASSESSMENT_ALGORITHM_VERSION = "backend-opportunity-fit-v2"
+ASSESSMENT_ALGORITHM_VERSION = "backend-opportunity-fit-v3"
 FitBand = Literal["strong", "promising", "stretch", "low", "insufficient_data"]
 AssessmentConfidence = Literal["high", "medium", "low"]
 EligibilityState = Literal["eligible", "uncertain", "likely_ineligible"]
@@ -70,8 +70,38 @@ class OpportunityAssessment:
 
 @dataclass(frozen=True)
 class _ExperienceRequirement:
-    minimum_years: int
+    minimum_years: float
     text: str
+    hard: bool
+
+
+@dataclass(frozen=True)
+class _RequirementClause:
+    text: str
+    soft: bool
+
+
+@dataclass(frozen=True)
+class _SkillRequirements:
+    required: frozenset[str]
+    optional: frozenset[str]
+    alternatives: tuple[frozenset[str], ...]
+
+    @property
+    def all_skills(self) -> frozenset[str]:
+        return frozenset(
+            set(self.required)
+            | set(self.optional)
+            | set().union(*self.alternatives, set())
+        )
+
+    @property
+    def required_skills(self) -> frozenset[str]:
+        return frozenset(set(self.required) | set().union(*self.alternatives, set()))
+
+    @property
+    def unit_count(self) -> int:
+        return len(self.required) + len(self.alternatives)
 
 
 _SKILL_PATTERNS: tuple[tuple[str, tuple[str, ...]], ...] = (
@@ -137,6 +167,20 @@ _ROLE_GROUP_PATTERNS: dict[str, tuple[str, ...]] = {
     "mobile": ("android", "ios", "mobile engineer"),
     "data": ("data engineer", "analytics engineer", "data scientist"),
     "security": ("security engineer", "application security"),
+    "quality": (
+        "quality assurance",
+        "qa engineer",
+        "test automation",
+        "automation engineer",
+        "software development engineer in test",
+        "sdet",
+    ),
+    "machine_learning": (
+        "machine learning",
+        "ml engineer",
+        "ai engineer",
+        "artificial intelligence",
+    ),
     "product": ("product manager", "product owner", "product management"),
     "business": (
         "administrative",
@@ -149,13 +193,53 @@ _ROLE_GROUP_PATTERNS: dict[str, tuple[str, ...]] = {
 }
 _ADJACENT_ROLE_GROUPS = frozenset({"backend", "software", "platform"})
 _SPECIALIST_ROLE_GROUPS = frozenset(
-    {"backend", "platform", "frontend", "mobile", "data", "security", "product", "business"}
+    {
+        "backend",
+        "platform",
+        "frontend",
+        "mobile",
+        "data",
+        "security",
+        "quality",
+        "machine_learning",
+        "product",
+        "business",
+    }
 )
 _SENIORITY_ORDER = {"junior": 0, "mid": 1, "senior": 2, "staff": 3}
 _SENTENCE_SPLIT = re.compile(r"(?:[\r\n]+|(?<=[.!?]))\s+")
 _EXPERIENCE = re.compile(
-    r"\b(?P<minimum>\d+)(?:\s*(?:[-–—]|to)\s*(?P<maximum>\d+))?"
+    r"\b(?P<minimum>\d+(?:[.]\d+)?)"
+    r"(?:\s*(?:[-–—]|to)\s*(?P<maximum>\d+(?:[.]\d+)?))?"
     r"\s*[+]?(?:\s+years?|\s+yrs?)\b",
+    re.IGNORECASE,
+)
+_SOFT_REQUIREMENT = re.compile(
+    r"\b(?:preferred|optional|ideally|nice to have|bonus|desirable)\b",
+    re.IGNORECASE,
+)
+_SOFT_SECTION = re.compile(
+    r"^(?:preferred|optional|nice to have|bonus|desirable|additional)\b",
+    re.IGNORECASE,
+)
+_HARD_SECTION = re.compile(
+    r"^(?:requirements?|required|minimum|(?:basic )?qualifications?|must have|"
+    r"responsibilities|what you(?: will|'ll) do)\b",
+    re.IGNORECASE,
+)
+_NEGATED_REQUIREMENT = re.compile(
+    r"\b(?:not required|no .{0,40}required|"
+    r"without requiring|do not need)\b",
+    re.IGNORECASE,
+)
+_HARD_EXPERIENCE = re.compile(
+    r"\b(?:required?|requires?|minimum|at least|must|need(?:ed|s)?)\b",
+    re.IGNORECASE,
+)
+_COMPANY_TENURE = re.compile(
+    r"\b(?:company|business|organization|founders?|team|we)\b.{0,40}"
+    r"\b(?:has|have|been|operat(?:e|ed|ing)|serv(?:e|ed|ing)|exist(?:ed|ing)?)\b|"
+    r"\b(?:serving customers|in business)\b",
     re.IGNORECASE,
 )
 _COUNTRY_PATTERNS: tuple[tuple[str, tuple[str, ...]], ...] = (
@@ -192,20 +276,25 @@ def assess_opportunity(
     resume_text: str,
     evidence: tuple[AssessmentEvidence, ...],
 ) -> OpportunityAssessment:
-    description = " ".join(posting.description.split())
+    description = _normalize_description(posting.description)
     candidate_text = " ".join(
         [resume_text, *(item.statement for item in evidence), *(" ".join(item.skills) for item in evidence)]
     )
-    jd_skills = _extract_skills(description)
+    requirements = _classify_skill_requirements(description)
+    jd_skills = set(requirements.all_skills)
+    required_skills = set(requirements.required_skills)
     candidate_skills = _extract_skills(candidate_text)
     matched_skills = jd_skills & candidate_skills
+    matched_required_skills = required_skills & candidate_skills
+    matched_requirement_units = _matched_requirement_units(requirements, candidate_skills)
 
     supporting = sorted(
         (
             (
                 index,
                 item.id,
-                jd_skills & _extract_skills(f"{item.statement} {' '.join(item.skills)}"),
+                required_skills
+                & _extract_skills(f"{item.statement} {' '.join(item.skills)}"),
             )
             for index, item in enumerate(evidence)
         ),
@@ -218,32 +307,43 @@ def assess_opportunity(
             supporting_ids_list.append(item_id)
             evidence_supported_skills.update(supported_skills)
     supporting_ids = tuple(supporting_ids_list)
+    evidence_supported_units = _matched_requirement_units(
+        requirements,
+        evidence_supported_skills,
+    )
 
     earned = 0.0
     known = 0.0
     relevance_conflict = False
+    role_uncertain = False
     eligibility_conflicts: list[str] = []
     eligibility_unknowns: list[str] = []
+    critical_gaps: list[str] = []
     gaps: list[str] = []
 
-    role_points, role_known, role_conflict = _role_alignment(posting.title, target.role_families)
+    role_points, role_known, role_conflict, role_uncertain = _role_alignment(
+        posting.title,
+        target.role_families,
+    )
     earned += role_points
     known += role_known
     if role_conflict:
         relevance_conflict = True
-        gaps.append("The role title is outside your saved target role families.")
+        critical_gaps.append("The role title is outside your saved target role families.")
+    elif role_uncertain:
+        gaps.append("The role title needs verification against your saved target role families.")
 
-    if jd_skills:
+    if requirements.unit_count:
         known += 40
-        skill_coverage = len(matched_skills) / len(jd_skills)
+        skill_coverage = matched_requirement_units / requirements.unit_count
         earned += 40 * skill_coverage
     else:
         skill_coverage = None
 
-    if jd_skills:
+    if required_skills:
         known += 20
-        evidence_target = min(3, len(jd_skills))
-        earned += 20 * min(1, len(evidence_supported_skills) / evidence_target)
+        evidence_target = min(3, requirements.unit_count)
+        earned += 20 * min(1, evidence_supported_units / evidence_target)
 
     employment_points, employment_known, employment_conflict = _employment_alignment(
         posting.employment_type,
@@ -253,7 +353,7 @@ def assess_opportunity(
     known += employment_known
     if employment_conflict:
         eligibility_conflicts.append("employment")
-        gaps.append("The posting's employment type conflicts with your saved preference.")
+        critical_gaps.append("The posting's employment type conflicts with your saved preference.")
     elif employment_known == 0:
         eligibility_unknowns.append("employment")
         gaps.append("The employment type could not be checked against your preference.")
@@ -267,7 +367,9 @@ def assess_opportunity(
     known += location_known
     if location_conflict:
         eligibility_conflicts.append("location")
-        gaps.append(location_gap or "The posting location conflicts with your saved target.")
+        critical_gaps.append(
+            location_gap or "The posting location conflicts with your saved target."
+        )
     elif location_unknown:
         eligibility_unknowns.append("location")
         gaps.append(location_gap or "The posting location could not be checked safely.")
@@ -276,10 +378,14 @@ def assess_opportunity(
         posting.location,
         profile.current_location,
         profile.work_authorizations,
+        target.target_locations,
     )
     if authorization_conflict:
         eligibility_conflicts.append("authorization")
-        gaps.append(authorization_gap or "Your saved work authorization conflicts with this location.")
+        critical_gaps.append(
+            authorization_gap
+            or "Your saved work authorization conflicts with this location."
+        )
     elif authorization_unknown:
         eligibility_unknowns.append("authorization")
         gaps.append(authorization_gap or "Work authorization needs verification.")
@@ -291,24 +397,43 @@ def assess_opportunity(
     earned += seniority_points
     known += seniority_known
     if above_target:
-        gaps.append("The title appears more senior than your saved target level.")
+        critical_gaps.append("The title appears more senior than your saved target level.")
 
-    missing_skills = _ordered_missing_skills(description, jd_skills - candidate_skills)
+    missing_skills = _ordered_skills(set(requirements.required) - candidate_skills)
     if missing_skills:
         gaps.append(
             "Not found in your approved résumé/evidence: " + ", ".join(missing_skills[:4]) + "."
         )
+    missing_alternatives = [
+        group for group in requirements.alternatives if not (group & candidate_skills)
+    ]
+    if missing_alternatives:
+        choices = ", ".join(_ordered_skills(set(missing_alternatives[0])))
+        gaps.append(f"Not found in your approved résumé/evidence: one of {choices}.")
     experience_requirement = _experience_requirement(description)
+    preferred_experience_gap = False
     if experience_requirement:
-        if profile.years_of_experience is None:
+        if not experience_requirement.hard:
+            if (
+                profile.years_of_experience is not None
+                and profile.years_of_experience + 0.25
+                < experience_requirement.minimum_years
+            ):
+                preferred_experience_gap = True
+                gaps.append(
+                    "The posting prefers at least "
+                    f"{experience_requirement.minimum_years:g} years; "
+                    f"your profile records {profile.years_of_experience:g}."
+                )
+        elif profile.years_of_experience is None:
             eligibility_unknowns.append("experience")
             gaps.append(
                 "Verify the stated experience requirement: " + experience_requirement.text
             )
         elif profile.years_of_experience + 0.25 < experience_requirement.minimum_years:
             eligibility_conflicts.append("experience")
-            gaps.append(
-                f"The posting asks for at least {experience_requirement.minimum_years} years; "
+            critical_gaps.append(
+                f"The posting asks for at least {experience_requirement.minimum_years:g} years; "
                 f"your profile records {profile.years_of_experience:g}."
             )
 
@@ -322,7 +447,7 @@ def assess_opportunity(
 
     normalized_score = 100 * earned / known if known else 0
     full_description = len(description) >= 400
-    signal_count = len(jd_skills) + int(experience_requirement is not None)
+    signal_count = requirements.unit_count + int(experience_requirement is not None)
     description_sufficient = len(description) >= 200 and signal_count >= 2
     confidence: AssessmentConfidence
     if known >= 80 and full_description and signal_count >= 3:
@@ -335,19 +460,21 @@ def assess_opportunity(
         confidence = "medium"
 
     thin_skill_coverage = (
-        skill_coverage is not None and len(jd_skills) >= 4 and skill_coverage < 0.4
+        skill_coverage is not None
+        and requirements.unit_count >= 4
+        and skill_coverage < 0.4
     )
     if relevance_conflict or eligibility == "likely_ineligible":
         fit_band: FitBand = "low"
     elif not description_sufficient:
         fit_band = "insufficient_data"
-    elif above_target or thin_skill_coverage:
+    elif role_uncertain or above_target or thin_skill_coverage or preferred_experience_gap:
         fit_band = "stretch"
     elif (
         normalized_score >= 70
         and known >= 70
-        and len(matched_skills) >= 3
-        and len(evidence_supported_skills) >= 2
+        and len(matched_required_skills) >= 3
+        and evidence_supported_units >= 2
         and eligibility == "eligible"
         and confidence == "high"
     ):
@@ -383,7 +510,7 @@ def assess_opportunity(
         representative_requirement=_representative_requirement(description, matched_skills),
         approved_evidence_ids=supporting_ids[:20],
         strengths=tuple(strengths[:3]),
-        gaps=tuple(_deduplicate(gaps)[:3]),
+        gaps=tuple(_deduplicate([*critical_gaps, *gaps])[:3]),
     )
 
 
@@ -407,12 +534,85 @@ def _extract_skills(text: str) -> set[str]:
     return skills
 
 
+def _classify_skill_requirements(description: str) -> _SkillRequirements:
+    required: set[str] = set()
+    optional: set[str] = set()
+    alternatives: list[frozenset[str]] = []
+    for clause in _requirement_clauses(description):
+        skills = _extract_skills(clause.text)
+        if not skills or _NEGATED_REQUIREMENT.search(clause.text):
+            continue
+        if clause.soft:
+            optional.update(skills)
+            continue
+        alternative = _alternative_skill_group(clause.text, skills)
+        if alternative is not None:
+            alternatives.append(alternative)
+            required.update(skills - alternative)
+        else:
+            required.update(skills)
+
+    normalized_alternatives: list[frozenset[str]] = []
+    seen_groups: set[frozenset[str]] = set()
+    for group in alternatives:
+        remaining = frozenset(group - required)
+        if len(remaining) < 2 or remaining in seen_groups:
+            continue
+        normalized_alternatives.append(remaining)
+        seen_groups.add(remaining)
+    alternative_skills = set().union(*normalized_alternatives, set())
+    optional.difference_update(required | alternative_skills)
+    return _SkillRequirements(
+        required=frozenset(required),
+        optional=frozenset(optional),
+        alternatives=tuple(normalized_alternatives),
+    )
+
+
+def _alternative_skill_group(text: str, skills: set[str]) -> frozenset[str] | None:
+    if len(skills) < 2:
+        return None
+    or_matches = list(re.finditer(r"\bor\b", text, re.IGNORECASE))
+    if not or_matches:
+        return None
+    conjunction = or_matches[-1]
+    prefix = text[: conjunction.start()]
+    start_markers = list(
+        re.finditer(
+            r"\b(?:either|one of|plus|with|using|in|and)\b|:",
+            prefix,
+            re.IGNORECASE,
+        )
+    )
+    start = start_markers[-1].end() if start_markers else 0
+    suffix = re.split(
+        r",\s*(?:plus|and)\b|\b(?:plus|along with|as well as|and)\b|;",
+        text[conjunction.end() :],
+        maxsplit=1,
+        flags=re.IGNORECASE,
+    )[0]
+    segment = f"{prefix[start:]} or {suffix}"
+    alternatives = _extract_skills(segment)
+    if len(alternatives) >= 2:
+        return frozenset(alternatives)
+    return None
+
+
+def _matched_requirement_units(
+    requirements: _SkillRequirements,
+    candidate_skills: set[str],
+) -> int:
+    return len(requirements.required & candidate_skills) + sum(
+        bool(group & candidate_skills) for group in requirements.alternatives
+    )
+
+
 def _role_alignment(
     title: str,
     role_families: tuple[str, ...],
-) -> tuple[float, float, bool]:
+) -> tuple[float, float, bool, bool]:
     if not role_families:
-        return 0, 0, False
+        return 0, 0, False, True
     normalized_title = _normalized(title)
     normalized_families = tuple(_normalized(value) for value in role_families)
     title_groups = _role_groups(normalized_title)
@@ -424,24 +624,25 @@ def _role_alignment(
         or title_specialists <= _ADJACENT_ROLE_GROUPS
         and target_specialists <= _ADJACENT_ROLE_GROUPS
     ):
-        return 0, 30, True
+        return 0, 30, True, False
     if any(family in normalized_title or normalized_title in family for family in normalized_families):
-        return 30, 30, False
+        return 30, 30, False, False
     if title_groups & target_groups:
-        return 30, 30, False
+        return 30, 30, False, False
     if title_groups & _ADJACENT_ROLE_GROUPS and target_groups & _ADJACENT_ROLE_GROUPS:
-        return 20, 30, False
+        return 20, 30, False, False
     # Provider titles such as "Member of Technical Staff" do not expose a
     # recognizable role family. Treat them as unknown rather than fabricating
     # a conflict; explicit frontend/product/etc. conflicts are handled above.
-    return 0, 30, bool(title_groups and target_groups)
+    explicit_conflict = bool(title_groups and target_groups)
+    return 0, 30, explicit_conflict, not explicit_conflict
 
 
 def _role_groups(value: str) -> set[str]:
     return {
         group
         for group, patterns in _ROLE_GROUP_PATTERNS.items()
-        if any(pattern in value for pattern in patterns)
+        if any(_contains_phrase(value, _normalized(pattern)) for pattern in patterns)
     }
 
 
@@ -465,34 +666,45 @@ def _location_alignment(
     if not location:
         return 0, 0, False, True, "The posting location was not provided."
 
-    posting_mode = next(
-        (mode for mode in ("remote", "hybrid", "onsite") if mode in location),
-        "onsite" if "on site" in location else None,
-    )
+    posting_modes = {
+        mode for mode in ("remote", "hybrid", "onsite") if mode in location
+    }
+    if "on site" in location:
+        posting_modes.add("onsite")
     allowed_modes = {mode.casefold() for mode in work_modes}
-    if posting_mode and allowed_modes and posting_mode not in allowed_modes:
+    if posting_modes and allowed_modes and not (posting_modes & allowed_modes):
         return (
             0,
             4,
             True,
             False,
-            f"The posting appears {posting_mode}, outside your saved work modes.",
+            "The posting's offered work modes are outside your saved work modes.",
+        )
+    if not posting_modes and allowed_modes and allowed_modes != {
+        "remote",
+        "hybrid",
+        "onsite",
+    }:
+        return (
+            0,
+            0,
+            False,
+            True,
+            "The posting does not state a work mode, so your work-mode preference needs verification.",
         )
 
-    posting_country = _country_code(posting_value or "")
-    target_countries = {
-        code
-        for target in target_locations
-        if (code := _country_code(target)) is not None
-    }
-    if posting_country and target_countries:
-        if posting_country not in target_countries:
+    posting_countries = _country_codes(posting_value or "")
+    target_countries = set().union(
+        *(_country_codes(target) for target in target_locations),
+        set(),
+    )
+    if posting_countries and target_countries:
+        if not (posting_countries & target_countries):
             return 0, 4, True, False, "The posting geography is outside your saved target locations."
         return 4, 4, False, False, None
 
     if any(
         _contains_phrase(location, _normalized(target))
-        or _contains_phrase(_normalized(target), location)
         for target in target_locations
     ):
         return 4, 4, False, False, None
@@ -503,28 +715,62 @@ def _authorization_check(
     posting_location: str | None,
     current_location: str | None,
     authorizations: tuple[AssessmentAuthorization, ...],
+    target_locations: tuple[str, ...],
 ) -> tuple[bool, bool, str | None]:
-    posting_country = _country_code(posting_location or "")
-    if posting_country is None:
+    posting_countries = _country_codes(posting_location or "")
+    if not posting_countries:
         return False, False, None
-    if posting_country == _country_code(current_location or ""):
-        return False, False, None
-    authorization = next(
-        (
-            item
-            for item in authorizations
-            if item.country_code.strip().upper() == posting_country
-        ),
-        None,
+    target_countries = set().union(
+        *(_country_codes(target) for target in target_locations),
+        set(),
     )
-    if authorization is None:
-        return False, True, f"Work authorization for {posting_country} is not recorded."
-    status = authorization.status.strip().casefold()
-    if status == "not_authorized":
-        return True, False, f"Your profile says you are not authorized to work in {posting_country}."
-    if status in {"needs_sponsorship", "other"}:
-        return False, True, f"Work authorization for {posting_country} needs verification."
-    return False, False, None
+    compatible_countries = (
+        posting_countries & target_countries
+        if target_countries
+        else posting_countries
+    )
+    if not compatible_countries:
+        # Geography already reports the hard conflict; authorization cannot
+        # rescue an option outside the saved target.
+        return False, False, None
+    authorization_by_country = {
+        item.country_code.strip().upper(): item.status.strip().casefold()
+        for item in authorizations
+    }
+    eligible_statuses = {"citizen", "permanent_resident", "work_permit"}
+    if any(
+        authorization_by_country.get(country) in eligible_statuses
+        for country in compatible_countries
+    ):
+        return False, False, None
+
+    uncertain_countries = sorted(
+        country
+        for country in compatible_countries
+        if authorization_by_country.get(country) in {None, "needs_sponsorship", "other"}
+    )
+    if uncertain_countries:
+        current_countries = _country_codes(current_location or "")
+        location_note = (
+            " Current location is not treated as proof of authorization."
+            if current_countries & set(uncertain_countries)
+            else ""
+        )
+        return (
+            False,
+            True,
+            "Work authorization needs verification for "
+            + ", ".join(uncertain_countries)
+            + "."
+            + location_note,
+        )
+
+    countries = ", ".join(sorted(compatible_countries))
+    return (
+        True,
+        False,
+        f"Your profile says you are not authorized for the offered location(s): {countries}.",
+    )
 
 
 def _seniority_alignment(
@@ -579,17 +825,50 @@ def _skill_index(skill: str) -> int:
 
 
 def _experience_requirement(description: str) -> _ExperienceRequirement | None:
-    for sentence in _sentences(description):
-        match = _EXPERIENCE.search(sentence)
-        if match and _looks_like_experience_requirement(sentence, match):
-            return _ExperienceRequirement(
-                minimum_years=int(match.group("minimum")),
-                text=_trim_sentence(sentence, 150),
+    candidates: list[_ExperienceRequirement] = []
+    for clause in _requirement_clauses(description):
+        for match in _EXPERIENCE.finditer(clause.text):
+            local_context = _local_experience_context(clause.text, match)
+            if not _looks_like_experience_requirement(local_context, match=None):
+                continue
+            candidates.append(
+                _ExperienceRequirement(
+                    minimum_years=float(match.group("minimum")),
+                    text=_trim_sentence(local_context, 150),
+                    hard=_experience_is_hard(local_context, clause_soft=clause.soft),
+                )
             )
-    return None
+    if not candidates:
+        return None
+    hard_candidates = [candidate for candidate in candidates if candidate.hard]
+    return max(hard_candidates or candidates, key=lambda candidate: candidate.minimum_years)
 
 
-def _looks_like_experience_requirement(sentence: str, match: re.Match[str]) -> bool:
+def _local_experience_context(text: str, match: re.Match[str]) -> str:
+    start = max(text.rfind(",", 0, match.start()), text.rfind(";", 0, match.start())) + 1
+    comma = text.find(",", match.end())
+    semicolon = text.find(";", match.end())
+    ends = [position for position in (comma, semicolon) if position >= 0]
+    end = min(ends) if ends else len(text)
+    return text[start:end].strip()
+
+
+def _experience_is_hard(text: str, *, clause_soft: bool) -> bool:
+    if _NEGATED_REQUIREMENT.search(text):
+        return False
+    if _HARD_EXPERIENCE.search(text):
+        return True
+    if _SOFT_REQUIREMENT.search(text):
+        return False
+    return not clause_soft
+
+
+def _looks_like_experience_requirement(
+    sentence: str,
+    match: re.Match[str] | None,
+) -> bool:
+    if _COMPANY_TENURE.search(sentence):
+        return False
     if re.search(
         r"\b(?:experience|experienced|minimum|at least|required|requirements?|"
         r"qualifications?|professional|industry)\b",
@@ -597,7 +876,10 @@ def _looks_like_experience_requirement(sentence: str, match: re.Match[str]) -> b
         re.IGNORECASE,
     ):
         return True
-    after_years = sentence[match.end() :]
+    local_match = match or _EXPERIENCE.search(sentence)
+    if local_match is None:
+        return False
+    after_years = sentence[local_match.end() :]
     return bool(
         re.match(
             r"\s+(?:of\s+)?(?:building|developing|engineering|programming|working|designing)",
@@ -607,15 +889,42 @@ def _looks_like_experience_requirement(sentence: str, match: re.Match[str]) -> b
     )
 
 
-def _country_code(value: str) -> str | None:
-    return next(
-        (
-            code
-            for code, patterns in _COUNTRY_PATTERNS
-            if any(re.search(pattern, value, re.IGNORECASE) for pattern in patterns)
-        ),
-        None,
-    )
+def _country_codes(value: str) -> set[str]:
+    return {
+        code
+        for code, patterns in _COUNTRY_PATTERNS
+        if any(re.search(pattern, value, re.IGNORECASE) for pattern in patterns)
+    }
+
+
+def _requirement_clauses(value: str) -> list[_RequirementClause]:
+    clauses: list[_RequirementClause] = []
+    soft_section = False
+    for raw_line in value.splitlines():
+        line = " ".join(raw_line.split()).strip(" -•\t")
+        if not line:
+            continue
+        if _SOFT_SECTION.search(line):
+            soft_section = True
+        elif _HARD_SECTION.search(line):
+            soft_section = False
+        for item in re.split(
+            r"(?<=[.!?;])\s+|,?\s+(?:but|while|however)\s+",
+            line,
+            flags=re.IGNORECASE,
+        ):
+            text = item.strip(" -•\t")
+            if not text:
+                continue
+            explicitly_soft = bool(_SOFT_REQUIREMENT.search(text))
+            explicitly_hard = bool(_HARD_SECTION.search(text))
+            clauses.append(
+                _RequirementClause(
+                    text=text,
+                    soft=explicitly_soft or (soft_section and not explicitly_hard),
+                )
+            )
+    return clauses
 
 
 def _representative_requirement(
@@ -642,6 +951,14 @@ def _representative_requirement(
 
 def _sentences(value: str) -> list[str]:
     return [" ".join(item.split()).strip(" -•\t") for item in _SENTENCE_SPLIT.split(value) if item.strip()]
+
+
+def _normalize_description(value: str) -> str:
+    return "\n".join(
+        line
+        for raw_line in value.splitlines()
+        if (line := " ".join(raw_line.split()))
+    )
 
 
 def _trim_sentence(value: str, limit: int) -> str:

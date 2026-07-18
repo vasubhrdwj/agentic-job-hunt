@@ -513,6 +513,10 @@ class TransparentMatchSummary(ContractModel):
     )
     resume_version_id: OpaqueId | None = None
     assessment_saved_search_id: OpaqueId | None = None
+    assessment_input_fingerprint: str | None = Field(
+        default=None,
+        pattern=r"^[a-f0-9]{64}$",
+    )
     fit_band: OpportunityFitBand | None = None
     confidence: AssessmentConfidence | None = None
     eligibility: OpportunityEligibility | None = None
@@ -543,6 +547,7 @@ class TransparentMatchSummary(ContractModel):
                 self.algorithm_version is None
                 or self.resume_version_id is None
                 or self.assessment_saved_search_id is None
+                or self.assessment_input_fingerprint is None
                 or self.fit_band is None
                 or self.confidence is None
                 or self.eligibility is None
@@ -551,11 +556,31 @@ class TransparentMatchSummary(ContractModel):
                 raise ValueError(
                     "assessed matches require algorithm, input versions, band, and confidence"
                 )
+            if self.fit_band is OpportunityFitBand.strong and (
+                self.confidence is not AssessmentConfidence.high
+                or self.eligibility is not OpportunityEligibility.eligible
+            ):
+                raise ValueError(
+                    "strong matches require high confidence and eligible inputs"
+                )
+            if (
+                self.eligibility is OpportunityEligibility.likely_ineligible
+                and self.fit_band is not OpportunityFitBand.low
+            ):
+                raise ValueError("likely-ineligible matches require a low fit band")
+            if (
+                self.fit_band is OpportunityFitBand.insufficient_data
+                and self.confidence is not AssessmentConfidence.low
+            ):
+                raise ValueError(
+                    "insufficient-data matches require low confidence"
+                )
         elif (
             self.not_assessed_reason is None
             or self.algorithm_version is not None
             or self.resume_version_id is not None
             or self.assessment_saved_search_id is not None
+            or self.assessment_input_fingerprint is not None
             or self.fit_band is not None
             or self.confidence is not None
             or self.eligibility is not None

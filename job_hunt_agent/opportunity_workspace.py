@@ -53,6 +53,7 @@ class OpportunityWorkspaceStore(Protocol):
         *,
         owner_id: str,
         opportunity_id: str,
+        saved_search_id: str | None = None,
     ) -> OpportunityDetailResponse | None: ...
 
     def decide_opportunity(

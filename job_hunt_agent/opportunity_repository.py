@@ -166,12 +166,15 @@ class _DiverseTodayCursor:
 class _AssessmentPrivateInputs:
     profile: AssessmentProfile
     evidence: tuple[AssessmentEvidence, ...]
+    profile_version: int | None
+    evidence_versions: tuple[tuple[str, int], ...]
     available: bool
 
 
 @dataclass(frozen=True)
 class _PinnedResumeInput:
     content: str | None
+    version: int | None
     unavailable_reason: NotAssessedReason | None
 
 
@@ -246,6 +249,13 @@ class _OpportunityAssessmentContext:
             algorithm_version=result.algorithm_version,
             resume_version_id=search.resume_version_id,
             assessment_saved_search_id=search.id,
+            assessment_input_fingerprint=self._input_fingerprint(
+                algorithm_version=result.algorithm_version,
+                posting_version=version,
+                search=search,
+                track=track,
+                resume=resume,
+            ),
             fit_band=result.fit_band,
             confidence=result.confidence,
             eligibility=result.eligibility,
@@ -255,6 +265,36 @@ class _OpportunityAssessmentContext:
             strengths=list(result.strengths),
             gaps=list(result.gaps),
         )
+
+    def _input_fingerprint(
+        self,
+        *,
+        algorithm_version: str,
+        posting_version: JobPostingVersion,
+        search: SavedSearch,
+        track: CareerTrack,
+        resume: _PinnedResumeInput,
+    ) -> str:
+        payload = {
+            "algorithm": algorithm_version,
+            "owner_scope": self.owner_id,
+            "posting": [
+                posting_version.id,
+                posting_version.version_number,
+                posting_version.content_hash,
+            ],
+            "saved_search": [search.id, search.version],
+            "career_track": [track.id, track.version],
+            "resume": [search.resume_version_id, resume.version],
+            "profile_version": self.private_inputs.profile_version,
+            "evidence_versions": self.private_inputs.evidence_versions,
+        }
+        canonical = json.dumps(
+            payload,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+        return hashlib.sha256(canonical).hexdigest()
 
     def _select_search(
         self,
@@ -298,6 +338,7 @@ class _OpportunityAssessmentContext:
         if row is None:
             result = _PinnedResumeInput(
                 content=None,
+                version=None,
                 unavailable_reason=NotAssessedReason.resume_unavailable,
             )
         else:
@@ -313,10 +354,15 @@ class _OpportunityAssessmentContext:
                 content = payload.get("content")
                 if not isinstance(content, str) or not content.strip():
                     raise ValueError("resume private payload is invalid")
-                result = _PinnedResumeInput(content=content, unavailable_reason=None)
+                result = _PinnedResumeInput(
+                    content=content,
+                    version=row.version,
+                    unavailable_reason=None,
+                )
             except (TypeError, ValueError):
                 result = _PinnedResumeInput(
                     content=None,
+                    version=None,
                     unavailable_reason=NotAssessedReason.assessment_unavailable,
                 )
         self.resumes[resume_id] = result
@@ -361,7 +407,7 @@ def _build_assessment_context(
                 current_location=data.current_location,
                 work_modes=tuple(data.work_modes),
                 employment_types=tuple(data.employment_types),
-                years_of_experience=None,
+                years_of_experience=data.years_of_experience,
                 work_authorizations=tuple(
                     AssessmentAuthorization(
                         country_code=authorization.country_code,
@@ -394,12 +440,16 @@ def _build_assessment_context(
         private_inputs = _AssessmentPrivateInputs(
             profile=profile,
             evidence=tuple(evidence),
+            profile_version=profile_row.version if profile_row is not None else None,
+            evidence_versions=tuple((row.id, row.version) for row in evidence_rows),
             available=True,
         )
     except (TypeError, ValueError):
         private_inputs = _AssessmentPrivateInputs(
             profile=AssessmentProfile(),
             evidence=(),
+            profile_version=None,
+            evidence_versions=(),
             available=False,
         )
     return _OpportunityAssessmentContext(
@@ -432,7 +482,11 @@ def _selected_assessment_search_id(
 def _assessment_description(value: str | None) -> str | None:
     if value is None:
         return None
-    normalized = " ".join(value.split())
+    normalized = "\n".join(
+        line
+        for raw_line in value.splitlines()
+        if (line := " ".join(raw_line.split()))
+    )
     if len(normalized) < 20 or len(normalized.split()) < 3:
         return None
     return normalized[:100_000].rstrip()
@@ -980,6 +1034,7 @@ def load_opportunity_detail(
     owner_id: str,
     opportunity_id: str,
     keyring: DataKeyring,
+    selected_saved_search_id: str | None = None,
 ) -> OpportunityDetailResponse | None:
     """Return one database-only review projection, or None across owner scope."""
 
@@ -995,7 +1050,7 @@ def load_opportunity_detail(
         session,
         owner_id=owner_id,
         keyring=keyring,
-        selected_saved_search_id=None,
+        selected_saved_search_id=selected_saved_search_id,
     )
     base = _today_item(
         session,

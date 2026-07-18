@@ -28,10 +28,12 @@ interface UndoState {
 
 export function OpportunityReview({
   opportunityId,
+  savedSearchId,
   ownerLocalDate,
   ownerTimezone,
 }: {
   opportunityId: string;
+  savedSearchId?: string | null;
   ownerLocalDate: string;
   ownerTimezone: string;
 }) {
@@ -47,13 +49,13 @@ export function OpportunityReview({
   const load = useCallback(async () => {
     setError(null);
     try {
-      setOpportunity(await getOpportunity(opportunityId));
+      setOpportunity(await getOpportunity(opportunityId, savedSearchId));
     } catch (reason) {
       setError(errorText(reason, "Unable to load this opportunity."));
     } finally {
       setLoading(false);
     }
-  }, [opportunityId]);
+  }, [opportunityId, savedSearchId]);
 
   useEffect(() => {
     const timer = setTimeout(() => void load(), 0);

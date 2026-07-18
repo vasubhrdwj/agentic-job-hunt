@@ -177,6 +177,7 @@ class FakeOpportunityStore:
     calls: list[tuple[str, str]] = field(default_factory=list)
     last_scan_create: dict[str, object] | None = None
     last_today_query: TodayQuery | None = None
+    last_opportunity_saved_search_id: str | None = None
     last_decision: dict[str, object] | None = None
     unavailable_today: bool = False
 
@@ -221,8 +222,10 @@ class FakeOpportunityStore:
         *,
         owner_id: str,
         opportunity_id: str,
+        saved_search_id: str | None = None,
     ) -> OpportunityDetailResponse | None:
         self.calls.append(("get_opportunity", owner_id))
+        self.last_opportunity_saved_search_id = saved_search_id
         return _opportunity_detail() if opportunity_id == "opportunity1" else None
 
     def decide_opportunity(
@@ -360,6 +363,20 @@ def test_radar_reads_require_owner_and_forward_only_authenticated_owner_scope(
         ("list_today", "owner"),
         ("get_opportunity", "owner"),
     ]
+
+
+def test_opportunity_detail_forwards_assessment_search_context(
+    opportunity_client: tuple[TestClient, FakeOpportunityStore],
+) -> None:
+    client, store = opportunity_client
+    _login(client)
+
+    response = client.get(
+        "/api/opportunities/opportunity1?saved_search_id=search1"
+    )
+
+    assert response.status_code == 200
+    assert store.last_opportunity_saved_search_id == "search1"
 
 
 def test_scan_create_enforces_origin_preconditions_idempotency_202_and_etag(

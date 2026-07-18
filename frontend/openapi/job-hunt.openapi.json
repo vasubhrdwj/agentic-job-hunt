@@ -3393,6 +3393,19 @@
             "maxItems": 3,
             "title": "Work Modes",
             "type": "array"
+          },
+          "years_of_experience": {
+            "anyOf": [
+              {
+                "maximum": 60.0,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Years Of Experience"
           }
         },
         "required": [
@@ -3506,6 +3519,19 @@
             "maxItems": 3,
             "title": "Work Modes",
             "type": "array"
+          },
+          "years_of_experience": {
+            "anyOf": [
+              {
+                "maximum": 60.0,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Years Of Experience"
           }
         },
         "title": "CandidateProfileWrite",
@@ -11047,6 +11073,18 @@
             "title": "Approved Evidence Ids",
             "type": "array"
           },
+          "assessment_input_fingerprint": {
+            "anyOf": [
+              {
+                "pattern": "^[a-f0-9]{64}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Assessment Input Fingerprint"
+          },
           "assessment_saved_search_id": {
             "anyOf": [
               {
@@ -17616,6 +17654,23 @@
               "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
               "title": "Opportunity Id",
               "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "saved_search_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Saved Search Id"
             }
           }
         ],

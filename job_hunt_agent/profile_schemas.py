@@ -100,6 +100,12 @@ class CandidateProfileData(ContractModel):
     career_thesis: str | None = Field(default=None, min_length=1, max_length=2_000)
     current_title: str | None = Field(default=None, min_length=1, max_length=200)
     current_location: str | None = Field(default=None, min_length=1, max_length=200)
+    years_of_experience: float | None = Field(
+        default=None,
+        ge=0,
+        le=60,
+        allow_inf_nan=False,
+    )
     work_authorizations: list[WorkAuthorization] = Field(
         default_factory=list,
         max_length=20,
@@ -145,6 +151,7 @@ def _profile_has_meaningful_details(profile: CandidateProfileData) -> bool:
         profile.career_thesis
         or profile.current_title
         or profile.current_location
+        or profile.years_of_experience is not None
         or profile.work_authorizations
         or profile.work_modes
         or profile.notice_period_days is not None

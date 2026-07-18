@@ -251,6 +251,7 @@ def _seed_candidate_profile(
         record_id=profile_id,
         payload={
             "current_location": "Gurugram, India",
+            "years_of_experience": 1.5,
             "work_authorizations": [
                 {"country_code": "IN", "status": "citizen"}
             ],
@@ -678,7 +679,7 @@ def test_automatic_assessment_reuses_private_inputs_and_matches_detail(
             session,
             owner_id="owner-a",
             scan_source_id="source-a1",
-            role=_role(),
+            role=_role(location="Remote India"),
             first_party_url_verified=True,
             now=NOW,
         )
@@ -693,6 +694,7 @@ def test_automatic_assessment_reuses_private_inputs_and_matches_detail(
             role=_role(
                 source_job_id="456",
                 url="https://jobs.acme.example/openings/456",
+                location="Remote India",
                 raw_description="Operate reliable Python and Kafka backend systems.",
             ),
             first_party_url_verified=True,
@@ -700,16 +702,27 @@ def test_automatic_assessment_reuses_private_inputs_and_matches_detail(
         )
 
         decrypt_calls: list[str] = []
+        assessed_experience: list[float | None] = []
         original_decrypt = opportunity_repository_module.decrypt_private_payload
+        original_assess = opportunity_repository_module.assess_opportunity
 
         def counted_decrypt(*args, **kwargs):
             decrypt_calls.append(kwargs["record_kind"])
             return original_decrypt(*args, **kwargs)
 
+        def capture_assessment_profile(*args, **kwargs):
+            assessed_experience.append(kwargs["profile"].years_of_experience)
+            return original_assess(*args, **kwargs)
+
         monkeypatch.setattr(
             opportunity_repository_module,
             "decrypt_private_payload",
             counted_decrypt,
+        )
+        monkeypatch.setattr(
+            opportunity_repository_module,
+            "assess_opportunity",
+            capture_assessment_profile,
         )
         today = list_today_opportunities(
             session,
@@ -729,6 +742,7 @@ def test_automatic_assessment_reuses_private_inputs_and_matches_detail(
             for item in today.items
         )
         assert "evidence-a" in by_id[first.opportunity_id].match.approved_evidence_ids
+        assert len(by_id[first.opportunity_id].match.assessment_input_fingerprint or "") == 64
         assert decrypt_calls.count("candidate_profile") == 1
         assert decrypt_calls.count("achievement_evidence") == 1
         assert decrypt_calls.count("resume_version") == 1
@@ -741,6 +755,7 @@ def test_automatic_assessment_reuses_private_inputs_and_matches_detail(
         )
         assert detail is not None
         assert detail.match == by_id[first.opportunity_id].match
+        assert assessed_experience == [1.5, 1.5, 1.5]
 
 
 def test_assessment_search_precedence_and_latest_match_are_deterministic(
@@ -845,10 +860,25 @@ def test_assessment_search_precedence_and_latest_match_are_deterministic(
             opportunity_id=first.opportunity_id,
             keyring=keyring,
         )
+        selected_detail = load_opportunity_detail(
+            session,
+            owner_id="owner-a",
+            opportunity_id=first.opportunity_id,
+            keyring=keyring,
+            selected_saved_search_id="search-a",
+        )
 
         assert default_today.items[0].match.assessment_saved_search_id == "search-a2"
         assert default_today.items[0].match.resume_version_id == "resume-a2"
         assert detail is not None and detail.match == default_today.items[0].match
+        assert (
+            selected_detail is not None
+            and selected_detail.match == scan_today.items[0].match
+        )
+        assert (
+            detail.match.assessment_input_fingerprint
+            != selected_detail.match.assessment_input_fingerprint
+        )
         assert scan_today.items[0].match.assessment_saved_search_id == "search-a"
         assert scan_today.items[0].match.resume_version_id == "resume-a"
         assert explicit_today.items[0].match == scan_today.items[0].match

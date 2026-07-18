@@ -622,6 +622,7 @@ def test_owner_onboarding_to_saved_search_to_queued_hunt_is_immediately_usable(
             "career_thesis": "Build secure, reliable identity platforms.",
             "current_title": "Senior Backend Engineer",
             "current_location": "Bengaluru",
+            "years_of_experience": 1.5,
             "work_authorizations": [{"country_code": "in", "status": "citizen"}],
             "work_modes": ["remote", "hybrid"],
             "employment_types": ["full_time"],
@@ -631,6 +632,7 @@ def test_owner_onboarding_to_saved_search_to_queued_hunt_is_immediately_usable(
     )
     assert profile.status_code == 200, profile.text
     assert profile.headers["etag"] == '"1"'
+    assert profile.json()["years_of_experience"] == 1.5
 
     resume_text = (
         "Built SCIM provisioning services.\n"
@@ -652,6 +654,7 @@ def test_owner_onboarding_to_saved_search_to_queued_hunt_is_immediately_usable(
 
     profile_with_resume = client.get("/api/me/profile")
     assert profile_with_resume.status_code == 200
+    assert profile_with_resume.json()["years_of_experience"] == 1.5
     assert profile_with_resume.json()["base_resume"]["id"] == resume_body["id"]
 
     track = client.post(

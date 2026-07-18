@@ -23,6 +23,7 @@ PROFILE = AssessmentProfile(
     current_location="Gurugram, India",
     employment_types=("full_time",),
     years_of_experience=1,
+    work_authorizations=(AssessmentAuthorization("IN", "citizen"),),
 )
 RESUME = """
 Software Engineer building Node.js and TypeScript backend services on AWS.
@@ -281,6 +282,360 @@ def test_unmet_experience_and_authorization_are_eligibility_failures() -> None:
 
     assert (experience.fit_band, experience.eligibility) == ("low", "likely_ineligible")
     assert (authorization.fit_band, authorization.eligibility) == ("low", "likely_ineligible")
+
+
+def test_current_location_does_not_override_explicit_authorization() -> None:
+    result = assess_opportunity(
+        posting=AssessmentPosting(
+            title="Backend Engineer",
+            description="Build Node.js AWS Kafka REST PostgreSQL services. " * 15,
+            location="India",
+            employment_type="full_time",
+        ),
+        target=TARGET,
+        profile=AssessmentProfile(
+            current_location="Gurugram, India",
+            employment_types=("full_time",),
+            years_of_experience=1,
+            work_authorizations=(AssessmentAuthorization("IN", "not_authorized"),),
+        ),
+        resume_text=RESUME,
+        evidence=EVIDENCE,
+    )
+
+    assert (result.fit_band, result.eligibility) == ("low", "likely_ineligible")
+
+
+def test_missing_work_mode_or_remote_geography_stays_uncertain() -> None:
+    india_without_mode = assess_opportunity(
+        posting=AssessmentPosting(
+            title="Backend Engineer",
+            description="Build Node.js AWS Kafka REST PostgreSQL services. " * 15,
+            location="India",
+            employment_type="full_time",
+        ),
+        target=TARGET,
+        profile=AssessmentProfile(
+            current_location="Gurugram, India",
+            work_modes=("remote",),
+            employment_types=("full_time",),
+            years_of_experience=1,
+            work_authorizations=(AssessmentAuthorization("IN", "citizen"),),
+        ),
+        resume_text=RESUME,
+        evidence=EVIDENCE,
+    )
+    remote_without_country = assess_opportunity(
+        posting=AssessmentPosting(
+            title="Backend Engineer",
+            description="Build Node.js AWS Kafka REST PostgreSQL services. " * 15,
+            location="Remote",
+            employment_type="full_time",
+        ),
+        target=AssessmentTarget(
+            role_families=TARGET.role_families,
+            seniority_levels=TARGET.seniority_levels,
+            target_locations=("Remote India",),
+        ),
+        profile=AssessmentProfile(
+            current_location="Gurugram, India",
+            work_modes=("remote",),
+            employment_types=("full_time",),
+            years_of_experience=1,
+            work_authorizations=(AssessmentAuthorization("IN", "citizen"),),
+        ),
+        resume_text=RESUME,
+        evidence=EVIDENCE,
+    )
+
+    assert india_without_mode.eligibility == "uncertain"
+    assert india_without_mode.fit_band != "strong"
+    assert remote_without_country.eligibility == "uncertain"
+    assert remote_without_country.fit_band != "strong"
+
+
+def test_decimal_and_preferred_experience_are_not_hard_failures() -> None:
+    result = assess_opportunity(
+        posting=AssessmentPosting(
+            title="Backend Engineer",
+            description=(
+                "Preferred qualifications: 1.5 years of experience with Node.js, AWS, "
+                "Kafka, REST APIs, and PostgreSQL. " * 12
+            ),
+            location="India",
+            employment_type="full_time",
+        ),
+        target=TARGET,
+        profile=AssessmentProfile(
+            current_location="Gurugram, India",
+            employment_types=("full_time",),
+            years_of_experience=1,
+            work_authorizations=(AssessmentAuthorization("IN", "citizen"),),
+        ),
+        resume_text=RESUME,
+        evidence=EVIDENCE,
+    )
+
+    assert result.eligibility == "eligible"
+    assert result.fit_band == "insufficient_data"
+    assert any("1.5 years" in gap for gap in result.gaps)
+
+
+def test_bullet_sections_keep_required_experience_hard() -> None:
+    result = assess_opportunity(
+        posting=AssessmentPosting(
+            title="Backend Engineer",
+            description=(
+                "Requirements\n"
+                "5+ years of backend experience required\n"
+                "Node.js, AWS, REST APIs, and Kafka\n"
+                "Preferred\n"
+                "Kubernetes and Terraform\n"
+            ) * 8,
+            location="India",
+            employment_type="full_time",
+        ),
+        target=TARGET,
+        profile=PROFILE,
+        resume_text=RESUME,
+        evidence=EVIDENCE,
+    )
+
+    assert (result.fit_band, result.eligibility) == ("low", "likely_ineligible")
+    assert any("at least 5 years" in gap for gap in result.gaps)
+
+
+def test_optional_tool_list_does_not_dilute_required_skill_coverage() -> None:
+    result = assess_opportunity(
+        posting=AssessmentPosting(
+            title="Backend Engineer",
+            description=(
+                "Requirements\n"
+                "Build Node.js services with AWS, REST APIs, and Kafka.\n"
+                "Nice to have\n"
+                "Kubernetes, Terraform, Helm, Redis, MongoDB, GraphQL, and gRPC.\n"
+            ) * 8,
+            location="India",
+            employment_type="full_time",
+        ),
+        target=TARGET,
+        profile=PROFILE,
+        resume_text=RESUME,
+        evidence=EVIDENCE,
+    )
+
+    assert result.fit_band == "strong"
+    assert all("Kubernetes" not in gap for gap in result.gaps)
+
+
+def test_alternative_and_negated_skills_do_not_create_false_gaps() -> None:
+    result = assess_opportunity(
+        posting=AssessmentPosting(
+            title="Backend Engineer",
+            description=(
+                "Required: experience with either Node.js or Python, plus AWS and REST APIs. "
+                "Kubernetes experience is not required. " * 10
+            ),
+            location="India",
+            employment_type="full_time",
+        ),
+        target=TARGET,
+        profile=PROFILE,
+        resume_text=RESUME,
+        evidence=EVIDENCE,
+    )
+
+    assert result.fit_band != "stretch"
+    assert all("Kubernetes" not in gap for gap in result.gaps)
+
+
+def test_multiple_offered_modes_and_countries_accept_any_viable_option() -> None:
+    result = assess_opportunity(
+        posting=AssessmentPosting(
+            title="Backend Engineer",
+            description="Build Node.js services with AWS, REST APIs, and Kafka. " * 12,
+            location="Hybrid or Remote - United States or Canada",
+            employment_type="full_time",
+        ),
+        target=AssessmentTarget(
+            role_families=TARGET.role_families,
+            seniority_levels=TARGET.seniority_levels,
+            target_locations=("Canada",),
+        ),
+        profile=AssessmentProfile(
+            current_location="Gurugram, India",
+            work_modes=("hybrid",),
+            employment_types=("full_time",),
+            years_of_experience=1,
+            work_authorizations=(AssessmentAuthorization("CA", "work_permit"),),
+        ),
+        resume_text=RESUME,
+        evidence=EVIDENCE,
+    )
+
+    assert result.eligibility == "eligible"
+    assert result.fit_band != "low"
+
+
+def test_authorization_must_match_the_target_compatible_country() -> None:
+    result = assess_opportunity(
+        posting=AssessmentPosting(
+            title="Backend Engineer",
+            description="Build Node.js services with AWS, REST APIs, and Kafka. " * 12,
+            location="Remote - United States or Canada",
+            employment_type="full_time",
+        ),
+        target=AssessmentTarget(
+            role_families=TARGET.role_families,
+            seniority_levels=TARGET.seniority_levels,
+            target_locations=("Canada",),
+        ),
+        profile=AssessmentProfile(
+            current_location="Gurugram, India",
+            work_modes=("remote",),
+            employment_types=("full_time",),
+            years_of_experience=1,
+            work_authorizations=(
+                AssessmentAuthorization("US", "work_permit"),
+                AssessmentAuthorization("CA", "not_authorized"),
+            ),
+        ),
+        resume_text=RESUME,
+        evidence=EVIDENCE,
+    )
+
+    assert (result.fit_band, result.eligibility) == ("low", "likely_ineligible")
+    assert any("CA" in gap for gap in result.gaps)
+
+
+def test_experience_hardness_is_local_to_each_requirement() -> None:
+    mixed_preference = assess_opportunity(
+        posting=AssessmentPosting(
+            title="Backend Engineer",
+            description=(
+                "Requirements: 5 years of experience required, Python preferred. "
+                "Build Node.js AWS REST Kafka services. " * 10
+            ),
+            location="India",
+            employment_type="full_time",
+        ),
+        target=TARGET,
+        profile=PROFILE,
+        resume_text=RESUME,
+        evidence=EVIDENCE,
+    )
+    company_age = assess_opportunity(
+        posting=AssessmentPosting(
+            title="Backend Engineer",
+            description=(
+                "With 20 years of experience serving customers, we require 1 year "
+                "of backend experience with Node.js AWS REST Kafka services. " * 10
+            ),
+            location="India",
+            employment_type="full_time",
+        ),
+        target=TARGET,
+        profile=PROFILE,
+        resume_text=RESUME,
+        evidence=EVIDENCE,
+    )
+
+    assert mixed_preference.eligibility == "likely_ineligible"
+    assert any("at least 5 years" in gap for gap in mixed_preference.gaps)
+    assert company_age.eligibility == "eligible"
+    assert all("20" not in gap for gap in company_age.gaps)
+
+
+def test_negation_applies_only_to_its_local_skill_subclause() -> None:
+    result = assess_opportunity(
+        posting=AssessmentPosting(
+            title="Backend Engineer",
+            description=(
+                "Kubernetes is not required, but AWS and REST APIs are required. "
+                "Build Node.js services with Kafka. " * 12
+            ),
+            location="India",
+            employment_type="full_time",
+        ),
+        target=TARGET,
+        profile=PROFILE,
+        resume_text=RESUME,
+        evidence=EVIDENCE,
+    )
+
+    assert {"AWS", "REST", "Node.js", "Kafka"} <= set(result.matched_terms)
+    assert result.fit_band != "insufficient_data"
+    assert all("Kubernetes" not in gap for gap in result.gaps)
+
+
+def test_general_disjunction_list_counts_as_one_requirement() -> None:
+    result = assess_opportunity(
+        posting=AssessmentPosting(
+            title="Backend Engineer",
+            description=(
+                "Required: Go, Java, or Python, plus AWS and REST APIs. "
+                "Operate reliable Kafka services. " * 12
+            ),
+            location="India",
+            employment_type="full_time",
+        ),
+        target=TARGET,
+        profile=PROFILE,
+        resume_text=RESUME + " Python services.",
+        evidence=EVIDENCE,
+    )
+
+    assert result.fit_band != "stretch"
+    assert all("Go" not in gap and "Java" not in gap for gap in result.gaps)
+
+
+def test_role_taxonomy_uses_boundaries_and_rejects_explicit_specializations() -> None:
+    salesforce = assess_opportunity(
+        posting=AssessmentPosting(
+            title="Salesforce Software Engineer",
+            description="Build Node.js services with AWS, REST APIs, and Kafka. " * 12,
+            location="India",
+            employment_type="full_time",
+        ),
+        target=TARGET,
+        profile=PROFILE,
+        resume_text=RESUME,
+        evidence=EVIDENCE,
+    )
+    assert salesforce.fit_band != "low"
+
+    for title in ("QA Automation Engineer", "Machine Learning Engineer"):
+        specialized = assess_opportunity(
+            posting=AssessmentPosting(
+                title=title,
+                description="Build Node.js services with AWS, REST APIs, and Kafka. " * 12,
+                location="India",
+                employment_type="full_time",
+            ),
+            target=TARGET,
+            profile=PROFILE,
+            resume_text=RESUME,
+            evidence=EVIDENCE,
+        )
+        assert specialized.fit_band == "low"
+
+
+def test_hard_conflict_is_not_hidden_behind_unknown_gaps() -> None:
+    result = assess_opportunity(
+        posting=AssessmentPosting(
+            title="Backend Engineer",
+            description="Required: 10+ years building Node.js AWS REST Kafka services. " * 10,
+            location=None,
+            employment_type=None,
+        ),
+        target=TARGET,
+        profile=PROFILE,
+        resume_text=RESUME,
+        evidence=EVIDENCE,
+    )
+
+    assert result.eligibility == "likely_ineligible"
+    assert any("at least 10 years" in gap for gap in result.gaps)
 
 
 def test_blank_or_sparse_descriptions_remain_insufficient_data() -> None:

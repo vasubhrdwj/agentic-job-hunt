@@ -24,6 +24,14 @@ export function OpportunityCard({
   onDecision: Parameters<typeof OpportunityActions>[0]["onDecision"];
 }) {
   const posting = opportunity.posting;
+  const assessmentSearchId = opportunity.match.state === "assessed"
+    ? opportunity.match.assessment_saved_search_id
+    : null;
+  const reviewHref = `/jobs/${encodeURIComponent(opportunity.id)}${
+    assessmentSearchId
+      ? `?saved_search_id=${encodeURIComponent(assessmentSearchId)}`
+      : ""
+  }`;
   return (
     <article
       aria-labelledby={`opportunity-title-${opportunity.id}`}
@@ -53,7 +61,7 @@ export function OpportunityCard({
         </div>
         <div className="flex shrink-0 flex-wrap gap-2">
           <Link
-            href={`/jobs/${encodeURIComponent(opportunity.id)}`}
+            href={reviewHref}
             className="inline-flex min-h-11 items-center justify-center rounded-lg border border-zinc-300 px-3 py-2 text-sm font-medium hover:bg-zinc-50 dark:border-zinc-700 dark:hover:bg-zinc-800"
           >
             Review
@@ -296,8 +304,8 @@ function notAssessedLabel(reason: TransparentMatchSummary["not_assessed_reason"]
 function eligibilityLabel(
   eligibility: NonNullable<TransparentMatchSummary["eligibility"]>,
 ): string {
-  if (eligibility === "eligible") return "Eligibility checks passed";
-  if (eligibility === "likely_ineligible") return "Likely ineligible";
+  if (eligibility === "eligible") return "No known eligibility conflict";
+  if (eligibility === "likely_ineligible") return "Likely eligibility conflict";
   return "Eligibility needs verification";
 }
 
