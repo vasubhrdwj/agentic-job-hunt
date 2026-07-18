@@ -28,7 +28,10 @@ import type {
   WorkAuthorization,
   WorkMode,
 } from "@/lib/workspace-types";
-import { hasMeaningfulCandidateProfile } from "@/lib/workspace-types";
+import {
+  hasMeaningfulCandidateProfile,
+  parseYearsOfExperienceInput,
+} from "@/lib/workspace-types";
 import type { EmploymentType, Seniority } from "@/lib/types";
 import {
   errorText,
@@ -82,6 +85,7 @@ export function ProfileWorkspace() {
 
   const [currentTitle, setCurrentTitle] = useState("");
   const [currentLocation, setCurrentLocation] = useState("");
+  const [yearsOfExperience, setYearsOfExperience] = useState("");
   const [careerThesis, setCareerThesis] = useState("");
   const [noticeDays, setNoticeDays] = useState("");
   const [workModes, setWorkModes] = useState<WorkMode[]>([]);
@@ -135,6 +139,7 @@ export function ProfileWorkspace() {
   const hydrateProfile = useCallback((value: CandidateProfile | null) => {
     setCurrentTitle(value?.current_title ?? "");
     setCurrentLocation(value?.current_location ?? "");
+    setYearsOfExperience(value?.years_of_experience?.toString() ?? "");
     setCareerThesis(value?.career_thesis ?? "");
     setNoticeDays(value?.notice_period_days?.toString() ?? "");
     setWorkModes(value?.work_modes ?? []);
@@ -214,9 +219,20 @@ export function ProfileWorkspace() {
       setProfileMessage({ kind: "error", text: "Add each work-authorization country only once." });
       return;
     }
+    let experienceYears: number | null;
+    try {
+      experienceYears = parseYearsOfExperienceInput(yearsOfExperience);
+    } catch {
+      setProfileMessage({
+        kind: "error",
+        text: "Enter total professional experience between 0 and 60 years.",
+      });
+      return;
+    }
     const payload: CandidateProfileWrite = {
       current_title: currentTitle.trim() || null,
       current_location: currentLocation.trim() || null,
+      years_of_experience: experienceYears,
       career_thesis: careerThesis.trim() || null,
       notice_period_days: noticeDays ? Number(noticeDays) : null,
       work_authorizations: authorizations,
@@ -227,7 +243,7 @@ export function ProfileWorkspace() {
     if (!hasMeaningfulCandidateProfile(payload)) {
       setProfileMessage({
         kind: "error",
-        text: "Add at least one useful detail about you, such as your title, location, work mode, authorization, notice period, or career direction.",
+        text: "Add at least one useful detail about you, such as your title, experience, location, work mode, authorization, notice period, or career direction.",
       });
       return;
     }
@@ -454,12 +470,15 @@ export function ProfileWorkspace() {
         description="Save the facts and preferences you otherwise repeat in every search. Nothing here starts a provider call."
       >
         <form onSubmit={saveAboutYou} className="space-y-5">
-          <div className="grid gap-5 sm:grid-cols-2">
+          <div className="grid gap-5 sm:grid-cols-3">
             <FormField label="Current title" htmlFor="current-title">
               <input id="current-title" value={currentTitle} onChange={(event) => setCurrentTitle(event.target.value)} className={inputClasses} placeholder="Senior Backend Engineer" />
             </FormField>
             <FormField label="Home location" htmlFor="current-location">
               <input id="current-location" value={currentLocation} onChange={(event) => setCurrentLocation(event.target.value)} className={inputClasses} placeholder="Bengaluru, India" />
+            </FormField>
+            <FormField label="Professional experience (years)" htmlFor="years-of-experience" hint="Optional. Used to check stated experience requirements.">
+              <input id="years-of-experience" type="number" min={0} max={60} step="0.1" inputMode="decimal" value={yearsOfExperience} onChange={(event) => setYearsOfExperience(event.target.value)} className={inputClasses} placeholder="1" />
             </FormField>
           </div>
 

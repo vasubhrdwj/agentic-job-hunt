@@ -42,6 +42,7 @@ export interface CandidateProfileWrite {
   career_thesis: string | null;
   current_title: string | null;
   current_location: string | null;
+  years_of_experience: number | null;
   work_authorizations: WorkAuthorization[];
   work_modes: WorkMode[];
   employment_types: Exclude<EmploymentType, "unknown">[];
@@ -64,10 +65,20 @@ export function hasMeaningfulCandidateProfile(
     profile.career_thesis?.trim() ||
       profile.current_title?.trim() ||
       profile.current_location?.trim() ||
+      profile.years_of_experience !== null ||
       profile.work_authorizations.length > 0 ||
       profile.work_modes.length > 0 ||
       profile.notice_period_days !== null,
   );
+}
+
+export function parseYearsOfExperienceInput(value: string): number | null {
+  if (!value.trim()) return null;
+  const years = Number(value);
+  if (!Number.isFinite(years) || years < 0 || years > 60) {
+    throw new RangeError("experience must be between 0 and 60 years");
+  }
+  return years;
 }
 
 export interface CareerPriorities {
