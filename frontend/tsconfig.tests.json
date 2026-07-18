@@ -10,6 +10,8 @@
   },
   "include": [
     "lib/application-undo-pursuit.ts",
-    "tests/application-undo-pursuit.test.ts"
+    "lib/today-company-balance.ts",
+    "tests/application-undo-pursuit.test.ts",
+    "tests/today-company-balance.test.ts"
   ]
 }

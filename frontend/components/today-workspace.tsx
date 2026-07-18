@@ -29,6 +29,7 @@ import {
   secondaryButtonClasses,
   StatusMessage,
 } from "./workspace-ui";
+import { balanceTodayCompanies } from "@/lib/today-company-balance";
 
 const TERMINAL_SCAN_STATES = new Set(["succeeded", "partial", "failed", "cancelled"]);
 const COVERAGE_WARNING_CODES = new Set(["source_incomplete", "source_fallback_used"]);
@@ -68,6 +69,9 @@ export function TodayWorkspace({
   const [undo, setUndo] = useState<UndoState | null>(null);
   const [undoPending, setUndoPending] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
+  const [expandedCompanySlugs, setExpandedCompanySlugs] = useState<Set<string>>(
+    () => new Set(),
+  );
   const decisionKeys = useRef<Record<string, string>>({});
 
   const query = useMemo(
@@ -278,6 +282,7 @@ export function TodayWorkspace({
   }
   if (!today) return null;
 
+  const companyBalance = balanceTodayCompanies(today.items, expandedCompanySlugs);
   const warnings = uniqueWarnings([...(today.scan_health.warnings ?? []), ...(scan?.warnings ?? [])]);
   const coverageWarnings = warnings.filter(isCoverageWarning);
   const operationalWarnings = warnings.filter((warning) => (
@@ -369,7 +374,21 @@ export function TodayWorkspace({
         />
       ) : (
         <section aria-label="Opportunity review inbox" className="space-y-5">
-          {today.items.map((opportunity) => (
+          {companyBalance.overflows.length > 0 ? (
+            <CompanyBalanceControls
+              overflows={companyBalance.overflows}
+              expandedCompanySlugs={expandedCompanySlugs}
+              onToggle={(companySlug) => {
+                setExpandedCompanySlugs((current) => {
+                  const next = new Set(current);
+                  if (next.has(companySlug)) next.delete(companySlug);
+                  else next.add(companySlug);
+                  return next;
+                });
+              }}
+            />
+          ) : null}
+          {companyBalance.visibleItems.map((opportunity) => (
             <OpportunityCard
               key={opportunity.id}
               opportunity={opportunity}
@@ -408,6 +427,54 @@ export function TodayWorkspace({
         />
       ) : null}
     </div>
+  );
+}
+
+function CompanyBalanceControls({
+  overflows,
+  expandedCompanySlugs,
+  onToggle,
+}: {
+  overflows: ReturnType<typeof balanceTodayCompanies>["overflows"];
+  expandedCompanySlugs: ReadonlySet<string>;
+  onToggle: (companySlug: string) => void;
+}) {
+  const hiddenCount = overflows.reduce(
+    (total, group) => total + (
+      expandedCompanySlugs.has(group.companySlug) ? 0 : group.hiddenCount
+    ),
+    0,
+  );
+  return (
+    <aside
+      aria-labelledby="company-balance-title"
+      className="rounded-xl border border-indigo-200 bg-indigo-50/70 p-4 dark:border-indigo-900 dark:bg-indigo-950/20"
+    >
+      <h2 id="company-balance-title" className="font-semibold text-indigo-950 dark:text-indigo-100">
+        Keeping your results varied
+      </h2>
+      <p className="mt-1 text-sm leading-6 text-indigo-900 dark:text-indigo-200">
+        Showing at most two roles per company by default{hiddenCount > 0 ? `; ${hiddenCount} repetitive role${hiddenCount === 1 ? " is" : "s are"} collapsed` : ""}. Nothing is deleted.
+      </p>
+      <div className="mt-3 flex flex-wrap gap-2">
+        {overflows.map((group) => {
+          const expanded = expandedCompanySlugs.has(group.companySlug);
+          return (
+            <button
+              key={group.companySlug}
+              type="button"
+              aria-pressed={expanded}
+              onClick={() => onToggle(group.companySlug)}
+              className="min-h-10 rounded-lg border border-indigo-300 bg-white px-3 py-2 text-xs font-medium text-indigo-800 hover:bg-indigo-100 dark:border-indigo-800 dark:bg-indigo-950 dark:text-indigo-200 dark:hover:bg-indigo-900"
+            >
+              {expanded
+                ? `Show only 2 from ${group.company}`
+                : `Show ${group.hiddenCount} more from ${group.company}`}
+            </button>
+          );
+        })}
+      </div>
+    </aside>
   );
 }
 

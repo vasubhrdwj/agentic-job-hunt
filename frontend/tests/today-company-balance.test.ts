@@ -1,0 +1,69 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+
+import { balanceTodayCompanies } from "../lib/today-company-balance";
+
+function role(id: string, company: string, companySlug: string) {
+  return {
+    id,
+    posting: {
+      company,
+      company_slug: companySlug,
+    },
+  };
+}
+
+test("Today keeps at most two roles per company while preserving source order", () => {
+  const items = [
+    role("amazon-1", "Amazon", "amazon"),
+    role("stable-1", "Stable Money", "stable-money"),
+    role("amazon-2", "Amazon", "amazon"),
+    role("zeta-1", "Zeta", "zeta"),
+    role("amazon-3", "Amazon", "amazon"),
+    role("amazon-4", "Amazon", "amazon"),
+  ];
+
+  const result = balanceTodayCompanies(items, new Set());
+
+  assert.deepEqual(result.visibleItems.map((item) => item.id), [
+    "amazon-1",
+    "stable-1",
+    "amazon-2",
+    "zeta-1",
+  ]);
+  assert.deepEqual(result.overflows, [{
+    company: "Amazon",
+    companySlug: "amazon",
+    hiddenCount: 2,
+    totalCount: 4,
+  }]);
+});
+
+test("an expanded company reveals only its own overflow", () => {
+  const items = [
+    role("amazon-1", "Amazon", "amazon"),
+    role("amazon-2", "Amazon", "amazon"),
+    role("amazon-3", "Amazon", "amazon"),
+    role("zeta-1", "Zeta", "zeta"),
+    role("zeta-2", "Zeta", "zeta"),
+    role("zeta-3", "Zeta", "zeta"),
+  ];
+
+  const result = balanceTodayCompanies(items, new Set(["amazon"]));
+
+  assert.deepEqual(result.visibleItems.map((item) => item.id), [
+    "amazon-1",
+    "amazon-2",
+    "amazon-3",
+    "zeta-1",
+    "zeta-2",
+  ]);
+  assert.deepEqual(result.overflows.map((group) => group.companySlug), [
+    "amazon",
+    "zeta",
+  ]);
+});
+
+test("the company limit rejects invalid configuration", () => {
+  assert.throws(() => balanceTodayCompanies([], new Set(), 0), RangeError);
+});
