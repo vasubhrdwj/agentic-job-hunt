@@ -20,7 +20,7 @@ test("Today keeps at most two roles per company while preserving source order", 
     role("amazon-2", "Amazon", "amazon"),
     role("zeta-1", "Zeta", "zeta"),
     role("amazon-3", "Amazon", "amazon"),
-    role("amazon-4", "Amazon", "amazon"),
+    role("amazon-4", "Amazon Jobs", "amazon"),
   ];
 
   const result = balanceTodayCompanies(items, new Set());
@@ -37,6 +37,25 @@ test("Today keeps at most two roles per company while preserving source order", 
     hiddenCount: 2,
     totalCount: 4,
   }]);
+});
+
+test("removing a visible decision promotes the next role from that company", () => {
+  const items = [
+    role("amazon-1", "Amazon", "amazon"),
+    role("amazon-2", "Amazon", "amazon"),
+    role("amazon-3", "Amazon", "amazon"),
+  ];
+
+  const afterDecision = balanceTodayCompanies(
+    items.filter((item) => item.id !== "amazon-1"),
+    new Set(),
+  );
+
+  assert.deepEqual(afterDecision.visibleItems.map((item) => item.id), [
+    "amazon-2",
+    "amazon-3",
+  ]);
+  assert.deepEqual(afterDecision.overflows, []);
 });
 
 test("an expanded company reveals only its own overflow", () => {

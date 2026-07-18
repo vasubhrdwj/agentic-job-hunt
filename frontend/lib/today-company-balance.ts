@@ -29,7 +29,9 @@ export function balanceTodayCompanies<T extends CompanyBalancedItem>(
     const companySlug = item.posting.company_slug;
     const seen = (seenByCompany.get(companySlug) ?? 0) + 1;
     seenByCompany.set(companySlug, seen);
-    companyNames.set(companySlug, item.posting.company);
+    if (!companyNames.has(companySlug)) {
+      companyNames.set(companySlug, item.posting.company);
+    }
     if (seen <= perCompanyLimit || expandedCompanySlugs.has(companySlug)) {
       visibleItems.push(item);
     }
