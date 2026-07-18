@@ -50,6 +50,24 @@ def test_backend_role_scores_above_irrelevant_role_by_documented_margin():
 
     assert backend_score > irrelevant_score
     assert backend_score - irrelevant_score >= 0.10
+    assert irrelevant_score < 0.10
+
+
+def test_generic_job_posting_words_never_become_resume_evidence():
+    resume = (ROOT / "fixtures/sample_resume.txt").read_text(encoding="utf-8")
+    backend, irrelevant = _calibration_roles()
+    scorer = ResumeFitScorer()
+
+    for role in (backend, irrelevant):
+        evidence = scorer.evaluate(resume, role)
+        assert not {
+            "engineering",
+            "experience",
+            "people",
+            "software",
+            "to",
+            "of",
+        }.intersection(evidence.matched_terms)
 
 
 def test_score_role_sets_bounded_score_and_quotes_real_jd_evidence():
