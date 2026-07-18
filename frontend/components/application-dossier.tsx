@@ -11,6 +11,7 @@ import type {
   ApplicationStage,
 } from "@/lib/application-types";
 import { ApplicationActivity } from "./application-activity";
+import { ApplicationUndoPursuit } from "./application-undo-pursuit";
 import { ApplicationMaterials } from "./application-materials";
 import { ApplicationInterviewRounds } from "./application-interview-rounds";
 import { ApplicationInterviewPreparation } from "./application-interview-preparation";
@@ -167,6 +168,12 @@ export function ApplicationDossier({
           This active application has no next action. Refresh before recording more progress.
         </StatusMessage>
       ) : null}
+
+      <ApplicationUndoPursuit
+        applicationId={application.id}
+        stage={application.stage}
+        onApplicationChanged={refreshApplication}
+      />
 
       <ApplicationInterviewRounds
         applicationId={application.id}

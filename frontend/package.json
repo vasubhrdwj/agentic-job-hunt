@@ -8,6 +8,7 @@
     "start": "next start",
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
+    "test": "tsc -p tsconfig.tests.json && node --test .next/frontend-tests/tests/application-undo-pursuit.test.js",
     "api:export": "../.venv/bin/python ../scripts/export_openapi.py",
     "api:generate": "openapi-typescript openapi/job-hunt.openapi.json -o lib/api-generated.ts",
     "api:check": "../.venv/bin/python ../scripts/export_openapi.py --check && node scripts/check-api-artifacts.mjs"

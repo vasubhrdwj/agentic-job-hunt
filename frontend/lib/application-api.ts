@@ -6,6 +6,8 @@ import type {
   ApplicationListResponse,
   TodayApplicationActionsResponse,
 } from "./application-types";
+import type { OpportunityDecisionResponse } from "./opportunity-types";
+import { undoPursuitRequest } from "./application-undo-pursuit";
 import type {
   ApplicationMilestoneCorrectionCreate,
 } from "./application-correction-types";
@@ -161,6 +163,21 @@ export async function reviewApplicationAction(
 export async function getApplication(id: string): Promise<ApplicationDetailResponse> {
   return json<ApplicationDetailResponse>(
     await fetch(`/api/applications/${encodeURIComponent(id)}`, { cache: "no-store" }),
+  );
+}
+
+export async function undoApplicationPursuit(
+  applicationId: string,
+  applicationVersion: number,
+  idempotencyKey: string,
+): Promise<OpportunityDecisionResponse> {
+  const request = undoPursuitRequest(
+    applicationId,
+    applicationVersion,
+    idempotencyKey,
+  );
+  return json<OpportunityDecisionResponse>(
+    await fetch(request.url, request.init),
   );
 }
 
