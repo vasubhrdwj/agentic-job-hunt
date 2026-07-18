@@ -39,7 +39,10 @@ AMAZON_TRUSTED_HOSTS = {
 }
 DEFAULT_TIMEOUT_SECONDS = 20
 DEFAULT_RESULT_LIMIT = 100
-DEFAULT_MAX_QUERIES = 3
+# Saved-search profiles accept at most 20 role keywords. Keep the same generous
+# ceiling here so every configured keyword is queried without allowing an
+# unbounded number of requests from directly constructed ``JobCriteria`` values.
+DEFAULT_MAX_QUERIES = 20
 SUMMARY_LIMIT = 520
 
 _COUNTRY_ISO3 = {

@@ -487,6 +487,41 @@ def test_deduplicates_same_source_job_across_queries(
     assert urlopen.call_count == 2
 
 
+def test_queries_every_distinct_saved_keyword_including_the_fourth(
+    monkeypatch: pytest.MonkeyPatch,
+    company: Company,
+    criteria: JobCriteria,
+) -> None:
+    urlopen = _install_response(monkeypatch, _fixture_bytes())
+
+    AmazonAdapter().fetch_open_roles(
+        company,
+        criteria.model_copy(
+            update={
+                "role_keywords": [
+                    " distributed systems ",
+                    "Backend Engineer",
+                    "backend engineer ",
+                    "Software Engineer",
+                    "Platform Engineer",
+                    "platform engineer",
+                ],
+            },
+        ),
+    )
+
+    queries = [
+        parse_qs(urlparse(call.args[0].full_url).query)["base_query"][0]
+        for call in urlopen.call_args_list
+    ]
+    assert queries == [
+        "distributed systems",
+        "Backend Engineer",
+        "Software Engineer",
+        "Platform Engineer",
+    ]
+
+
 def test_empty_payload_returns_empty_and_logs(
     monkeypatch: pytest.MonkeyPatch,
     company: Company,
