@@ -41,6 +41,7 @@ from job_hunt_agent.opportunity_schemas import (
     ScanCreateRequest,
     TodayQuery,
 )
+from job_hunt_agent.private_payloads import encrypt_private_payload
 from job_hunt_agent.owner_workspace import (
     WorkspaceCapabilityUnavailable,
     WorkspaceConflict,
@@ -69,8 +70,15 @@ def opportunity_workspace(
     monkeypatch.delenv("RENDER_GIT_COMMIT", raising=False)
     monkeypatch.delenv("APP_VERSION", raising=False)
     Base.metadata.create_all(database.engine)
+    keyring = DataKeyring([("test-v1", Fernet.generate_key().decode("ascii"))])
     with database.session() as session:
-        _seed_search(session, owner_id="owner-a", search_id="search-a", version=3)
+        _seed_search(
+            session,
+            owner_id="owner-a",
+            search_id="search-a",
+            version=3,
+            keyring=keyring,
+        )
         session.add(Owner(id="owner-b", display_name="Owner B", timezone="UTC"))
         record_worker_heartbeat(
             session,
@@ -90,7 +98,6 @@ def opportunity_workspace(
         "load_company_pack",
         lambda pack: registry if pack == "backend_india" else None,
     )
-    keyring = DataKeyring([("test-v1", Fernet.generate_key().decode("ascii"))])
     try:
         yield database, SqlAlchemyOpportunityWorkspaceStore(database, keyring)
     finally:
@@ -116,6 +123,7 @@ def _seed_search(
     owner_id: str,
     search_id: str,
     version: int,
+    keyring: DataKeyring,
 ) -> None:
     session.add(Owner(id=owner_id, display_name="Owner A", timezone="Asia/Kolkata"))
     session.add(
@@ -131,13 +139,26 @@ def _seed_search(
             version=1,
         )
     )
+    resume_id = f"resume-{owner_id}"
+    resume_envelope = encrypt_private_payload(
+        keyring,
+        record_kind="resume_version",
+        owner_id=owner_id,
+        record_id=resume_id,
+        payload={
+            "content": (
+                "Backend software engineer building reliable distributed systems, "
+                "Python services, REST APIs, AWS, Docker, and PostgreSQL."
+            )
+        },
+    )
     session.add(
         ResumeVersion(
-            id=f"resume-{owner_id}",
+            id=resume_id,
             owner_id=owner_id,
             label="Base resume",
-            encrypted_content="PRIVATE RESUME CIPHERTEXT",
-            encryption_key_id="test-v1",
+            encrypted_content=resume_envelope.ciphertext,
+            encryption_key_id=resume_envelope.key_id,
             content_hash="a" * 64,
             source="pasted",
             is_base=True,
@@ -149,7 +170,7 @@ def _seed_search(
             id=search_id,
             owner_id=owner_id,
             career_track_id=f"track-{owner_id}",
-            resume_version_id=f"resume-{owner_id}",
+            resume_version_id=resume_id,
             name="Senior backend roles",
             criteria_schema_version=1,
             criteria={
@@ -539,8 +560,11 @@ def test_today_and_detail_delegate_to_database_only_repository_projections(
     assert today.data_source == "database"
     assert [item.id for item in today.items] == [opportunity_id]
     assert today.items[0].posting.summary == "Build reliable backend systems."
-    assert today.items[0].match.state.value == "not_assessed"
+    assert today.items[0].match.state.value == "assessed"
+    assert today.items[0].match.assessment_saved_search_id == "search-a"
+    assert today.items[0].match.resume_version_id == "resume-owner-a"
     assert detail is not None and detail.data_source == "database"
+    assert detail.match == today.items[0].match
     assert detail.description == "Design and operate reliable backend systems."
     assert detail.apply_urls == ["https://acme.example/jobs/GH-123"]
     assert "PRIVATE MATCH PROSE" not in detail.model_dump_json()

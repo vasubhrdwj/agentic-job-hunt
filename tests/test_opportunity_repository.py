@@ -10,9 +10,12 @@ import pytest
 from cryptography.fernet import Fernet
 from sqlalchemy import func, select
 
+import job_hunt_agent.opportunity_repository as opportunity_repository_module
 from job_hunt_agent.database import Database
 from job_hunt_agent.models import (
+    AchievementEvidence,
     Base,
+    CandidateProfile,
     CareerTrack,
     JobObservation,
     JobPosting,
@@ -37,6 +40,7 @@ from job_hunt_agent.opportunity_repository import (
     posting_identity,
 )
 from job_hunt_agent.opportunity_schemas import OpportunityDecisionRequest, TodayQuery
+from job_hunt_agent.private_payloads import encrypt_private_payload
 from job_hunt_agent.repository_errors import ResourceConflict, VersionConflict
 from job_hunt_agent.schemas import CompanySource, EmploymentType, Role
 from job_hunt_agent.security import DataKeyring
@@ -52,7 +56,12 @@ def radar(tmp_path: Path) -> tuple[Database, DataKeyring]:
     keyring = DataKeyring([("test-v1", Fernet.generate_key().decode("ascii"))])
     with database.session() as session:
         for owner_id in ("owner-a", "owner-b"):
-            _seed_owner_search(session, owner_id, f"search-{owner_id[-1]}")
+            _seed_owner_search(
+                session,
+                owner_id,
+                f"search-{owner_id[-1]}",
+                keyring=keyring,
+            )
         _seed_scan_source(session, "owner-a", "search-a", "scan-a1", "source-a1")
     try:
         yield database, keyring
@@ -60,7 +69,13 @@ def radar(tmp_path: Path) -> tuple[Database, DataKeyring]:
         database.dispose()
 
 
-def _seed_owner_search(session, owner_id: str, search_id: str) -> None:
+def _seed_owner_search(
+    session,
+    owner_id: str,
+    search_id: str,
+    *,
+    keyring: DataKeyring,
+) -> None:
     track_id = f"track-{owner_id[-1]}"
     resume_id = f"resume-{owner_id[-1]}"
     session.add(Owner(id=owner_id, display_name=owner_id, timezone="UTC"))
@@ -79,13 +94,24 @@ def _seed_owner_search(session, owner_id: str, search_id: str) -> None:
             updated_at=NOW,
         )
     )
+    resume_content = (
+        "Backend software engineer building Python, distributed systems, REST APIs, "
+        "AWS, Docker, PostgreSQL, Kafka, OAuth, and reliable event pipelines."
+    )
+    resume_envelope = encrypt_private_payload(
+        keyring,
+        record_kind="resume_version",
+        owner_id=owner_id,
+        record_id=resume_id,
+        payload={"content": resume_content},
+    )
     session.add(
         ResumeVersion(
             id=resume_id,
             owner_id=owner_id,
             label="Resume",
-            encrypted_content="ciphertext",
-            encryption_key_id="test-v1",
+            encrypted_content=resume_envelope.ciphertext,
+            encryption_key_id=resume_envelope.key_id,
             content_hash=("a" if owner_id == "owner-a" else "b") * 64,
             source="pasted",
             is_base=True,
@@ -171,6 +197,75 @@ def _seed_scan_source(
             warning_codes=[],
             version=1,
             started_at=NOW,
+            created_at=NOW,
+            updated_at=NOW,
+        )
+    )
+
+
+def _seed_approved_evidence(
+    session,
+    *,
+    owner_id: str,
+    evidence_id: str,
+    keyring: DataKeyring,
+    statement: str = "Owned reliable Python distributed systems in production.",
+    skills: list[str] | None = None,
+) -> None:
+    envelope = encrypt_private_payload(
+        keyring,
+        record_kind="achievement_evidence",
+        owner_id=owner_id,
+        record_id=evidence_id,
+        payload={"statement": statement, "source_excerpt": None},
+    )
+    session.add(
+        AchievementEvidence(
+            id=evidence_id,
+            owner_id=owner_id,
+            source_resume_version_id=None,
+            encrypted_payload=envelope.ciphertext,
+            encryption_key_id=envelope.key_id,
+            skills=skills or ["Python", "distributed systems"],
+            origin="owner_entered",
+            approval_state="approved",
+            approved_at=NOW,
+            version=1,
+            created_at=NOW,
+            updated_at=NOW,
+        )
+    )
+
+
+def _seed_candidate_profile(
+    session,
+    *,
+    owner_id: str,
+    profile_id: str,
+    keyring: DataKeyring,
+) -> None:
+    envelope = encrypt_private_payload(
+        keyring,
+        record_kind="candidate_profile",
+        owner_id=owner_id,
+        record_id=profile_id,
+        payload={
+            "current_location": "Gurugram, India",
+            "work_authorizations": [
+                {"country_code": "IN", "status": "citizen"}
+            ],
+            "work_modes": ["remote", "hybrid"],
+            "employment_types": ["full_time"],
+        },
+    )
+    session.add(
+        CandidateProfile(
+            id=profile_id,
+            owner_id=owner_id,
+            encrypted_payload=envelope.ciphertext,
+            encryption_key_id=envelope.key_id,
+            onboarding_state="complete",
+            version=1,
             created_at=NOW,
             updated_at=NOW,
         )
@@ -559,6 +654,293 @@ def test_unknown_source_date_and_employment_type_remain_visible(
             "posted_date",
             "compensation",
         ]
+
+
+def test_automatic_assessment_reuses_private_inputs_and_matches_detail(
+    radar: tuple[Database, DataKeyring],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    database, keyring = radar
+    with database.session() as session:
+        _seed_candidate_profile(
+            session,
+            owner_id="owner-a",
+            profile_id="profile-a",
+            keyring=keyring,
+        )
+        _seed_approved_evidence(
+            session,
+            owner_id="owner-a",
+            evidence_id="evidence-a",
+            keyring=keyring,
+        )
+        first = persist_scan_source_role(
+            session,
+            owner_id="owner-a",
+            scan_source_id="source-a1",
+            role=_role(),
+            first_party_url_verified=True,
+            now=NOW,
+        )
+        scan_source = session.get(OpportunityScanSource, "source-a1")
+        assert scan_source is not None
+        scan_source.observed_count = 2
+        scan_source.returned_count = 2
+        second = persist_scan_source_role(
+            session,
+            owner_id="owner-a",
+            scan_source_id="source-a1",
+            role=_role(
+                source_job_id="456",
+                url="https://jobs.acme.example/openings/456",
+                raw_description="Operate reliable Python and Kafka backend systems.",
+            ),
+            first_party_url_verified=True,
+            now=NOW + timedelta(minutes=1),
+        )
+
+        decrypt_calls: list[str] = []
+        original_decrypt = opportunity_repository_module.decrypt_private_payload
+
+        def counted_decrypt(*args, **kwargs):
+            decrypt_calls.append(kwargs["record_kind"])
+            return original_decrypt(*args, **kwargs)
+
+        monkeypatch.setattr(
+            opportunity_repository_module,
+            "decrypt_private_payload",
+            counted_decrypt,
+        )
+        today = list_today_opportunities(
+            session,
+            owner_id="owner-a",
+            query=TodayQuery(),
+            keyring=keyring,
+            now=NOW + timedelta(minutes=2),
+        )
+
+        by_id = {item.id: item for item in today.items}
+        assert set(by_id) == {first.opportunity_id, second.opportunity_id}
+        assert all(item.match.state.value == "assessed" for item in today.items)
+        assert all(
+            item.match.assessment_saved_search_id == "search-a"
+            and item.match.resume_version_id == "resume-a"
+            and item.match.eligibility.value == "eligible"
+            for item in today.items
+        )
+        assert "evidence-a" in by_id[first.opportunity_id].match.approved_evidence_ids
+        assert decrypt_calls.count("candidate_profile") == 1
+        assert decrypt_calls.count("achievement_evidence") == 1
+        assert decrypt_calls.count("resume_version") == 1
+
+        detail = load_opportunity_detail(
+            session,
+            owner_id="owner-a",
+            opportunity_id=first.opportunity_id,
+            keyring=keyring,
+        )
+        assert detail is not None
+        assert detail.match == by_id[first.opportunity_id].match
+
+
+def test_assessment_search_precedence_and_latest_match_are_deterministic(
+    radar: tuple[Database, DataKeyring],
+) -> None:
+    database, keyring = radar
+    with database.session() as session:
+        first = persist_scan_source_role(
+            session,
+            owner_id="owner-a",
+            scan_source_id="source-a1",
+            role=_role(),
+            first_party_url_verified=True,
+            now=NOW,
+        )
+        base = session.get(SavedSearch, "search-a")
+        assert base is not None
+        resume_id = "resume-a2"
+        envelope = encrypt_private_payload(
+            keyring,
+            record_kind="resume_version",
+            owner_id="owner-a",
+            record_id=resume_id,
+            payload={"content": "Frontend JavaScript and React engineer."},
+        )
+        session.add(
+            ResumeVersion(
+                id=resume_id,
+                owner_id="owner-a",
+                label="Second resume",
+                encrypted_content=envelope.ciphertext,
+                encryption_key_id=envelope.key_id,
+                content_hash="c" * 64,
+                source="pasted",
+                is_base=False,
+                version=1,
+                created_at=NOW + timedelta(minutes=1),
+                updated_at=NOW + timedelta(minutes=1),
+            )
+        )
+        session.add(
+            SavedSearch(
+                id="search-a2",
+                owner_id="owner-a",
+                career_track_id=base.career_track_id,
+                resume_version_id=resume_id,
+                name="Second search",
+                criteria_schema_version=base.criteria_schema_version,
+                criteria=dict(base.criteria),
+                pack=base.pack,
+                use_self_rag=False,
+                cadence="manual",
+                schedule={"local_time": None, "days_of_week": []},
+                timezone="UTC",
+                active=True,
+                version=1,
+                created_at=NOW + timedelta(minutes=1),
+                updated_at=NOW + timedelta(minutes=1),
+            )
+        )
+        session.flush()
+        _seed_scan_source(
+            session,
+            "owner-a",
+            "search-a2",
+            "scan-a2",
+            "source-a2",
+        )
+        persist_scan_source_role(
+            session,
+            owner_id="owner-a",
+            scan_source_id="source-a2",
+            role=_role(),
+            first_party_url_verified=True,
+            now=NOW + timedelta(minutes=2),
+        )
+
+        default_today = list_today_opportunities(
+            session,
+            owner_id="owner-a",
+            query=TodayQuery(),
+            keyring=keyring,
+            now=NOW + timedelta(minutes=3),
+        )
+        scan_today = list_today_opportunities(
+            session,
+            owner_id="owner-a",
+            query=TodayQuery(scan_id="scan-a1"),
+            keyring=keyring,
+            now=NOW + timedelta(minutes=3),
+        )
+        explicit_today = list_today_opportunities(
+            session,
+            owner_id="owner-a",
+            query=TodayQuery(saved_search_id="search-a"),
+            keyring=keyring,
+            now=NOW + timedelta(minutes=3),
+        )
+        detail = load_opportunity_detail(
+            session,
+            owner_id="owner-a",
+            opportunity_id=first.opportunity_id,
+            keyring=keyring,
+        )
+
+        assert default_today.items[0].match.assessment_saved_search_id == "search-a2"
+        assert default_today.items[0].match.resume_version_id == "resume-a2"
+        assert detail is not None and detail.match == default_today.items[0].match
+        assert scan_today.items[0].match.assessment_saved_search_id == "search-a"
+        assert scan_today.items[0].match.resume_version_id == "resume-a"
+        assert explicit_today.items[0].match == scan_today.items[0].match
+
+
+@pytest.mark.parametrize("corrupt_kind", ["resume", "profile", "evidence"])
+def test_private_assessment_failure_is_safe_and_does_not_break_today(
+    radar: tuple[Database, DataKeyring],
+    corrupt_kind: str,
+) -> None:
+    database, keyring = radar
+    marker = f"PRIVATE CORRUPT {corrupt_kind.upper()} CONTENT"
+    with database.session() as session:
+        persisted = persist_scan_source_role(
+            session,
+            owner_id="owner-a",
+            scan_source_id="source-a1",
+            role=_role(),
+            first_party_url_verified=True,
+            now=NOW,
+        )
+        if corrupt_kind == "resume":
+            resume = session.get(ResumeVersion, "resume-a")
+            assert resume is not None
+            resume.encrypted_content = marker
+        elif corrupt_kind == "profile":
+            session.add(
+                CandidateProfile(
+                    id="profile-a",
+                    owner_id="owner-a",
+                    encrypted_payload=marker,
+                    encryption_key_id="test-v1",
+                    onboarding_state="complete",
+                    version=1,
+                    created_at=NOW,
+                    updated_at=NOW,
+                )
+            )
+        else:
+            _seed_approved_evidence(
+                session,
+                owner_id="owner-a",
+                evidence_id="evidence-a",
+                keyring=keyring,
+            )
+            evidence = session.get(AchievementEvidence, "evidence-a")
+            assert evidence is not None
+            evidence.encrypted_payload = marker
+
+        today = list_today_opportunities(
+            session,
+            owner_id="owner-a",
+            query=TodayQuery(),
+            keyring=keyring,
+            now=NOW + timedelta(minutes=1),
+        )
+
+        assert [item.id for item in today.items] == [persisted.opportunity_id]
+        assert today.items[0].match.state.value == "not_assessed"
+        assert (
+            today.items[0].match.not_assessed_reason.value
+            == "assessment_unavailable"
+        )
+        assert marker not in today.model_dump_json()
+
+
+def test_missing_job_description_is_explicitly_not_assessed(
+    radar: tuple[Database, DataKeyring],
+) -> None:
+    database, keyring = radar
+    with database.session() as session:
+        persist_scan_source_role(
+            session,
+            owner_id="owner-a",
+            scan_source_id="source-a1",
+            role=_role(raw_description=None),
+            first_party_url_verified=True,
+            now=NOW,
+        )
+        today = list_today_opportunities(
+            session,
+            owner_id="owner-a",
+            query=TodayQuery(),
+            keyring=keyring,
+            now=NOW,
+        )
+
+        assert today.items[0].match.state.value == "not_assessed"
+        assert (
+            today.items[0].match.not_assessed_reason.value
+            == "description_unavailable"
+        )
 
 
 def test_today_scan_filter_returns_only_owner_observations_from_that_scan(

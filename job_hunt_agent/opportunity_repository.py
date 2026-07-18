@@ -12,7 +12,7 @@ import base64
 import hashlib
 import hmac
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date, datetime, timezone
 from typing import Any
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
@@ -24,6 +24,9 @@ from sqlalchemy.orm import Session
 
 from .job_queue import utcnow
 from .models import (
+    AchievementEvidence,
+    CandidateProfile,
+    CareerTrack,
     JobObservation,
     JobPosting,
     JobPostingAlias,
@@ -32,8 +35,17 @@ from .models import (
     OpportunityScan,
     OpportunityScanSource,
     OwnerOpportunity,
+    ResumeVersion,
     SavedSearch,
     SavedSearchMatch,
+)
+from .opportunity_assessment import (
+    AssessmentAuthorization,
+    AssessmentEvidence,
+    AssessmentPosting,
+    AssessmentProfile,
+    AssessmentTarget,
+    assess_opportunity,
 )
 from .opportunity_schemas import (
     CompensationEvidenceFact,
@@ -74,6 +86,7 @@ from .opportunity_schemas import (
     UnknownReasonCode,
 )
 from .private_payloads import decrypt_private_payload, encrypt_private_payload
+from .profile_schemas import CandidateProfileData
 from .repository_errors import ResourceConflict, require_version
 from .schemas import Role
 from .security import DataKeyring
@@ -147,6 +160,300 @@ class _DiverseTodayCursor:
     company_position: int
     surfaced_at: datetime
     opportunity_id: str
+
+
+@dataclass(frozen=True)
+class _AssessmentPrivateInputs:
+    profile: AssessmentProfile
+    evidence: tuple[AssessmentEvidence, ...]
+    available: bool
+
+
+@dataclass(frozen=True)
+class _PinnedResumeInput:
+    content: str | None
+    unavailable_reason: NotAssessedReason | None
+
+
+@dataclass
+class _OpportunityAssessmentContext:
+    """Request-local private inputs and pinned saved-search dependencies."""
+
+    session: Session
+    owner_id: str
+    keyring: DataKeyring
+    selected_saved_search_id: str | None
+    private_inputs: _AssessmentPrivateInputs
+    searches: dict[str, SavedSearch | None] = field(default_factory=dict)
+    tracks: dict[str, CareerTrack | None] = field(default_factory=dict)
+    resumes: dict[str, _PinnedResumeInput] = field(default_factory=dict)
+
+    def assess(
+        self,
+        *,
+        version: JobPostingVersion,
+        match_rows: list[tuple[SavedSearchMatch, SavedSearch]],
+    ) -> TransparentMatchSummary:
+        search = self._select_search(match_rows)
+        if search is None:
+            return _not_assessed(NotAssessedReason.assessment_unavailable)
+
+        description = _assessment_description(version.description)
+        if description is None:
+            return _not_assessed(NotAssessedReason.description_unavailable)
+        if not self.private_inputs.available:
+            return _not_assessed(NotAssessedReason.assessment_unavailable)
+
+        track = self._track(search.career_track_id)
+        if track is None:
+            return _not_assessed(NotAssessedReason.assessment_unavailable)
+        resume = self._resume(search.resume_version_id)
+        if resume.unavailable_reason is not None:
+            return _not_assessed(resume.unavailable_reason)
+        assert resume.content is not None
+
+        try:
+            target = AssessmentTarget(
+                role_families=_private_input_strings(track.role_families),
+                seniority_levels=_private_input_strings(track.seniority_levels),
+                target_locations=_private_input_strings(track.target_locations),
+            )
+        except (TypeError, ValueError):
+            return _not_assessed(NotAssessedReason.assessment_unavailable)
+
+        result = assess_opportunity(
+            posting=AssessmentPosting(
+                title=version.title,
+                description=description,
+                location=(
+                    version.location
+                    if version.location.strip().casefold() != "location not specified"
+                    else None
+                ),
+                employment_type=(
+                    version.employment_type
+                    if version.employment_type != "unknown"
+                    else None
+                ),
+            ),
+            target=target,
+            profile=self.private_inputs.profile,
+            resume_text=resume.content,
+            evidence=self.private_inputs.evidence,
+        )
+        return TransparentMatchSummary(
+            state=MatchAssessmentState.assessed,
+            algorithm_version=result.algorithm_version,
+            resume_version_id=search.resume_version_id,
+            assessment_saved_search_id=search.id,
+            fit_band=result.fit_band,
+            confidence=result.confidence,
+            eligibility=result.eligibility,
+            matched_terms=list(result.matched_terms),
+            representative_requirement=result.representative_requirement,
+            approved_evidence_ids=list(result.approved_evidence_ids),
+            strengths=list(result.strengths),
+            gaps=list(result.gaps),
+        )
+
+    def _select_search(
+        self,
+        match_rows: list[tuple[SavedSearchMatch, SavedSearch]],
+    ) -> SavedSearch | None:
+        for _match, search in match_rows:
+            self.searches[search.id] = search
+        if self.selected_saved_search_id is not None:
+            return self.searches.get(self.selected_saved_search_id)
+        if not match_rows:
+            return None
+        _match, search = max(
+            match_rows,
+            key=lambda pair: (
+                _as_utc(pair[0].last_matched_at),
+                pair[0].id,
+            ),
+        )
+        return search
+
+    def _track(self, track_id: str) -> CareerTrack | None:
+        if track_id not in self.tracks:
+            self.tracks[track_id] = self.session.scalar(
+                select(CareerTrack).where(
+                    CareerTrack.owner_id == self.owner_id,
+                    CareerTrack.id == track_id,
+                )
+            )
+        return self.tracks[track_id]
+
+    def _resume(self, resume_id: str) -> _PinnedResumeInput:
+        cached = self.resumes.get(resume_id)
+        if cached is not None:
+            return cached
+        row = self.session.scalar(
+            select(ResumeVersion).where(
+                ResumeVersion.owner_id == self.owner_id,
+                ResumeVersion.id == resume_id,
+            )
+        )
+        if row is None:
+            result = _PinnedResumeInput(
+                content=None,
+                unavailable_reason=NotAssessedReason.resume_unavailable,
+            )
+        else:
+            try:
+                payload = decrypt_private_payload(
+                    self.keyring,
+                    record_kind="resume_version",
+                    owner_id=self.owner_id,
+                    record_id=row.id,
+                    encryption_key_id=row.encryption_key_id,
+                    ciphertext=row.encrypted_content,
+                )
+                content = payload.get("content")
+                if not isinstance(content, str) or not content.strip():
+                    raise ValueError("resume private payload is invalid")
+                result = _PinnedResumeInput(content=content, unavailable_reason=None)
+            except (TypeError, ValueError):
+                result = _PinnedResumeInput(
+                    content=None,
+                    unavailable_reason=NotAssessedReason.assessment_unavailable,
+                )
+        self.resumes[resume_id] = result
+        return result
+
+
+def _build_assessment_context(
+    session: Session,
+    *,
+    owner_id: str,
+    keyring: DataKeyring,
+    selected_saved_search_id: str | None,
+) -> _OpportunityAssessmentContext:
+    profile_row = session.scalar(
+        select(CandidateProfile).where(CandidateProfile.owner_id == owner_id)
+    )
+    evidence_rows = list(
+        session.scalars(
+            select(AchievementEvidence)
+            .where(
+                AchievementEvidence.owner_id == owner_id,
+                AchievementEvidence.approval_state == "approved",
+            )
+            .order_by(AchievementEvidence.created_at, AchievementEvidence.id)
+        )
+    )
+    try:
+        profile = AssessmentProfile()
+        if profile_row is not None:
+            payload = decrypt_private_payload(
+                keyring,
+                record_kind="candidate_profile",
+                owner_id=owner_id,
+                record_id=profile_row.id,
+                encryption_key_id=profile_row.encryption_key_id,
+                ciphertext=profile_row.encrypted_payload,
+            )
+            data = CandidateProfileData.model_validate(
+                {**payload, "onboarding_step": profile_row.onboarding_state}
+            )
+            profile = AssessmentProfile(
+                current_location=data.current_location,
+                work_modes=tuple(data.work_modes),
+                employment_types=tuple(data.employment_types),
+                years_of_experience=None,
+                work_authorizations=tuple(
+                    AssessmentAuthorization(
+                        country_code=authorization.country_code,
+                        status=authorization.status,
+                    )
+                    for authorization in data.work_authorizations
+                ),
+            )
+
+        evidence: list[AssessmentEvidence] = []
+        for row in evidence_rows:
+            payload = decrypt_private_payload(
+                keyring,
+                record_kind="achievement_evidence",
+                owner_id=owner_id,
+                record_id=row.id,
+                encryption_key_id=row.encryption_key_id,
+                ciphertext=row.encrypted_payload,
+            )
+            statement = payload.get("statement")
+            if not isinstance(statement, str) or not statement.strip():
+                raise ValueError("achievement evidence private payload is invalid")
+            evidence.append(
+                AssessmentEvidence(
+                    id=row.id,
+                    statement=statement,
+                    skills=_private_input_strings(row.skills),
+                )
+            )
+        private_inputs = _AssessmentPrivateInputs(
+            profile=profile,
+            evidence=tuple(evidence),
+            available=True,
+        )
+    except (TypeError, ValueError):
+        private_inputs = _AssessmentPrivateInputs(
+            profile=AssessmentProfile(),
+            evidence=(),
+            available=False,
+        )
+    return _OpportunityAssessmentContext(
+        session=session,
+        owner_id=owner_id,
+        keyring=keyring,
+        selected_saved_search_id=selected_saved_search_id,
+        private_inputs=private_inputs,
+    )
+
+
+def _selected_assessment_search_id(
+    session: Session,
+    *,
+    owner_id: str,
+    query: TodayQuery,
+) -> str | None:
+    if query.saved_search_id is not None:
+        return query.saved_search_id
+    if query.scan_id is None:
+        return None
+    return session.scalar(
+        select(OpportunityScan.saved_search_id).where(
+            OpportunityScan.owner_id == owner_id,
+            OpportunityScan.id == query.scan_id,
+        )
+    )
+
+
+def _assessment_description(value: str | None) -> str | None:
+    if value is None:
+        return None
+    normalized = " ".join(value.split())
+    if len(normalized) < 20 or len(normalized.split()) < 3:
+        return None
+    return normalized[:100_000].rstrip()
+
+
+def _private_input_strings(value: object) -> tuple[str, ...]:
+    if not isinstance(value, (list, tuple)):
+        raise TypeError("private assessment input must be a string list")
+    result: list[str] = []
+    for item in value:
+        if not isinstance(item, str) or not item.strip():
+            raise ValueError("private assessment input must contain non-blank strings")
+        result.append(item)
+    return tuple(result)
+
+
+def _not_assessed(reason: NotAssessedReason) -> TransparentMatchSummary:
+    return TransparentMatchSummary(
+        state=MatchAssessmentState.not_assessed,
+        not_assessed_reason=reason,
+    )
 
 
 def canonicalize_posting_url(value: str) -> str:
@@ -624,8 +931,23 @@ def list_today_opportunities(
     has_more = len(rows) > query.limit
     selected = rows[: query.limit]
     selected_company_positions = company_positions[: query.limit]
+    assessment_context = _build_assessment_context(
+        session,
+        owner_id=owner_id,
+        keyring=keyring,
+        selected_saved_search_id=_selected_assessment_search_id(
+            session,
+            owner_id=owner_id,
+            query=query,
+        ),
+    )
     items = [
-        _today_item(session, opportunity=row, keyring=keyring)
+        _today_item(
+            session,
+            opportunity=row,
+            keyring=keyring,
+            assessment_context=assessment_context,
+        )
         for row in selected
     ]
     next_cursor = None
@@ -669,7 +991,18 @@ def load_opportunity_detail(
     )
     if opportunity is None:
         return None
-    base = _today_item(session, opportunity=opportunity, keyring=keyring)
+    assessment_context = _build_assessment_context(
+        session,
+        owner_id=owner_id,
+        keyring=keyring,
+        selected_saved_search_id=None,
+    )
+    base = _today_item(
+        session,
+        opportunity=opportunity,
+        keyring=keyring,
+        assessment_context=assessment_context,
+    )
     versions = list(
         session.scalars(
             select(JobPostingVersion)
@@ -878,6 +1211,7 @@ def _today_item(
     *,
     opportunity: OwnerOpportunity,
     keyring: DataKeyring,
+    assessment_context: _OpportunityAssessmentContext,
 ) -> TodayOpportunityItem:
     posting = session.scalar(
         select(JobPosting).where(
@@ -977,9 +1311,9 @@ def _today_item(
             )
             for match, search in match_rows
         ],
-        match=TransparentMatchSummary(
-            state=MatchAssessmentState.not_assessed,
-            not_assessed_reason=NotAssessedReason.not_requested,
+        match=assessment_context.assess(
+            version=latest,
+            match_rows=match_rows,
         ),
         latest_decision=(
             _decision_event_response(latest_event, keyring)
