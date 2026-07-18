@@ -97,9 +97,6 @@ export function ApplicationMaterials({
   const [questions, setQuestions] = useState<QuestionDraft[]>([]);
   const [selectedEvidenceIds, setSelectedEvidenceIds] = useState<string[]>([]);
   const [inputsDirty, setInputsDirty] = useState(false);
-  const [reviewedDiff, setReviewedDiff] = useState(false);
-  const [reviewedAnswers, setReviewedAnswers] = useState(false);
-  const [reviewedSources, setReviewedSources] = useState(false);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<MutationIntent | null>(null);
   const [unresolvedIntent, setUnresolvedIntent] = useState<MutationIntent | null>(null);
@@ -116,12 +113,6 @@ export function ApplicationMaterials({
   const setDirty = useCallback((value: boolean) => {
     dirtyRef.current = value;
     setInputsDirty(value);
-  }, []);
-
-  const resetReviewChecks = useCallback(() => {
-    setReviewedDiff(false);
-    setReviewedAnswers(false);
-    setReviewedSources(false);
   }, []);
 
   const hydrateInputs = useCallback((
@@ -146,8 +137,7 @@ export function ApplicationMaterials({
     setQuestions(hydratedQuestions);
     setSelectedEvidenceIds(evidenceIds);
     setDirty(false);
-    resetReviewChecks();
-  }, [resetReviewChecks, setDirty]);
+  }, [setDirty]);
 
   const acceptResponse = useCallback((
     next: ApplicationArtifactsResponse,
@@ -460,7 +450,6 @@ export function ApplicationMaterials({
       ambiguousMessage: eventType === "approved"
         ? "The approval may already be recorded."
         : "The rejection may already be recorded.",
-      onConfirmed: resetReviewChecks,
     });
   }
 
@@ -558,7 +547,6 @@ export function ApplicationMaterials({
       "tailored_resume_unchanged",
       "current_revision_rejected",
     ].includes(blocker));
-  const allReviewed = reviewedDiff && reviewedAnswers && reviewedSources;
   const currentRejected = projection.current_event?.event_type === "rejected" &&
     projection.current_event.artifact_revision_id === revision?.id;
 
@@ -662,37 +650,42 @@ export function ApplicationMaterials({
                   />
                 </div>
 
-                <fieldset disabled={controlsLocked} className="min-w-0">
-                  <legend className="text-sm font-semibold">Achievements to use in the résumé and note</legend>
-                  <p className="mt-1 text-xs leading-5 text-zinc-500">
-                    Select at least one exact reviewed achievement. Only these saved evidence versions may become candidate claims.
+                <details className="min-w-0 rounded-lg bg-zinc-50 p-4 dark:bg-zinc-950/60">
+                  <summary className="cursor-pointer text-sm font-semibold">
+                    Change selected evidence · {selectedEvidence.length} selected
+                  </summary>
+                  <p className="mt-2 text-xs leading-5 text-zinc-500">
+                    Up to five approved achievements are selected automatically. Open this only when you want to use different evidence.
                   </p>
-                  <div className="mt-3 space-y-2">
-                    {sourceCatalog.evidence.map((evidence) => (
-                      <label
-                        key={`${evidence.id}:${evidence.version}`}
-                        className="flex min-w-0 items-start gap-3 rounded-lg bg-zinc-50 p-3 text-sm dark:bg-zinc-950/60"
-                      >
-                        <input
-                          type="checkbox"
-                          className="mt-1"
-                          checked={selectedEvidenceIds.includes(evidence.id)}
-                          disabled={
-                            controlsLocked ||
-                            (!selectedEvidenceIds.includes(evidence.id) && selectedEvidenceIds.length >= 5)
-                          }
-                          onChange={() => toggleSelectedEvidence(evidence.id)}
-                        />
-                        <span className="min-w-0">
-                          <span className="block break-words leading-6">{evidence.statement}</span>
-                          <span className="mt-1 block text-xs text-zinc-500">
-                            Approved {formatDate(evidence.approved_at)} · version {evidence.version}
+                  <fieldset disabled={controlsLocked} className="mt-3 min-w-0">
+                    <legend className="sr-only">Achievements to use in the résumé and note</legend>
+                    <div className="space-y-2">
+                      {sourceCatalog.evidence.map((evidence) => (
+                        <label
+                          key={`${evidence.id}:${evidence.version}`}
+                          className="flex min-w-0 items-start gap-3 rounded-lg bg-white p-3 text-sm dark:bg-zinc-900/70"
+                        >
+                          <input
+                            type="checkbox"
+                            className="mt-1"
+                            checked={selectedEvidenceIds.includes(evidence.id)}
+                            disabled={
+                              controlsLocked ||
+                              (!selectedEvidenceIds.includes(evidence.id) && selectedEvidenceIds.length >= 5)
+                            }
+                            onChange={() => toggleSelectedEvidence(evidence.id)}
+                          />
+                          <span className="min-w-0">
+                            <span className="block break-words leading-6">{evidence.statement}</span>
+                            <span className="mt-1 block text-xs text-zinc-500">
+                              Approved {formatDate(evidence.approved_at)} · version {evidence.version}
+                            </span>
                           </span>
-                        </span>
-                      </label>
-                    ))}
-                  </div>
-                </fieldset>
+                        </label>
+                      ))}
+                    </div>
+                  </fieldset>
+                </details>
 
                 <div>
                   <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
@@ -797,30 +790,10 @@ export function ApplicationMaterials({
                   approvalBlocked || currentRejected ? "opacity-65" : ""
                 }`}
               >
-                <legend className="px-1 font-semibold">Safety review for this exact version</legend>
+                <legend className="px-1 font-semibold">Approve this exact package</legend>
                 <p className="mt-1 text-sm leading-6 text-zinc-600 dark:text-zinc-400">
-                  Approval creates an immutable tailored résumé. It does not fill or submit an application.
+                  Review the visible résumé diff, note, answers, sources, and unclaimed gaps above. Approving confirms that review in one step and creates an immutable tailored résumé. It does not fill or submit an application.
                 </p>
-                <div className="mt-4 space-y-3 text-sm leading-6">
-                  <ReviewCheck
-                    checked={reviewedDiff}
-                    onChange={setReviewedDiff}
-                    disabled={controlsLocked || approvalBlocked || currentRejected}
-                    label="I reviewed every addition and removal in the exact résumé diff."
-                  />
-                  <ReviewCheck
-                    checked={reviewedAnswers}
-                    onChange={setReviewedAnswers}
-                    disabled={controlsLocked || approvalBlocked || currentRejected}
-                    label="I reviewed the company note and every answer, including any item needing my input."
-                  />
-                  <ReviewCheck
-                    checked={reviewedSources}
-                    onChange={setReviewedSources}
-                    disabled={controlsLocked || approvalBlocked || currentRejected}
-                    label="I checked the linked sources and the unsupported requirements that were deliberately not claimed."
-                  />
-                </div>
                 {hasNeedsInput ? (
                   <p className="mt-3 text-sm font-medium text-amber-700 dark:text-amber-300">
                     At least one answer still needs your input. Change the question evidence and create a new version before approval.
@@ -832,7 +805,6 @@ export function ApplicationMaterials({
                     disabled={
                       approvalBlocked ||
                       currentRejected ||
-                      !allReviewed ||
                       Boolean(busy) ||
                       Boolean(unresolvedIntent && unresolvedIntent !== "approve")
                     }
@@ -843,7 +815,7 @@ export function ApplicationMaterials({
                       ? "Approving exact version…"
                       : unresolvedIntent === "approve"
                         ? "Retry unchanged approval"
-                        : `Approve revision ${revision.revision_number}`}
+                        : "Approve this package"}
                   </button>
                   <button
                     type="button"
@@ -1211,31 +1183,6 @@ function ClaimsDetails({
         </ol>
       )}
     </details>
-  );
-}
-
-function ReviewCheck({
-  checked,
-  onChange,
-  disabled,
-  label,
-}: {
-  checked: boolean;
-  onChange: (value: boolean) => void;
-  disabled: boolean;
-  label: string;
-}) {
-  return (
-    <label className="flex items-start gap-3">
-      <input
-        type="checkbox"
-        className="mt-1"
-        disabled={disabled}
-        checked={checked}
-        onChange={(event) => onChange(event.target.checked)}
-      />
-      <span>{label}</span>
-    </label>
   );
 }
 
