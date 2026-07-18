@@ -17,6 +17,10 @@ import type {
 } from "@/lib/application-artifact-types";
 import type { ApplicationStage } from "@/lib/application-types";
 import {
+  buildGroundedFitStory,
+  type GroundedFitStory,
+} from "@/lib/grounded-fit-story";
+import {
   createIdempotencyKey,
   WorkspaceApiError,
 } from "@/lib/workspace-api";
@@ -970,6 +974,11 @@ function ArtifactReview({
   const hasIncompleteAnswers = revision.answers.some(
     (answer) => answer.status === "needs_owner_input",
   );
+  const groundedFitStory = buildGroundedFitStory({
+    companyNote: revision.company_note,
+    selectedEvidence: revision.selected_evidence,
+    unsupportedRequirements,
+  });
 
   return (
     <div className="space-y-6">
@@ -994,23 +1003,22 @@ function ArtifactReview({
         </StatusMessage>
       ) : null}
 
-      {unsupportedRequirements.length > 0 ? (
-        <details open className="rounded-xl border border-amber-200 bg-amber-50 p-4 dark:border-amber-900 dark:bg-amber-950/25">
-          <summary className="cursor-pointer font-semibold text-amber-950 dark:text-amber-100">
-            Deliberately not claimed · {unsupportedRequirements.length}
-          </summary>
-          <p className="mt-2 text-sm leading-6 text-amber-900 dark:text-amber-200">
-            These reviewed gaps were not turned into résumé or answer claims.
-          </p>
-          <ul className="mt-3 space-y-2 text-sm text-amber-950 dark:text-amber-100">
-            {unsupportedRequirements.map((requirement) => (
-              <li key={requirement.id} className="break-words">
-                <span className="font-medium capitalize">{requirement.importance}:</span> {requirement.text}
-              </li>
-            ))}
-          </ul>
-        </details>
-      ) : null}
+      {groundedFitStory ? (
+        <GroundedFitStoryReview
+          story={groundedFitStory}
+          exactSourceNote={revision.company_note.text}
+          sourceClaims={revision.company_note.claims}
+          copied={copied}
+          copyText={copyText}
+        />
+      ) : (
+        <LegacyCompanyNote
+          revision={revision}
+          unsupportedRequirements={unsupportedRequirements}
+          copied={copied}
+          copyText={copyText}
+        />
+      )}
 
       <section aria-labelledby={`resume-diff-${revision.id}`} className="rounded-xl border border-zinc-200 p-4 sm:p-5 dark:border-zinc-800">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
@@ -1030,26 +1038,6 @@ function ArtifactReview({
         </div>
         <DiffViewer revision={revision} />
         <ClaimsDetails title="Résumé claim sources" claims={revision.tailored_resume.claims} />
-      </section>
-
-      <section aria-labelledby={`company-note-${revision.id}`} className="rounded-xl border border-zinc-200 p-4 sm:p-5 dark:border-zinc-800">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-          <div>
-            <h3 id={`company-note-${revision.id}`} className="font-semibold">Company-specific note</h3>
-            <p className="mt-1 text-sm text-zinc-500">Grounded only in reviewed evidence and the pinned role.</p>
-          </div>
-          <button
-            type="button"
-            onClick={() => void copyText("note", revision.company_note.text)}
-            className={secondaryButtonClasses}
-          >
-            {copied === "note" ? "Copied note" : "Copy note"}
-          </button>
-        </div>
-        <pre className="mt-4 whitespace-pre-wrap break-words rounded-lg bg-zinc-50 p-4 font-sans text-sm leading-6 dark:bg-zinc-950/60">
-          {revision.company_note.text}
-        </pre>
-        <ClaimsDetails title="Note claim sources" claims={revision.company_note.claims} />
       </section>
 
       {revision.questions.length > 0 ? (
@@ -1118,6 +1106,141 @@ function ArtifactReview({
         </pre>
       </details>
     </div>
+  );
+}
+
+function GroundedFitStoryReview({
+  story,
+  exactSourceNote,
+  sourceClaims,
+  copied,
+  copyText,
+}: {
+  story: GroundedFitStory;
+  exactSourceNote: string;
+  sourceClaims: ApplicationArtifactRevisionResponse["company_note"]["claims"];
+  copied: string | null;
+  copyText: (key: string, text: string) => Promise<void>;
+}) {
+  return (
+    <section
+      aria-labelledby="grounded-fit-story-title"
+      className="rounded-xl border border-indigo-200 bg-indigo-50/50 p-4 sm:p-5 dark:border-indigo-900 dark:bg-indigo-950/20"
+    >
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[0.12em] text-indigo-700 dark:text-indigo-300">
+            Automatically prepared
+          </p>
+          <h3 id="grounded-fit-story-title" className="mt-1 font-semibold">
+            Why I fit · grounded draft
+          </h3>
+          <p className="mt-1 max-w-3xl text-sm leading-6 text-zinc-600 dark:text-zinc-400">
+            Copy-ready starting text for an application note or outreach message. It uses only the pinned role and approved achievements from this exact materials version.
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={() => void copyText("fit-story", story.message)}
+          className={secondaryButtonClasses}
+        >
+          {copied === "fit-story" ? "Copied grounded draft" : "Copy why-I-fit draft"}
+        </button>
+      </div>
+
+      <pre className="mt-4 whitespace-pre-wrap break-words rounded-lg bg-white p-4 font-sans text-sm leading-6 dark:bg-zinc-950/60">
+        {story.message}
+      </pre>
+
+      {story.unclaimedGaps.length > 0 ? (
+        <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-4 text-amber-950 dark:border-amber-900 dark:bg-amber-950/25 dark:text-amber-100">
+          <h4 className="text-sm font-semibold">
+            Kept out of the draft · {story.unclaimedGaps.length} unclaimed {story.unclaimedGaps.length === 1 ? "gap" : "gaps"}
+          </h4>
+          <p className="mt-1 text-xs leading-5 text-amber-900 dark:text-amber-200">
+            These reviewed requirements have no approved support, so the app does not imply that you meet them.
+          </p>
+          <ul className="mt-3 space-y-2 text-sm">
+            {story.unclaimedGaps.map((gap) => (
+              <li key={gap.id} className="break-words leading-6">
+                <span className="font-medium capitalize">{gap.importance}:</span> {gap.text}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : (
+        <p className="mt-4 rounded-lg bg-emerald-50 p-3 text-sm text-emerald-900 dark:bg-emerald-950/30 dark:text-emerald-100">
+          The reviewed fit contains no requirements marked unsupported. Partial support is still described only through its approved evidence.
+        </p>
+      )}
+
+      <details className="mt-4 rounded-lg border border-zinc-200 bg-white p-3 dark:border-zinc-800 dark:bg-zinc-900/60">
+        <summary className="cursor-pointer text-sm font-medium">
+          View exact saved source note and provenance
+        </summary>
+        <p className="mt-2 text-xs leading-5 text-zinc-500">
+          The draft above is derived on screen from these immutable exact sources; it adds no unsourced experience claim.
+        </p>
+        <pre className="mt-3 whitespace-pre-wrap break-words rounded-lg bg-zinc-50 p-4 font-sans text-sm leading-6 dark:bg-zinc-950/60">
+          {exactSourceNote}
+        </pre>
+        <ClaimsDetails title="Source-note claim references" claims={sourceClaims} />
+      </details>
+    </section>
+  );
+}
+
+function LegacyCompanyNote({
+  revision,
+  unsupportedRequirements,
+  copied,
+  copyText,
+}: {
+  revision: ApplicationArtifactRevisionResponse;
+  unsupportedRequirements: NonNullable<ApplicationArtifactsResponse["source_catalog"]>["unsupported_requirements"];
+  copied: string | null;
+  copyText: (key: string, text: string) => Promise<void>;
+}) {
+  return (
+    <>
+      {unsupportedRequirements.length > 0 ? (
+        <details open className="rounded-xl border border-amber-200 bg-amber-50 p-4 dark:border-amber-900 dark:bg-amber-950/25">
+          <summary className="cursor-pointer font-semibold text-amber-950 dark:text-amber-100">
+            Deliberately not claimed · {unsupportedRequirements.length}
+          </summary>
+          <p className="mt-2 text-sm leading-6 text-amber-900 dark:text-amber-200">
+            These reviewed gaps were not turned into résumé or answer claims.
+          </p>
+          <ul className="mt-3 space-y-2 text-sm text-amber-950 dark:text-amber-100">
+            {unsupportedRequirements.map((requirement) => (
+              <li key={requirement.id} className="break-words">
+                <span className="font-medium capitalize">{requirement.importance}:</span> {requirement.text}
+              </li>
+            ))}
+          </ul>
+        </details>
+      ) : null}
+
+      <section aria-labelledby={`company-note-${revision.id}`} className="rounded-xl border border-zinc-200 p-4 sm:p-5 dark:border-zinc-800">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <h3 id={`company-note-${revision.id}`} className="font-semibold">Company-specific note</h3>
+            <p className="mt-1 text-sm text-zinc-500">Grounded only in reviewed evidence and the pinned role.</p>
+          </div>
+          <button
+            type="button"
+            onClick={() => void copyText("note", revision.company_note.text)}
+            className={secondaryButtonClasses}
+          >
+            {copied === "note" ? "Copied note" : "Copy note"}
+          </button>
+        </div>
+        <pre className="mt-4 whitespace-pre-wrap break-words rounded-lg bg-zinc-50 p-4 font-sans text-sm leading-6 dark:bg-zinc-950/60">
+          {revision.company_note.text}
+        </pre>
+        <ClaimsDetails title="Note claim sources" claims={revision.company_note.claims} />
+      </section>
+    </>
   );
 }
 
