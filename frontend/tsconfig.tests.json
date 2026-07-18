@@ -15,6 +15,7 @@
     "lib/application-pack-review.ts",
     "lib/application-undo-pursuit.ts",
     "lib/grounded-fit-story.ts",
+    "lib/grounded-outreach-drafts.ts",
     "lib/opportunity-fit.ts",
     "lib/today-company-balance.ts",
     "lib/workspace-types.ts",
@@ -24,6 +25,7 @@
     "tests/application-pack-review.test.ts",
     "tests/application-undo-pursuit.test.ts",
     "tests/grounded-fit-story.test.ts",
+    "tests/grounded-outreach-drafts.test.ts",
     "tests/opportunity-fit.test.ts",
     "tests/today-company-balance.test.ts",
     "tests/workspace-types.test.ts"

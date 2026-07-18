@@ -6,6 +6,7 @@ import {
   getApplicationContacts,
   startApplicationContactSearch,
 } from "@/lib/application-api";
+import type { ApplicationArtifactsResponse } from "@/lib/application-artifact-types";
 import type { InterviewHistoryState } from "@/lib/application-interview-types";
 import type {
   ApplicationContactBenchResponse,
@@ -48,6 +49,9 @@ export function ApplicationPeople({
   applicationVersion,
   applicationStage,
   postingState,
+  roleTitle,
+  companyName,
+  applicationArtifacts,
   ownerLocalDate,
   ownerTimezone,
   interviewHistoryState,
@@ -56,6 +60,9 @@ export function ApplicationPeople({
   applicationVersion: number;
   applicationStage: ApplicationStage;
   postingState: ApplicationPostingState;
+  roleTitle: string;
+  companyName: string;
+  applicationArtifacts: ApplicationArtifactsResponse | null;
   ownerLocalDate: string;
   ownerTimezone: string;
   interviewHistoryState: InterviewHistoryState;
@@ -439,6 +446,9 @@ export function ApplicationPeople({
       applicationVersion={applicationVersion}
       applicationStage={applicationStage}
       postingState={postingState}
+      roleTitle={roleTitle}
+      companyName={companyName}
+      applicationArtifacts={applicationArtifacts}
       ownerLocalDate={ownerLocalDate}
       ownerTimezone={ownerTimezone}
       benchReady={Boolean(result && result.verified_count > 0)}

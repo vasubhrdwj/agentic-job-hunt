@@ -89,3 +89,11 @@ export function applicationDossierLayout(
 export function interviewHistoryIsKnownEmpty(stage: ApplicationStage): boolean {
   return stage === "pursuing" || stage === "ready_to_apply";
 }
+
+export function applicationDossierNeedsArtifactBootstrap(
+  stage: ApplicationStage,
+): boolean {
+  const layout = applicationDossierLayout(stage);
+  return layout.primary.includes("people") &&
+    !layout.primary.includes("application_materials");
+}

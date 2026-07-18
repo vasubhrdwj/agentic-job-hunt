@@ -3,10 +3,11 @@
 import Link from "next/link";
 import { Fragment, useCallback, useEffect, useState } from "react";
 
-import { getApplication } from "@/lib/application-api";
+import { getApplication, getApplicationArtifacts } from "@/lib/application-api";
 import type { ApplicationArtifactsResponse } from "@/lib/application-artifact-types";
 import {
   applicationDossierLayout,
+  applicationDossierNeedsArtifactBootstrap,
   interviewHistoryIsKnownEmpty,
   type ApplicationDossierSection,
 } from "@/lib/application-dossier-layout";
@@ -75,6 +76,29 @@ export function ApplicationDossier({
     const timer = setTimeout(() => void load(), 0);
     return () => clearTimeout(timer);
   }, [load]);
+
+  useEffect(() => {
+    const application = detail?.application;
+    if (!application || !applicationDossierNeedsArtifactBootstrap(application.stage)) {
+      return;
+    }
+    let active = true;
+    void getApplicationArtifacts(application.id)
+      .then((next) => {
+        if (!active || next.application_id !== application.id) return;
+        setCurrentArtifacts((current) =>
+          current?.application_id === application.id ? current : next,
+        );
+      })
+      .catch(() => {
+        // Outreach safely stays blank without approved grounding. Artifact errors
+        // remain isolated from the application dossier and can be retried by the
+        // materials workspace when the owner opens it.
+      });
+    return () => {
+      active = false;
+    };
+  }, [detail]);
 
   if (loading) {
     return <p role="status" className="text-sm text-zinc-500">Loading application dossier…</p>;
@@ -152,6 +176,9 @@ export function ApplicationDossier({
           applicationVersion={application.version}
           applicationStage={application.stage}
           postingState={posting.state}
+          roleTitle={posting.title}
+          companyName={posting.company}
+          applicationArtifacts={currentArtifacts}
           ownerLocalDate={ownerLocalDate}
           ownerTimezone={ownerTimezone}
           interviewHistoryState={effectiveInterviewHistoryState}

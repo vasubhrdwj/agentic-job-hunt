@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
   applicationDossierLayout,
+  applicationDossierNeedsArtifactBootstrap,
   interviewHistoryIsKnownEmpty,
   type ApplicationDossierSection,
 } from "../lib/application-dossier-layout";
@@ -64,4 +65,14 @@ test("each stage assigns every visible workflow to only one priority tier", () =
 
 test("closed applications keep workflows in history instead of the main path", () => {
   assert.deepEqual(applicationDossierLayout("closed").primary, []);
+});
+
+test("an applied dossier bootstraps approved artifacts while materials stay collapsed", () => {
+  assert.equal(applicationDossierNeedsArtifactBootstrap("applied"), true);
+  assert.equal(applicationDossierNeedsArtifactBootstrap("pursuing"), false);
+  assert.equal(applicationDossierNeedsArtifactBootstrap("ready_to_apply"), false);
+  assert.equal(applicationDossierNeedsArtifactBootstrap("screening"), false);
+  assert.equal(applicationDossierNeedsArtifactBootstrap("interviewing"), false);
+  assert.equal(applicationDossierNeedsArtifactBootstrap("offer"), false);
+  assert.equal(applicationDossierNeedsArtifactBootstrap("closed"), false);
 });

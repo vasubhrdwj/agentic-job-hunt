@@ -15,6 +15,7 @@ import {
   saveApplicationOutreachMessage,
   startApplicationOutreachSequence,
 } from "@/lib/application-api";
+import type { ApplicationArtifactsResponse } from "@/lib/application-artifact-types";
 import type { InterviewHistoryState } from "@/lib/application-interview-types";
 import type {
   ApplicationPostingState,
@@ -35,6 +36,12 @@ import type {
   OutreachSentAttempt,
   OutreachTimelineEvent,
 } from "@/lib/outreach-types";
+import {
+  approvedOutreachGrounding,
+  hydrateOutreachDraft,
+  outreachDraftIsDirty,
+  prepareGroundedOutreachDrafts,
+} from "@/lib/grounded-outreach-drafts";
 import { createIdempotencyKey, WorkspaceApiError } from "@/lib/workspace-api";
 import {
   errorText,
@@ -117,6 +124,9 @@ export function ApplicationOutreach({
   applicationVersion,
   applicationStage,
   postingState,
+  roleTitle,
+  companyName,
+  applicationArtifacts,
   ownerLocalDate,
   ownerTimezone,
   benchReady,
@@ -127,6 +137,9 @@ export function ApplicationOutreach({
   applicationVersion: number;
   applicationStage: ApplicationStage;
   postingState: ApplicationPostingState;
+  roleTitle: string;
+  companyName: string;
+  applicationArtifacts: ApplicationArtifactsResponse | null;
   ownerLocalDate: string;
   ownerTimezone: string;
   benchReady: boolean;
@@ -163,6 +176,12 @@ export function ApplicationOutreach({
   const dirtyDrafts = useRef(new Set<DraftKey>());
   const pendingIntents = useRef(new Map<string, PendingIntent>());
   const replyTriggerAttemptId = useRef<string | null>(null);
+  const approvedGrounding = useMemo(() => approvedOutreachGrounding({
+    artifacts: applicationArtifacts,
+    applicationId,
+    roleTitle,
+    companyName,
+  }), [applicationArtifacts, applicationId, companyName, roleTitle]);
 
   useEffect(() => () => {
     requestGeneration.current += 1;
@@ -180,17 +199,32 @@ export function ApplicationOutreach({
     setDrafts((current) => {
       const hydrated = { ...current };
       for (const recipient of next.recipients) {
+        const prepared = prepareGroundedOutreachDrafts(approvedGrounding, {
+          applicationContactId: recipient.application_contact_id,
+          publicName: recipient.public_name,
+          currentTitle: recipient.current_title,
+          category: recipient.category,
+        });
         for (const kind of ["initial", "follow_up"] as const) {
           const key = draftKey(recipient.application_contact_id, kind);
-          if (dirtyDrafts.current.has(key)) continue;
           const saved = messageFor(recipient, kind);
-          hydrated[key] = saved?.body ?? hydrated[key] ?? "";
+          hydrated[key] = hydrateOutreachDraft({
+            currentValue: hydrated[key] ?? "",
+            dirty: dirtyDrafts.current.has(key),
+            savedBody: saved?.body ?? null,
+            preparedBody: kind === "initial" ? prepared?.initial ?? "" : prepared?.followUp ?? "",
+          });
         }
       }
       draftValues.current = hydrated;
       return hydrated;
     });
-  }, []);
+  }, [approvedGrounding]);
+
+  useEffect(() => {
+    const current = outreachRef.current;
+    if (current) hydrateDrafts(current);
+  }, [hydrateDrafts]);
 
   const acceptResponse = useCallback((
     next: ApplicationOutreachResponse,
@@ -883,12 +917,13 @@ export function ApplicationOutreach({
             Contact people without losing track
           </h2>
           <p className="mt-2 max-w-3xl text-sm leading-6 text-zinc-600 dark:text-zinc-400">
-            Write and review every message yourself. Save an exact version, copy it,
+            Grounded starting drafts are prepared from the exact approved application
+            package when available. Review or edit, save an exact version, copy it,
             send it on the person&apos;s profile or by email, then record what happened.
           </p>
         </div>
         <span className="inline-flex min-h-8 shrink-0 items-center self-start rounded-full border border-emerald-200 bg-emerald-50 px-3 text-xs font-semibold text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-200">
-          Manual only
+          Manual send
         </span>
       </div>
 
@@ -1004,6 +1039,12 @@ export function ApplicationOutreach({
                     draftFollowUp={drafts[draftKey(recipient.application_contact_id, "follow_up")] ?? ""}
                     initialDirty={Boolean(dirtyFlags[draftKey(recipient.application_contact_id, "initial")])}
                     followUpDirty={Boolean(dirtyFlags[draftKey(recipient.application_contact_id, "follow_up")])}
+                    draftsPrepared={prepareGroundedOutreachDrafts(approvedGrounding, {
+                      applicationContactId: recipient.application_contact_id,
+                      publicName: recipient.public_name,
+                      currentTitle: recipient.current_title,
+                      category: recipient.category,
+                    }) !== null}
                     channelByMessage={channels}
                     sendConfirmationByMessage={sendConfirmations}
                     locallyCopied={locallyCopied}
@@ -1014,11 +1055,25 @@ export function ApplicationOutreach({
                     replyUi={replyUi}
                     onDraftChange={(kind, value) => {
                       const key = draftKey(recipient.application_contact_id, kind);
-                      const saved = messageFor(recipient, kind)?.body ?? "";
-                      if (value === saved) dirtyDrafts.current.delete(key);
+                      const saved = messageFor(recipient, kind)?.body ?? null;
+                      const prepared = prepareGroundedOutreachDrafts(approvedGrounding, {
+                        applicationContactId: recipient.application_contact_id,
+                        publicName: recipient.public_name,
+                        currentTitle: recipient.current_title,
+                        category: recipient.category,
+                      });
+                      const preparedBody = kind === "initial"
+                        ? prepared?.initial ?? ""
+                        : prepared?.followUp ?? "";
+                      const dirty = outreachDraftIsDirty({
+                        value,
+                        savedBody: saved,
+                        preparedBody,
+                      });
+                      if (!dirty) dirtyDrafts.current.delete(key);
                       else dirtyDrafts.current.add(key);
                       draftValues.current = { ...draftValues.current, [key]: value };
-                      setDirtyFlags((current) => ({ ...current, [key]: value !== saved }));
+                      setDirtyFlags((current) => ({ ...current, [key]: dirty }));
                       setDrafts((current) => ({ ...current, [key]: value }));
                     }}
                     onSave={(kind) => void saveMessage(recipient, kind)}
@@ -1246,6 +1301,7 @@ function RecipientCard({
   draftFollowUp,
   initialDirty,
   followUpDirty,
+  draftsPrepared,
   channelByMessage,
   sendConfirmationByMessage,
   locallyCopied,
@@ -1271,6 +1327,7 @@ function RecipientCard({
   draftFollowUp: string;
   initialDirty: boolean;
   followUpDirty: boolean;
+  draftsPrepared: boolean;
   channelByMessage: Record<string, OutreachChannel>;
   sendConfirmationByMessage: Record<string, boolean>;
   locallyCopied: Record<string, boolean>;
@@ -1358,6 +1415,7 @@ function RecipientCard({
           kind="initial"
           value={draftInitial}
           dirty={initialDirty}
+          prepared={draftsPrepared && !initial && Boolean(draftInitial) && !initialDirty}
           saved={initial}
           enabled={active}
           busy={busy}
@@ -1385,6 +1443,7 @@ function RecipientCard({
             kind="follow_up"
             value={draftFollowUp}
             dirty={followUpDirty}
+            prepared={draftsPrepared && !followUp && Boolean(draftFollowUp) && !followUpDirty}
             saved={followUp}
             enabled={active && !followUp?.sent_at}
             busy={busy}
@@ -1478,6 +1537,7 @@ function MessageEditor({
   kind,
   value,
   dirty,
+  prepared,
   saved,
   enabled,
   busy,
@@ -1501,6 +1561,7 @@ function MessageEditor({
   kind: OutreachMessageKind;
   value: string;
   dirty: boolean;
+  prepared: boolean;
   saved: OutreachMessageVersion | null;
   enabled: boolean;
   busy: string | null;
@@ -1548,8 +1609,9 @@ function MessageEditor({
         </span>
       </div>
       <p id={`${inputId}-help`} className="mt-1 text-xs leading-5 text-zinc-500">
-        Keep it personal: why this role or team, one truthful proof from your experience,
-        and one small question. The text is saved exactly as written.
+        {prepared
+          ? "Prepared from this role’s exact approved materials and this person’s public facts. Review and edit it before saving; nothing sends automatically."
+          : "Keep it specific and truthful. The text is saved exactly as written, and nothing sends automatically."}
       </p>
       <textarea
         id={inputId}
@@ -1559,8 +1621,8 @@ function MessageEditor({
         disabled={!enabled || Boolean(unresolvedIntent) || Boolean(busy)}
         onChange={(event) => onChange(event.target.value)}
         placeholder={kind === "initial"
-          ? "Write your own short, specific message…"
-          : "Write one brief, respectful follow-up…"}
+          ? "No grounded starting draft is available; write a short, specific message…"
+          : "No grounded follow-up is available; write one brief, respectful note…"}
         className={`${textareaClasses} mt-2`}
       />
       <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
