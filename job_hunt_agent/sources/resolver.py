@@ -106,6 +106,42 @@ _INDIA_LOCATION_SIGNALS = (
     frozenset({"chennai"}),
     frozenset({"kolkata"}),
     frozenset({"ahmedabad"}),
+    frozenset({"kochi"}),
+    frozenset({"cochin"}),
+    frozenset({"thiruvananthapuram"}),
+    frozenset({"trivandrum"}),
+    frozenset({"jaipur"}),
+    frozenset({"chandigarh"}),
+    frozenset({"indore"}),
+    frozenset({"bhopal"}),
+    frozenset({"lucknow"}),
+    frozenset({"nagpur"}),
+    frozenset({"bhubaneswar"}),
+    frozenset({"visakhapatnam"}),
+    frozenset({"vizag"}),
+    frozenset({"coimbatore"}),
+    frozenset({"mysuru"}),
+    frozenset({"mysore"}),
+    frozenset({"mangaluru"}),
+    frozenset({"mangalore"}),
+    frozenset({"vadodara"}),
+    frozenset({"surat"}),
+    frozenset({"goa"}),
+    frozenset({"ncr"}),
+    frozenset({"kerala"}),
+    frozenset({"karnataka"}),
+    frozenset({"telangana"}),
+    frozenset({"maharashtra"}),
+    frozenset({"tamil", "nadu"}),
+    frozenset({"uttar", "pradesh"}),
+    frozenset({"west", "bengal"}),
+    frozenset({"gujarat"}),
+    frozenset({"rajasthan"}),
+    frozenset({"madhya", "pradesh"}),
+    frozenset({"odisha"}),
+    frozenset({"punjab"}),
+    frozenset({"haryana"}),
+    frozenset({"andhra", "pradesh"}),
 )
 _INDIA_LOCATION_EXCLUSIONS = (
     frozenset({"excluding", "india"}),
@@ -120,13 +156,19 @@ _INDIA_COMPATIBLE_REMOTE_REGIONS = (
     frozenset({"asia"}),
     frozenset({"asia", "pacific"}),
 )
-_REMOTE_LOCATION_GENERIC_TOKENS = frozenset(
+_LOCATION_MODE_GENERIC_TOKENS = frozenset(
     {
         "and",
         "based",
         "from",
         "home",
         "hybrid",
+        "multiple",
+        "not",
+        "onsite",
+        "on",
+        "site",
+        "office",
         "location",
         "locations",
         "only",
@@ -134,6 +176,9 @@ _REMOTE_LOCATION_GENERIC_TOKENS = frozenset(
         "position",
         "remote",
         "role",
+        "specified",
+        "unknown",
+        "various",
         "work",
     }
 )
@@ -758,15 +803,29 @@ def _matches_country_scope(role: Role, criteria: JobCriteria) -> bool:
         for signal in _INDIA_COMPATIBLE_REMOTE_REGIONS
     ):
         return True
+    requested_locations = [
+        set(_normalized(location).split()) - _LOCATION_MODE_GENERIC_TOKENS
+        for location in criteria.location
+    ]
+    if any(
+        requested and requested <= location_tokens
+        for requested in requested_locations
+    ):
+        return True
     if "remote" in location_tokens:
         # A bare Remote is eligibility-unknown and may still be useful. Once a
         # posting qualifies Remote with a place, however, an unknown qualifier
         # is not evidence that an India-based applicant can take the role.
-        return not (location_tokens - _REMOTE_LOCATION_GENERIC_TOKENS)
-    return not any(
+        return not (location_tokens - _LOCATION_MODE_GENERIC_TOKENS)
+    if any(
         signal <= location_tokens
         for signal in _INDIA_INCOMPATIBLE_LOCATION_SIGNALS
-    )
+    ):
+        return False
+    # A named place that is neither requested nor recognizably India-scoped is
+    # not evidence of eligibility for an India-only search. Mode-only/unknown
+    # labels remain eligible-but-unknown rather than becoming false positives.
+    return not (location_tokens - _LOCATION_MODE_GENERIC_TOKENS)
 
 
 def _matches_seniority_evidence(role: Role, criteria: JobCriteria) -> bool:

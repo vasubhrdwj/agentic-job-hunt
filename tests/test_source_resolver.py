@@ -536,6 +536,47 @@ def test_india_country_scope_does_not_override_another_country_search():
     assert roles == [role]
 
 
+def test_india_country_scope_rejects_named_foreign_non_remote_locations():
+    accepted_locations = [
+        "Bengaluru, Karnataka",
+        "Kochi, Kerala",
+        "Hyderabad or Singapore",
+        "On-site",
+        "Location not specified",
+    ]
+    rejected_locations = [
+        "Berlin, Germany",
+        "Singapore",
+        "São Paulo, Brazil",
+        "Tokyo, Japan",
+        "New York, NY",
+    ]
+    primary = FakeAdapter(
+        name="greenhouse",
+        supported_source=CompanySource.greenhouse,
+        roles=[
+            _role(
+                title="Backend Engineer",
+                url=f"https://acme.example/jobs/country-{index}",
+                location=location,
+            )
+            for index, location in enumerate(
+                [*accepted_locations, *rejected_locations]
+            )
+        ],
+    )
+    resolver = SourceResolver([primary], fallback=FakeAdapter(name="google_jobs"))
+
+    roles = resolver.fetch_company_roles(
+        _company(),
+        _criteria(country="in", location=["India", "Bengaluru", "Remote India"]),
+        use_cache=False,
+        allow_fallback=False,
+    )
+
+    assert [role.location for role in roles] == accepted_locations
+
+
 def test_filters_known_stale_and_wrong_type_but_preserves_unknown_dates():
     primary = FakeAdapter(
         name="greenhouse",
