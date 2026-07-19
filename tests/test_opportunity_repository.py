@@ -9,6 +9,7 @@ from pathlib import Path
 import pytest
 from cryptography.fernet import Fernet
 from sqlalchemy import event, func, select
+from sqlalchemy.dialects import postgresql
 
 import job_hunt_agent.opportunity_repository as opportunity_repository_module
 from job_hunt_agent.database import Database
@@ -986,6 +987,22 @@ def test_assessment_search_precedence_and_latest_match_are_deterministic(
         assert scan_today.items[0].match.resume_version_id == "resume-a"
         assert explicit_today.items[0].match == scan_today.items[0].match
 
+        second_search = session.get(SavedSearch, "search-a2")
+        assert second_search is not None
+        second_search.active = False
+        second_search.version += 1
+        session.flush()
+        after_deactivation = list_today_opportunities(
+            session,
+            owner_id="owner-a",
+            query=TodayQuery(),
+            keyring=keyring,
+            now=NOW + timedelta(minutes=4),
+        )
+
+        assert after_deactivation.items[0].match.assessment_saved_search_id == "search-a"
+        assert after_deactivation.items[0].match.resume_version_id == "resume-a"
+
 
 @pytest.mark.parametrize("corrupt_kind", ["resume", "profile", "evidence"])
 def test_private_assessment_failure_is_safe_and_does_not_break_today(
@@ -1333,6 +1350,93 @@ def test_today_inbox_uses_latest_reliable_partition_snapshot(
         assert refreshed_current.summary.needs_decision == 1
         assert refreshed_current.summary.watching == 1
         assert refreshed_current.summary.dismissed == 1
+
+        # A healthy source can observe raw roles that the stricter central
+        # country/title filters correctly reject. That post-filter empty result
+        # advances the partition and removes old Inbox false positives, unlike
+        # a transport-level empty response with zero observations.
+        _seed_scan_source(session, "owner-a", "search-a", "scan-a5", "source-a5")
+        filtered_source = session.get(OpportunityScanSource, "source-a5")
+        assert filtered_source is not None
+        filtered_source.observed_count = 3
+        filtered_source.returned_count = 0
+        _finish_scan_source(
+            session,
+            scan_id="scan-a5",
+            source_id="source-a5",
+            completed_at=NOW + timedelta(minutes=13),
+        )
+        filtered_current = list_today_opportunities(
+            session,
+            owner_id="owner-a",
+            query=TodayQuery(),
+            keyring=keyring,
+            now=NOW + timedelta(minutes=14),
+        )
+
+        assert filtered_current.items == []
+        assert filtered_current.summary.needs_decision == 0
+        assert filtered_current.summary.watching == 1
+        assert filtered_current.summary.dismissed == 1
+
+
+def test_today_requires_a_snapshot_from_the_active_saved_search_version(
+    radar: tuple[Database, DataKeyring],
+) -> None:
+    database, keyring = radar
+    with database.session() as session:
+        persisted = persist_scan_source_role(
+            session,
+            owner_id="owner-a",
+            scan_source_id="source-a1",
+            role=_role(),
+            first_party_url_verified=True,
+            now=NOW,
+        )
+        _finish_scan_source(
+            session,
+            scan_id="scan-a1",
+            source_id="source-a1",
+            completed_at=NOW + timedelta(minutes=1),
+        )
+        before_edit = list_today_opportunities(
+            session,
+            owner_id="owner-a",
+            query=TodayQuery(),
+            keyring=keyring,
+            now=NOW + timedelta(minutes=2),
+        )
+        assert [item.id for item in before_edit.items] == [persisted.opportunity_id]
+
+        search = session.get(SavedSearch, "search-a")
+        assert search is not None
+        search.criteria = {**search.criteria, "role_keywords": ["platform"]}
+        search.version += 1
+        search.updated_at = NOW + timedelta(minutes=3)
+        session.flush()
+
+        after_edit = list_today_opportunities(
+            session,
+            owner_id="owner-a",
+            query=TodayQuery(),
+            keyring=keyring,
+            now=NOW + timedelta(minutes=4),
+        )
+
+        assert after_edit.items == []
+        assert after_edit.summary.needs_decision == 0
+
+
+def test_today_currentness_predicate_compiles_for_postgresql_json() -> None:
+    condition = opportunity_repository_module._current_inbox_snapshot_condition(
+        owner_id="owner-a",
+        snapshot_at=NOW,
+    )
+    statement = select(OwnerOpportunity.id).where(condition)
+    compiled = str(statement.compile(dialect=postgresql.dialect()))
+
+    assert "json_array_length" in compiled
+    assert "warning_codes =" not in compiled
 
 
 def test_today_round_robins_companies_and_paginates_without_loss(

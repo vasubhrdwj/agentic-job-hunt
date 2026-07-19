@@ -329,10 +329,11 @@ class _OpportunityAssessmentContext:
             self.searches[search.id] = search
         if self.selected_saved_search_id is not None:
             return self.searches.get(self.selected_saved_search_id)
-        if not match_rows:
+        active_rows = [pair for pair in match_rows if pair[1].active]
+        if not active_rows:
             return None
         _match, search = max(
-            match_rows,
+            active_rows,
             key=lambda pair: (
                 _as_utc(pair[0].last_matched_at),
                 pair[0].id,
@@ -1646,29 +1647,24 @@ def _current_inbox_snapshot_condition(
 ) -> Any:
     """Keep Inbox roles from each active search partition's current snapshot.
 
-    Ranking is applied only after discarding failed and empty source attempts, so
-    either kind of refresh retains the last non-empty success for that exact
-    saved-search, company, and source partition. Terminal partial scans can
-    still advance their successful partitions without erasing failed ones.
-    When the owner has no reliable snapshot yet, the ``NOT EXISTS`` branch
-    preserves the cumulative pre-snapshot behavior.
+    Failed and transport-empty source attempts retain the last reliable result.
+    A warning-free fetch that observed raw roles may advance to an intentionally
+    empty post-filter snapshot, allowing stricter matching to retire prior false
+    positives. Only sources produced by the active saved-search version are
+    current; after a search edit, Inbox stays empty until that version is scanned.
+    Owners without any reliable source history retain the in-progress cumulative
+    fallback, scoped only to matches from active searches.
     """
 
-    partition_rank = func.row_number().over(
-        partition_by=(
-            OpportunityScan.saved_search_id,
-            OpportunityScanSource.company_slug,
-            OpportunityScanSource.source,
-        ),
-        order_by=(
-            OpportunityScanSource.completed_at.desc(),
-            OpportunityScanSource.id.desc(),
-        ),
-    ).label("partition_rank")
-    source_candidates = (
+    reliable_source_history = (
         select(
             OpportunityScanSource.id.label("scan_source_id"),
-            partition_rank,
+            OpportunityScan.saved_search_id.label("saved_search_id"),
+            OpportunityScanSource.company_slug.label("company_slug"),
+            OpportunityScanSource.source.label("source"),
+            OpportunityScanSource.completed_at.label("completed_at"),
+            OpportunityScan.saved_search_version.label("scan_search_version"),
+            SavedSearch.version.label("active_search_version"),
         )
         .join(
             OpportunityScan,
@@ -1683,7 +1679,14 @@ def _current_inbox_snapshot_condition(
         .where(
             OpportunityScanSource.owner_id == owner_id,
             OpportunityScanSource.status == "succeeded",
-            OpportunityScanSource.persisted_count > 0,
+            # A successful fetch that observed raw source roles but persisted
+            # none is still a trustworthy post-filter empty snapshot. This is
+            # how stricter country/title filters retire earlier false positives
+            # without treating a transport-level empty response as authoritative.
+            OpportunityScanSource.observed_count > 0,
+            # JSON equality is not available for PostgreSQL's ``json`` type;
+            # json_array_length is portable across PostgreSQL and SQLite JSON1.
+            func.json_array_length(OpportunityScanSource.warning_codes) == 0,
             OpportunityScanSource.completed_at <= snapshot_at,
             OpportunityScan.status.in_(("succeeded", "partial")),
             OpportunityScan.finalized_at.is_not(None),
@@ -1691,10 +1694,26 @@ def _current_inbox_snapshot_condition(
         )
     )
     if saved_search_id is not None:
-        source_candidates = source_candidates.where(
+        reliable_source_history = reliable_source_history.where(
             OpportunityScan.saved_search_id == saved_search_id
         )
-    ranked_sources = source_candidates.cte("ranked_reliable_today_sources")
+    history = reliable_source_history.cte("reliable_today_source_history")
+    partition_rank = func.row_number().over(
+        partition_by=(
+            history.c.saved_search_id,
+            history.c.company_slug,
+            history.c.source,
+        ),
+        order_by=(
+            history.c.completed_at.desc(),
+            history.c.scan_source_id.desc(),
+        ),
+    ).label("partition_rank")
+    ranked_sources = (
+        select(history.c.scan_source_id, partition_rank)
+        .where(history.c.scan_search_version == history.c.active_search_version)
+        .cte("ranked_reliable_today_sources")
+    )
     current_sources = (
         select(ranked_sources.c.scan_source_id)
         .where(ranked_sources.c.partition_rank == 1)
@@ -1706,10 +1725,29 @@ def _current_inbox_snapshot_condition(
             select(current_sources.c.scan_source_id)
         ),
     )
-    has_reliable_snapshot = select(current_sources.c.scan_source_id).exists()
-    return (~has_reliable_snapshot) | OwnerOpportunity.job_posting_id.in_(
-        current_posting_ids
+    active_match_ids = (
+        select(SavedSearchMatch.job_posting_id)
+        .join(
+            SavedSearch,
+            (SavedSearch.owner_id == SavedSearchMatch.owner_id)
+            & (SavedSearch.id == SavedSearchMatch.saved_search_id),
+        )
+        .where(
+            SavedSearchMatch.owner_id == owner_id,
+            SavedSearch.active.is_(True),
+        )
     )
+    if saved_search_id is not None:
+        active_match_ids = active_match_ids.where(
+            SavedSearchMatch.saved_search_id == saved_search_id
+        )
+    has_reliable_history = select(history.c.scan_source_id).exists()
+    current_snapshot = OwnerOpportunity.job_posting_id.in_(current_posting_ids)
+    in_progress_fallback = (
+        ~has_reliable_history
+        & OwnerOpportunity.job_posting_id.in_(active_match_ids)
+    )
+    return current_snapshot | in_progress_fallback
 
 
 def _today_scan_health(session: Session, owner_id: str) -> TodayScanHealth:
