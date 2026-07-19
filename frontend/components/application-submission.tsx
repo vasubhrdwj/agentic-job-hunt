@@ -13,7 +13,9 @@ import type {
   ApplicationTransitionCreate,
 } from "@/lib/application-submission-types";
 import type { ApplicationStage, ApplicationPostingState } from "@/lib/application-types";
+import { persistedVerifiedDestination } from "@/lib/application-submission-handoff";
 import { createIdempotencyKey, WorkspaceApiError } from "@/lib/workspace-api";
+import { ApprovedResumeDownload } from "./approved-resume-download";
 import {
   errorText,
   inputClasses,
@@ -27,6 +29,7 @@ interface PendingTransition {
   fingerprint: string;
   payload: ApplicationTransitionCreate;
   expectedVersion: number;
+  navigateTo: string | null;
 }
 
 export function ApplicationSubmission({
@@ -53,8 +56,6 @@ export function ApplicationSubmission({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  const [readyChecks, setReadyChecks] = useState([false, false, false, false]);
-  const [manualConfirmation, setManualConfirmation] = useState(false);
   const [readyDueOn, setReadyDueOn] = useState(ownerLocalDate);
   const [appliedOn, setAppliedOn] = useState(ownerLocalDate);
   const [followUpDueOn, setFollowUpDueOn] = useState(
@@ -126,9 +127,12 @@ export function ApplicationSubmission({
     };
   }, [effectiveArtifacts]);
 
-  async function runTransition(payload: ApplicationTransitionCreate) {
+  async function runTransition(
+    payload: ApplicationTransitionCreate,
+    navigateTo: string | null = null,
+  ) {
     if (busy) return;
-    const fingerprint = JSON.stringify(payload);
+    const fingerprint = JSON.stringify({ payload, navigateTo });
     const existing = pending.current;
     if (existing && existing.fingerprint !== fingerprint) {
       setError("Retry the unchanged pending action or refresh its saved state before changing inputs.");
@@ -139,6 +143,7 @@ export function ApplicationSubmission({
       fingerprint,
       payload,
       expectedVersion: applicationVersion,
+      navigateTo,
     };
     pending.current = request;
     setHasPending(true);
@@ -146,50 +151,71 @@ export function ApplicationSubmission({
     setError(null);
     setNotice(null);
     try {
-      await transitionApplication(
-        applicationId,
-        request.expectedVersion,
-        request.key,
-        request.payload,
-      );
+      const attempt = await transitionApplication(
+          applicationId,
+          request.expectedVersion,
+          request.key,
+          request.payload,
+        )
+        .then(() => ({ ok: true as const }))
+        .catch((reason: unknown) => ({ ok: false as const, reason }));
+
+      if (!attempt.ok) {
+        const reason = attempt.reason;
+        const saved = await load(false);
+        const apiError = reason instanceof WorkspaceApiError ? reason : null;
+        const ambiguous = !apiError || apiError.retryable || apiError.code === "mutation_pending";
+        if (saved && transitionMatches(saved, payload)) {
+          pending.current = null;
+          setHasPending(false);
+          await refreshParent();
+          setNotice("The saved transition was confirmed after checking the durable record.");
+        } else if (saved?.submission) {
+          pending.current = null;
+          setHasPending(false);
+          await refreshParent();
+          setError(
+            "A different durable application record already exists. Review the exact saved receipt below; it was not replaced.",
+          );
+        } else if (!ambiguous) {
+          pending.current = null;
+          setHasPending(false);
+          await refreshParent();
+          setError(errorText(reason, "The application transition was rejected."));
+        } else {
+          setError(
+            `${errorText(reason, "The transition result is not yet confirmed.")} ` +
+            "Your exact request is retained; retry it unchanged or check saved state.",
+          );
+        }
+        return;
+      }
+
       pending.current = null;
       setHasPending(false);
-      await onApplicationChanged();
+      const parentRefreshed = await refreshParent();
       await load(false);
       setNotice(
         payload.to_stage === "ready_to_apply"
-          ? "This exact pack is ready. Submit it manually at the saved destination."
-          : "Your manual application was recorded with the exact materials used.",
+          ? "This exact pack is ready. Continuing to the verified employer site…"
+          : parentRefreshed
+            ? "Your manual application was recorded with the exact materials used."
+            : "Your manual application was recorded. Refresh the page if the summary has not updated.",
       );
-    } catch (reason) {
-      const saved = await load(false);
-      const apiError = reason instanceof WorkspaceApiError ? reason : null;
-      const ambiguous = !apiError || apiError.retryable || apiError.code === "mutation_pending";
-      if (saved && transitionMatches(saved, payload)) {
-        pending.current = null;
-        setHasPending(false);
-        await onApplicationChanged();
-        setNotice("The saved transition was confirmed after checking the durable record.");
-      } else if (saved?.submission) {
-        pending.current = null;
-        setHasPending(false);
-        await onApplicationChanged();
-        setError(
-          "A different durable application record already exists. Review the exact saved receipt below; it was not replaced.",
-        );
-      } else if (!ambiguous) {
-        pending.current = null;
-        setHasPending(false);
-        await onApplicationChanged();
-        setError(errorText(reason, "The application transition was rejected."));
-      } else {
-        setError(
-          `${errorText(reason, "The transition result is not yet confirmed.")} ` +
-          "Your exact request is retained; retry it unchanged or check saved state.",
-        );
+      if (request.navigateTo) {
+        window.location.assign(request.navigateTo);
       }
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function refreshParent(): Promise<boolean> {
+    try {
+      await onApplicationChanged();
+      return true;
+    } catch {
+      return false;
     }
   }
 
@@ -203,14 +229,21 @@ export function ApplicationSubmission({
       if (saved && transitionMatches(saved, request.payload)) {
         pending.current = null;
         setHasPending(false);
-        await onApplicationChanged();
+        await refreshParent();
         setNotice("The exact transition was confirmed from the durable record.");
       } else if (saved?.submission) {
         pending.current = null;
         setHasPending(false);
-        await onApplicationChanged();
+        await refreshParent();
         setError(
           "A different durable application record already exists. Review the exact saved receipt below.",
+        );
+      } else if (
+        request.payload.to_stage === "ready_to_apply" &&
+        saved?.stage === "ready_to_apply"
+      ) {
+        setError(
+          "The ready state is visible, but this read view cannot prove it came from the exact pending request. Retry unchanged with the original safe receipt before continuing.",
         );
       } else {
         setError(
@@ -225,7 +258,38 @@ export function ApplicationSubmission({
   async function retryPending() {
     const request = pending.current;
     if (!request || busy) return;
-    await runTransition(request.payload);
+    await runTransition(request.payload, request.navigateTo);
+  }
+
+  async function continueToEmployer() {
+    if (!exactMaterials) {
+      setError("The approved application materials are no longer available. Refresh before continuing.");
+      return;
+    }
+    const verifiedDestination = persistedVerifiedDestination(projection, destination);
+    if (!verifiedDestination) {
+      setError(
+        "The selected employer destination is no longer in the persisted verified list. Refresh before continuing.",
+      );
+      return;
+    }
+    await runTransition({
+      ...exactMaterials,
+      to_stage: "ready_to_apply",
+      next_action_due_on: readyDueOn,
+      confirm_ready: true,
+    }, verifiedDestination);
+  }
+
+  function continueToPersistedEmployer() {
+    const verifiedDestination = persistedVerifiedDestination(projection, destination);
+    if (!verifiedDestination) {
+      setError(
+        "The selected employer destination is no longer in the persisted verified list. Refresh before continuing.",
+      );
+      return;
+    }
+    window.location.assign(verifiedDestination);
   }
 
   if (loading) {
@@ -255,10 +319,11 @@ export function ApplicationSubmission({
         Manual application
       </p>
       <h2 id="manual-application-title" className="mt-2 text-xl font-semibold">
-        Review, submit yourself, then record it
+        Continue to the employer, then record the result
       </h2>
       <p className="mt-2 max-w-3xl text-sm leading-6 text-zinc-600 dark:text-zinc-400">
-        This records what you submit. It never opens, fills, or submits an employer form for you.
+        The app records this exact pack as ready, then takes you to the verified employer site.
+        It never fills or submits the employer form for you.
       </p>
 
       {error ? <div className="mt-4"><StatusMessage kind="error">{error}</StatusMessage></div> : null}
@@ -315,49 +380,40 @@ export function ApplicationSubmission({
             onChange={setDestination}
           />
           <ExactMaterialsSummary artifacts={effectiveArtifacts} destinationHost={destinationHost} />
-          <fieldset className="space-y-3">
-            <legend className="font-semibold">Ready checklist</legend>
-            {[
-              "I reviewed the exact résumé diff.",
-              "I reviewed every answer and the company note.",
-              "I verified this is the employer’s official careers or ATS destination.",
-              "I understand that I must submit the application myself.",
-            ].map((label, index) => (
-              <label key={label} className="flex min-h-11 items-start gap-3 rounded-lg border border-zinc-200 p-3 text-sm dark:border-zinc-800">
-                <input
-                  type="checkbox"
-                  disabled={controlsLocked}
-                  checked={readyChecks[index]}
-                  onChange={(event) => setReadyChecks((current) => current.map((value, item) => item === index ? event.target.checked : value))}
-                  className="mt-0.5 h-5 w-5"
-                />
-                <span>{label}</span>
-              </label>
-            ))}
-          </fieldset>
-          <label className="block text-sm font-medium">
-            Submit-by date
-            <input
-              type="date"
-              disabled={controlsLocked}
-              value={readyDueOn}
-              min={ownerLocalDate}
-              onChange={(event) => setReadyDueOn(event.target.value)}
-              className={`${inputClasses} mt-2 sm:max-w-xs`}
-            />
-          </label>
+          <ApprovedResumeDownload
+            applicationId={applicationId}
+            available={
+              effectiveArtifacts?.status === "approved" &&
+              effectiveArtifacts.current_revision?.id === effectiveArtifacts.approved_revision?.id
+            }
+            label="Download approved résumé (.docx)"
+          />
+          <p className="text-sm leading-6 text-zinc-600 dark:text-zinc-400">
+            Continuing records the approved materials as ready, then leaves this app. You will still review and submit the employer form yourself.
+          </p>
+          <details className="rounded-lg border border-zinc-200 px-4 py-3 text-sm dark:border-zinc-800">
+            <summary className="cursor-pointer font-medium">
+              Submit by {formatDateOnly(readyDueOn)} (change)
+            </summary>
+            <label className="mt-3 block font-medium">
+              Submit by
+              <input
+                type="date"
+                disabled={controlsLocked}
+                value={readyDueOn}
+                min={ownerLocalDate}
+                onChange={(event) => setReadyDueOn(event.target.value)}
+                className={`${inputClasses} mt-2 sm:max-w-xs`}
+              />
+            </label>
+          </details>
           <button
             type="button"
-            disabled={controlsLocked || !readyChecks.every(Boolean) || !readyDueOn}
-            onClick={() => void runTransition({
-              ...exactMaterials,
-              to_stage: "ready_to_apply",
-              next_action_due_on: readyDueOn,
-              confirm_ready: true,
-            })}
+            disabled={controlsLocked || !destination || !readyDueOn}
+            onClick={() => void continueToEmployer()}
             className={`${primaryButtonClasses} w-full sm:w-auto`}
           >
-            {busy ? "Recording readiness…" : "Mark ready to apply"}
+            {busy ? "Preparing handoff…" : `Continue to ${destinationHost || "employer"} →`}
           </button>
         </div>
       ) : durableStage === "ready_to_apply" ? (
@@ -369,51 +425,59 @@ export function ApplicationSubmission({
             onChange={setDestination}
           />
           <ExactMaterialsSummary artifacts={effectiveArtifacts} destinationHost={destinationHost} />
-          <a
-            href={destination}
-            target="_blank"
-            rel="noopener noreferrer"
-            className={`${primaryButtonClasses} w-full sm:w-auto`}
-          >
-            Open employer application ↗
-          </a>
-          <div className="grid gap-4 sm:grid-cols-2">
-            <label className="block text-sm font-medium">
-              Date you applied
-              <input
-                type="date"
-                disabled={controlsLocked}
-                value={appliedOn}
-                max={ownerLocalDate}
-                onChange={(event) => setAppliedOn(event.target.value)}
-                className={`${inputClasses} mt-2`}
-              />
-            </label>
-            <label className="block text-sm font-medium">
-              Follow-up due
-              <input
-                type="date"
-                disabled={controlsLocked}
-                value={followUpDueOn}
-                min={appliedOn > ownerLocalDate ? appliedOn : ownerLocalDate}
-                onChange={(event) => setFollowUpDueOn(event.target.value)}
-                className={`${inputClasses} mt-2`}
-              />
-            </label>
-          </div>
-          <label className="flex min-h-11 items-start gap-3 rounded-lg border border-zinc-200 p-3 text-sm dark:border-zinc-800">
-            <input
-              type="checkbox"
-              disabled={controlsLocked}
-              checked={manualConfirmation}
-              onChange={(event) => setManualConfirmation(event.target.checked)}
-              className="mt-0.5 h-5 w-5"
-            />
-            <span>I submitted this application myself using the exact materials shown above.</span>
-          </label>
+          <ApprovedResumeDownload
+            applicationId={applicationId}
+            available={
+              effectiveArtifacts?.status === "approved" &&
+              effectiveArtifacts.current_revision?.id === effectiveArtifacts.approved_revision?.id
+            }
+            label="Download approved résumé (.docx)"
+          />
           <button
             type="button"
-            disabled={controlsLocked || !manualConfirmation || !destination || !appliedOn || !followUpDueOn}
+            disabled={controlsLocked || !destination}
+            onClick={continueToPersistedEmployer}
+            className={`${secondaryButtonClasses} w-full sm:w-auto`}
+          >
+            Continue to employer →
+          </button>
+          <div className="rounded-xl bg-zinc-50 p-4 text-sm dark:bg-zinc-950/60">
+            <p className="font-medium">After you submit on the employer site</p>
+            <p className="mt-1 leading-6 text-zinc-600 dark:text-zinc-400">
+              Record it here as applied on {formatDateOnly(appliedOn)}, with follow-up due {formatDateOnly(followUpDueOn)}.
+              Nothing is recorded as applied until you click the confirmation button below.
+            </p>
+          </div>
+          <details className="rounded-lg border border-zinc-200 px-4 py-3 text-sm dark:border-zinc-800">
+            <summary className="cursor-pointer font-medium">Change application or follow-up dates</summary>
+            <div className="mt-3 grid gap-4 sm:grid-cols-2">
+              <label className="block font-medium">
+                Date you applied
+                <input
+                  type="date"
+                  disabled={controlsLocked}
+                  value={appliedOn}
+                  max={ownerLocalDate}
+                  onChange={(event) => setAppliedOn(event.target.value)}
+                  className={`${inputClasses} mt-2`}
+                />
+              </label>
+              <label className="block font-medium">
+                Follow-up due
+                <input
+                  type="date"
+                  disabled={controlsLocked}
+                  value={followUpDueOn}
+                  min={appliedOn > ownerLocalDate ? appliedOn : ownerLocalDate}
+                  onChange={(event) => setFollowUpDueOn(event.target.value)}
+                  className={`${inputClasses} mt-2`}
+                />
+              </label>
+            </div>
+          </details>
+          <button
+            type="button"
+            disabled={controlsLocked || !destination || !appliedOn || !followUpDueOn}
             onClick={() => void runTransition({
               ...exactMaterials,
               to_stage: "applied",
@@ -424,7 +488,7 @@ export function ApplicationSubmission({
             })}
             className={`${primaryButtonClasses} w-full sm:w-auto`}
           >
-            {busy ? "Recording application…" : "Record manual application"}
+            {busy ? "Recording application…" : "I submitted — record application"}
           </button>
         </div>
       ) : null}
