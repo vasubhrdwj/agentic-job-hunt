@@ -95,6 +95,17 @@ scan architecture.
 
 - `GET /api/today` returns persisted summary counts, last scan health, and
   deduplicated opportunities.
+- `sort=recommended` is the default and ranks the complete filtered snapshot
+  before pagination by actionable state, eligibility, fit band, and confidence.
+  It rotates companies only within an equal tier and exposes those same labels
+  on each card instead of an opaque numeric score. `sort=newest` retains the
+  company-diverse recency view.
+- Recommended cursors bind the snapshot, query scope, ordered opportunity set,
+  and assessment fingerprints. Changes to profile, approved evidence, postings,
+  or decisions return `invalid_cursor` refresh guidance rather than duplicate or
+  omit roles across pages.
+- In the all-search view, each role is assessed with its most recent matching
+  saved search; filtering one saved search pins every assessment to that target.
 - `GET /api/opportunities/{id}` shows current facts, immutable history, source
   provenance, unknowns, and matching saved searches.
 - Initial durable decisions are `watch`, `dismiss`, and `restore_to_inbox`,

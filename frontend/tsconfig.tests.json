@@ -18,6 +18,7 @@
     "lib/grounded-outreach-drafts.ts",
     "lib/opportunity-fit.ts",
     "lib/today-company-balance.ts",
+    "lib/today-sort.ts",
     "lib/workspace-types.ts",
     "tests/application-dossier-layout.test.ts",
     "tests/application-materials-auto-generation.test.ts",
@@ -28,6 +29,7 @@
     "tests/grounded-outreach-drafts.test.ts",
     "tests/opportunity-fit.test.ts",
     "tests/today-company-balance.test.ts",
+    "tests/today-sort.test.ts",
     "tests/workspace-types.test.ts"
   ]
 }

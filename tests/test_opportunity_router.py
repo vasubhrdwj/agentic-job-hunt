@@ -42,6 +42,7 @@ from job_hunt_agent.opportunity_schemas import (
 from job_hunt_agent.owner_workspace import (
     WorkspaceCapabilityUnavailable,
     WorkspaceConflict,
+    WorkspaceInputError,
     WorkspaceNotFound,
     WorkspaceUnavailable,
 )
@@ -180,6 +181,7 @@ class FakeOpportunityStore:
     last_opportunity_saved_search_id: str | None = None
     last_decision: dict[str, object] | None = None
     unavailable_today: bool = False
+    invalid_today_cursor: bool = False
 
     def create_scan(
         self,
@@ -214,6 +216,12 @@ class FakeOpportunityStore:
         self.calls.append(("list_today", owner_id))
         if self.unavailable_today:
             raise WorkspaceUnavailable("PRIVATE_DATABASE_HOST")
+        if self.invalid_today_cursor:
+            raise WorkspaceInputError(
+                "The role order changed. Refresh Today to load a consistent list.",
+                field="cursor",
+                code="invalid_cursor",
+            )
         self.last_today_query = query
         return _today()
 
@@ -489,6 +497,7 @@ def test_today_query_validation_is_safe_and_valid_filters_reach_store(
         "/api/today",
         params={
             "view": "watching",
+            "sort": "newest",
             "scan_id": "scan1",
             "saved_search_id": "search1",
             "lane": "core",
@@ -499,6 +508,7 @@ def test_today_query_validation_is_safe_and_valid_filters_reach_store(
     assert valid.status_code == 200, valid.text
     assert store.last_today_query == TodayQuery(
         view="watching",
+        sort="newest",
         scan_id="scan1",
         saved_search_id="search1",
         lane="core",
@@ -508,6 +518,9 @@ def test_today_query_validation_is_safe_and_valid_filters_reach_store(
 
     invalid_limit = client.get("/api/today", params={"limit": "51"})
     _assert_problem(invalid_limit, status_code=422, code="invalid_request")
+
+    invalid_sort = client.get("/api/today", params={"sort": "highest_percentage"})
+    _assert_problem(invalid_sort, status_code=422, code="invalid_request")
 
     invalid_cursor = client.get("/api/today", params={"cursor": "unsafe cursor"})
     body = _assert_problem(
@@ -519,6 +532,25 @@ def test_today_query_validation_is_safe_and_valid_filters_reach_store(
 
     invalid_scan = client.get("/api/today", params={"scan_id": "../foreign"})
     _assert_problem(invalid_scan, status_code=422, code="invalid_request")
+
+
+def test_stale_today_cursor_returns_safe_refresh_guidance(
+    opportunity_client: tuple[TestClient, FakeOpportunityStore],
+) -> None:
+    client, store = opportunity_client
+    _login(client)
+    store.invalid_today_cursor = True
+
+    response = client.get("/api/today", params={"cursor": "opaque_cursor_123"})
+    body = _assert_problem(response, status_code=422, code="invalid_cursor")
+
+    assert body["message"] == (
+        "The role order changed. Refresh Today to load a consistent list."
+    )
+    assert body["field_errors"] == [
+        {"field": "cursor", "message": body["message"]}
+    ]
+    assert "opaque_cursor_123" not in json.dumps(body)
 
 
 def test_decision_enforces_origin_preconditions_etag_and_safe_validation(

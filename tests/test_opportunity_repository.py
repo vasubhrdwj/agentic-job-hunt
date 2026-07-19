@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 from cryptography.fernet import Fernet
-from sqlalchemy import func, select
+from sqlalchemy import event, func, select
 
 import job_hunt_agent.opportunity_repository as opportunity_repository_module
 from job_hunt_agent.database import Database
@@ -39,6 +39,7 @@ from job_hunt_agent.opportunity_repository import (
     persist_scan_source_role,
     posting_identity,
 )
+from job_hunt_agent.opportunity_assessment import OpportunityAssessment
 from job_hunt_agent.opportunity_schemas import OpportunityDecisionRequest, TodayQuery
 from job_hunt_agent.private_payloads import encrypt_private_payload
 from job_hunt_agent.repository_errors import ResourceConflict, VersionConflict
@@ -296,6 +297,78 @@ def _role(**updates) -> Role:
     }
     values.update(updates)
     return Role(**values)
+
+
+def _categorical_rank_assessment(*, posting, **_kwargs) -> OpportunityAssessment:
+    if posting.title.startswith("Strong"):
+        fit_band, confidence, eligibility = "strong", "high", "eligible"
+    elif posting.title.startswith("Promising"):
+        fit_band, confidence, eligibility = "promising", "medium", "eligible"
+    elif posting.title.startswith("Stretch"):
+        fit_band, confidence, eligibility = "stretch", "medium", "eligible"
+    else:
+        fit_band, confidence, eligibility = "low", "high", "likely_ineligible"
+    return OpportunityAssessment(
+        algorithm_version="test-categorical-v1",
+        fit_band=fit_band,
+        confidence=confidence,
+        eligibility=eligibility,
+        matched_terms=("Python",) if fit_band != "low" else (),
+        representative_requirement="Build reliable backend systems.",
+        approved_evidence_ids=("evidence-a",) if fit_band != "low" else (),
+        strengths=("Relevant backend evidence",) if fit_band != "low" else (),
+        gaps=("Eligibility does not match",) if fit_band == "low" else (),
+    )
+
+
+def _seed_categorical_rank_roles(session) -> dict[str, str]:
+    specifications = [
+        ("alpha", "Strong Alpha Older", "strong-alpha-old", 1),
+        ("alpha", "Strong Alpha Newer", "strong-alpha-new", 4),
+        ("beta", "Strong Beta", "strong-beta", 5),
+        ("gamma", "Promising Gamma", "promising-gamma", 20),
+        ("delta", "Stretch Delta", "stretch-delta", 30),
+        ("epsilon", "Low Epsilon", "low-epsilon", 40),
+    ]
+    source_by_company: dict[str, str] = {}
+    for company, _title, _job_id, _minute in specifications:
+        if company in source_by_company:
+            continue
+        scan_id = f"scan-rank-{company}"
+        source_id = f"source-rank-{company}"
+        _seed_scan_source(
+            session,
+            "owner-a",
+            "search-a",
+            scan_id,
+            source_id,
+            company_slug=company,
+        )
+        source = session.get(OpportunityScanSource, source_id)
+        assert source is not None
+        source.observed_count = sum(
+            1 for candidate in specifications if candidate[0] == company
+        )
+        source.returned_count = source.observed_count
+        source_by_company[company] = source_id
+    result: dict[str, str] = {}
+    for company, title, job_id, minute in specifications:
+        persisted = persist_scan_source_role(
+            session,
+            owner_id="owner-a",
+            scan_source_id=source_by_company[company],
+            role=_role(
+                company=company.title(),
+                company_slug=company,
+                title=title,
+                source_job_id=job_id,
+                url=f"https://jobs.{company}.example/{job_id}",
+            ),
+            first_party_url_verified=True,
+            now=NOW + timedelta(minutes=minute),
+        )
+        result[job_id] = persisted.opportunity_id
+    return result
 
 
 @pytest.mark.parametrize(
@@ -1221,6 +1294,223 @@ def test_today_round_robins_companies_and_paginates_without_loss(
             "amazon",
             "amazon",
         ]
+
+
+def test_today_recommended_ranks_full_result_set_before_pagination(
+    radar: tuple[Database, DataKeyring],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    database, keyring = radar
+    with database.session() as session:
+        _seed_candidate_profile(
+            session,
+            owner_id="owner-a",
+            profile_id="profile-a",
+            keyring=keyring,
+        )
+        _seed_approved_evidence(
+            session,
+            owner_id="owner-a",
+            evidence_id="evidence-a",
+            keyring=keyring,
+        )
+        expected = _seed_categorical_rank_roles(session)
+        monkeypatch.setattr(
+            opportunity_repository_module,
+            "assess_opportunity",
+            _categorical_rank_assessment,
+        )
+
+        first = list_today_opportunities(
+            session,
+            owner_id="owner-a",
+            query=TodayQuery(limit=2),
+            keyring=keyring,
+            now=NOW + timedelta(hours=2),
+        )
+
+        assert [item.match.fit_band.value for item in first.items] == [
+            "strong",
+            "strong",
+        ]
+        assert {item.posting.company_slug for item in first.items} == {"alpha", "beta"}
+        assert first.next_cursor is not None
+
+        seen = list(first.items)
+        cursor = first.next_cursor
+        while cursor is not None:
+            page = list_today_opportunities(
+                session,
+                owner_id="owner-a",
+                query=TodayQuery(limit=2, cursor=cursor),
+                keyring=keyring,
+                now=NOW + timedelta(hours=3),
+            )
+            seen.extend(page.items)
+            cursor = page.next_cursor
+
+        assert [item.match.fit_band.value for item in seen] == [
+            "strong",
+            "strong",
+            "strong",
+            "promising",
+            "stretch",
+            "low",
+        ]
+        assert {item.id for item in seen} == set(expected.values())
+        assert len({item.id for item in seen}) == len(seen)
+
+        newest = list_today_opportunities(
+            session,
+            owner_id="owner-a",
+            query=TodayQuery(sort="newest", limit=2),
+            keyring=keyring,
+            now=NOW + timedelta(hours=2),
+        )
+        assert newest.items[0].id == expected["low-epsilon"]
+        assert newest.items[0].match.fit_band.value == "low"
+
+
+@pytest.mark.parametrize("changed_input", ["profile", "evidence", "posting"])
+def test_today_recommended_cursor_fails_closed_when_ranking_inputs_change(
+    radar: tuple[Database, DataKeyring],
+    monkeypatch: pytest.MonkeyPatch,
+    changed_input: str,
+) -> None:
+    database, keyring = radar
+    with database.session() as session:
+        _seed_candidate_profile(
+            session,
+            owner_id="owner-a",
+            profile_id="profile-a",
+            keyring=keyring,
+        )
+        _seed_approved_evidence(
+            session,
+            owner_id="owner-a",
+            evidence_id="evidence-a",
+            keyring=keyring,
+        )
+        _seed_categorical_rank_roles(session)
+        monkeypatch.setattr(
+            opportunity_repository_module,
+            "assess_opportunity",
+            _categorical_rank_assessment,
+        )
+        first = list_today_opportunities(
+            session,
+            owner_id="owner-a",
+            query=TodayQuery(limit=2),
+            keyring=keyring,
+            now=NOW + timedelta(hours=2),
+        )
+        assert first.next_cursor is not None
+
+        if changed_input == "profile":
+            profile = session.get(CandidateProfile, "profile-a")
+            assert profile is not None
+            profile.version += 1
+        elif changed_input == "evidence":
+            evidence = session.get(AchievementEvidence, "evidence-a")
+            assert evidence is not None
+            evidence.version += 1
+        else:
+            _seed_scan_source(
+                session,
+                "owner-a",
+                "search-a",
+                "scan-rank-update",
+                "source-rank-update",
+                company_slug="alpha",
+            )
+            persist_scan_source_role(
+                session,
+                owner_id="owner-a",
+                scan_source_id="source-rank-update",
+                role=_role(
+                    company="Alpha",
+                    company_slug="alpha",
+                    title="Strong Alpha Newer",
+                    source_job_id="strong-alpha-new",
+                    url="https://jobs.alpha.example/strong-alpha-new",
+                    raw_description="Build changed Python backend systems.",
+                ),
+                first_party_url_verified=True,
+                now=NOW + timedelta(hours=2, minutes=1),
+            )
+        session.flush()
+
+        with pytest.raises(ValueError, match="cursor is invalid"):
+            list_today_opportunities(
+                session,
+                owner_id="owner-a",
+                query=TodayQuery(limit=2, cursor=first.next_cursor),
+                keyring=keyring,
+                now=NOW + timedelta(hours=3),
+            )
+
+
+def test_today_recommended_bulk_reads_75_candidates_without_n_plus_one(
+    radar: tuple[Database, DataKeyring],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    database, keyring = radar
+    with database.session() as session:
+        source = session.get(OpportunityScanSource, "source-a1")
+        assert source is not None
+        source.observed_count = 75
+        source.returned_count = 75
+        for index in range(75):
+            persist_scan_source_role(
+                session,
+                owner_id="owner-a",
+                scan_source_id="source-a1",
+                role=_role(
+                    source_job_id=f"perf-{index}",
+                    url=f"https://jobs.acme.example/perf/{index}",
+                    title=f"Strong Performance Role {index}",
+                ),
+                first_party_url_verified=True,
+                now=NOW + timedelta(minutes=index),
+            )
+
+        assessment_calls = 0
+
+        def counted_assessment(**kwargs):
+            nonlocal assessment_calls
+            assessment_calls += 1
+            return _categorical_rank_assessment(**kwargs)
+
+        monkeypatch.setattr(
+            opportunity_repository_module,
+            "assess_opportunity",
+            counted_assessment,
+        )
+        statements = 0
+
+        def count_statement(*_args, **_kwargs) -> None:
+            nonlocal statements
+            statements += 1
+
+        event.listen(database.engine, "before_cursor_execute", count_statement)
+        try:
+            page = list_today_opportunities(
+                session,
+                owner_id="owner-a",
+                query=TodayQuery(limit=10),
+                keyring=keyring,
+                now=NOW + timedelta(hours=2),
+            )
+        finally:
+            event.remove(database.engine, "before_cursor_execute", count_statement)
+
+        assert len(page.items) == 10
+        assert page.next_cursor is not None
+        assert assessment_calls == 75
+        # Ranking and the rendered page both use bulk reads. Distinct saved-search
+        # tracks/resumes add only personal-scale cache misses, never one query per
+        # role in the 75-item corpus.
+        assert statements <= 20
 
 
 def test_late_lock_with_older_scan_time_keeps_posting_history_monotonic(

@@ -48,6 +48,7 @@ from .opportunity_assessment import (
     assess_opportunity,
 )
 from .opportunity_schemas import (
+    AssessmentConfidence,
     CompensationEvidenceFact,
     DateEvidenceFact,
     DismissReason,
@@ -62,6 +63,8 @@ from .opportunity_schemas import (
     OpportunityDecisionState,
     OpportunityDetailResponse,
     OpportunityFactField,
+    OpportunityEligibility,
+    OpportunityFitBand,
     OpportunityFacts,
     OpportunityLane,
     OpportunityPosting,
@@ -80,6 +83,7 @@ from .opportunity_schemas import (
     TodayOpportunityItem,
     TodayQuery,
     TodayScanHealth,
+    TodaySort,
     TodaySummary,
     TodayView,
     TransparentMatchSummary,
@@ -108,6 +112,10 @@ _DECISION_NOTE_KIND = "opportunity_decision_note"
 
 class OpportunityRepositoryError(RuntimeError):
     """Base class for safe opportunity persistence failures."""
+
+
+class InvalidTodayCursor(ValueError):
+    """The opaque Today pagination token cannot continue one stable ordering."""
 
 
 class PostingIdentityConflict(OpportunityRepositoryError):
@@ -160,6 +168,23 @@ class _DiverseTodayCursor:
     company_position: int
     surfaced_at: datetime
     opportunity_id: str
+
+
+@dataclass(frozen=True)
+class _RecommendedTodayCursor:
+    snapshot_at: datetime
+    offset: int
+    ordering_fingerprint: str
+    query_fingerprint: str
+
+
+@dataclass(frozen=True)
+class _RecommendedTodayCandidate:
+    opportunity: OwnerOpportunity
+    posting: JobPosting
+    version: JobPostingVersion
+    match_rows: tuple[tuple[SavedSearchMatch, SavedSearch], ...]
+    match: TransparentMatchSummary
 
 
 @dataclass(frozen=True)
@@ -905,8 +930,73 @@ def list_today_opportunities(
             )
         )
     cursor = _decode_cursor(query.cursor) if query.cursor else None
-    company_positions: list[int] = []
-    if isinstance(cursor, _LegacyTodayCursor):
+    if isinstance(cursor, _RecommendedTodayCursor) and query.sort is not TodaySort.recommended:
+        raise InvalidTodayCursor("cursor is invalid")
+    assessment_context = _build_assessment_context(
+        session,
+        owner_id=owner_id,
+        keyring=keyring,
+        selected_saved_search_id=_selected_assessment_search_id(
+            session,
+            owner_id=owner_id,
+            query=query,
+        ),
+    )
+    lane_is_supported = query.lane in (None, OpportunityLane.unassigned)
+    recommended_mode = (
+        isinstance(cursor, _RecommendedTodayCursor)
+        or (cursor is None and query.sort is TodaySort.recommended)
+    )
+    if recommended_mode:
+        snapshot_at = cursor.snapshot_at if cursor is not None else current
+        query_fingerprint = _recommended_query_fingerprint(query)
+        if (
+            isinstance(cursor, _RecommendedTodayCursor)
+            and not hmac.compare_digest(cursor.query_fingerprint, query_fingerprint)
+        ):
+            raise InvalidTodayCursor("cursor is invalid")
+        candidates = (
+            _recommended_today_candidates(
+                session,
+                filters=filters,
+                snapshot_at=snapshot_at,
+                assessment_context=assessment_context,
+            )
+            if lane_is_supported
+            else []
+        )
+        ordered = _rank_recommended_today(candidates)
+        ordering_fingerprint = _recommended_ordering_fingerprint(ordered)
+        offset = cursor.offset if isinstance(cursor, _RecommendedTodayCursor) else 0
+        if isinstance(cursor, _RecommendedTodayCursor) and (
+            offset > len(ordered)
+            or not hmac.compare_digest(
+                cursor.ordering_fingerprint,
+                ordering_fingerprint,
+            )
+        ):
+            # A profile, evidence, posting, filter, or decision changed after page
+            # one. Refuse to splice two different rankings together; a fresh load
+            # gives the owner one coherent recommendation order.
+            raise InvalidTodayCursor("cursor is invalid")
+        selected_candidates = ordered[offset : offset + query.limit]
+        items = _recommended_today_items(
+            session,
+            candidates=selected_candidates,
+            keyring=keyring,
+        )
+        next_offset = offset + len(selected_candidates)
+        next_cursor = (
+            _encode_recommended_cursor(
+                snapshot_at=snapshot_at,
+                offset=next_offset,
+                ordering_fingerprint=ordering_fingerprint,
+                query_fingerprint=query_fingerprint,
+            )
+            if next_offset < len(ordered)
+            else None
+        )
+    elif isinstance(cursor, _LegacyTodayCursor):
         # Cursors issued before company-diverse ordering must finish traversing
         # the old recency order. Switching order mid-pagination can duplicate or
         # omit rows, so legacy tokens deliberately retain legacy semantics.
@@ -926,7 +1016,23 @@ def list_today_opportunities(
             )
             .limit(query.limit + 1)
         )
-        rows = list(session.scalars(legacy_statement))
+        rows = list(session.scalars(legacy_statement)) if lane_is_supported else []
+        has_more = len(rows) > query.limit
+        selected = rows[: query.limit]
+        items = [
+            _today_item(
+                session,
+                opportunity=row,
+                keyring=keyring,
+                assessment_context=assessment_context,
+            )
+            for row in selected
+        ]
+        next_cursor = (
+            _encode_cursor(selected[-1].last_surfaced_at, selected[-1].id)
+            if has_more and selected
+            else None
+        )
     else:
         snapshot_at = cursor.snapshot_at if cursor is not None else current
         company_position = func.row_number().over(
@@ -976,48 +1082,33 @@ def list_today_opportunities(
             ranked.c.surfaced_at.desc(),
             ranked.c.opportunity_id.desc(),
         ).limit(query.limit + 1)
-        ranked_rows = list(session.execute(diverse_statement))
+        ranked_rows = (
+            list(session.execute(diverse_statement)) if lane_is_supported else []
+        )
         rows = [row[0] for row in ranked_rows]
         company_positions = [int(row[1]) for row in ranked_rows]
-    if query.lane not in (None, OpportunityLane.unassigned):
-        rows = []
-        company_positions = []
-    has_more = len(rows) > query.limit
-    selected = rows[: query.limit]
-    selected_company_positions = company_positions[: query.limit]
-    assessment_context = _build_assessment_context(
-        session,
-        owner_id=owner_id,
-        keyring=keyring,
-        selected_saved_search_id=_selected_assessment_search_id(
-            session,
-            owner_id=owner_id,
-            query=query,
-        ),
-    )
-    items = [
-        _today_item(
-            session,
-            opportunity=row,
-            keyring=keyring,
-            assessment_context=assessment_context,
-        )
-        for row in selected
-    ]
-    next_cursor = None
-    if has_more and selected:
-        if isinstance(cursor, _LegacyTodayCursor):
-            next_cursor = _encode_cursor(
-                selected[-1].last_surfaced_at,
-                selected[-1].id,
+        has_more = len(rows) > query.limit
+        selected = rows[: query.limit]
+        selected_company_positions = company_positions[: query.limit]
+        items = [
+            _today_item(
+                session,
+                opportunity=row,
+                keyring=keyring,
+                assessment_context=assessment_context,
             )
-        else:
-            next_cursor = _encode_diverse_cursor(
+            for row in selected
+        ]
+        next_cursor = (
+            _encode_diverse_cursor(
                 snapshot_at=snapshot_at,
                 company_position=selected_company_positions[-1],
                 surfaced_at=selected[-1].last_surfaced_at,
                 opportunity_id=selected[-1].id,
             )
+            if has_more and selected
+            else None
+        )
     return TodayListResponse(
         data_source="database",
         as_of=current,
@@ -1267,6 +1358,7 @@ def _today_item(
     opportunity: OwnerOpportunity,
     keyring: DataKeyring,
     assessment_context: _OpportunityAssessmentContext,
+    assessed_match: TransparentMatchSummary | None = None,
 ) -> TodayOpportunityItem:
     posting = session.scalar(
         select(JobPosting).where(
@@ -1321,6 +1413,34 @@ def _today_item(
         )
         .limit(1)
     )
+    match = (
+        assessed_match
+        if assessed_match is not None
+        else assessment_context.assess(version=latest, match_rows=match_rows)
+    )
+    return _today_item_from_graph(
+        opportunity=opportunity,
+        posting=posting,
+        latest=latest,
+        latest_observation=latest_observation,
+        match_rows=match_rows,
+        latest_event=latest_event,
+        match=match,
+        keyring=keyring,
+    )
+
+
+def _today_item_from_graph(
+    *,
+    opportunity: OwnerOpportunity,
+    posting: JobPosting,
+    latest: JobPostingVersion,
+    latest_observation: JobObservation,
+    match_rows: list[tuple[SavedSearchMatch, SavedSearch]],
+    latest_event: OpportunityDecisionEventRow | None,
+    match: TransparentMatchSummary,
+    keyring: DataKeyring,
+) -> TodayOpportunityItem:
     facts, unknowns = _facts_and_unknowns(latest)
     if posting.lifecycle_state == "closed":
         change_kind = PostingChangeKind.closed
@@ -1366,10 +1486,7 @@ def _today_item(
             )
             for match, search in match_rows
         ],
-        match=assessment_context.assess(
-            version=latest,
-            match_rows=match_rows,
-        ),
+        match=match,
         latest_decision=(
             _decision_event_response(latest_event, keyring)
             if latest_event is not None
@@ -1590,7 +1707,297 @@ def _encode_diverse_cursor(
     return base64.urlsafe_b64encode(raw).decode("ascii").rstrip("=")
 
 
-def _decode_cursor(value: str) -> _LegacyTodayCursor | _DiverseTodayCursor:
+def _recommended_today_candidates(
+    session: Session,
+    *,
+    filters: list[Any],
+    snapshot_at: datetime,
+    assessment_context: _OpportunityAssessmentContext,
+) -> list[_RecommendedTodayCandidate]:
+    """Load every candidate's ranking inputs in three bounded bulk queries."""
+
+    opportunity_rows = list(
+        session.execute(
+            select(OwnerOpportunity, JobPosting)
+            .join(
+                JobPosting,
+                (JobPosting.owner_id == OwnerOpportunity.owner_id)
+                & (JobPosting.id == OwnerOpportunity.job_posting_id),
+            )
+            .where(*filters)
+            .where(OwnerOpportunity.last_surfaced_at <= snapshot_at)
+        )
+    )
+    posting_ids = [opportunity.job_posting_id for opportunity, _posting in opportunity_rows]
+    if not posting_ids:
+        return []
+
+    latest_versions: dict[str, JobPostingVersion] = {}
+    for version in session.scalars(
+        select(JobPostingVersion)
+        .where(
+            JobPostingVersion.owner_id == assessment_context.owner_id,
+            JobPostingVersion.job_posting_id.in_(posting_ids),
+        )
+        .order_by(
+            JobPostingVersion.job_posting_id,
+            JobPostingVersion.version_number.desc(),
+        )
+    ):
+        latest_versions.setdefault(version.job_posting_id, version)
+
+    matches_by_posting: dict[
+        str,
+        list[tuple[SavedSearchMatch, SavedSearch]],
+    ] = {}
+    for match, search in session.execute(
+        select(SavedSearchMatch, SavedSearch)
+        .join(
+            SavedSearch,
+            (SavedSearch.owner_id == SavedSearchMatch.owner_id)
+            & (SavedSearch.id == SavedSearchMatch.saved_search_id),
+        )
+        .where(
+            SavedSearchMatch.owner_id == assessment_context.owner_id,
+            SavedSearchMatch.job_posting_id.in_(posting_ids),
+        )
+        .order_by(
+            SavedSearchMatch.job_posting_id,
+            SavedSearchMatch.first_matched_at,
+            SavedSearchMatch.id,
+        )
+    ):
+        matches_by_posting.setdefault(match.job_posting_id, []).append((match, search))
+
+    candidates: list[_RecommendedTodayCandidate] = []
+    for opportunity, posting in opportunity_rows:
+        version = latest_versions.get(opportunity.job_posting_id)
+        if version is None:
+            raise OpportunityRepositoryError("opportunity posting graph is incomplete")
+        match_rows = tuple(matches_by_posting.get(opportunity.job_posting_id, []))
+        candidates.append(
+            _RecommendedTodayCandidate(
+                opportunity=opportunity,
+                posting=posting,
+                version=version,
+                match_rows=match_rows,
+                match=assessment_context.assess(
+                    version=version,
+                    match_rows=list(match_rows),
+                ),
+            )
+        )
+    return candidates
+
+
+def _recommended_today_items(
+    session: Session,
+    *,
+    candidates: list[_RecommendedTodayCandidate],
+    keyring: DataKeyring,
+) -> list[TodayOpportunityItem]:
+    """Build one page from two bulk reads and the already-ranked public graph."""
+
+    if not candidates:
+        return []
+    version_ids = [candidate.version.id for candidate in candidates]
+    observations: dict[str, JobObservation] = {}
+    for observation in session.scalars(
+        select(JobObservation)
+        .where(
+            JobObservation.owner_id == candidates[0].opportunity.owner_id,
+            JobObservation.job_posting_version_id.in_(version_ids),
+        )
+        .order_by(
+            JobObservation.job_posting_version_id,
+            JobObservation.observed_at.desc(),
+            JobObservation.id.desc(),
+        )
+    ):
+        observations.setdefault(observation.job_posting_version_id, observation)
+
+    opportunity_ids = [candidate.opportunity.id for candidate in candidates]
+    events: dict[str, OpportunityDecisionEventRow] = {}
+    for decision_event in session.scalars(
+        select(OpportunityDecisionEventRow)
+        .where(
+            OpportunityDecisionEventRow.owner_id
+            == candidates[0].opportunity.owner_id,
+            OpportunityDecisionEventRow.owner_opportunity_id.in_(opportunity_ids),
+        )
+        .order_by(
+            OpportunityDecisionEventRow.owner_opportunity_id,
+            OpportunityDecisionEventRow.occurred_at.desc(),
+            OpportunityDecisionEventRow.created_at.desc(),
+            OpportunityDecisionEventRow.id.desc(),
+        )
+    ):
+        events.setdefault(decision_event.owner_opportunity_id, decision_event)
+
+    items: list[TodayOpportunityItem] = []
+    for candidate in candidates:
+        observation = observations.get(candidate.version.id)
+        if observation is None:
+            raise OpportunityRepositoryError("posting version has no observation")
+        items.append(
+            _today_item_from_graph(
+                opportunity=candidate.opportunity,
+                posting=candidate.posting,
+                latest=candidate.version,
+                latest_observation=observation,
+                match_rows=list(candidate.match_rows),
+                latest_event=events.get(candidate.opportunity.id),
+                match=candidate.match,
+                keyring=keyring,
+            )
+        )
+    return items
+
+
+def _recommended_priority(candidate: _RecommendedTodayCandidate) -> tuple[int, ...]:
+    """Return an inspectable, categorical recommendation order.
+
+    No score is invented here: each component is already visible on the role
+    card. Actionability and eligibility are hard gates, followed by fit band and
+    confidence. Missing assessment data is deliberately placed in the
+    insufficient-data tier instead of being guessed as a match.
+    """
+
+    posting_state = {"open": 0, "unknown": 1, "closed": 2}[
+        candidate.posting.lifecycle_state
+    ]
+    decision_state = {"inbox": 0, "watch": 1, "pursued": 2, "dismiss": 3}[
+        candidate.opportunity.decision
+    ]
+    match = candidate.match
+    if match.state is MatchAssessmentState.not_assessed:
+        return posting_state, decision_state, 1, 3, 2, 1
+    assert match.eligibility is not None
+    assert match.fit_band is not None
+    assert match.confidence is not None
+    eligibility = {
+        OpportunityEligibility.eligible: 0,
+        OpportunityEligibility.uncertain: 1,
+        OpportunityEligibility.likely_ineligible: 2,
+    }[match.eligibility]
+    fit = {
+        OpportunityFitBand.strong: 0,
+        OpportunityFitBand.promising: 1,
+        OpportunityFitBand.stretch: 2,
+        OpportunityFitBand.insufficient_data: 3,
+        OpportunityFitBand.low: 4,
+    }[match.fit_band]
+    confidence = {
+        AssessmentConfidence.high: 0,
+        AssessmentConfidence.medium: 1,
+        AssessmentConfidence.low: 2,
+    }[match.confidence]
+    return posting_state, decision_state, eligibility, fit, confidence, 0
+
+
+def _rank_recommended_today(
+    candidates: list[_RecommendedTodayCandidate],
+) -> list[_RecommendedTodayCandidate]:
+    """Rank first by recommendation tier, then diversify companies in that tier."""
+
+    tiers: dict[
+        tuple[int, ...],
+        dict[str, list[_RecommendedTodayCandidate]],
+    ] = {}
+    for candidate in candidates:
+        tiers.setdefault(_recommended_priority(candidate), {}).setdefault(
+            candidate.posting.company_slug,
+            [],
+        ).append(candidate)
+
+    ordered: list[_RecommendedTodayCandidate] = []
+    for priority in sorted(tiers):
+        companies = tiers[priority]
+        for company_candidates in companies.values():
+            company_candidates.sort(
+                key=lambda candidate: (
+                    _as_utc(candidate.opportunity.last_surfaced_at),
+                    candidate.opportunity.id,
+                ),
+                reverse=True,
+            )
+        position = 0
+        while True:
+            company_round = [
+                company_candidates[position]
+                for company_candidates in companies.values()
+                if position < len(company_candidates)
+            ]
+            if not company_round:
+                break
+            company_round.sort(
+                key=lambda candidate: (
+                    _as_utc(candidate.opportunity.last_surfaced_at),
+                    candidate.opportunity.id,
+                ),
+                reverse=True,
+            )
+            ordered.extend(company_round)
+            position += 1
+    return ordered
+
+
+def _recommended_query_fingerprint(query: TodayQuery) -> str:
+    raw = _canonical_json(
+        {
+            "view": query.view.value,
+            "sort": query.sort.value,
+            "scan_id": query.scan_id,
+            "saved_search_id": query.saved_search_id,
+            "lane": query.lane.value if query.lane is not None else None,
+        }
+    ).encode("utf-8")
+    return hashlib.sha256(raw).hexdigest()
+
+
+def _recommended_ordering_fingerprint(
+    ordered: list[_RecommendedTodayCandidate],
+) -> str:
+    raw = _canonical_json(
+        [
+            [
+                candidate.opportunity.id,
+                _as_utc(candidate.opportunity.last_surfaced_at).isoformat(),
+                list(_recommended_priority(candidate)),
+                candidate.match.algorithm_version,
+                candidate.match.assessment_input_fingerprint,
+                candidate.match.not_assessed_reason.value
+                if candidate.match.not_assessed_reason is not None
+                else None,
+            ]
+            for candidate in ordered
+        ]
+    ).encode("utf-8")
+    return hashlib.sha256(raw).hexdigest()
+
+
+def _encode_recommended_cursor(
+    *,
+    snapshot_at: datetime,
+    offset: int,
+    ordering_fingerprint: str,
+    query_fingerprint: str,
+) -> str:
+    raw = _canonical_json(
+        [
+            "fit_company_round_robin_v1",
+            _as_utc(snapshot_at).isoformat(),
+            offset,
+            ordering_fingerprint,
+            query_fingerprint,
+        ]
+    ).encode("utf-8")
+    return base64.urlsafe_b64encode(raw).decode("ascii").rstrip("=")
+
+
+def _decode_cursor(
+    value: str,
+) -> _LegacyTodayCursor | _DiverseTodayCursor | _RecommendedTodayCursor:
     try:
         padded = value + "=" * (-len(value) % 4)
         decoded = json.loads(base64.urlsafe_b64decode(padded).decode("utf-8"))
@@ -1616,15 +2023,39 @@ def _decode_cursor(value: str) -> _LegacyTodayCursor | _DiverseTodayCursor:
                 surfaced_at=_as_utc(datetime.fromisoformat(timestamp)),
                 opportunity_id=_valid_cursor_opportunity_id(opportunity_id),
             )
+        if len(decoded) == 5 and decoded[0] == "fit_company_round_robin_v1":
+            _, snapshot, offset, ordering_fingerprint, query_fingerprint = decoded
+            if (
+                not isinstance(offset, int)
+                or isinstance(offset, bool)
+                or offset < 1
+                or not _is_sha256(ordering_fingerprint)
+                or not _is_sha256(query_fingerprint)
+            ):
+                raise ValueError("cursor is invalid")
+            return _RecommendedTodayCursor(
+                snapshot_at=_as_utc(datetime.fromisoformat(snapshot)),
+                offset=offset,
+                ordering_fingerprint=ordering_fingerprint,
+                query_fingerprint=query_fingerprint,
+            )
         raise ValueError("cursor is invalid")
     except (TypeError, ValueError, UnicodeError, json.JSONDecodeError) as exc:
-        raise ValueError("cursor is invalid") from exc
+        raise InvalidTodayCursor("cursor is invalid") from exc
 
 
 def _valid_cursor_opportunity_id(value: object) -> str:
     if not isinstance(value, str) or not value:
         raise ValueError("cursor is invalid")
     return value
+
+
+def _is_sha256(value: object) -> bool:
+    return (
+        isinstance(value, str)
+        and len(value) == 64
+        and all(character in "0123456789abcdef" for character in value)
+    )
 
 
 def _trimmed(value: str | None, limit: int) -> str | None:

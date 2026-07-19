@@ -50,6 +50,7 @@ from .opportunity_schemas import (
 )
 from .opportunity_repository import (
     DecisionIdempotencyConflict,
+    InvalidTodayCursor,
     OpportunityNotFound,
     OpportunityRepositoryError,
     PostingIdentityConflict,
@@ -643,6 +644,12 @@ def _opportunity_errors() -> Iterator[None]:
         raise WorkspaceConflict(str(exc)) from exc
     except OpportunityNotFound as exc:
         raise WorkspaceNotFound("opportunity not found") from exc
+    except InvalidTodayCursor as exc:
+        raise WorkspaceInputError(
+            "The role order changed. Refresh Today to load a consistent list.",
+            field="cursor",
+            code="invalid_cursor",
+        ) from exc
     except PostingIdentityConflict as exc:
         raise WorkspaceConflict(str(exc), code="posting_identity_conflict") from exc
     except ApplicationRepositoryError as exc:

@@ -32,6 +32,7 @@ from job_hunt_agent.models import (
 )
 from job_hunt_agent.application_repository import ApplicationRepositoryError
 from job_hunt_agent.opportunity_repository import (
+    InvalidTodayCursor,
     OpportunityNotFound,
     persist_scan_source_role,
 )
@@ -577,6 +578,33 @@ def test_today_and_detail_delegate_to_database_only_repository_projections(
     assert store.get_opportunity(
         owner_id="owner-b", opportunity_id=opportunity_id
     ) is None
+
+
+def test_today_maps_a_stale_ranking_cursor_to_safe_input_guidance(
+    opportunity_workspace: tuple[Database, SqlAlchemyOpportunityWorkspaceStore],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _database, store = opportunity_workspace
+
+    def stale_cursor(*_args, **_kwargs):
+        raise InvalidTodayCursor("PRIVATE_CURSOR_CONTENT")
+
+    monkeypatch.setattr(
+        workspace_module,
+        "list_today_opportunities",
+        stale_cursor,
+    )
+
+    with pytest.raises(WorkspaceInputError) as captured:
+        store.list_today(
+            owner_id="owner-a",
+            query=TodayQuery(cursor="opaque_cursor_123"),
+        )
+
+    assert captured.value.code == "invalid_cursor"
+    assert captured.value.field == "cursor"
+    assert "Refresh Today" in str(captured.value)
+    assert "PRIVATE_CURSOR_CONTENT" not in str(captured.value)
 
 
 def test_decision_delegation_maps_not_found_versions_and_idempotency_and_encrypts_note(

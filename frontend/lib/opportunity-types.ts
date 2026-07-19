@@ -24,6 +24,7 @@ export type OpportunityDecisionAction =
   | "restore_to_inbox";
 export type OpportunityLane = "reach" | "core" | "hedge" | "unassigned";
 export type TodayView = "inbox" | "watching" | "dismissed" | "all";
+export type TodaySort = "recommended" | "newest";
 export type EvidenceState = "verified" | "inferred" | "unknown";
 export type ApplicationAcquisitionSource =
   | "job_hunt_search"
@@ -244,6 +245,7 @@ export interface OpportunityDecisionResponse {
 
 export interface TodayQuery {
   view: TodayView;
+  sort?: TodaySort;
   scanId?: string;
   savedSearchId?: string;
   lane?: OpportunityLane;

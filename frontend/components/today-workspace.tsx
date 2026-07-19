@@ -18,7 +18,12 @@ import type {
   TodayResponse,
   TodayView,
 } from "@/lib/opportunity-types";
-import { createIdempotencyKey, listSavedSearches } from "@/lib/workspace-api";
+import { parseTodaySort, todaySortExplanation } from "@/lib/today-sort";
+import {
+  createIdempotencyKey,
+  listSavedSearches,
+  WorkspaceApiError,
+} from "@/lib/workspace-api";
 import type { SavedSearch } from "@/lib/workspace-types";
 import { DecisionUndo } from "./opportunity-actions";
 import { OpportunityCard } from "./opportunity-card";
@@ -59,16 +64,18 @@ export function TodayWorkspace({
   const router = useRouter();
   const searchParams = useSearchParams();
   const view = validView(searchParams.get("view"));
+  const sort = parseTodaySort(searchParams.get("sort"));
   const savedSearchId = searchParams.get("search") || undefined;
   const lane = validLane(searchParams.get("lane"));
   const scanId = searchParams.get("scan") || undefined;
-  const companyScopeKey = [view, scanId ?? "", savedSearchId ?? "", lane ?? ""].join(":");
+  const companyScopeKey = [view, sort, scanId ?? "", savedSearchId ?? "", lane ?? ""].join(":");
 
   const [today, setToday] = useState<TodayResponse | null>(null);
   const [savedSearches, setSavedSearches] = useState<SavedSearch[] | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [rankingNotice, setRankingNotice] = useState<string | null>(null);
   const [filterNonce, setFilterNonce] = useState(0);
   const [scan, setScan] = useState<ScanStatusResponse | null>(null);
   const [scanError, setScanError] = useState<string | null>(null);
@@ -83,14 +90,15 @@ export function TodayWorkspace({
   const decisionKeys = useRef<Record<string, string>>({});
 
   const query = useMemo(
-    () => ({ view, scanId, savedSearchId, lane, limit: 20 }),
-    [view, scanId, savedSearchId, lane],
+    () => ({ view, sort, scanId, savedSearchId, lane, limit: 20 }),
+    [view, sort, scanId, savedSearchId, lane],
   );
 
   const loadToday = useCallback(async (preserve: boolean) => {
     if (preserve) setRefreshing(true);
     else setLoading(true);
     setLoadError(null);
+    setRankingNotice(null);
     try {
       setToday(await getToday(query));
     } catch (reason) {
@@ -153,7 +161,7 @@ export function TodayWorkspace({
     };
   }, [scanId]);
 
-  function updateFilter(name: "view" | "search" | "lane", value: string) {
+  function updateFilter(name: "view" | "sort" | "search" | "lane", value: string) {
     const params = new URLSearchParams(searchParams.toString());
     if (value) params.set(name, value);
     else params.delete(name);
@@ -269,7 +277,18 @@ export function TodayWorkspace({
         items: [...current.items, ...next.items],
       } : next);
     } catch (reason) {
-      setLoadError(errorText(reason, "Unable to load more roles."));
+      if (reason instanceof WorkspaceApiError && reason.code === "invalid_cursor") {
+        try {
+          setToday(await getToday(query));
+          setRankingNotice(
+            "Recommendations refreshed because your profile, evidence, posting data, or decisions changed.",
+          );
+        } catch (refreshReason) {
+          setLoadError(errorText(refreshReason, "Unable to refresh your recommendations."));
+        }
+      } else {
+        setLoadError(errorText(reason, "Unable to load more roles."));
+      }
     } finally {
       setLoadingMore(false);
     }
@@ -354,12 +373,16 @@ export function TodayWorkspace({
         </aside>
       ) : null}
 
-      <section aria-label="Inbox filters" className="grid min-w-0 gap-3 rounded-xl border border-zinc-200 bg-white p-4 sm:grid-cols-3 dark:border-zinc-800 dark:bg-zinc-900/70">
+      <section aria-label="Inbox filters" className="grid min-w-0 gap-3 rounded-xl border border-zinc-200 bg-white p-4 sm:grid-cols-2 lg:grid-cols-4 dark:border-zinc-800 dark:bg-zinc-900/70">
         <Filter label="View" id="today-view" value={view} onChange={(value) => updateFilter("view", value)}>
           <option value="inbox">Needs review</option>
           <option value="watching">Watching</option>
           <option value="dismissed">Dismissed</option>
           <option value="all">All roles</option>
+        </Filter>
+        <Filter label="Order" id="today-sort" value={sort} onChange={(value) => updateFilter("sort", value)}>
+          <option value="recommended">Recommended</option>
+          <option value="newest">Newest</option>
         </Filter>
         <Filter label="Saved search" id="today-search" value={savedSearchId ?? ""} onChange={(value) => updateFilter("search", value)}>
           <option value="">All saved searches</option>
@@ -369,9 +392,16 @@ export function TodayWorkspace({
           <option value="">All lanes</option>
           <option value="unassigned">Unassigned</option>
         </Filter>
+        <p className="text-xs leading-5 text-zinc-500 sm:col-span-2 lg:col-span-4">
+          {todaySortExplanation(sort)} No hidden percentage is used; the same fit and eligibility labels appear on each role.
+          {sort === "recommended" && !savedSearchId
+            ? " With All saved searches selected, each role is assessed against the search that matched it most recently; choose one saved search to rank only for that target."
+            : ""}
+        </p>
       </section>
 
       {loadError ? <StatusMessage kind="error">{loadError} Last-confirmed roles remain below.</StatusMessage> : null}
+      {rankingNotice ? <StatusMessage kind="info">{rankingNotice}</StatusMessage> : null}
       {actionError ? <StatusMessage kind="error">{actionError}</StatusMessage> : null}
 
       {today.items.length === 0 ? (

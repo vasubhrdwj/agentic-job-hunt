@@ -254,6 +254,11 @@ class TodayView(str, Enum):
     all = "all"
 
 
+class TodaySort(str, Enum):
+    recommended = "recommended"
+    newest = "newest"
+
+
 class ScanHealthState(str, Enum):
     never_run = "never_run"
     healthy = "healthy"
@@ -973,6 +978,7 @@ class TodayScanHealth(ContractModel):
 
 class TodayQuery(ContractModel):
     view: TodayView = TodayView.inbox
+    sort: TodaySort = TodaySort.recommended
     scan_id: OpaqueId | None = None
     saved_search_id: OpaqueId | None = None
     lane: OpportunityLane | None = None
@@ -1041,6 +1047,7 @@ __all__ = [
     "TodayQuery",
     "TodayScanHealth",
     "TodaySummary",
+    "TodaySort",
     "TodayView",
     "TransparentMatchSummary",
     "UTCDateTime",

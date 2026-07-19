@@ -29,6 +29,7 @@ from ..opportunity_schemas import (
     ScanStatusResponse,
     TodayListResponse,
     TodayQuery,
+    TodaySort,
     TodayView,
 )
 from ..opportunity_workspace import OpportunityWorkspaceStore
@@ -140,6 +141,7 @@ def create_opportunity_router(
     )
     def list_today(
         view: TodayView = Query(default=TodayView.inbox),
+        sort: TodaySort = Query(default=TodaySort.recommended),
         scan_id: OpaqueId | None = Query(default=None),
         saved_search_id: OpaqueId | None = Query(default=None),
         lane: OpportunityLane | None = Query(default=None),
@@ -149,6 +151,7 @@ def create_opportunity_router(
     ) -> TodayListResponse:
         query = TodayQuery(
             view=view,
+            sort=sort,
             scan_id=scan_id,
             saved_search_id=saved_search_id,
             lane=lane,
