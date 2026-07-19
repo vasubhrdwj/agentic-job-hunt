@@ -49,12 +49,13 @@ def _role(
     source: CompanySource = CompanySource.greenhouse,
     company_slug: str | None = None,
     source_job_id: str | None = None,
+    location: str = "India",
 ) -> Role:
     return Role(
         company=company,
         title=title,
         url=url,
-        location="India",
+        location=location,
         summary="Build backend services.",
         match_reason="The posting asks for backend services.",
         source=source,
@@ -411,6 +412,128 @@ def test_backend_title_gate_rejects_recruiting_roles_matched_from_description():
     )
 
     assert roles == []
+
+
+def test_backend_title_taxonomy_keeps_engineering_families_and_rejects_false_positives():
+    kept_titles = [
+        "Backend Engineer",
+        "Software Engineer I",
+        "Software Development Engineer I",
+        "SDE I",
+        "Platform Engineer",
+        "Infrastructure Engineer",
+        "Site Reliability Engineer",
+        "Systems Development Engineer I",
+    ]
+    rejected_titles = [
+        "Machine Learning Engineer",
+        "ML Engineer",
+        "SDE, Machine Learning",
+        "Software Engineer, Machine Learning",
+        "Customer Success Engineer",
+        "Platform Engineer, Customer Success",
+        "Technical Support Engineer",
+        "Software Support Engineer",
+        "Sales Engineer",
+        "Infrastructure Sales Engineer",
+        "Controls Engineer",
+        "Software Controls Engineer",
+        "Technical Services Engineer",
+        "Platform Engineer, Technical Services",
+        "Service Delivery Engineer",
+        "SDE, Service Delivery",
+        "GTM Engineer",
+        "GTM Platform Engineer",
+        "Forward Deployed Engineer",
+        "Software Engineer, Forward Deployed (FDE)",
+    ]
+    primary = FakeAdapter(
+        name="greenhouse",
+        supported_source=CompanySource.greenhouse,
+        roles=[
+            _role(
+                title=title,
+                url=f"https://acme.example/jobs/title-{index}",
+            )
+            for index, title in enumerate([*kept_titles, *rejected_titles])
+        ],
+    )
+    resolver = SourceResolver([primary], fallback=FakeAdapter(name="google_jobs"))
+
+    roles = resolver.fetch_company_roles(
+        _company(),
+        _criteria(role_keywords=["Backend Engineer", "Software Engineer"]),
+        use_cache=False,
+        allow_fallback=False,
+    )
+
+    assert [role.title for role in roles] == kept_titles
+
+
+def test_india_country_scope_rejects_foreign_remote_roles_centrally():
+    accepted_locations = [
+        "Remote",
+        "Remote - India",
+        "Remote - APAC",
+        "Worldwide remote",
+        "Remote - United Kingdom or India",
+    ]
+    rejected_locations = [
+        "Remote - Ireland",
+        "Remote, Spain",
+        "Remote - Canada",
+        "Remote - United States",
+        "Remote (US only)",
+        "Remote - UK",
+        "Remote - London",
+        "Remote - Singapore",
+        "Remote - Germany",
+        "Remote - Brazil",
+        "Remote - APAC (excluding India)",
+    ]
+    primary = FakeAdapter(
+        name="greenhouse",
+        supported_source=CompanySource.greenhouse,
+        roles=[
+            _role(
+                title="Backend Engineer",
+                url=f"https://acme.example/jobs/location-{index}",
+                location=location,
+            )
+            for index, location in enumerate(
+                [*accepted_locations, *rejected_locations]
+            )
+        ],
+    )
+    resolver = SourceResolver([primary], fallback=FakeAdapter(name="google_jobs"))
+
+    roles = resolver.fetch_company_roles(
+        _company(),
+        _criteria(country="in", location=["Remote India", "Bengaluru"]),
+        use_cache=False,
+        allow_fallback=False,
+    )
+
+    assert [role.location for role in roles] == accepted_locations
+
+
+def test_india_country_scope_does_not_override_another_country_search():
+    role = _role(location="Remote - Canada")
+    primary = FakeAdapter(
+        name="greenhouse",
+        supported_source=CompanySource.greenhouse,
+        roles=[role],
+    )
+    resolver = SourceResolver([primary], fallback=FakeAdapter(name="google_jobs"))
+
+    roles = resolver.fetch_company_roles(
+        _company(),
+        _criteria(country="ca", location=["Remote Canada"]),
+        use_cache=False,
+        allow_fallback=False,
+    )
+
+    assert roles == [role]
 
 
 def test_filters_known_stale_and_wrong_type_but_preserves_unknown_dates():

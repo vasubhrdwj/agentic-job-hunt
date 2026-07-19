@@ -51,7 +51,6 @@ _BACKEND_TITLE_ROLE_NOUNS = frozenset(
         "developers",
         "engineer",
         "engineers",
-        "sde",
     }
 )
 _ENGINEERING_EARLY_CAREER_NOUNS = frozenset(
@@ -63,6 +62,109 @@ _ENGINEERING_EARLY_CAREER_NOUNS = frozenset(
         "internship",
         "trainee",
     }
+)
+_BACKEND_TITLE_ACRONYMS = frozenset({"sde", "sre", "swe"})
+_BACKEND_TITLE_HARD_EXCLUSIONS = (
+    frozenset({"customer", "success"}),
+    frozenset({"support"}),
+    frozenset({"sales"}),
+    frozenset({"technical", "service"}),
+    frozenset({"technical", "services"}),
+    frozenset({"service", "delivery"}),
+    frozenset({"go", "to", "market"}),
+    frozenset({"gtm"}),
+    frozenset({"forward", "deployed"}),
+    frozenset({"fde"}),
+)
+_GENERIC_SOFTWARE_TITLE_EXCLUSIONS = (
+    frozenset({"machine", "learning"}),
+    frozenset({"ml"}),
+    frozenset({"controls"}),
+    frozenset({"frontend"}),
+    frozenset({"front", "end"}),
+    frozenset({"mobile"}),
+    frozenset({"ios"}),
+    frozenset({"android"}),
+    frozenset({"embedded"}),
+    frozenset({"firmware"}),
+    frozenset({"quality", "assurance"}),
+    frozenset({"qa"}),
+    frozenset({"test"}),
+)
+_INDIA_LOCATION_SIGNALS = (
+    frozenset({"india"}),
+    frozenset({"indian"}),
+    frozenset({"bengaluru"}),
+    frozenset({"bangalore"}),
+    frozenset({"hyderabad"}),
+    frozenset({"gurugram"}),
+    frozenset({"gurgaon"}),
+    frozenset({"pune"}),
+    frozenset({"mumbai"}),
+    frozenset({"delhi"}),
+    frozenset({"noida"}),
+    frozenset({"chennai"}),
+    frozenset({"kolkata"}),
+    frozenset({"ahmedabad"}),
+)
+_INDIA_LOCATION_EXCLUSIONS = (
+    frozenset({"excluding", "india"}),
+    frozenset({"except", "india"}),
+)
+_INDIA_COMPATIBLE_REMOTE_REGIONS = (
+    frozenset({"worldwide"}),
+    frozenset({"anywhere"}),
+    frozenset({"global"}),
+    frozenset({"apac"}),
+    frozenset({"apj"}),
+    frozenset({"asia"}),
+    frozenset({"asia", "pacific"}),
+)
+_REMOTE_LOCATION_GENERIC_TOKENS = frozenset(
+    {
+        "and",
+        "based",
+        "from",
+        "home",
+        "hybrid",
+        "location",
+        "locations",
+        "only",
+        "or",
+        "position",
+        "remote",
+        "role",
+        "work",
+    }
+)
+_INDIA_INCOMPATIBLE_LOCATION_SIGNALS = (
+    frozenset({"ireland"}),
+    frozenset({"spain"}),
+    frozenset({"canada"}),
+    frozenset({"united", "states"}),
+    frozenset({"usa"}),
+    frozenset({"us"}),
+    frozenset({"u", "s"}),
+    frozenset({"united", "kingdom"}),
+    frozenset({"uk"}),
+    frozenset({"u", "k"}),
+    frozenset({"britain"}),
+    frozenset({"england"}),
+    frozenset({"scotland"}),
+    frozenset({"wales"}),
+    frozenset({"europe"}),
+    frozenset({"emea"}),
+    frozenset({"australia"}),
+    frozenset({"new", "zealand"}),
+    frozenset({"latam"}),
+    frozenset({"latin", "america"}),
+    frozenset({"dublin"}),
+    frozenset({"madrid"}),
+    frozenset({"barcelona"}),
+    frozenset({"toronto"}),
+    frozenset({"vancouver"}),
+    frozenset({"montreal"}),
+    frozenset({"london"}),
 )
 _ADVANCED_TITLE_TOKENS = frozenset(
     {
@@ -422,6 +524,8 @@ def _filter_and_dedupe(roles: Iterable[Role], criteria: JobCriteria) -> list[Rol
     for role in roles:
         if not _matches_role_intent(role, criteria):
             continue
+        if not _matches_country_scope(role, criteria):
+            continue
         if not _matches_seniority_evidence(role, criteria):
             continue
         if (
@@ -593,10 +697,75 @@ def _explicitly_requests_application_engineer(criteria: JobCriteria) -> bool:
 
 
 def _is_backend_role_title(title_tokens: set[str]) -> bool:
-    if title_tokens.intersection(_BACKEND_TITLE_ROLE_NOUNS):
-        return True
-    return "engineering" in title_tokens and bool(
+    if any(family <= title_tokens for family in _BACKEND_TITLE_HARD_EXCLUSIONS):
+        return False
+
+    has_role_noun = bool(title_tokens.intersection(_BACKEND_TITLE_ROLE_NOUNS))
+    has_early_career_role = "engineering" in title_tokens and bool(
         title_tokens.intersection(_ENGINEERING_EARLY_CAREER_NOUNS)
+    )
+    has_role_shape = (
+        has_role_noun
+        or has_early_career_role
+        or bool(title_tokens.intersection(_BACKEND_TITLE_ACRONYMS))
+    )
+    if not has_role_shape:
+        return False
+
+    # These are the role families the backend pack intentionally discovers.
+    # Requiring a family prevents incidental body matches from turning every
+    # kind of engineer into a backend recommendation.
+    if title_tokens.intersection(
+        {"backend", "infrastructure", "infra", "platform"}
+    ):
+        return True
+    if {"site", "reliability"} <= title_tokens:
+        return True
+    if {"systems", "development"} <= title_tokens:
+        return True
+    if {"distributed", "systems"} <= title_tokens:
+        return True
+    if any(
+        family <= title_tokens for family in _GENERIC_SOFTWARE_TITLE_EXCLUSIONS
+    ):
+        return False
+    return (
+        bool(title_tokens.intersection(_BACKEND_TITLE_ACRONYMS))
+        or "software" in title_tokens
+    )
+
+
+def _matches_country_scope(role: Role, criteria: JobCriteria) -> bool:
+    """Apply country semantics once, after every source adapter.
+
+    A bare ``Remote`` remains eligible because the posting does not prove a
+    conflict. Explicit worldwide/APAC scopes include India. Explicit foreign
+    scopes do not, unless the same multi-location posting also names India or
+    an India-compatible region.
+    """
+
+    if criteria.country.strip().casefold() != "in":
+        return True
+    location_tokens = set(_normalized(role.location).split())
+    if not location_tokens:
+        return True
+    if any(signal <= location_tokens for signal in _INDIA_LOCATION_EXCLUSIONS):
+        return False
+    if any(signal <= location_tokens for signal in _INDIA_LOCATION_SIGNALS):
+        return True
+    if any(
+        signal <= location_tokens
+        for signal in _INDIA_COMPATIBLE_REMOTE_REGIONS
+    ):
+        return True
+    if "remote" in location_tokens:
+        # A bare Remote is eligibility-unknown and may still be useful. Once a
+        # posting qualifies Remote with a place, however, an unknown qualifier
+        # is not evidence that an India-based applicant can take the role.
+        return not (location_tokens - _REMOTE_LOCATION_GENERIC_TOKENS)
+    return not any(
+        signal <= location_tokens
+        for signal in _INDIA_INCOMPATIBLE_LOCATION_SIGNALS
     )
 
 
