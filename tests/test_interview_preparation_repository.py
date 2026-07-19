@@ -190,6 +190,17 @@ def test_load_and_save_are_evidence_pinned_encrypted_and_idempotent(
     }
     assert all(prompt.evidence for prompt in before.prompts)
     assert all(prompt.draft.situation == "" for prompt in before.prompts)
+    assert all(prompt.starting_draft is not None for prompt in before.prompts)
+    for prompt in before.prompts:
+        assert prompt.starting_draft is not None
+        assert prompt.starting_draft.source_requirement_id == prompt.requirement_id
+        assert [
+            (reference.id, reference.version)
+            for reference in prompt.starting_draft.source_evidence
+        ] == [(item.id, item.version) for item in prompt.evidence]
+        assert prompt.starting_draft.draft.situation == ""
+        assert prompt.starting_draft.draft.task == ""
+        assert prompt.starting_draft.draft.action == ""
     evidence = before.prompts[0].evidence[0]
     assert evidence.statement.startswith("PRIVATE EVIDENCE")
     assert evidence.version >= 2
@@ -217,6 +228,11 @@ def test_load_and_save_are_evidence_pinned_encrypted_and_idempotent(
         assert row is not None
         assert "Owner-authored fact" not in row.encrypted_payload
         assert "PRIVATE EVIDENCE" not in row.encrypted_payload
+        stored_prompts = preparation_repository._load_revision_prompts(
+            row,
+            keyring=keyring,
+        )
+        assert all(prompt.starting_draft is None for prompt in stored_prompts)
         replay = create_interview_preparation_revision(
             session,
             owner_id="owner-a",
@@ -414,6 +430,88 @@ def test_changed_or_retired_evidence_blocks_new_writes(submitted_workspace) -> N
                 idempotency_key="retired-evidence-save",
                 keyring=keyring,
             )
+
+
+def test_separate_required_evidence_gap_does_not_block_usable_grounded_prompts(
+    submitted_workspace,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    database, keyring = submitted_workspace
+    with database.session() as session:
+        ordinary = load_application_interview_preparation(
+            session,
+            owner_id="owner-a",
+            application_id="application1",
+            keyring=keyring,
+        )
+    assert ordinary is not None
+    supported = ordinary.requirements[0]
+    requirements = [
+        ApplicationPackRequirementResponse(
+            id=supported.id,
+            ordinal=1,
+            importance="required",
+            text=supported.text,
+            source_start=0,
+            source_end=1,
+            coverage="supported",
+            evidence=supported.evidence,
+        ),
+        ApplicationPackRequirementResponse(
+            id="separate-required-gap",
+            ordinal=2,
+            importance="required",
+            text="Experience operating Kubernetes in production.",
+            source_start=2,
+            source_end=3,
+            coverage="unsupported",
+            evidence=[],
+        ),
+    ]
+    monkeypatch.setattr(
+        preparation_repository,
+        "_load_revision_payload",
+        lambda *args, **kwargs: (
+            "persisted_description",
+            "x" * 100,
+            requirements,
+        ),
+    )
+
+    with database.session() as session:
+        projection = load_application_interview_preparation(
+            session,
+            owner_id="owner-a",
+            application_id="application1",
+            keyring=keyring,
+        )
+    assert projection is not None
+    assert projection.status.value == "not_started"
+    assert projection.prompts
+    assert {
+        blocker.value for blocker in projection.blockers
+    }.isdisjoint({"required_requirement_evidence_missing"})
+    assert [gap.requirement_id for gap in projection.evidence_gaps] == [
+        "separate-required-gap"
+    ]
+    assert any("Prepare the evidence-backed stories now" in step for step in projection.next_steps)
+
+    with database.session() as session:
+        saved = create_interview_preparation_revision(
+            session,
+            owner_id="owner-a",
+            application_id="application1",
+            payload=_payload(projection),
+            expected_version=projection.write_version,
+            idempotency_key="save-with-separate-required-gap",
+            keyring=keyring,
+            now=NOW + timedelta(hours=2),
+        )
+    assert saved is not None
+    assert saved.status.value == "ready"
+    assert [gap.requirement_id for gap in saved.evidence_gaps] == [
+        "separate-required-gap"
+    ]
 
 
 def test_version_conflict_is_detected_before_append(submitted_workspace) -> None:

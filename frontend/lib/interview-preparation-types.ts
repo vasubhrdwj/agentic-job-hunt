@@ -1,4 +1,7 @@
-import type { ApplicationPackEvidenceSnapshot } from "./application-pack-types";
+import type {
+  ApplicationPackEvidenceReference,
+  ApplicationPackEvidenceSnapshot,
+} from "./application-pack-types";
 
 export type InterviewPreparationStatus =
   | "blocked"
@@ -30,6 +33,25 @@ export interface InterviewPreparationStarDraft {
   result: string;
 }
 
+export type InterviewPreparationMissingFact =
+  | "situation_context"
+  | "personal_responsibility"
+  | "specific_actions"
+  | "verified_result"
+  | "motivation_connection"
+  | "conflict_or_ambiguity_details"
+  | "setback_and_learning_details"
+  | "leadership_or_collaboration_details";
+
+export interface InterviewPreparationStartingDraft {
+  generation_method: "exact_sources_v1";
+  source_requirement_id: string;
+  source_evidence: ApplicationPackEvidenceReference[];
+  result_evidence: ApplicationPackEvidenceReference | null;
+  draft: InterviewPreparationStarDraft;
+  missing_facts: InterviewPreparationMissingFact[];
+}
+
 export interface InterviewPreparationPromptDraftCreate
   extends InterviewPreparationStarDraft {
   prompt_id: string;
@@ -42,6 +64,7 @@ export interface InterviewPreparationPrompt {
   requirement_id: string | null;
   requirement_text: string | null;
   evidence: ApplicationPackEvidenceSnapshot[];
+  starting_draft: InterviewPreparationStartingDraft | null;
   draft: InterviewPreparationStarDraft;
   missing_sections: Array<"situation" | "task" | "action" | "result">;
 }

@@ -7,9 +7,11 @@ import {
   createInterviewPreparationRevision,
   getApplicationInterviewPreparation,
 } from "@/lib/application-api";
+import { insertGroundedDraftIntoEmptyFields } from "@/lib/interview-preparation-drafts";
 import type {
   ApplicationInterviewPreparationResponse,
   InterviewPreparationBlocker,
+  InterviewPreparationMissingFact,
   InterviewPreparationPrompt,
   InterviewPreparationRevisionCreate,
   InterviewPreparationStarDraft,
@@ -46,6 +48,17 @@ const BLOCKER_COPY: Record<InterviewPreparationBlocker, string> = {
     "At least one required qualification has no approved evidence. The app will not fill that gap with an invented story.",
   required_prompt_capacity_exceeded:
     "There are more required, evidence-backed requirements than the 12-prompt safety limit. None will be silently grouped or treated as prepared.",
+};
+
+const MISSING_FACT_COPY: Record<InterviewPreparationMissingFact, string> = {
+  situation_context: "Situation: when and where this happened, who was involved, and what was at stake.",
+  personal_responsibility: "Task: your exact responsibility, separate from the team’s goal.",
+  specific_actions: "Action: the steps and decisions you personally took.",
+  verified_result: "Result: a verified outcome or metric. Leave it blank if you cannot prove one.",
+  motivation_connection: "Motivation: why this example genuinely connects to this company and role.",
+  conflict_or_ambiguity_details: "Conflict or ambiguity: what was unclear or contested and how you handled it.",
+  setback_and_learning_details: "Learning: the real setback, what changed in your thinking, and what you did differently.",
+  leadership_or_collaboration_details: "Collaboration: who you worked with and how your contribution helped them succeed.",
 };
 
 export function ApplicationInterviewPreparation({
@@ -105,6 +118,21 @@ export function ApplicationInterviewPreparation({
       [promptId]: { ...(current[promptId] ?? EMPTY_DRAFT), [field]: value },
     }));
     setNotice(null);
+    setSaveError(null);
+    setRetryPending(false);
+  }
+
+  function insertGroundedStartingDraft(prompt: InterviewPreparationPrompt) {
+    const starter = prompt.starting_draft?.draft;
+    if (!starter) return;
+    setDrafts((values) => {
+      const current = values[prompt.id] ?? EMPTY_DRAFT;
+      const next = insertGroundedDraftIntoEmptyFields(current, starter);
+      return sameDraft(current, next) ? values : { ...values, [prompt.id]: next };
+    });
+    setNotice(
+      "If Result was empty, the exact approved outcome was inserted locally. Existing text was kept. Verify it before saving; nothing was saved or approved automatically.",
+    );
     setSaveError(null);
     setRetryPending(false);
   }
@@ -202,7 +230,7 @@ export function ApplicationInterviewPreparation({
             Build truthful stories for {projection.target.label}
           </h2>
           <p className="mt-2 max-w-3xl text-sm leading-6 text-zinc-600 dark:text-zinc-400">
-            The questions come only from the exact role, submitted application, and evidence you approved. STAR fields start blank and only contain what you write.
+            The questions come only from the exact role, submitted application, and evidence you approved. Grounded starters never guess Situation, Task, or Action, and they are never saved automatically.
           </p>
         </div>
         <div className="max-w-xs sm:text-right">
@@ -296,6 +324,11 @@ export function ApplicationInterviewPreparation({
                 </li>
               ))}
             </ul>
+            {projection.status !== "blocked" ? (
+              <p className="mt-3 leading-6 text-amber-950 dark:text-amber-100">
+                These gaps stay visible, but they do not stop you from preparing the evidence-backed stories below.
+              </p>
+            ) : null}
           </details>
         ) : null}
 
@@ -321,6 +354,7 @@ export function ApplicationInterviewPreparation({
                 draft={drafts[prompt.id] ?? EMPTY_DRAFT}
                 disabled={saving || projection.status === "blocked"}
                 onChange={(field, value) => updateDraft(prompt.id, field, value)}
+                onUseStartingDraft={() => insertGroundedStartingDraft(prompt)}
               />
             ))}
           </div>
@@ -349,14 +383,18 @@ function PromptEditor({
   draft,
   disabled,
   onChange,
+  onUseStartingDraft,
 }: {
   prompt: InterviewPreparationPrompt;
   index: number;
   draft: InterviewPreparationStarDraft;
   disabled: boolean;
   onChange: (field: keyof InterviewPreparationStarDraft, value: string) => void;
+  onUseStartingDraft: () => void;
 }) {
   const baseId = `interview-prompt-${prompt.id}`;
+  const startingDraft = prompt.starting_draft;
+  const hasResultStarter = Boolean(startingDraft?.draft.result.trim());
   return (
     <details open={index === 0} className="rounded-xl border border-zinc-200 p-4 dark:border-zinc-800">
       <summary className="cursor-pointer font-semibold">
@@ -366,6 +404,48 @@ function PromptEditor({
         <span className="mt-2 block text-sm leading-6">{prompt.question}</span>
       </summary>
       <div className="mt-4 space-y-4">
+        {startingDraft ? (
+          <div className="rounded-lg border border-violet-200 bg-violet-50 p-3 text-sm dark:border-violet-900 dark:bg-violet-950/25">
+            <p className="text-xs font-semibold uppercase tracking-wide text-violet-700 dark:text-violet-300">
+              Grounded starting outline · not saved
+            </p>
+            <p className="mt-3 text-xs font-semibold uppercase tracking-wide text-zinc-500">
+              What this story must demonstrate
+            </p>
+            <p className="mt-1 leading-6">{prompt.requirement_text}</p>
+            <p className="mt-3 text-xs font-semibold uppercase tracking-wide text-zinc-500">
+              Facts still missing from a truthful answer
+            </p>
+            <ul className="mt-2 list-disc space-y-1 pl-5 leading-6">
+              {startingDraft.missing_facts.map((fact) => (
+                <li key={fact}>{MISSING_FACT_COPY[fact]}</li>
+              ))}
+            </ul>
+            {hasResultStarter ? (
+              <div className="mt-3 rounded-md border border-violet-200 bg-white p-3 dark:border-violet-900 dark:bg-zinc-950/40">
+                <p className="text-xs font-semibold uppercase tracking-wide text-zinc-500">
+                  Exact approved outcome available for Result
+                </p>
+                <p className="mt-1 leading-6">{startingDraft.draft.result}</p>
+                <button
+                  type="button"
+                  disabled={disabled || Boolean(draft.result.trim())}
+                  onClick={onUseStartingDraft}
+                  className={`${secondaryButtonClasses} mt-3`}
+                >
+                  {draft.result.trim() ? "Keep existing Result" : "Use exact result as a starter"}
+                </button>
+                <p className="mt-2 text-xs leading-5 text-zinc-600 dark:text-zinc-400">
+                  This fills only an empty Result field. It never replaces your text, saves, or approves the answer.
+                </p>
+              </div>
+            ) : (
+              <p className="mt-3 text-xs leading-5 text-zinc-600 dark:text-zinc-400">
+                No approved statement explicitly names an outcome, so Result stays blank instead of guessing.
+              </p>
+            )}
+          </div>
+        ) : null}
         <div className="rounded-lg bg-violet-50 p-3 text-sm dark:bg-violet-950/25">
           <p className="text-xs font-semibold uppercase tracking-wide text-violet-700 dark:text-violet-300">Approved evidence · reference, not an answer</p>
           {prompt.evidence.map((evidence) => (

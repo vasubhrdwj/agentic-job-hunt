@@ -7,7 +7,10 @@ from typing import Literal, Self
 
 from pydantic import BaseModel, ConfigDict, Field, StrictInt, field_validator, model_validator
 
-from .application_pack_schemas import ApplicationPackEvidenceSnapshot
+from .application_pack_schemas import (
+    ApplicationPackEvidenceReference,
+    ApplicationPackEvidenceSnapshot,
+)
 from .application_schemas import OpaqueId, UTCDateTime
 
 
@@ -38,6 +41,17 @@ class InterviewPreparationPromptCategory(str, Enum):
     conflict_ambiguity = "conflict_ambiguity"
     failure_learning = "failure_learning"
     leadership_collaboration = "leadership_collaboration"
+
+
+class InterviewPreparationMissingFact(str, Enum):
+    situation_context = "situation_context"
+    personal_responsibility = "personal_responsibility"
+    specific_actions = "specific_actions"
+    verified_result = "verified_result"
+    motivation_connection = "motivation_connection"
+    conflict_or_ambiguity_details = "conflict_or_ambiguity_details"
+    setback_and_learning_details = "setback_and_learning_details"
+    leadership_or_collaboration_details = "leadership_or_collaboration_details"
 
 
 class InterviewPreparationBlocker(str, Enum):
@@ -107,6 +121,42 @@ class InterviewPreparationStarDraft(InterviewPreparationContract):
     result: str = Field(default="", max_length=MAX_STAR_SECTION_CHARS)
 
 
+class InterviewPreparationStartingDraft(InterviewPreparationContract):
+    """Unsaved, deterministic source material for overcoming a blank page.
+
+    Situation, task, and action stay empty because neither a role requirement nor an
+    achievement statement proves those STAR facts. Result may contain one exact
+    approved statement only when that statement explicitly describes an outcome.
+    """
+
+    generation_method: Literal["exact_sources_v1"] = "exact_sources_v1"
+    source_requirement_id: OpaqueId
+    source_evidence: list[ApplicationPackEvidenceReference] = Field(
+        min_length=1,
+        max_length=10,
+    )
+    result_evidence: ApplicationPackEvidenceReference | None = None
+    draft: InterviewPreparationStarDraft
+    missing_facts: list[InterviewPreparationMissingFact] = Field(
+        min_length=1,
+        max_length=8,
+    )
+
+    @model_validator(mode="after")
+    def source_references_are_unique(self) -> Self:
+        refs = [(item.id, item.version) for item in self.source_evidence]
+        if len(refs) != len(set(refs)):
+            raise ValueError("starting-draft evidence references must be unique")
+        if self.result_evidence is not None and (
+            self.result_evidence.id,
+            self.result_evidence.version,
+        ) not in set(refs):
+            raise ValueError("result evidence must belong to the starting-draft sources")
+        if len(self.missing_facts) != len(set(self.missing_facts)):
+            raise ValueError("starting-draft missing facts must be unique")
+        return self
+
+
 class InterviewPreparationPromptDraftCreate(InterviewPreparationStarDraft):
     prompt_id: OpaqueId
 
@@ -118,6 +168,7 @@ class InterviewPreparationPrompt(InterviewPreparationContract):
     requirement_id: OpaqueId | None = None
     requirement_text: str | None = Field(default=None, min_length=1, max_length=2_000)
     evidence: list[ApplicationPackEvidenceSnapshot] = Field(min_length=1, max_length=10)
+    starting_draft: InterviewPreparationStartingDraft | None = None
     draft: InterviewPreparationStarDraft
     missing_sections: list[Literal["situation", "task", "action", "result"]] = Field(
         default_factory=list,
@@ -135,7 +186,161 @@ class InterviewPreparationPrompt(InterviewPreparationContract):
         ]
         if self.missing_sections != expected:
             raise ValueError("missing_sections must match the owner-authored STAR draft")
+        if self.starting_draft is not None:
+            if self.requirement_id is None or self.requirement_text is None:
+                raise ValueError("a grounded starting draft requires an exact requirement")
+            expected_starting_draft = build_grounded_starting_draft(
+                category=self.category,
+                requirement_id=self.requirement_id,
+                evidence=self.evidence,
+            )
+            if self.starting_draft != expected_starting_draft:
+                raise ValueError(
+                    "starting_draft must contain only the exact pinned requirement and evidence"
+                )
         return self
+
+
+def build_grounded_starting_draft(
+    *,
+    category: InterviewPreparationPromptCategory,
+    requirement_id: str,
+    evidence: list[ApplicationPackEvidenceSnapshot],
+) -> InterviewPreparationStartingDraft:
+    """Build an auditable, non-inventive starter from exact approved sources."""
+
+    if not evidence:
+        raise ValueError("a grounded starting draft requires approved evidence")
+    unique_evidence: list[ApplicationPackEvidenceSnapshot] = []
+    seen: set[tuple[str, int]] = set()
+    for item in evidence:
+        key = (item.id, item.version)
+        if key not in seen:
+            unique_evidence.append(item)
+            seen.add(key)
+
+    result_source = next(
+        (item for item in unique_evidence if _statement_explicitly_names_result(item.statement)),
+        None,
+    )
+    missing_facts = [
+        InterviewPreparationMissingFact.situation_context,
+        InterviewPreparationMissingFact.personal_responsibility,
+        InterviewPreparationMissingFact.specific_actions,
+    ]
+    if result_source is None:
+        missing_facts.append(InterviewPreparationMissingFact.verified_result)
+    category_gap = {
+        InterviewPreparationPromptCategory.role_motivation: (
+            InterviewPreparationMissingFact.motivation_connection
+        ),
+        InterviewPreparationPromptCategory.conflict_ambiguity: (
+            InterviewPreparationMissingFact.conflict_or_ambiguity_details
+        ),
+        InterviewPreparationPromptCategory.failure_learning: (
+            InterviewPreparationMissingFact.setback_and_learning_details
+        ),
+        InterviewPreparationPromptCategory.leadership_collaboration: (
+            InterviewPreparationMissingFact.leadership_or_collaboration_details
+        ),
+    }.get(category)
+    if category_gap is not None:
+        missing_facts.append(category_gap)
+
+    return InterviewPreparationStartingDraft(
+        source_requirement_id=requirement_id,
+        source_evidence=[
+            ApplicationPackEvidenceReference(id=item.id, version=item.version)
+            for item in unique_evidence
+        ],
+        result_evidence=(
+            ApplicationPackEvidenceReference(
+                id=result_source.id,
+                version=result_source.version,
+            )
+            if result_source is not None
+            else None
+        ),
+        draft=InterviewPreparationStarDraft(
+            result=result_source.statement if result_source is not None else "",
+        ),
+        missing_facts=missing_facts,
+    )
+
+
+def _statement_explicitly_names_result(statement: str) -> bool:
+    """Conservatively recognize an outcome without rewriting or interpreting it."""
+
+    lowered = statement.casefold().strip()
+    result_prefixes = (
+        "achieved ",
+        "accelerated ",
+        "boosted ",
+        "cut ",
+        "decreased ",
+        "delivered ",
+        "eliminated ",
+        "grew ",
+        "improved ",
+        "increased ",
+        "lowered ",
+        "prevented ",
+        "raised ",
+        "ranked ",
+        "reached ",
+        "reduced ",
+        "saved ",
+        "scaled ",
+        "won ",
+    )
+    if lowered.startswith(result_prefixes):
+        return True
+    explicit_outcome_words = (
+        " achieved ",
+        " accelerated ",
+        " boosted ",
+        " decreased ",
+        " eliminated ",
+        " grew ",
+        " improved ",
+        " increased ",
+        " lowered ",
+        " prevented ",
+        " raised ",
+        " reduced ",
+        " saved ",
+    )
+    result_connectors = (
+        " resulting in ",
+        " resulted in ",
+        " leading to ",
+        " led to ",
+        " reducing ",
+        " increasing ",
+        " improving ",
+        " cutting ",
+        " saving ",
+    )
+    return (
+        any(word in f" {lowered} " for word in explicit_outcome_words)
+        or any(connector in f" {lowered} " for connector in result_connectors)
+        or _statement_names_numeric_change(statement)
+        or (
+            lowered.startswith("top ")
+            and any(character.isdigit() for character in lowered[4:12])
+        )
+    )
+
+
+def _statement_names_numeric_change(statement: str) -> bool:
+    """Accept metric transitions while rejecting architectural arrow diagrams."""
+
+    parts = statement.replace("→", "->").split("->")
+    return any(
+        any(character.isdigit() for character in left[-32:])
+        and any(character.isdigit() for character in right[:32])
+        for left, right in zip(parts, parts[1:], strict=False)
+    )
 
 
 class InterviewPreparationRevisionSummary(InterviewPreparationContract):
@@ -214,9 +419,9 @@ class ApplicationInterviewPreparationResponse(InterviewPreparationContract):
     blockers: list[InterviewPreparationBlocker] = Field(default_factory=list, max_length=10)
     next_steps: list[str] = Field(default_factory=list, max_length=10)
     disclaimer: Literal[
-        "Prompts are deterministic scaffolds. Only you can supply and verify the STAR details; no answer is treated as generated truth."
+        "Grounded starters quote only exact approved evidence and never guess missing STAR facts. They are not saved or approved unless you deliberately use, verify, and save them."
     ] = (
-        "Prompts are deterministic scaffolds. Only you can supply and verify the STAR details; no answer is treated as generated truth."
+        "Grounded starters quote only exact approved evidence and never guess missing STAR facts. They are not saved or approved unless you deliberately use, verify, and save them."
     )
 
     @model_validator(mode="after")
@@ -266,6 +471,7 @@ __all__ = [
     "ApplicationInterviewPreparationResponse",
     "InterviewPreparationBlocker",
     "InterviewPreparationEvidenceGap",
+    "InterviewPreparationMissingFact",
     "InterviewPreparationPrompt",
     "InterviewPreparationPromptCategory",
     "InterviewPreparationPromptDraftCreate",
@@ -274,8 +480,10 @@ __all__ = [
     "InterviewPreparationRevisionSummary",
     "InterviewPreparationRoleContext",
     "InterviewPreparationStarDraft",
+    "InterviewPreparationStartingDraft",
     "InterviewPreparationStatus",
     "InterviewPreparationTarget",
     "InterviewPreparationTargetKind",
     "MAX_PREPARATION_PROMPTS",
+    "build_grounded_starting_draft",
 ]

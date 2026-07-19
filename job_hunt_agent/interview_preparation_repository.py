@@ -30,6 +30,7 @@ from .interview_preparation_schemas import (
     InterviewPreparationTarget,
     InterviewPreparationTargetKind,
     MAX_PREPARATION_PROMPTS,
+    build_grounded_starting_draft,
 )
 from .job_queue import utcnow
 from .models import (
@@ -181,7 +182,6 @@ def create_interview_preparation_revision(
         InterviewPreparationBlocker.reviewed_application_pack_missing,
         InterviewPreparationBlocker.approved_evidence_missing,
         InterviewPreparationBlocker.evidence_snapshot_changed,
-        InterviewPreparationBlocker.required_requirement_evidence_missing,
         InterviewPreparationBlocker.required_prompt_capacity_exceeded,
     }
     if blocked_for_write.intersection(projection.blockers):
@@ -242,6 +242,9 @@ def create_interview_preparation_revision(
         stored_prompts.append(
             prompt.model_copy(
                 update={
+                    # Grounded starters are a reproducible read aid, not accepted
+                    # owner text. Persist only the owner's deliberate STAR fields.
+                    "starting_draft": None,
                     "draft": star,
                     "missing_sections": _missing_sections(star),
                 }
@@ -480,12 +483,16 @@ def _projection(
                 )
             )
     if any(gap.importance == "required" for gap in gaps):
-        blockers.append(
-            InterviewPreparationBlocker.required_requirement_evidence_missing
-        )
-        next_steps.append(
-            "Add or approve evidence for every required gap; the tool will not invent an answer."
-        )
+        if evidence and evidence_current:
+            next_steps.append(
+                "Prepare the evidence-backed stories now. Add approved evidence for the "
+                "remaining required gaps separately; no prompt will invent those facts."
+            )
+        else:
+            next_steps.append(
+                "Add or approve evidence for the required gaps; the tool will not "
+                "invent an answer."
+            )
 
     source_fingerprint = (
         _source_fingerprint(
@@ -612,6 +619,11 @@ def _build_prompts(
             requirement_id=requirement.id,
             requirement_text=requirement.text,
             evidence=requirement.evidence,
+            starting_draft=build_grounded_starting_draft(
+                category=category,
+                requirement_id=requirement.id,
+                evidence=requirement.evidence,
+            ),
             draft=draft,
             missing_sections=_missing_sections(draft),
         )
