@@ -32,6 +32,7 @@ import {
   hasMeaningfulCandidateProfile,
   parseYearsOfExperienceInput,
 } from "@/lib/workspace-types";
+import { careerTrackMatchesPayload } from "@/lib/career-track-update";
 import type { EmploymentType, Seniority } from "@/lib/types";
 import {
   errorText,
@@ -330,20 +331,20 @@ export function ProfileWorkspace() {
       setTrackMessage({ kind: "error", text: "Set at least one career priority above zero." });
       return;
     }
+    const payload = {
+      name: trackName.trim(),
+      role_families: roles,
+      seniority_levels: seniorities,
+      target_locations: locations,
+      priorities,
+      active: trackActive,
+    };
+    const editing = editingTrackId
+      ? tracks.find((track) => track.id === editingTrackId) ?? null
+      : null;
     setTrackPending(true);
     setTrackMessage(null);
     try {
-      const payload = {
-          name: trackName.trim(),
-          role_families: roles,
-          seniority_levels: seniorities,
-          target_locations: locations,
-          priorities,
-          active: trackActive,
-        };
-      const editing = editingTrackId
-        ? tracks.find((track) => track.id === editingTrackId)
-        : null;
       if (editing) {
         await updateCareerTrack(editing, payload);
       } else {
@@ -362,6 +363,27 @@ export function ProfileWorkspace() {
       });
       setTracks(await listCareerTracks());
     } catch (error) {
+      if (editing) {
+        try {
+          const refreshedTracks = await listCareerTracks();
+          setTracks(refreshedTracks);
+          const refreshed = refreshedTracks.find((track) => track.id === editing.id);
+          if (refreshed && careerTrackMatchesPayload(refreshed, payload)) {
+            setTrackName("");
+            setRoleFamilies("");
+            setTargetLocations("");
+            setTrackActive(true);
+            setEditingTrackId(null);
+            setTrackMessage({
+              kind: "success",
+              text: "Career target updated. Confirmed from the saved record.",
+            });
+            return;
+          }
+        } catch {
+          // Preserve the original mutation error when confirmation is unavailable.
+        }
+      }
       setTrackMessage({ kind: "error", text: errorText(error, "Unable to save the career target.") });
     } finally {
       setTrackPending(false);
