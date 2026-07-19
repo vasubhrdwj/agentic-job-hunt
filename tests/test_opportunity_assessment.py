@@ -98,6 +98,36 @@ def test_infrastructure_role_with_major_skill_gaps_is_a_stretch() -> None:
     assert any("Kubernetes" in gap and "Terraform" in gap for gap in result.gaps)
 
 
+def test_adjacent_sre_role_is_not_promoted_as_a_backend_match() -> None:
+    result = assess_opportunity(
+        posting=AssessmentPosting(
+            title="Site Reliability Engineer",
+            description=(
+                "Operate reliable AWS services using Node.js, Kafka, Docker, REST, "
+                "PostgreSQL, OAuth, SCIM, and distributed systems. " * 10
+            ),
+            location="India",
+            employment_type="full_time",
+        ),
+        target=AssessmentTarget(
+            role_families=(
+                "Backend Software Engineer",
+                "Software Development Engineer",
+                "Backend Developer",
+            ),
+            seniority_levels=("junior", "mid"),
+            target_locations=("India", "Remote India"),
+        ),
+        profile=PROFILE,
+        resume_text=RESUME,
+        evidence=EVIDENCE,
+    )
+
+    assert result.fit_band == "stretch"
+    assert any("adjacent to" in gap for gap in result.gaps)
+    assert all("title aligns" not in strength.casefold() for strength in result.strengths)
+
+
 def test_more_senior_title_is_never_promoted_above_stretch() -> None:
     result = assess_opportunity(
         posting=AssessmentPosting(

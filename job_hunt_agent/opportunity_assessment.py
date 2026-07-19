@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from typing import Literal
 
 
-ASSESSMENT_ALGORITHM_VERSION = "backend-opportunity-fit-v3"
+ASSESSMENT_ALGORITHM_VERSION = "backend-opportunity-fit-v4"
 FitBand = Literal["strong", "promising", "stretch", "low", "insufficient_data"]
 AssessmentConfidence = Literal["high", "medium", "low"]
 EligibilityState = Literal["eligible", "uncertain", "likely_ineligible"]
@@ -321,7 +321,13 @@ def assess_opportunity(
     critical_gaps: list[str] = []
     gaps: list[str] = []
 
-    role_points, role_known, role_conflict, role_uncertain = _role_alignment(
+    (
+        role_points,
+        role_known,
+        role_conflict,
+        role_uncertain,
+        role_adjacent,
+    ) = _role_alignment(
         posting.title,
         target.role_families,
     )
@@ -330,6 +336,10 @@ def assess_opportunity(
     if role_conflict:
         relevance_conflict = True
         critical_gaps.append("The role title is outside your saved target role families.")
+    elif role_adjacent:
+        gaps.append(
+            "The role title is adjacent to, but not an exact match for, your saved target role families."
+        )
     elif role_uncertain:
         gaps.append("The role title needs verification against your saved target role families.")
 
@@ -468,7 +478,13 @@ def assess_opportunity(
         fit_band: FitBand = "low"
     elif not description_sufficient:
         fit_band = "insufficient_data"
-    elif role_uncertain or above_target or thin_skill_coverage or preferred_experience_gap:
+    elif (
+        role_uncertain
+        or role_adjacent
+        or above_target
+        or thin_skill_coverage
+        or preferred_experience_gap
+    ):
         fit_band = "stretch"
     elif (
         normalized_score >= 70
@@ -489,7 +505,7 @@ def assess_opportunity(
         fit_band = "insufficient_data"
 
     strengths: list[str] = []
-    if role_points >= 20:
+    if role_points >= 30:
         strengths.append("The title aligns with your saved target role families.")
     if matched_skills:
         strengths.append(
@@ -610,9 +626,9 @@ def _matched_requirement_units(
 def _role_alignment(
     title: str,
     role_families: tuple[str, ...],
-) -> tuple[float, float, bool, bool]:
+) -> tuple[float, float, bool, bool, bool]:
     if not role_families:
-        return 0, 0, False, True
+        return 0, 0, False, True, False
     normalized_title = _normalized(title)
     normalized_families = tuple(_normalized(value) for value in role_families)
     title_groups = _role_groups(normalized_title)
@@ -624,18 +640,18 @@ def _role_alignment(
         or title_specialists <= _ADJACENT_ROLE_GROUPS
         and target_specialists <= _ADJACENT_ROLE_GROUPS
     ):
-        return 0, 30, True, False
+        return 0, 30, True, False, False
     if any(family in normalized_title or normalized_title in family for family in normalized_families):
-        return 30, 30, False, False
+        return 30, 30, False, False, False
     if title_groups & target_groups:
-        return 30, 30, False, False
+        return 30, 30, False, False, False
     if title_groups & _ADJACENT_ROLE_GROUPS and target_groups & _ADJACENT_ROLE_GROUPS:
-        return 20, 30, False, False
+        return 20, 30, False, False, True
     # Provider titles such as "Member of Technical Staff" do not expose a
     # recognizable role family. Treat them as unknown rather than fabricating
     # a conflict; explicit frontend/product/etc. conflicts are handled above.
     explicit_conflict = bool(title_groups and target_groups)
-    return 0, 30, explicit_conflict, not explicit_conflict
+    return 0, 30, explicit_conflict, not explicit_conflict, False
 
 
 def _role_groups(value: str) -> set[str]:
