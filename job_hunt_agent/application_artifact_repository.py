@@ -751,16 +751,30 @@ def _tailored_resume(
     if not selected:
         return _document(base_content, [])
     builder = _DocumentBuilder("resume")
+    header_boundary = _resume_header_boundary(base_content)
+    if header_boundary is None:
+        builder.append(base_content)
+        builder.append("\n" if base_content.endswith("\n") else "\n\n")
+    else:
+        builder.append(base_content[:header_boundary])
     builder.append("RELEVANT HIGHLIGHTS\n")
     for evidence in selected:
         builder.append("- ")
         builder.claim(evidence.statement, _evidence_source(evidence))
         builder.append("\n")
-    builder.append("\n")
-    builder.append(base_content)
+    if header_boundary is not None:
+        builder.append("\n")
+        builder.append(base_content[header_boundary:])
     if len(builder.text) > MAX_RESUME_CHARS:
         raise ValueError("grounded highlights exceed the supported resume size")
     return builder.document()
+
+
+def _resume_header_boundary(base_content: str) -> int | None:
+    """Return the end of the first blank line after a resume header."""
+
+    boundary = re.search(r"\n[ \t]*\n", base_content)
+    return boundary.end() if boundary is not None else None
 
 
 def _company_note(

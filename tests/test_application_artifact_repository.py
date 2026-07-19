@@ -134,6 +134,12 @@ def test_deterministic_generation_is_grounded_exact_encrypted_and_approvable(
     assert revision.questions[0].text == "Describe your Python impact."
     assert revision.answers[0].status.value == "answered"
     assert evidence.statement in revision.tailored_resume.text
+    assert revision.tailored_resume.text.startswith(
+        "PRIVATE CANDIDATE\nPRIVATE CONTACT\n\nRELEVANT HIGHLIGHTS\n"
+    )
+    assert revision.tailored_resume.text.index(evidence.statement) < (
+        revision.tailored_resume.text.index("PRIVATE RESUME:")
+    )
     assert evidence.statement in revision.company_note.text
     assert evidence.statement in revision.answers[0].text
     assert revision.diff.base_content_hash != revision.diff.tailored_content_hash

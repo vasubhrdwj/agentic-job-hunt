@@ -152,7 +152,11 @@ def pack_workspace(tmp_path: Path) -> tuple[Database, DataKeyring, str]:
             session,
             owner_id="owner-a",
             label="Base resume",
-            content="PRIVATE RESUME: Built reliable Python distributed systems.",
+            content=(
+                "PRIVATE CANDIDATE\n"
+                "PRIVATE CONTACT\n\n"
+                "PRIVATE RESUME: Built reliable Python distributed systems."
+            ),
             source="pasted",
             keyring=keyring,
             make_base=True,
