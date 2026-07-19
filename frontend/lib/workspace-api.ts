@@ -13,23 +13,26 @@ import type {
   Versioned,
 } from "./workspace-types";
 
-export type RoleScanCapabilityReason =
+export type WorkerCapabilityReason =
   | "no_fresh_worker"
   | "unsupported_kind"
   | "incompatible_build"
   | "health_unavailable"
   | null;
 
-export interface RoleScanCapability {
+export interface WorkerCapability {
   available: boolean;
-  reason: RoleScanCapabilityReason;
+  reason: WorkerCapabilityReason;
   fresh_worker_count: number;
   compatible_worker_count: number;
 }
 
+export type RoleScanCapability = WorkerCapability;
+
 export interface OwnerHealth {
   capabilities: {
     role_scan: RoleScanCapability;
+    contact_search: WorkerCapability;
   };
 }
 

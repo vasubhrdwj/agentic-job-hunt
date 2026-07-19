@@ -11,6 +11,7 @@ from pathlib import Path
 import pytest
 from sqlalchemy import func, select
 
+import job_hunt_agent.worker as queue_worker
 import job_hunt_agent.contact_search_worker as contact_worker
 from job_hunt_agent.contact_discovery import (
     ContactProviderConfigurationError,
@@ -20,7 +21,11 @@ from job_hunt_agent.contact_discovery import (
 from job_hunt_agent.database import Database
 from job_hunt_agent.interview_round_repository import schedule_interview_round
 from job_hunt_agent.interview_round_schemas import InterviewRoundCreate
-from job_hunt_agent.job_queue import cancel_job, claim_next_job
+from job_hunt_agent.job_queue import (
+    cancel_job,
+    claim_next_job,
+    record_worker_heartbeat,
+)
 from job_hunt_agent.models import (
     Application,
     ApplicationContact,
@@ -260,6 +265,60 @@ def _claim(database: Database) -> Claim:
         )
         assert job is not None and job.id == JOB_ID
     return Claim()
+
+
+def test_old_queued_search_is_reconciled_when_live_worker_cannot_claim_contacts(
+    contact_worker_db: Database,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    current = NOW + timedelta(minutes=2)
+    monkeypatch.setenv("JOB_HUNT_WORKER_HEARTBEAT_MAX_AGE_SECONDS", "30")
+    with contact_worker_db.session() as session:
+        record_worker_heartbeat(
+            session,
+            worker_id="scan-only-worker",
+            supported_kinds={"scan_saved_search"},
+            now=current,
+        )
+        reconciled = queue_worker._cancel_unserviceable_contact_jobs(
+            session,
+            now=current,
+        )
+
+    assert reconciled == 1
+    with contact_worker_db.session() as session:
+        job = session.get(BackgroundJob, JOB_ID)
+        plan = session.get(ContactPlan, PLAN_ID)
+        assert job is not None and job.status == "cancelled"
+        assert plan is not None and plan.status == "cancelled"
+        assert plan.finalized_at is not None
+        assert plan.finalized_at.replace(tzinfo=timezone.utc) == current
+
+
+def test_old_queued_search_remains_claimable_when_contact_worker_is_ready(
+    contact_worker_db: Database,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    current = NOW + timedelta(minutes=2)
+    monkeypatch.setenv("JOB_HUNT_WORKER_HEARTBEAT_MAX_AGE_SECONDS", "30")
+    with contact_worker_db.session() as session:
+        record_worker_heartbeat(
+            session,
+            worker_id="contact-ready-worker",
+            supported_kinds={contact_worker.CONTACT_SEARCH_JOB_KIND},
+            now=current,
+        )
+        reconciled = queue_worker._cancel_unserviceable_contact_jobs(
+            session,
+            now=current,
+        )
+
+    assert reconciled == 0
+    with contact_worker_db.session() as session:
+        job = session.get(BackgroundJob, JOB_ID)
+        plan = session.get(ContactPlan, PLAN_ID)
+        assert job is not None and job.status == "queued"
+        assert plan is not None and plan.status == "queued"
 
 
 def _seed_interview_contact_plan(session) -> None:

@@ -958,6 +958,12 @@ def test_owner_health_is_private_and_reports_queue_counts(
         "fresh_worker_count": 0,
         "compatible_worker_count": 0,
     }
+    assert body["capabilities"]["contact_search"] == {
+        "available": False,
+        "reason": "no_fresh_worker",
+        "fresh_worker_count": 0,
+        "compatible_worker_count": 0,
+    }
 
     with database.session() as session:
         record_worker_heartbeat(
@@ -970,6 +976,11 @@ def test_owner_health_is_private_and_reports_queue_counts(
     assert role_scan["available"] is True
     assert role_scan["reason"] is None
     assert role_scan["compatible_worker_count"] == 1
+    contact_search = client.get("/api/health").json()["capabilities"][
+        "contact_search"
+    ]
+    assert contact_search["available"] is False
+    assert contact_search["reason"] == "unsupported_kind"
 
 
 def test_legacy_liveness_remains_available_without_durable_database(

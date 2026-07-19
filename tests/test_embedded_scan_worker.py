@@ -7,6 +7,7 @@ from threading import Event
 from fastapi.testclient import TestClient
 
 from job_hunt_agent import embedded_scan_worker
+from job_hunt_agent.contact_search_repository import CONTACT_SEARCH_JOB_KIND
 from job_hunt_agent.opportunity_scan_worker import SCAN_JOB_KIND
 from job_hunt_agent.worker import WorkerResult
 
@@ -26,6 +27,41 @@ def test_embedded_scan_worker_enabled_is_explicit(monkeypatch) -> None:
     assert embedded_scan_worker.embedded_scan_worker_enabled() is True
     monkeypatch.setenv(embedded_scan_worker.EMBEDDED_SCAN_WORKER_ENV, "false")
     assert embedded_scan_worker.embedded_scan_worker_enabled() is False
+
+
+def test_embedded_worker_advertises_contacts_only_when_configured(monkeypatch) -> None:
+    monkeypatch.setenv(
+        "JOB_HUNT_WORKER_KINDS",
+        f"{SCAN_JOB_KIND},{CONTACT_SEARCH_JOB_KIND}",
+    )
+    monkeypatch.delenv("ENVIRONMENT", raising=False)
+    monkeypatch.setenv("USE_MOCKS", "0")
+    monkeypatch.delenv("SERPAPI_API_KEY", raising=False)
+    monkeypatch.delenv("SERPAPI_KEY", raising=False)
+    assert embedded_scan_worker.embedded_worker_job_kinds() == frozenset(
+        {SCAN_JOB_KIND}
+    )
+
+    monkeypatch.setenv("SERPAPI_API_KEY", "configured-test-key")
+    assert embedded_scan_worker.embedded_worker_job_kinds() == frozenset(
+        {SCAN_JOB_KIND, CONTACT_SEARCH_JOB_KIND}
+    )
+
+
+def test_missing_contact_provider_never_removes_scan_capability(monkeypatch) -> None:
+    monkeypatch.setenv(
+        "JOB_HUNT_WORKER_KINDS",
+        f"{SCAN_JOB_KIND},{CONTACT_SEARCH_JOB_KIND}",
+    )
+    monkeypatch.setenv("ENVIRONMENT", "production")
+    monkeypatch.setenv("ENABLE_PRACTICAL_MODE", "1")
+    monkeypatch.setenv("USE_MOCKS", "0")
+    monkeypatch.delenv("SERPAPI_API_KEY", raising=False)
+    monkeypatch.delenv("SERPAPI_KEY", raising=False)
+
+    assert embedded_scan_worker.embedded_worker_job_kinds() == frozenset(
+        {SCAN_JOB_KIND}
+    )
 
 
 def test_embedded_worker_claims_only_scan_jobs_and_disposes_database(

@@ -25,7 +25,11 @@ from job_hunt_agent.application_schemas import (
 )
 from job_hunt_agent.contact_schemas import ApplicationContactBenchResponse
 from job_hunt_agent.database import Database
-from job_hunt_agent.owner_workspace import WorkspaceConflict, WorkspaceUnavailable
+from job_hunt_agent.owner_workspace import (
+    WorkspaceCapabilityUnavailable,
+    WorkspaceConflict,
+    WorkspaceUnavailable,
+)
 from job_hunt_agent.opportunity_schemas import (
     OpportunityDecisionEvent,
     OpportunityDecisionResponse,
@@ -97,6 +101,7 @@ class FakeApplicationStore:
     last_undo: tuple[str, int, str] | None = None
     unavailable: bool = False
     conflict: WorkspaceConflict | None = None
+    contact_worker_unavailable: bool = False
 
     def list_applications(
         self,
@@ -205,6 +210,11 @@ class FakeApplicationStore:
         )
         if self.unavailable:
             raise WorkspaceUnavailable("PRIVATE_CONTACT_DATABASE_HOST")
+        if self.contact_worker_unavailable:
+            raise WorkspaceCapabilityUnavailable(
+                "contact_search",
+                reason="unsupported_kind",
+            )
         if self.conflict is not None:
             raise self.conflict
         if application_id != "application1":
@@ -553,6 +563,32 @@ def test_contact_search_requires_mutation_security_and_returns_queued_bench(
         1,
         "contacts-application1-v1",
     )
+
+
+def test_contact_search_reports_worker_unavailability_without_queueing_claims(
+    application_client: tuple[TestClient, FakeApplicationStore],
+) -> None:
+    client, store = application_client
+    _login(client)
+    store.contact_worker_unavailable = True
+
+    response = client.post(
+        "/api/applications/application1/contact-searches",
+        headers={
+            "Origin": ORIGIN,
+            "If-Match": '"1"',
+            "Idempotency-Key": "contacts-worker-unavailable",
+        },
+    )
+
+    body = _assert_problem(
+        response,
+        status_code=503,
+        code="contact_worker_unavailable",
+    )
+    assert body["retryable"] is True
+    assert "contact-search worker" in body["message"]
+    assert "unsupported_kind" not in json.dumps(body)
 
 
 @pytest.mark.parametrize(

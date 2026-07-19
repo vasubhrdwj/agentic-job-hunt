@@ -10,7 +10,7 @@ import threading
 import time
 from collections.abc import Iterable
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
 from pydantic import ValidationError
@@ -29,6 +29,7 @@ from .contact_search_worker import (
 )
 from .database import Database, database_from_env
 from .job_queue import (
+    cancel_job,
     claim_next_job,
     fail_job_attempt,
     heartbeat_job,
@@ -46,11 +47,15 @@ from .models import (
     OpportunityScanSource,
 )
 from .opportunity_scan_worker import SCAN_JOB_KIND, process_claimed_opportunity_scan
-from .production_runtime import validate_production_runtime
+from .production_runtime import (
+    validate_contact_search_runtime,
+    validate_production_runtime,
+)
 from .requests import HuntRequestPayload
 from .run import run_hunt
 from .security import DataKeyring, DecryptionError, EncryptedEnvelope, load_data_keyring
 from .sources.registry import RegistryError
+from .worker_health import load_worker_capability, worker_heartbeat_max_age_seconds
 
 
 LOGGER = logging.getLogger(__name__)
@@ -187,14 +192,24 @@ def run_worker_once(
         if practical
         else PRACTICAL_JOB_KINDS
     )
-    validate_production_runtime(
-        practical_mode=practical,
-        use_mocks=resolved_use_mocks,
-        enable_tracing=resolved_tracing,
-        require_providers=(
-            not practical or bool(supported_kinds & PROVIDER_JOB_KINDS)
-        ),
-    )
+    if (
+        practical
+        and CONTACT_SEARCH_JOB_KIND in supported_kinds
+        and "legacy_hunt" not in supported_kinds
+    ):
+        validate_contact_search_runtime(
+            practical_mode=True,
+            use_mocks=resolved_use_mocks,
+        )
+    else:
+        validate_production_runtime(
+            practical_mode=practical,
+            use_mocks=resolved_use_mocks,
+            enable_tracing=resolved_tracing,
+            require_providers=(
+                not practical or bool(supported_kinds & PROVIDER_JOB_KINDS)
+            ),
+        )
 
     if practical:
         database = durable_database or database_from_env(required=True)
@@ -300,8 +315,18 @@ def _run_practical_worker_once(
     with database.session() as session:
         current = datetime.now(timezone.utc)
         recover_stale_jobs(session, now=current)
+        # Publish this process's exact capabilities before reconciling queued
+        # work. This lets an upgraded embedded worker adopt an older contact
+        # job instead of having a scan-only predecessor cancel it.
+        _record_worker_state(
+            session,
+            worker_id=worker_id,
+            current_job_id=None,
+            supported_kinds=supported_kinds,
+        )
         _reconcile_terminal_opportunity_scans(session, now=current)
         reconcile_terminal_contact_plans(session, now=current)
+        _cancel_unserviceable_contact_jobs(session, now=current)
         job = claim_next_job(
             session,
             worker_id=worker_id,
@@ -509,6 +534,60 @@ def _run_practical_worker_once(
         use_mocks=use_mocks,
         enable_tracing=enable_tracing,
     )
+
+
+def _cancel_unserviceable_contact_jobs(
+    session: Session,
+    *,
+    now: datetime,
+) -> int:
+    """Stop old queued contact work only when live workers cannot claim it.
+
+    A short grace window prevents deployment hand-offs from cancelling work
+    while the replacement worker publishes its first heartbeat. The cancelled
+    plan remains auditable and can be retried once health advertises the
+    capability again.
+    """
+
+    capability = load_worker_capability(
+        session,
+        kind=CONTACT_SEARCH_JOB_KIND,
+        now=now,
+    )
+    if capability.available or capability.reason not in {
+        "unsupported_kind",
+        "incompatible_build",
+    }:
+        return 0
+
+    cutoff = now - timedelta(seconds=worker_heartbeat_max_age_seconds())
+    job_ids = tuple(
+        session.scalars(
+            select(BackgroundJob.id)
+            .join(ContactPlan, ContactPlan.background_job_id == BackgroundJob.id)
+            .where(
+                BackgroundJob.kind == CONTACT_SEARCH_JOB_KIND,
+                BackgroundJob.subject_type == "contact_plan",
+                BackgroundJob.subject_id == ContactPlan.id,
+                BackgroundJob.status == "queued",
+                BackgroundJob.created_at <= cutoff,
+                ContactPlan.owner_id == BackgroundJob.owner_id,
+                ContactPlan.status == "queued",
+            )
+            .order_by(BackgroundJob.id)
+        )
+    )
+    for job_id in job_ids:
+        cancel_job(
+            session,
+            job_id,
+            actor="contact-capability-reconciler",
+            reason="contact_worker_unavailable",
+            now=now,
+        )
+    if job_ids:
+        reconcile_terminal_contact_plans(session, now=now)
+    return len(job_ids)
 
 
 def _reconcile_terminal_opportunity_scans(

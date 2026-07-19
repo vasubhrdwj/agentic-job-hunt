@@ -10,8 +10,9 @@ from fastapi.security import APIKeyCookie
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from ..database import MIGRATION_HEAD, Database
 from ..auth import session_cookie_name
+from ..contact_search_repository import CONTACT_SEARCH_JOB_KIND
+from ..database import MIGRATION_HEAD, Database
 from ..models import BackgroundJob
 from ..worker_health import (
     DEFAULT_WORKER_HEARTBEAT_MAX_AGE_SECONDS,
@@ -68,11 +69,16 @@ def create_health_router(database: Database | None) -> APIRouter:
                 session,
                 kind=ROLE_SCAN_JOB_KIND,
             )
+            contact_search = load_worker_capability(
+                session,
+                kind=CONTACT_SEARCH_JOB_KIND,
+            )
         return {
             **snapshot,
             "owner_id": owner.owner_id,
             "capabilities": {
                 "role_scan": role_scan.public_payload(),
+                "contact_search": contact_search.public_payload(),
             },
             "queue": {
                 "counts": counts,

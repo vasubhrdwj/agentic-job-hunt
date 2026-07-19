@@ -621,7 +621,7 @@ def _invoke(operation: Callable[..., T], **kwargs: object) -> T:
             if exc.field is not None
             else None
         )
-        raise WorkspaceApiError(422, "invalid_request", str(exc), field_errors=fields) from exc
+        raise WorkspaceApiError(422, exc.code, str(exc), field_errors=fields) from exc
     except WorkspaceCapabilityUnavailable as exc:
         if exc.capability == "role_scan":
             raise WorkspaceApiError(
@@ -630,6 +630,16 @@ def _invoke(operation: Callable[..., T], **kwargs: object) -> T:
                 (
                     "Role scans are temporarily paused because the scan service "
                     "is not ready yet."
+                ),
+                retryable=True,
+            ) from exc
+        if exc.capability == "contact_search":
+            raise WorkspaceApiError(
+                503,
+                "contact_worker_unavailable",
+                (
+                    "Contact search is temporarily unavailable because no "
+                    "compatible contact-search worker is ready."
                 ),
                 retryable=True,
             ) from exc

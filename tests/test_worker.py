@@ -340,6 +340,53 @@ def test_production_scan_only_worker_bypasses_providers_and_leaves_hunts_queued(
         database.dispose()
 
 
+def test_production_contact_only_worker_does_not_require_ai_or_tracing_services(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from job_hunt_agent import worker
+
+    database = _create_practical_database(tmp_path, monkeypatch)
+    try:
+        monkeypatch.setenv("ENVIRONMENT", "production")
+        monkeypatch.setenv("ENABLE_PRACTICAL_MODE", "1")
+        monkeypatch.setenv("ENABLE_TRACE_DRAFT_CONTENT", "0")
+        monkeypatch.setenv("USE_MOCKS", "0")
+        monkeypatch.setenv("SERPAPI_API_KEY", "configured-test-key")
+        monkeypatch.setenv(
+            "JOB_HUNT_DATA_KEYS",
+            f"v1:{Fernet.generate_key().decode('ascii')}",
+        )
+        monkeypatch.setenv(
+            "DATABASE_URL",
+            "postgresql+psycopg://worker:test@db.invalid/jobs?sslmode=require",
+        )
+        for name in (
+            "GOOGLE_API_KEY",
+            "PHOENIX_API_KEY",
+            "PHOENIX_COLLECTOR_ENDPOINT",
+            "GEMINI_PAID_SERVICE_ACK",
+        ):
+            monkeypatch.delenv(name, raising=False)
+
+        result = worker.run_worker_once(
+            worker_id="production-contact-only",
+            durable_database=database,
+            practical_mode=True,
+            use_mocks=False,
+            enable_tracing=False,
+            job_kinds={worker.CONTACT_SEARCH_JOB_KIND},
+        )
+
+        assert result.claimed is False
+        with database.session() as session:
+            heartbeat = session.get(WorkerHeartbeat, "production-contact-only")
+            assert heartbeat is not None
+            assert heartbeat.supported_kinds == [worker.CONTACT_SEARCH_JOB_KIND]
+    finally:
+        database.dispose()
+
+
 def test_production_scan_only_worker_still_requires_core_safety(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

@@ -10,14 +10,20 @@ from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 
 from .contact_repository import ContactRepositoryError, load_application_contact_bench
 from .contact_search_repository import (
+    CONTACT_SEARCH_JOB_KIND,
     ContactSearchRepositoryError,
     create_contact_search,
 )
 from .contact_schemas import ApplicationContactBenchResponse
 from .database import Database
 from .mutation_receipts import MutationIdempotencyConflict, MutationPending
-from .owner_workspace import WorkspaceConflict, WorkspaceUnavailable
+from .owner_workspace import (
+    WorkspaceCapabilityUnavailable,
+    WorkspaceConflict,
+    WorkspaceUnavailable,
+)
 from .repository_errors import ResourceConflict, VersionConflict
+from .worker_health import load_worker_capability
 
 
 class SqlAlchemyContactWorkspaceStore:
@@ -50,6 +56,15 @@ class SqlAlchemyContactWorkspaceStore:
         """Queue or replay a search and project its bench in one transaction."""
 
         with _contact_errors(), self.database.session() as session:
+            capability = load_worker_capability(
+                session,
+                kind=CONTACT_SEARCH_JOB_KIND,
+            )
+            if not capability.available:
+                raise WorkspaceCapabilityUnavailable(
+                    "contact_search",
+                    reason=capability.reason,
+                )
             created = create_contact_search(
                 session,
                 owner_id=owner_id,

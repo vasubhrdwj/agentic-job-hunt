@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import socket
 from contextlib import contextmanager
+from types import SimpleNamespace
 
 import pytest
 from sqlalchemy.exc import SQLAlchemyError
@@ -16,7 +17,11 @@ from job_hunt_agent.mutation_receipts import (
     MutationIdempotencyConflict,
     MutationPending,
 )
-from job_hunt_agent.owner_workspace import WorkspaceConflict, WorkspaceUnavailable
+from job_hunt_agent.owner_workspace import (
+    WorkspaceCapabilityUnavailable,
+    WorkspaceConflict,
+    WorkspaceUnavailable,
+)
 from job_hunt_agent.repository_errors import ResourceConflict, VersionConflict
 from job_hunt_agent.sqlalchemy_contact_workspace import SqlAlchemyContactWorkspaceStore
 
@@ -25,6 +30,15 @@ class FakeDatabase:
     @contextmanager
     def session(self):
         yield object()
+
+
+@pytest.fixture(autouse=True)
+def ready_contact_worker(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        workspace_module,
+        "load_worker_capability",
+        lambda _session, *, kind: SimpleNamespace(available=True, reason="available"),
+    )
 
 
 def test_contact_store_reads_only_the_database_and_forwards_owner_scope(
@@ -157,6 +171,40 @@ def test_contact_store_creates_and_projects_in_the_same_transaction(
     assert response.status.value == "queued"
     assert [name for name, _session in calls] == ["create", "load"]
     assert calls[0][1] is calls[1][1]
+
+
+def test_contact_store_rejects_creation_before_mutation_when_worker_is_unavailable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    store = SqlAlchemyContactWorkspaceStore(FakeDatabase())  # type: ignore[arg-type]
+    create_called = False
+
+    monkeypatch.setattr(
+        workspace_module,
+        "load_worker_capability",
+        lambda _session, *, kind: SimpleNamespace(
+            available=False,
+            reason="unsupported_kind",
+        ),
+    )
+
+    def fake_create(*_args, **_kwargs):
+        nonlocal create_called
+        create_called = True
+
+    monkeypatch.setattr(workspace_module, "create_contact_search", fake_create)
+
+    with pytest.raises(WorkspaceCapabilityUnavailable) as caught:
+        store.create_application_contact_search(
+            owner_id="owner-a",
+            application_id="application1",
+            expected_application_version=3,
+            idempotency_key="contacts-unavailable",
+        )
+
+    assert caught.value.capability == "contact_search"
+    assert caught.value.reason == "unsupported_kind"
+    assert create_called is False
 
 
 @pytest.mark.parametrize(

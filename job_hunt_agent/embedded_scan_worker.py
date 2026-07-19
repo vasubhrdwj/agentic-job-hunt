@@ -1,11 +1,13 @@
-"""Optional scan-only worker hosted inside the web process.
+"""Optional interactive worker hosted inside the web process.
 
 The embedded worker is a free-tier bridge for the private, user-triggered
 product. A request wakes the web service and the same process drains durable
 scan jobs while the service remains alive. Queue leases keep interrupted work
 recoverable after a free-instance restart.
 
-Provider-consuming contact and legacy jobs are intentionally excluded.
+Legacy hunts are intentionally excluded. Contact discovery is advertised only
+when its live provider and the production provider safeguards are configured;
+otherwise the worker remains provider-free and continues serving role scans.
 """
 
 from __future__ import annotations
@@ -16,9 +18,14 @@ import socket
 import threading
 from dataclasses import dataclass, field
 
+from .config import env_bool, is_production
+from .contact_discovery import ContactProviderConfigurationError
+from .contact_providers import SerpAPIContactProvider
+from .contact_search_repository import CONTACT_SEARCH_JOB_KIND
 from .database import database_from_env
 from .opportunity_scan_worker import SCAN_JOB_KIND
-from .worker import run_worker_once
+from .production_runtime import validate_contact_search_runtime
+from .worker import WORKER_KINDS_ENV, resolve_practical_job_kinds, run_worker_once
 
 
 LOGGER = logging.getLogger(__name__)
@@ -38,7 +45,7 @@ def embedded_scan_worker_enabled() -> bool:
 
 @dataclass
 class EmbeddedScanWorker:
-    """Own one daemon thread that claims only first-party scan jobs."""
+    """Own one daemon thread for interactive role and configured contact work."""
 
     worker_id: str = field(default_factory=lambda: _worker_id())
     idle_sleep_seconds: float = DEFAULT_IDLE_SLEEP_SECONDS
@@ -72,13 +79,14 @@ class EmbeddedScanWorker:
             database = database_from_env(required=True)
             if database is None:  # pragma: no cover - required=True is fail-closed.
                 raise RuntimeError("embedded scan worker requires DATABASE_URL")
+            supported_kinds = embedded_worker_job_kinds()
             while not self._stop.is_set():
                 try:
                     result = run_worker_once(
                         worker_id=self.worker_id,
                         durable_database=database,
                         practical_mode=True,
-                        job_kinds={SCAN_JOB_KIND},
+                        job_kinds=supported_kinds,
                     )
                     delay = 0.0 if result.claimed else self.idle_sleep_seconds
                 except Exception as exc:  # noqa: BLE001 - logs omit secret values.
@@ -95,6 +103,39 @@ class EmbeddedScanWorker:
                 database.dispose()
 
 
+def embedded_worker_job_kinds() -> frozenset[str]:
+    """Resolve only the work this in-process bridge can truthfully complete."""
+
+    configured_value = os.getenv(WORKER_KINDS_ENV)
+    configured = resolve_practical_job_kinds(
+        {SCAN_JOB_KIND} if configured_value is None else configured_value
+    )
+    supported = {SCAN_JOB_KIND} if SCAN_JOB_KIND in configured else set()
+    if CONTACT_SEARCH_JOB_KIND in configured and _contact_search_runtime_ready():
+        supported.add(CONTACT_SEARCH_JOB_KIND)
+    if not supported:
+        raise RuntimeError(
+            "embedded worker must enable scan_saved_search or a configured "
+            "discover_contacts capability"
+        )
+    return frozenset(supported)
+
+
+def _contact_search_runtime_ready() -> bool:
+    use_mocks = env_bool("USE_MOCKS", default=False)
+    if use_mocks:
+        return not is_production()
+    try:
+        SerpAPIContactProvider.from_env()
+        validate_contact_search_runtime(
+            practical_mode=True,
+            use_mocks=False,
+        )
+    except (ContactProviderConfigurationError, RuntimeError):
+        return False
+    return True
+
+
 def _worker_id() -> str:
     configured = os.getenv("JOB_HUNT_EMBEDDED_WORKER_ID", "").strip()
     if configured:
@@ -105,5 +146,6 @@ def _worker_id() -> str:
 __all__ = [
     "EMBEDDED_SCAN_WORKER_ENV",
     "EmbeddedScanWorker",
+    "embedded_worker_job_kinds",
     "embedded_scan_worker_enabled",
 ]

@@ -79,6 +79,21 @@ def production_provider_errors(
     return errors
 
 
+def production_contact_provider_errors() -> list[str]:
+    """Return only the configuration errors needed for contact discovery."""
+
+    if not is_production():
+        return []
+    if not any(
+        os.getenv(name, "").strip()
+        for name in ("SERPAPI_API_KEY", "SERPAPI_KEY")
+    ):
+        return [
+            "SERPAPI_API_KEY or SERPAPI_KEY is required for contact discovery"
+        ]
+    return []
+
+
 def production_runtime_errors(
     *,
     practical_mode: bool | None = None,
@@ -118,9 +133,29 @@ def validate_production_runtime(
         raise RuntimeError("Invalid production runtime config: " + "; ".join(errors))
 
 
+def validate_contact_search_runtime(
+    *,
+    practical_mode: bool | None = None,
+    use_mocks: bool | None = None,
+) -> None:
+    """Refuse unsafe contact work without requiring unrelated AI services."""
+
+    errors = [
+        *production_core_errors(
+            practical_mode=practical_mode,
+            use_mocks=use_mocks,
+        ),
+        *production_contact_provider_errors(),
+    ]
+    if errors:
+        raise RuntimeError("Invalid contact-search runtime config: " + "; ".join(errors))
+
+
 __all__ = [
     "production_core_errors",
+    "production_contact_provider_errors",
     "production_provider_errors",
     "production_runtime_errors",
     "validate_production_runtime",
+    "validate_contact_search_runtime",
 ]

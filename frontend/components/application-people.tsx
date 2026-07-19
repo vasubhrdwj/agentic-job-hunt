@@ -16,7 +16,12 @@ import type {
   ContactSearchSnapshot,
   RelevanceEvidenceResponse,
 } from "@/lib/application-types";
-import { createIdempotencyKey, WorkspaceApiError } from "@/lib/workspace-api";
+import {
+  createIdempotencyKey,
+  getOwnerHealth,
+  type WorkerCapability,
+  WorkspaceApiError,
+} from "@/lib/workspace-api";
 import { ApplicationOutreach } from "./application-outreach";
 import {
   errorText,
@@ -73,16 +78,41 @@ export function ApplicationPeople({
   const [startError, setStartError] = useState<string | null>(null);
   const [liveWarning, setLiveWarning] = useState<string | null>(null);
   const [starting, setStarting] = useState(false);
+  const [contactCapability, setContactCapability] = useState<WorkerCapability | null>(null);
+  const [capabilityChecking, setCapabilityChecking] = useState(true);
   const [pollPaused, setPollPaused] = useState(false);
   const [pollNonce, setPollNonce] = useState(0);
   const pendingStart = useRef<PendingStart | null>(null);
   const requestGeneration = useRef(0);
   const benchRef = useRef<ApplicationContactBenchResponse | null>(null);
+  const capabilityAutoChecks = useRef(0);
+
+  const refreshContactCapability = useCallback(async () => {
+    setCapabilityChecking(true);
+    try {
+      const health = await getOwnerHealth();
+      const capability = health.capabilities.contact_search;
+      if (!capability || typeof capability.available !== "boolean") {
+        throw new Error("Contact-search capability is missing from health.");
+      }
+      setContactCapability(capability);
+    } catch {
+      setContactCapability({
+        available: false,
+        reason: "health_unavailable",
+        fresh_worker_count: 0,
+        compatible_worker_count: 0,
+      });
+    } finally {
+      setCapabilityChecking(false);
+    }
+  }, []);
 
   useEffect(() => {
     requestGeneration.current += 1;
     pendingStart.current = null;
     benchRef.current = null;
+    capabilityAutoChecks.current = 0;
   }, [applicationId]);
 
   const acceptResponse = useCallback((
@@ -168,13 +198,35 @@ export function ApplicationPeople({
   useEffect(() => {
     let active = true;
     const timer = setTimeout(() => {
-      if (active) void refresh(true);
+      if (active) {
+        void refresh(true);
+        void refreshContactCapability();
+      }
     }, 0);
     return () => {
       active = false;
       clearTimeout(timer);
     };
-  }, [refresh]);
+  }, [refresh, refreshContactCapability]);
+
+  useEffect(() => {
+    if (!contactCapability || contactCapability.available) {
+      capabilityAutoChecks.current = 0;
+      return;
+    }
+    if (
+      contactCapability.reason === "unsupported_kind" ||
+      capabilityAutoChecks.current >= 5
+    ) return;
+
+    const attempt = capabilityAutoChecks.current;
+    capabilityAutoChecks.current += 1;
+    const timer = setTimeout(
+      () => void refreshContactCapability(),
+      Math.min(30_000, 2_000 * (2 ** attempt)),
+    );
+    return () => clearTimeout(timer);
+  }, [contactCapability, refreshContactCapability]);
 
   const currentSearchId = bench?.current_search?.id ?? null;
   const currentSearchStatus = bench?.current_search?.status ?? null;
@@ -260,6 +312,7 @@ export function ApplicationPeople({
       if (pendingStart.current === receipt) pendingStart.current = null;
       setLoadError(null);
       setPollPaused(false);
+      void refreshContactCapability();
     } catch (reason) {
       if (requestGeneration.current !== generation) return;
       const ambiguousFailure =
@@ -283,6 +336,12 @@ export function ApplicationPeople({
         }
       }
       const detail = contactRequestError(reason, "Unable to start the contact search.");
+      if (
+        reason instanceof WorkspaceApiError &&
+        reason.code === "contact_worker_unavailable"
+      ) {
+        void refreshContactCapability();
+      }
       setStartError(
         ambiguousFailure
           ? `${detail} Trying the button again is safe and will not duplicate the search.`
@@ -309,7 +368,13 @@ export function ApplicationPeople({
     applicationStage,
   );
   const applicationContactable = contactSearchBlockedCopy === null;
-  const canStart = applicationContactable && postingState === "open" && !activeSearch && !starting;
+  const contactServiceAvailable = contactCapability?.available ?? null;
+  const canStart =
+    applicationContactable &&
+    postingState === "open" &&
+    contactServiceAvailable === true &&
+    !activeSearch &&
+    !starting;
 
   return (
     <>
@@ -371,7 +436,27 @@ export function ApplicationPeople({
             bench={bench}
             searchAllowed={applicationContactable}
             searchBlockedCopy={contactSearchBlockedCopy}
+            contactServiceAvailable={contactServiceAvailable}
           />
+        ) : null}
+
+        {capabilityChecking ? (
+          <StatusMessage kind="info">
+            Checking whether verified-people search is ready…
+          </StatusMessage>
+        ) : contactCapability && !contactCapability.available ? (
+          <StatusMessage kind="info">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <span>{contactCapabilityUnavailableCopy(contactCapability.reason)}</span>
+              <button
+                type="button"
+                onClick={() => void refreshContactCapability()}
+                className={secondaryButtonClasses}
+              >
+                Check again
+              </button>
+            </div>
+          </StatusMessage>
         ) : null}
 
         {startError ? <StatusMessage kind="error">{startError}</StatusMessage> : null}
@@ -422,6 +507,8 @@ export function ApplicationPeople({
                 ? "Starting search…"
                 : activeSearch
                   ? "Search in progress"
+                  : capabilityChecking
+                    ? "Checking search service…"
                   : searchButtonLabel(bench.status)}
             </button>
             {result ? (
@@ -463,17 +550,19 @@ function SearchStatus({
   bench,
   searchAllowed,
   searchBlockedCopy,
+  contactServiceAvailable,
 }: {
   bench: ApplicationContactBenchResponse;
   searchAllowed: boolean;
   searchBlockedCopy: string | null;
+  contactServiceAvailable: boolean | null;
 }) {
   const search = bench.current_search;
   if (bench.status === "not_started") {
     return (
       <StatusMessage kind="info">
         {searchAllowed
-          ? "No people search has been started for this application. Starting one makes public provider requests and saves only evidence-backed results."
+          ? "No people search has been started for this application. Starting one makes three bounded public-provider queries and saves only evidence-backed results."
           : searchBlockedCopy ?? "A new people search is not available for this application."}
       </StatusMessage>
     );
@@ -483,7 +572,9 @@ function SearchStatus({
   if (search.status === "queued") {
     return (
       <StatusMessage kind="info">
-        {search.retryable
+        {contactServiceAvailable === false
+          ? "This saved search is not running because no compatible contact-search service is currently available. It will not be presented as active work indefinitely."
+          : search.retryable
           ? "A provider attempt was incomplete. The durable worker will retry it automatically."
           : "Contact search queued. The durable worker will start it shortly."}
         {bench.last_completed_result
@@ -787,6 +878,21 @@ function friendlySearchError(code: string | null): string {
   return code && messages[code]
     ? messages[code]
     : "The latest contact search failed without publishing a partial result.";
+}
+
+function contactCapabilityUnavailableCopy(
+  reason: WorkerCapability["reason"],
+): string {
+  if (reason === "unsupported_kind") {
+    return "Verified-people search is not enabled on the current service. No new search will be queued.";
+  }
+  if (reason === "incompatible_build") {
+    return "Verified-people search is paused while the service deployment finishes.";
+  }
+  if (reason === "no_fresh_worker") {
+    return "Verified-people search is waking up or temporarily offline. No new search will be queued yet.";
+  }
+  return "Verified-people search readiness could not be confirmed, so starting a search is safely paused.";
 }
 
 function contactRequestError(reason: unknown, fallback: string): string {

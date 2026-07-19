@@ -15,10 +15,12 @@ export DATABASE_URL='postgresql+psycopg://...'
 4. Run `.venv/bin/python -m alembic upgrade head` as a one-shot migration
    process.
 5. Start the new web version. The free private topology starts its embedded
-   scan-only worker from the same commit. Do not enable Scan roles until
+   interactive worker from the same commit. Do not enable Scan roles until
    authenticated `/api/health` reports `role_scan.available=true`.
-   Provider-consuming jobs require a separately configured worker. Set
-   `JOB_HUNT_WORKER_KINDS=scan_saved_search` for a provider-free process or
+   Contact discovery requires `SERPAPI_API_KEY` and must report
+   `contact_search.available=true` before the UI can queue work. Set
+   `JOB_HUNT_WORKER_KINDS=scan_saved_search` for a provider-free process,
+   `scan_saved_search,discover_contacts` for the free interactive process, or
    `legacy_hunt,scan_saved_search,discover_contacts` for a full worker.
    Omitting the variable preserves the full set; blank or unknown values fail
    startup. The CLI `--job-kinds` option overrides the environment.
@@ -55,7 +57,8 @@ origin and run one provider-free saved-search scan. Confirm:
 
 1. authenticated `/api/health` reports the scan capability;
 2. the scan reaches a terminal state within ten minutes;
-3. the worker heartbeat advertises only `scan_saved_search`;
+3. the worker heartbeat advertises `scan_saved_search` and advertises
+   `discover_contacts` only when SerpAPI is configured;
 4. trusted roles, if present, reach Today; and
 5. a restart during a test scan leaves a recoverable durable queue record.
 

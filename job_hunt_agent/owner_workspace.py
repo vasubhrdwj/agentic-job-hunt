@@ -48,9 +48,16 @@ class WorkspaceConflict(OwnerWorkspaceError):
 
 
 class WorkspaceInputError(OwnerWorkspaceError):
-    def __init__(self, message: str, *, field: str | None = None) -> None:
+    def __init__(
+        self,
+        message: str,
+        *,
+        field: str | None = None,
+        code: str = "invalid_request",
+    ) -> None:
         super().__init__(message)
         self.field = field
+        self.code = code
 
 
 class WorkspaceUnavailable(OwnerWorkspaceError):
