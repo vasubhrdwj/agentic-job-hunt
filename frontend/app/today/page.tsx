@@ -2,6 +2,7 @@ import { Suspense } from "react";
 import { redirect } from "next/navigation";
 
 import { TodayApplicationActions } from "@/components/today-application-actions";
+import { TodayRecommendationReadiness } from "@/components/today-recommendation-readiness";
 import { TodayWorkspace } from "@/components/today-workspace";
 import { WorkspaceHeader } from "@/components/workspace-header";
 import { getServerOwnerSession } from "@/lib/server-session";
@@ -21,6 +22,7 @@ export default async function TodayPage() {
       />
       <div className="space-y-8">
         <TodayApplicationActions />
+        <TodayRecommendationReadiness />
         <section aria-label="Opportunity review inbox">
           <Suspense fallback={<p role="status" className="text-sm text-zinc-500">Loading your persisted opportunity inbox…</p>}>
             <TodayWorkspace

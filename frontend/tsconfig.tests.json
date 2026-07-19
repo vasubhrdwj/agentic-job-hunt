@@ -19,6 +19,7 @@
     "lib/interview-preparation-drafts.ts",
     "lib/opportunity-fit.ts",
     "lib/today-company-balance.ts",
+    "lib/today-recommendation-readiness.ts",
     "lib/today-sort.ts",
     "lib/workspace-types.ts",
     "tests/application-dossier-layout.test.ts",
@@ -31,6 +32,7 @@
     "tests/interview-preparation-drafts.test.ts",
     "tests/opportunity-fit.test.ts",
     "tests/today-company-balance.test.ts",
+    "tests/today-recommendation-readiness.test.ts",
     "tests/today-sort.test.ts",
     "tests/workspace-types.test.ts"
   ]
