@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 from datetime import timedelta
+from io import BytesIO
 
 import pytest
+from docx import Document
 from sqlalchemy import func, select
 
 from job_hunt_agent.application_artifact_repository import (
     create_application_artifact_revision,
+    load_approved_tailored_resume_docx,
     load_application_artifacts,
     record_application_artifact_event,
 )
@@ -206,6 +209,52 @@ def test_deterministic_generation_is_grounded_exact_encrypted_and_approvable(
         )
     assert replayed is not None and replayed.approval_event is not None
     assert replayed.approval_event.id == approved.approval_event.id
+
+    with database.session() as session:
+        export = load_approved_tailored_resume_docx(
+            session,
+            owner_id="owner-a",
+            application_id="application1",
+            keyring=keyring,
+        )
+        assert load_approved_tailored_resume_docx(
+            session,
+            owner_id="owner-b",
+            application_id="application1",
+            keyring=keyring,
+        ) is None
+    assert export is not None
+    assert export.artifact_revision_id == revision.id
+    assert export.content_hash == revision.tailored_resume.content_hash
+    assert export.filename == "example-senior-backend-engineer-resume-r1.docx"
+    assert [item.text for item in Document(BytesIO(export.content)).paragraphs] == (
+        revision.tailored_resume.text.split("\n")
+    )
+
+    replacement_request = request.model_copy(
+        update={"parent_artifact_revision_id": revision.id}
+    )
+    with database.session() as session:
+        replacement = create_application_artifact_revision(
+            session,
+            owner_id="owner-a",
+            application_id="application1",
+            pack_id=reviewed.pack.id,
+            payload=replacement_request,
+            expected_pack_version=approved.pack.version,
+            idempotency_key="artifact-generate-replacement",
+            keyring=keyring,
+            now=NOW + timedelta(minutes=7),
+        )
+    assert replacement is not None and replacement.status.value == "draft"
+    with pytest.raises(ResourceConflict, match="approve the current materials"):
+        with database.session() as session:
+            load_approved_tailored_resume_docx(
+                session,
+                owner_id="owner-a",
+                application_id="application1",
+                keyring=keyring,
+            )
 
 
 def test_unanswerable_questions_persist_as_blocked_draft_and_can_be_rejected(

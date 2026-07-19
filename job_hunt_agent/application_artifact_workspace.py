@@ -9,6 +9,7 @@ from .application_artifact_schemas import (
     ApplicationArtifactRevisionCreate,
     ApplicationArtifactsResponse,
 )
+from .resume_docx import ApprovedResumeDocx
 
 
 class ApplicationArtifactWorkspaceStore(Protocol):
@@ -20,6 +21,13 @@ class ApplicationArtifactWorkspaceStore(Protocol):
         owner_id: str,
         application_id: str,
     ) -> ApplicationArtifactsResponse | None: ...
+
+    def get_approved_tailored_resume_docx(
+        self,
+        *,
+        owner_id: str,
+        application_id: str,
+    ) -> ApprovedResumeDocx | None: ...
 
     def create_application_artifact_revision(
         self,

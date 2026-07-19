@@ -35,6 +35,7 @@ import {
   StatusMessage,
   textareaClasses,
 } from "./workspace-ui";
+import { ApprovedResumeDownload } from "./approved-resume-download";
 
 interface QuestionDraft {
   id: string;
@@ -827,6 +828,7 @@ export function ApplicationMaterials({
 
             {revision ? (
               <ArtifactReview
+                applicationId={applicationId}
                 revision={revision}
                 unsupportedRequirements={
                   sourceCatalog.reviewed_grounding_revision_id === revision.grounding_revision_id
@@ -1006,6 +1008,7 @@ function QuestionEditor({
 }
 
 function ArtifactReview({
+  applicationId,
   revision,
   unsupportedRequirements,
   approvedRevisionId,
@@ -1014,6 +1017,7 @@ function ArtifactReview({
   copied,
   copyText,
 }: {
+  applicationId: string;
   revision: ApplicationArtifactRevisionResponse;
   unsupportedRequirements: NonNullable<ApplicationArtifactsResponse["source_catalog"]>["unsupported_requirements"];
   approvedRevisionId: string | null;
@@ -1086,13 +1090,19 @@ function ArtifactReview({
               Unified base-versus-tailored changes. “+” is added and “−” is removed.
             </p>
           </div>
-          <button
-            type="button"
-            onClick={() => void copyText("resume", revision.tailored_resume.text)}
-            className={secondaryButtonClasses}
-          >
-            {copied === "resume" ? "Copied exact résumé" : "Copy tailored résumé"}
-          </button>
+          <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
+            <ApprovedResumeDownload
+              applicationId={applicationId}
+              available={approvedRevisionId === revision.id}
+            />
+            <button
+              type="button"
+              onClick={() => void copyText("resume", revision.tailored_resume.text)}
+              className={secondaryButtonClasses}
+            >
+              {copied === "resume" ? "Copied exact résumé" : "Copy tailored résumé"}
+            </button>
+          </div>
         </div>
         <DiffViewer revision={revision} />
         <ClaimsDetails title="Résumé claim sources" claims={revision.tailored_resume.claims} />

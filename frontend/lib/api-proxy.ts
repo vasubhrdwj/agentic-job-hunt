@@ -36,14 +36,17 @@ const REQUEST_HEADER_ALLOWLIST = [
 ] as const;
 
 const RESPONSE_HEADER_ALLOWLIST = [
+  "cache-control",
   "content-disposition",
   "content-type",
   "deprecation",
   "etag",
   "link",
+  "pragma",
   "retry-after",
   "sunset",
   "www-authenticate",
+  "x-content-type-options",
   "x-request-id",
 ] as const;
 

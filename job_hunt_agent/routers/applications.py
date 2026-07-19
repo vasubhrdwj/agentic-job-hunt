@@ -62,6 +62,7 @@ from ..outreach_schemas import (
     OutreachReplyCreate,
 )
 from ..opportunity_schemas import OpportunityDecisionResponse
+from ..resume_docx import DOCX_MEDIA_TYPE
 from ..weekly_review_schemas import (
     ApplicationActionReviewCreate,
     ApplicationActionReviewMutationResponse,
@@ -664,6 +665,43 @@ def create_application_router(
         if artifacts.pack is not None:
             _set_etag(response, artifacts.pack.version)
         return artifacts
+
+    @router.get(
+        "/api/applications/{application_id}/application-artifacts/approved-resume.docx",
+        response_class=Response,
+        description=(
+            "Download an ATS-safe DOCX built only from the exact current approved "
+            "tailored-resume artifact. Draft and superseded approvals fail closed."
+        ),
+        responses={
+            200: {
+                "description": "Exact current approved tailored resume",
+                "content": {DOCX_MEDIA_TYPE: {}},
+            },
+            **COMMON_ERROR_RESPONSES,
+        },
+    )
+    def download_owner_approved_tailored_resume(
+        application_id: OpaqueId,
+        owner: AuthenticatedOwner = Security(require_read_owner),
+    ) -> Response:
+        export = _invoke(
+            _store(store).get_approved_tailored_resume_docx,
+            owner_id=owner.owner_id,
+            application_id=application_id,
+        )
+        if export is None:
+            _not_found("application")
+        return Response(
+            content=export.content,
+            media_type=DOCX_MEDIA_TYPE,
+            headers={
+                "Cache-Control": "private, no-store, max-age=0",
+                "Pragma": "no-cache",
+                "Content-Disposition": f'attachment; filename="{export.filename}"',
+                "X-Content-Type-Options": "nosniff",
+            },
+        )
 
     @router.post(
         "/api/applications/{application_id}/application-packs/{pack_id}/artifact-revisions",

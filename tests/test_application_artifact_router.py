@@ -23,6 +23,7 @@ from job_hunt_agent.database import Database
 from job_hunt_agent.routers.applications import create_application_router
 from job_hunt_agent.routers.session import create_session_router
 from job_hunt_agent.routers.workspace import install_workspace_error_handler
+from job_hunt_agent.resume_docx import ApprovedResumeDocx, DOCX_MEDIA_TYPE
 from job_hunt_agent.security import hash_access_token
 
 
@@ -55,6 +56,24 @@ class FakeArtifactStore:
     def get_application_artifacts(self, *, owner_id: str, application_id: str):
         self.calls.append(("get", {"owner_id": owner_id, "application_id": application_id}))
         return _response(3) if application_id == "application1" else None
+
+    def get_approved_tailored_resume_docx(
+        self,
+        *,
+        owner_id: str,
+        application_id: str,
+    ):
+        self.calls.append(
+            ("download", {"owner_id": owner_id, "application_id": application_id})
+        )
+        if application_id != "application1":
+            return None
+        return ApprovedResumeDocx(
+            content=b"exact-docx-bytes",
+            filename="example-backend-engineer-resume-r2.docx",
+            artifact_revision_id="artifact2",
+            content_hash="a" * 64,
+        )
 
     def create_application_artifact_revision(
         self,
@@ -174,6 +193,36 @@ def test_artifact_routes_are_authenticated_versioned_and_forward_exact_questions
     )
     assert event.status_code == 200, event.text
     assert event.headers["etag"] == '"5"'
+
+
+def test_approved_resume_download_is_authenticated_private_and_owner_scoped(
+    artifact_client: tuple[TestClient, FakeArtifactStore],
+) -> None:
+    client, store = artifact_client
+    path = (
+        "/api/applications/application1/application-artifacts/approved-resume.docx"
+    )
+    assert client.get(path).status_code == 401
+
+    _login(client)
+    response = client.get(path)
+
+    assert response.status_code == 200
+    assert response.content == b"exact-docx-bytes"
+    assert response.headers["content-type"] == DOCX_MEDIA_TYPE
+    assert response.headers["cache-control"] == "private, no-store, max-age=0"
+    assert response.headers["pragma"] == "no-cache"
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["content-disposition"] == (
+        'attachment; filename="example-backend-engineer-resume-r2.docx"'
+    )
+    assert store.calls[-1] == (
+        "download",
+        {"owner_id": "owner", "application_id": "application1"},
+    )
+    assert client.get(
+        "/api/applications/missing/application-artifacts/approved-resume.docx"
+    ).status_code == 404
 
 
 def test_artifact_payloads_reject_models_and_false_approval_confirmation(

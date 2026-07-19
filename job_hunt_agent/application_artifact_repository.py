@@ -62,6 +62,12 @@ from .private_payloads import decrypt_private_payload, encrypt_private_payload
 from .profile_repository import create_or_reuse_resume_version, load_resume_version
 from .profile_schemas import ResumeVersionSummary
 from .repository_errors import ResourceConflict, require_version
+from .resume_docx import (
+    ApprovedResumeDocx,
+    ResumeDocxError,
+    build_resume_docx,
+    safe_resume_filename,
+)
 from .security import DataKeyring, MAX_RESUME_CHARS
 
 
@@ -107,6 +113,60 @@ def load_application_artifacts(
         application=application,
         pack=pack,
         keyring=keyring,
+    )
+
+
+def load_approved_tailored_resume_docx(
+    session: Session,
+    *,
+    owner_id: str,
+    application_id: str,
+    keyring: DataKeyring,
+) -> ApprovedResumeDocx | None:
+    """Export only the latest revision when that exact revision is approved."""
+
+    application = _owned_application(session, owner_id, application_id)
+    if application is None:
+        return None
+    pack = _owned_pack(session, owner_id, application_id)
+    if pack is None:
+        raise ResourceConflict("approve the current materials before downloading a resume")
+    revision = _latest_artifact_revision(session, pack)
+    event = _artifact_event(session, pack, revision) if revision is not None else None
+    if revision is None or event is None or event.event_type != "approved":
+        raise ResourceConflict("approve the current materials before downloading a resume")
+    if event.tailored_resume_version_id is None:
+        raise ApplicationArtifactRepositoryError(
+            "approved artifact does not name its tailored resume"
+        )
+
+    stored = _load_artifact_payload(revision, keyring=keyring)
+    approved_resume = load_resume_version(
+        session,
+        owner_id=owner_id,
+        resume_version_id=event.tailored_resume_version_id,
+        keyring=keyring,
+    )
+    if approved_resume is None or approved_resume.content != stored.tailored_resume.text:
+        raise ApplicationArtifactRepositoryError(
+            "approved artifact and tailored resume do not match"
+        )
+    posting = _posting_version(session, application)
+    try:
+        content = build_resume_docx(stored.tailored_resume.text)
+    except ResumeDocxError as exc:
+        raise ApplicationArtifactRepositoryError(
+            "approved tailored resume cannot be exported"
+        ) from exc
+    return ApprovedResumeDocx(
+        content=content,
+        filename=safe_resume_filename(
+            company_name=posting.company_name,
+            role_title=posting.title,
+            revision_number=revision.revision_number,
+        ),
+        artifact_revision_id=revision.id,
+        content_hash=stored.tailored_resume.content_hash,
     )
 
 
@@ -1274,6 +1334,7 @@ def _require_replay_type(actual: str | None, expected: str) -> None:
 __all__ = [
     "ApplicationArtifactRepositoryError",
     "create_application_artifact_revision",
+    "load_approved_tailored_resume_docx",
     "load_application_artifacts",
     "record_application_artifact_event",
 ]

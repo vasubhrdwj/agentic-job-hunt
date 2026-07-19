@@ -11,6 +11,7 @@ from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from .application_artifact_repository import (
     ApplicationArtifactRepositoryError,
     create_application_artifact_revision,
+    load_approved_tailored_resume_docx,
     load_application_artifacts,
     record_application_artifact_event,
 )
@@ -108,6 +109,7 @@ from .owner_workspace import (
 from .opportunity_schemas import OpportunityDecisionResponse
 from .private_payloads import PrivatePayloadBindingError
 from .repository_errors import ResourceConflict, VersionConflict
+from .resume_docx import ApprovedResumeDocx
 from .security import DataKeyring, DecryptionError
 from .sqlalchemy_contact_workspace import SqlAlchemyContactWorkspaceStore
 from .weekly_review_repository import (
@@ -388,6 +390,20 @@ class SqlAlchemyApplicationWorkspaceStore(SqlAlchemyContactWorkspaceStore):
     ) -> ApplicationArtifactsResponse | None:
         with _application_artifact_errors(), self.database.session() as session:
             return load_application_artifacts(
+                session,
+                owner_id=owner_id,
+                application_id=application_id,
+                keyring=self.keyring,
+            )
+
+    def get_approved_tailored_resume_docx(
+        self,
+        *,
+        owner_id: str,
+        application_id: str,
+    ) -> ApprovedResumeDocx | None:
+        with _application_artifact_errors(), self.database.session() as session:
+            return load_approved_tailored_resume_docx(
                 session,
                 owner_id=owner_id,
                 application_id=application_id,
