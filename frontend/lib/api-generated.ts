@@ -1625,10 +1625,10 @@ export interface components {
             data_source: "database";
             /**
              * Disclaimer
-             * @default Prompts are deterministic scaffolds. Only you can supply and verify the STAR details; no answer is treated as generated truth.
+             * @default Grounded starters quote only exact approved evidence and never guess missing STAR facts. They are not saved or approved unless you deliberately use, verify, and save them.
              * @constant
              */
-            disclaimer: "Prompts are deterministic scaffolds. Only you can supply and verify the STAR details; no answer is treated as generated truth.";
+            disclaimer: "Grounded starters quote only exact approved evidence and never guess missing STAR facts. They are not saved or approved unless you deliberately use, verify, and save them.";
             /** Evidence Gaps */
             evidence_gaps?: components["schemas"]["InterviewPreparationEvidenceGap"][];
             /**
@@ -2926,6 +2926,11 @@ export interface components {
             /** Requirement Text */
             requirement_text: string;
         };
+        /**
+         * InterviewPreparationMissingFact
+         * @enum {string}
+         */
+        InterviewPreparationMissingFact: "situation_context" | "personal_responsibility" | "specific_actions" | "verified_result" | "motivation_connection" | "conflict_or_ambiguity_details" | "setback_and_learning_details" | "leadership_or_collaboration_details";
         /** InterviewPreparationPrompt */
         InterviewPreparationPrompt: {
             category: components["schemas"]["InterviewPreparationPromptCategory"];
@@ -2942,6 +2947,7 @@ export interface components {
             requirement_id?: string | null;
             /** Requirement Text */
             requirement_text?: string | null;
+            starting_draft?: components["schemas"]["InterviewPreparationStartingDraft"] | null;
         };
         /**
          * InterviewPreparationPromptCategory
@@ -3064,6 +3070,30 @@ export interface components {
              * @default
              */
             task: string;
+        };
+        /**
+         * InterviewPreparationStartingDraft
+         * @description Unsaved, deterministic source material for overcoming a blank page.
+         *
+         *     Situation, task, and action stay empty because neither a role requirement nor an
+         *     achievement statement proves those STAR facts. Result may contain one exact
+         *     approved statement only when that statement explicitly describes an outcome.
+         */
+        InterviewPreparationStartingDraft: {
+            draft: components["schemas"]["InterviewPreparationStarDraft"];
+            /**
+             * Generation Method
+             * @default exact_sources_v1
+             * @constant
+             */
+            generation_method: "exact_sources_v1";
+            /** Missing Facts */
+            missing_facts: components["schemas"]["InterviewPreparationMissingFact"][];
+            result_evidence?: components["schemas"]["ApplicationPackEvidenceReference"] | null;
+            /** Source Evidence */
+            source_evidence: components["schemas"]["ApplicationPackEvidenceReference"][];
+            /** Source Requirement Id */
+            source_requirement_id: string;
         };
         /**
          * InterviewPreparationStatus
@@ -5192,6 +5222,11 @@ export interface components {
             /** Warnings */
             warnings?: components["schemas"]["ScanWarning"][];
         };
+        /**
+         * TodaySort
+         * @enum {string}
+         */
+        TodaySort: "recommended" | "newest";
         /** TodaySummary */
         TodaySummary: {
             /** Dismissed */
@@ -11353,6 +11388,7 @@ export interface operations {
         parameters: {
             query?: {
                 view?: components["schemas"]["TodayView"];
+                sort?: components["schemas"]["TodaySort"];
                 scan_id?: string | null;
                 saved_search_id?: string | null;
                 lane?: components["schemas"]["OpportunityLane"] | null;

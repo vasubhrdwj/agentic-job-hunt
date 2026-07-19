@@ -56,6 +56,17 @@ unknown facts and supports durable Watch, Dismiss, and restore decisions; it
 never searches live sources, reads a resume, discovers contacts, drafts text,
 or calls a model merely because the page was opened.
 
+Today defaults to **Recommended** ordering across the complete filtered,
+persisted result set before pagination. The order uses only visible categorical
+facts: actionable posting/decision state, eligibility, fit band, and confidence;
+companies rotate only inside an equal recommendation tier. There is no hidden
+fit percentage. **Newest** remains available as an explicit alternative. The
+cursor pins the result snapshot, filter scope, order, and assessment inputs; if
+the profile, approved evidence, posting, or decision changes between pages, the
+API returns safe refresh guidance instead of mixing two rankings. With all saved
+searches selected, each role uses the search that matched it most recently;
+selecting one search ranks only against that target.
+
 Phase 3A adds an atomic **Pursue** decision. It creates exactly one application,
 one open dated next action, and one immutable creation activity, then exposes a
 database-only Applications list and dossier. Phase 5 extends that narrow state
@@ -389,9 +400,11 @@ in-place operations and require a migration-current, identity-matched archive.
 ## Hosted deployment status
 
 `render.yaml` keeps the deployment on Render's free web tier and enables one
-embedded, scan-only durable worker in that process. A user request wakes the
-web and worker together; interrupted scan leases recover after a restart.
-This bridge does not claim contact discovery or legacy provider jobs.
+embedded durable worker in that process. A user request wakes the web and
+worker together; interrupted leases recover after a restart. The bridge always
+supports provider-free role scans and also supports explicit contact searches
+when `SERPAPI_API_KEY` is configured. Missing contact configuration never
+disables role scans, and the bridge never claims legacy provider jobs.
 `/web-ready` gates web traffic on a reachable, migrated database; authenticated
 `/api/health` exposes the exact live capabilities.
 
@@ -405,7 +418,9 @@ Before routing production traffic:
    migration release step instead.
 3. For the free private deployment, keep
    `ENABLE_EMBEDDED_SCAN_WORKER=1` and
-   `JOB_HUNT_WORKER_KINDS=scan_saved_search`. When an always-on standalone
+   `JOB_HUNT_WORKER_KINDS=scan_saved_search,discover_contacts`. Contact search
+   is advertised only when its SerpAPI configuration passes runtime checks.
+   When an always-on standalone
    worker is introduced, disable the embedded worker and give the new service
    the same database and encryption keys.
 4. Configure the required Render environment variables, including an exact

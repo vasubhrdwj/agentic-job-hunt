@@ -1701,8 +1701,8 @@
             "type": "string"
           },
           "disclaimer": {
-            "const": "Prompts are deterministic scaffolds. Only you can supply and verify the STAR details; no answer is treated as generated truth.",
-            "default": "Prompts are deterministic scaffolds. Only you can supply and verify the STAR details; no answer is treated as generated truth.",
+            "const": "Grounded starters quote only exact approved evidence and never guess missing STAR facts. They are not saved or approved unless you deliberately use, verify, and save them.",
+            "default": "Grounded starters quote only exact approved evidence and never guess missing STAR facts. They are not saved or approved unless you deliberately use, verify, and save them.",
             "title": "Disclaimer",
             "type": "string"
           },
@@ -5290,6 +5290,20 @@
         "title": "InterviewPreparationEvidenceGap",
         "type": "object"
       },
+      "InterviewPreparationMissingFact": {
+        "enum": [
+          "situation_context",
+          "personal_responsibility",
+          "specific_actions",
+          "verified_result",
+          "motivation_connection",
+          "conflict_or_ambiguity_details",
+          "setback_and_learning_details",
+          "leadership_or_collaboration_details"
+        ],
+        "title": "InterviewPreparationMissingFact",
+        "type": "string"
+      },
       "InterviewPreparationPrompt": {
         "additionalProperties": false,
         "properties": {
@@ -5357,6 +5371,16 @@
               }
             ],
             "title": "Requirement Text"
+          },
+          "starting_draft": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/InterviewPreparationStartingDraft"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [
@@ -5641,6 +5665,62 @@
           }
         },
         "title": "InterviewPreparationStarDraft",
+        "type": "object"
+      },
+      "InterviewPreparationStartingDraft": {
+        "additionalProperties": false,
+        "description": "Unsaved, deterministic source material for overcoming a blank page.\n\nSituation, task, and action stay empty because neither a role requirement nor an\nachievement statement proves those STAR facts. Result may contain one exact\napproved statement only when that statement explicitly describes an outcome.",
+        "properties": {
+          "draft": {
+            "$ref": "#/components/schemas/InterviewPreparationStarDraft"
+          },
+          "generation_method": {
+            "const": "exact_sources_v1",
+            "default": "exact_sources_v1",
+            "title": "Generation Method",
+            "type": "string"
+          },
+          "missing_facts": {
+            "items": {
+              "$ref": "#/components/schemas/InterviewPreparationMissingFact"
+            },
+            "maxItems": 8,
+            "minItems": 1,
+            "title": "Missing Facts",
+            "type": "array"
+          },
+          "result_evidence": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ApplicationPackEvidenceReference"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "source_evidence": {
+            "items": {
+              "$ref": "#/components/schemas/ApplicationPackEvidenceReference"
+            },
+            "maxItems": 10,
+            "minItems": 1,
+            "title": "Source Evidence",
+            "type": "array"
+          },
+          "source_requirement_id": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
+            "title": "Source Requirement Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source_requirement_id",
+          "source_evidence",
+          "draft",
+          "missing_facts"
+        ],
+        "title": "InterviewPreparationStartingDraft",
         "type": "object"
       },
       "InterviewPreparationStatus": {
@@ -11021,6 +11101,14 @@
         ],
         "title": "TodayScanHealth",
         "type": "object"
+      },
+      "TodaySort": {
+        "enum": [
+          "recommended",
+          "newest"
+        ],
+        "title": "TodaySort",
+        "type": "string"
       },
       "TodaySummary": {
         "additionalProperties": false,
@@ -20085,6 +20173,15 @@
             "schema": {
               "$ref": "#/components/schemas/TodayView",
               "default": "inbox"
+            }
+          },
+          {
+            "in": "query",
+            "name": "sort",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/TodaySort",
+              "default": "recommended"
             }
           },
           {
