@@ -906,7 +906,15 @@ def list_today_opportunities(
         TodayView.watching: "watch",
         TodayView.dismissed: "dismiss",
     }
-    filters = [OwnerOpportunity.owner_id == owner_id]
+    filters = [
+        OwnerOpportunity.owner_id == owner_id,
+        OwnerOpportunity.job_posting_id.in_(
+            select(JobPosting.id).where(
+                JobPosting.owner_id == owner_id,
+                JobPosting.lifecycle_state == "open",
+            )
+        ),
+    ]
     if query.view is not TodayView.all:
         filters.append(
             OwnerOpportunity.decision == decision_by_view[query.view]
@@ -930,6 +938,23 @@ def list_today_opportunities(
             )
         )
     cursor = _decode_cursor(query.cursor) if query.cursor else None
+    if query.scan_id is None and not isinstance(cursor, _LegacyTodayCursor):
+        source_snapshot_at = (
+            cursor.snapshot_at
+            if isinstance(cursor, (_DiverseTodayCursor, _RecommendedTodayCursor))
+            else current
+        )
+        current_inbox = _current_inbox_snapshot_condition(
+            owner_id=owner_id,
+            snapshot_at=source_snapshot_at,
+            saved_search_id=query.saved_search_id,
+        )
+        if query.view is TodayView.inbox:
+            filters.append(current_inbox)
+        elif query.view is TodayView.all:
+            filters.append(
+                (OwnerOpportunity.decision != "inbox") | current_inbox
+            )
     if isinstance(cursor, _RecommendedTodayCursor) and query.sort is not TodaySort.recommended:
         raise InvalidTodayCursor("cursor is invalid")
     assessment_context = _build_assessment_context(
@@ -1112,7 +1137,12 @@ def list_today_opportunities(
     return TodayListResponse(
         data_source="database",
         as_of=current,
-        summary=_today_summary(session, owner_id, scan_id=query.scan_id),
+        summary=_today_summary(
+            session,
+            owner_id,
+            scan_id=query.scan_id,
+            as_of=current,
+        ),
         scan_health=_today_scan_health(session, owner_id),
         items=items,
         next_cursor=next_cursor,
@@ -1567,11 +1597,20 @@ def _today_summary(
     owner_id: str,
     *,
     scan_id: str | None = None,
+    as_of: datetime,
 ) -> TodaySummary:
     statement = select(
         OwnerOpportunity.decision,
         func.count(OwnerOpportunity.id),
-    ).where(OwnerOpportunity.owner_id == owner_id)
+    ).where(
+        OwnerOpportunity.owner_id == owner_id,
+        OwnerOpportunity.job_posting_id.in_(
+            select(JobPosting.id).where(
+                JobPosting.owner_id == owner_id,
+                JobPosting.lifecycle_state == "open",
+            )
+        ),
+    )
     if scan_id is not None:
         statement = statement.where(
             OwnerOpportunity.job_posting_id.in_(
@@ -1581,6 +1620,14 @@ def _today_summary(
                 )
             )
         )
+    else:
+        statement = statement.where(
+            (OwnerOpportunity.decision != "inbox")
+            | _current_inbox_snapshot_condition(
+                owner_id=owner_id,
+                snapshot_at=as_of,
+            )
+        )
     counts = dict(
         session.execute(statement.group_by(OwnerOpportunity.decision)).all()
     )
@@ -1588,6 +1635,80 @@ def _today_summary(
         needs_decision=int(counts.get("inbox", 0)),
         watching=int(counts.get("watch", 0)),
         dismissed=int(counts.get("dismiss", 0)),
+    )
+
+
+def _current_inbox_snapshot_condition(
+    *,
+    owner_id: str,
+    snapshot_at: datetime,
+    saved_search_id: str | None = None,
+) -> Any:
+    """Keep Inbox roles from each active search partition's current snapshot.
+
+    Ranking is applied only after discarding failed and empty source attempts, so
+    either kind of refresh retains the last non-empty success for that exact
+    saved-search, company, and source partition. Terminal partial scans can
+    still advance their successful partitions without erasing failed ones.
+    When the owner has no reliable snapshot yet, the ``NOT EXISTS`` branch
+    preserves the cumulative pre-snapshot behavior.
+    """
+
+    partition_rank = func.row_number().over(
+        partition_by=(
+            OpportunityScan.saved_search_id,
+            OpportunityScanSource.company_slug,
+            OpportunityScanSource.source,
+        ),
+        order_by=(
+            OpportunityScanSource.completed_at.desc(),
+            OpportunityScanSource.id.desc(),
+        ),
+    ).label("partition_rank")
+    source_candidates = (
+        select(
+            OpportunityScanSource.id.label("scan_source_id"),
+            partition_rank,
+        )
+        .join(
+            OpportunityScan,
+            (OpportunityScan.owner_id == OpportunityScanSource.owner_id)
+            & (OpportunityScan.id == OpportunityScanSource.opportunity_scan_id),
+        )
+        .join(
+            SavedSearch,
+            (SavedSearch.owner_id == OpportunityScan.owner_id)
+            & (SavedSearch.id == OpportunityScan.saved_search_id),
+        )
+        .where(
+            OpportunityScanSource.owner_id == owner_id,
+            OpportunityScanSource.status == "succeeded",
+            OpportunityScanSource.persisted_count > 0,
+            OpportunityScanSource.completed_at <= snapshot_at,
+            OpportunityScan.status.in_(("succeeded", "partial")),
+            OpportunityScan.finalized_at.is_not(None),
+            SavedSearch.active.is_(True),
+        )
+    )
+    if saved_search_id is not None:
+        source_candidates = source_candidates.where(
+            OpportunityScan.saved_search_id == saved_search_id
+        )
+    ranked_sources = source_candidates.cte("ranked_reliable_today_sources")
+    current_sources = (
+        select(ranked_sources.c.scan_source_id)
+        .where(ranked_sources.c.partition_rank == 1)
+        .cte("current_today_sources")
+    )
+    current_posting_ids = select(JobObservation.job_posting_id).where(
+        JobObservation.owner_id == owner_id,
+        JobObservation.opportunity_scan_source_id.in_(
+            select(current_sources.c.scan_source_id)
+        ),
+    )
+    has_reliable_snapshot = select(current_sources.c.scan_source_id).exists()
+    return (~has_reliable_snapshot) | OwnerOpportunity.job_posting_id.in_(
+        current_posting_ids
     )
 
 

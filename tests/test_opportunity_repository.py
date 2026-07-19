@@ -204,6 +204,36 @@ def _seed_scan_source(
     )
 
 
+def _finish_scan_source(
+    session,
+    *,
+    scan_id: str,
+    source_id: str,
+    completed_at: datetime,
+    succeeded: bool = True,
+) -> None:
+    source = session.get(OpportunityScanSource, source_id)
+    scan = session.get(OpportunityScan, scan_id)
+    assert source is not None and scan is not None
+    source.observed_count = max(source.observed_count, source.persisted_count)
+    source.returned_count = max(source.returned_count, source.persisted_count)
+    source.status = "succeeded" if succeeded else "failed"
+    source.error_code = None if succeeded else "source_fetch_failed"
+    source.completed_at = completed_at
+    source.updated_at = completed_at
+    source.version += 1
+    scan.status = "partial" if succeeded else "failed"
+    scan.stage = "complete"
+    scan.source_count = 1
+    scan.terminal_source_count = 1
+    scan.successful_source_count = int(succeeded)
+    scan.failed_source_count = int(not succeeded)
+    scan.finalized_at = completed_at
+    scan.updated_at = completed_at
+    scan.version += 1
+    session.flush()
+
+
 def _seed_approved_evidence(
     session,
     *,
@@ -1108,6 +1138,203 @@ def test_today_scan_filter_returns_only_owner_observations_from_that_scan(
         assert missing_scan.summary.needs_decision == 0
 
 
+def test_today_inbox_uses_latest_reliable_partition_snapshot(
+    radar: tuple[Database, DataKeyring],
+) -> None:
+    database, keyring = radar
+    with database.session() as session:
+        first_source = session.get(OpportunityScanSource, "source-a1")
+        assert first_source is not None
+        first_source.observed_count = 4
+        first_source.returned_count = 4
+        old_only = persist_scan_source_role(
+            session,
+            owner_id="owner-a",
+            scan_source_id="source-a1",
+            role=_role(
+                source_job_id="old-only",
+                url="https://jobs.acme.example/old-only",
+                title="Old Snapshot Role",
+            ),
+            first_party_url_verified=True,
+            now=NOW,
+        )
+        shared = persist_scan_source_role(
+            session,
+            owner_id="owner-a",
+            scan_source_id="source-a1",
+            role=_role(
+                source_job_id="shared",
+                url="https://jobs.acme.example/shared",
+                title="Current Snapshot Role",
+            ),
+            first_party_url_verified=True,
+            now=NOW + timedelta(minutes=1),
+        )
+        dismissed = persist_scan_source_role(
+            session,
+            owner_id="owner-a",
+            scan_source_id="source-a1",
+            role=_role(
+                source_job_id="dismissed-history",
+                url="https://jobs.acme.example/dismissed-history",
+                title="Dismissed Historical Role",
+            ),
+            first_party_url_verified=True,
+            now=NOW + timedelta(minutes=2),
+        )
+        closed = persist_scan_source_role(
+            session,
+            owner_id="owner-a",
+            scan_source_id="source-a1",
+            role=_role(
+                source_job_id="closed-history",
+                url="https://jobs.acme.example/closed-history",
+                title="Closed Historical Role",
+            ),
+            first_party_url_verified=True,
+            now=NOW + timedelta(minutes=3),
+        )
+        _finish_scan_source(
+            session,
+            scan_id="scan-a1",
+            source_id="source-a1",
+            completed_at=NOW + timedelta(minutes=4),
+        )
+
+        _seed_scan_source(session, "owner-a", "search-a", "scan-a2", "source-a2")
+        persist_scan_source_role(
+            session,
+            owner_id="owner-a",
+            scan_source_id="source-a2",
+            role=_role(
+                source_job_id="shared",
+                url="https://jobs.acme.example/shared",
+                title="Current Snapshot Role",
+            ),
+            first_party_url_verified=True,
+            now=NOW + timedelta(minutes=5),
+        )
+        _finish_scan_source(
+            session,
+            scan_id="scan-a2",
+            source_id="source-a2",
+            completed_at=NOW + timedelta(minutes=6),
+        )
+
+        # A later empty success and an even later failure do not erase the last
+        # non-empty successful snapshot for this search/company/source partition.
+        _seed_scan_source(session, "owner-a", "search-a", "scan-a3", "source-a3")
+        empty_source = session.get(OpportunityScanSource, "source-a3")
+        assert empty_source is not None
+        empty_source.observed_count = 0
+        empty_source.returned_count = 0
+        _finish_scan_source(
+            session,
+            scan_id="scan-a3",
+            source_id="source-a3",
+            completed_at=NOW + timedelta(minutes=7),
+        )
+        _seed_scan_source(session, "owner-a", "search-a", "scan-a4", "source-a4")
+        failed_source = session.get(OpportunityScanSource, "source-a4")
+        assert failed_source is not None
+        failed_source.observed_count = 0
+        failed_source.returned_count = 0
+        _finish_scan_source(
+            session,
+            scan_id="scan-a4",
+            source_id="source-a4",
+            completed_at=NOW + timedelta(minutes=8),
+            succeeded=False,
+        )
+
+        dismissed_row = session.get(OwnerOpportunity, dismissed.opportunity_id)
+        assert dismissed_row is not None
+        decide_owner_opportunity(
+            session,
+            owner_id="owner-a",
+            opportunity_id=dismissed.opportunity_id,
+            request=OpportunityDecisionRequest(
+                action="dismiss",
+                dismiss_reason="not_relevant",
+            ),
+            expected_version=dismissed_row.version,
+            idempotency_key="dismiss-historical-role",
+            keyring=keyring,
+            now=NOW + timedelta(minutes=9),
+        )
+        closed_posting = session.get(JobPosting, closed.posting_id)
+        assert closed_posting is not None
+        closed_posting.lifecycle_state = "closed"
+        closed_posting.closure_reason = "explicit"
+        closed_posting.closed_at = NOW + timedelta(minutes=9)
+        closed_posting.version += 1
+        session.flush()
+
+        current = list_today_opportunities(
+            session,
+            owner_id="owner-a",
+            query=TodayQuery(),
+            keyring=keyring,
+            now=NOW + timedelta(minutes=10),
+        )
+        historical = list_today_opportunities(
+            session,
+            owner_id="owner-a",
+            query=TodayQuery(scan_id="scan-a1", view="all"),
+            keyring=keyring,
+            now=NOW + timedelta(minutes=10),
+        )
+
+        assert [item.id for item in current.items] == [shared.opportunity_id]
+        assert {item.id for item in historical.items} == {
+            old_only.opportunity_id,
+            shared.opportunity_id,
+            dismissed.opportunity_id,
+        }
+        assert closed.opportunity_id not in {item.id for item in historical.items}
+
+        old_row = session.get(OwnerOpportunity, old_only.opportunity_id)
+        assert old_row is not None
+        decide_owner_opportunity(
+            session,
+            owner_id="owner-a",
+            opportunity_id=old_only.opportunity_id,
+            request=OpportunityDecisionRequest(action="watch"),
+            expected_version=old_row.version,
+            idempotency_key="watch-historical-role",
+            keyring=keyring,
+            now=NOW + timedelta(minutes=11),
+        )
+        watching = list_today_opportunities(
+            session,
+            owner_id="owner-a",
+            query=TodayQuery(view="watching"),
+            keyring=keyring,
+            now=NOW + timedelta(minutes=12),
+        )
+        dismissed_view = list_today_opportunities(
+            session,
+            owner_id="owner-a",
+            query=TodayQuery(view="dismissed"),
+            keyring=keyring,
+            now=NOW + timedelta(minutes=12),
+        )
+        refreshed_current = list_today_opportunities(
+            session,
+            owner_id="owner-a",
+            query=TodayQuery(),
+            keyring=keyring,
+            now=NOW + timedelta(minutes=12),
+        )
+
+        assert [item.id for item in watching.items] == [old_only.opportunity_id]
+        assert [item.id for item in dismissed_view.items] == [dismissed.opportunity_id]
+        assert refreshed_current.summary.needs_decision == 1
+        assert refreshed_current.summary.watching == 1
+        assert refreshed_current.summary.dismissed == 1
+
+
 def test_today_round_robins_companies_and_paginates_without_loss(
     radar: tuple[Database, DataKeyring],
 ) -> None:
@@ -1473,6 +1700,12 @@ def test_today_recommended_bulk_reads_75_candidates_without_n_plus_one(
                 first_party_url_verified=True,
                 now=NOW + timedelta(minutes=index),
             )
+        _finish_scan_source(
+            session,
+            scan_id="scan-a1",
+            source_id="source-a1",
+            completed_at=NOW + timedelta(minutes=75),
+        )
 
         assessment_calls = 0
 
