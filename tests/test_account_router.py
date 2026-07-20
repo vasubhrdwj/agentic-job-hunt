@@ -32,6 +32,7 @@ def account_client(
     url = f"sqlite+pysqlite:///{tmp_path / 'accounts.db'}"
     monkeypatch.setenv("DATABASE_URL", url)
     monkeypatch.setenv("JOB_HUNT_SIGNUP_MODE", "open")
+    monkeypatch.delenv("JOB_HUNT_LEGACY_RECOVERY_REQUIRED", raising=False)
     monkeypatch.delenv("JOB_HUNT_OWNER_ID", raising=False)
     monkeypatch.delenv("JOB_HUNT_OWNER_TOKEN_HASH", raising=False)
     monkeypatch.setenv(
@@ -68,6 +69,7 @@ def _configure_legacy_recovery(
     owner_id: str,
     recovery_token: str,
 ) -> None:
+    monkeypatch.setenv("JOB_HUNT_LEGACY_RECOVERY_REQUIRED", "1")
     monkeypatch.setenv("JOB_HUNT_OWNER_ID", owner_id)
     monkeypatch.setenv(
         "JOB_HUNT_OWNER_TOKEN_HASH",
@@ -192,6 +194,34 @@ def test_pending_legacy_recovery_is_advertised_and_suppresses_signup(
     assert blocked_signup.status_code == 409
     assert blocked_signup.json() == {
         "detail": "recover the previous workspace before creating new accounts"
+    }
+    with database.session() as session:
+        assert session.scalar(select(func.count()).select_from(Owner)) == 1
+        assert session.scalar(select(func.count()).select_from(OwnerCredential)) == 0
+
+
+def test_required_legacy_recovery_fails_closed_when_configuration_is_missing(
+    account_client: tuple[TestClient, Database],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client, database = account_client
+    monkeypatch.setenv("JOB_HUNT_LEGACY_RECOVERY_REQUIRED", "1")
+    with database.session() as session:
+        session.add(
+            Owner(id="owner", display_name="Legacy Vasu", timezone="Asia/Kolkata")
+        )
+
+    status_response = client.get("/api/session/status")
+    assert status_response.status_code == 200
+    assert status_response.json() == {
+        "state": "setup_required",
+        "signup_enabled": False,
+        "legacy_recovery_enabled": False,
+    }
+    blocked_signup = _signup(client, "new-workspace@example.com")
+    assert blocked_signup.status_code == 503
+    assert blocked_signup.json() == {
+        "detail": "legacy workspace recovery is not configured"
     }
     with database.session() as session:
         assert session.scalar(select(func.count()).select_from(Owner)) == 1

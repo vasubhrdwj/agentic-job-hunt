@@ -19,6 +19,8 @@ from job_hunt_agent.auth import (
     create_owner_session,
     legacy_recovery_available,
     legacy_recovery_configured,
+    legacy_recovery_required,
+    legacy_recovery_state,
     load_owner_session,
     normalize_email,
     revoke_owner_session,
@@ -98,6 +100,60 @@ def test_legacy_recovery_configuration_and_availability_are_fail_closed(
 
     with auth_db.session() as session:
         assert legacy_recovery_available(session) is False
+
+
+def test_required_legacy_recovery_never_treats_broken_config_as_complete(
+    auth_db: Database,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("JOB_HUNT_LEGACY_RECOVERY_REQUIRED", "1")
+    monkeypatch.delenv("JOB_HUNT_OWNER_ID", raising=False)
+    monkeypatch.delenv("JOB_HUNT_OWNER_TOKEN_HASH", raising=False)
+    assert legacy_recovery_required() is True
+    with auth_db.session() as session:
+        assert legacy_recovery_state(session) == "misconfigured"
+
+    monkeypatch.setenv("JOB_HUNT_LEGACY_RECOVERY_REQUIRED", "maybe")
+    with pytest.raises(AuthConfigError, match="boolean"):
+        legacy_recovery_required()
+    with auth_db.session() as session:
+        assert legacy_recovery_state(session) == "misconfigured"
+
+
+def test_required_recovery_allows_fresh_or_privacy_deleted_workspace(
+    auth_db: Database,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("JOB_HUNT_LEGACY_RECOVERY_REQUIRED", "1")
+    monkeypatch.setenv("JOB_HUNT_OWNER_ID", "owner")
+    monkeypatch.delenv("JOB_HUNT_OWNER_TOKEN_HASH", raising=False)
+    with auth_db.session() as session:
+        assert legacy_recovery_state(session) == "complete"
+        session.add(Owner(id="owner", display_name="Vasu", timezone="Asia/Kolkata"))
+
+    with auth_db.session() as session:
+        assert legacy_recovery_state(session) == "misconfigured"
+    monkeypatch.setenv("JOB_HUNT_OWNER_ID", "wrong-owner")
+    with auth_db.session() as session:
+        assert legacy_recovery_state(session) == "misconfigured"
+    monkeypatch.setenv("JOB_HUNT_OWNER_ID", "owner")
+    with auth_db.session() as session:
+        session.add(
+            OwnerCredential(
+                owner_id="owner",
+                normalized_email="vasu@example.com",
+                password_hash=auth_module.hash_password(PASSWORD),
+            )
+        )
+
+    with auth_db.session() as session:
+        assert legacy_recovery_state(session) == "complete"
+        owner = session.get(Owner, "owner")
+        assert owner is not None
+        session.delete(owner)
+
+    with auth_db.session() as session:
+        assert legacy_recovery_state(session) == "complete"
 
 
 def test_account_email_is_normalized_password_is_argon2id_and_owner_id_is_generated(

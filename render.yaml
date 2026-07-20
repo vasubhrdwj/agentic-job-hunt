@@ -12,10 +12,17 @@ services:
     envVars:
       - key: ENVIRONMENT
         value: production
-      # Production uses owner-scoped email/password accounts. The legacy
-      # shared access key is no longer accepted by the application.
+      # Production uses owner-scoped email/password accounts. These legacy
+      # settings authorize exactly one recovery of the existing workspace;
+      # they are not accepted by the normal sign-in endpoint.
       - key: ENABLE_PRACTICAL_MODE
         value: "1"
+      - key: JOB_HUNT_LEGACY_RECOVERY_REQUIRED
+        value: "1"
+      - key: JOB_HUNT_OWNER_ID
+        value: owner
+      - key: JOB_HUNT_OWNER_TOKEN_HASH
+        sync: false
       # Normal email/password signup opens automatically after the one existing
       # key-based workspace has been recovered. While recovery is pending, the
       # API suppresses signup and preserves that workspace for its owner.

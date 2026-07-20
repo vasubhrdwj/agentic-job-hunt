@@ -20,7 +20,7 @@ from ..auth import (
     consume_signup_capacity,
     create_account,
     create_owner_session,
-    legacy_recovery_available,
+    legacy_recovery_state,
     load_owner_session,
     recover_legacy_account,
     revoke_owner_session,
@@ -101,17 +101,19 @@ def create_session_router(
             and database.reachable()
             and database.migrations_current()
         )
-        recovery_enabled = False
+        recovery_state = "not_required"
         if database_ready and database is not None:
             with database.session() as session:
-                recovery_enabled = legacy_recovery_available(session)
+                recovery_state = legacy_recovery_state(session)
+        recovery_enabled = recovery_state == "pending"
+        account_service_ready = database_ready and recovery_state != "misconfigured"
         response.headers["Cache-Control"] = "no-store, max-age=0"
         return SessionStatusResponse(
-            state="ready" if database_ready else "setup_required",
+            state="ready" if account_service_ready else "setup_required",
             signup_enabled=(
-                database_ready and signup_enabled() and not recovery_enabled
+                account_service_ready and signup_enabled() and not recovery_enabled
             ),
-            legacy_recovery_enabled=database_ready and recovery_enabled,
+            legacy_recovery_enabled=account_service_ready and recovery_enabled,
         )
 
     @router.post("/api/accounts", response_model=SessionResponse, status_code=201)
@@ -125,8 +127,13 @@ def create_session_router(
             raise HTTPException(status_code=403, detail="signup is closed")
         db = require_migrated_database(database)
         with db.session() as recovery_session:
-            recovery_pending = legacy_recovery_available(recovery_session)
-        if recovery_pending:
+            recovery_state = legacy_recovery_state(recovery_session)
+        if recovery_state == "misconfigured":
+            raise HTTPException(
+                status_code=503,
+                detail="legacy workspace recovery is not configured",
+            )
+        if recovery_state == "pending":
             raise HTTPException(
                 status_code=409,
                 detail="recover the previous workspace before creating new accounts",

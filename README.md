@@ -369,6 +369,11 @@ Configure persistence and CORS via env:
   beta is open, but signup is temporarily hidden while a configured legacy
   workspace is awaiting its one-time recovery. After recovery, that owner uses
   normal email/password sign-in and independent new accounts can be created.
+- `JOB_HUNT_LEGACY_RECOVERY_REQUIRED` — set to `1` only during the hosted
+  one-time migration. Signup fails closed if its owner or key hash is missing.
+- `JOB_HUNT_OWNER_ID` / `JOB_HUNT_OWNER_TOKEN_HASH` — migration-only owner id
+  and SHA-256 hex digest of the old raw sign-in key. They never enable normal
+  key-based login and cannot replace an account password.
 - `JOB_HUNT_PRIVACY_RECEIPT_SECRET` — stable 32+ character server-only HMAC
   secret so deletion idempotency survives owner-login credential rotation.
 - `JOB_HUNT_DATA_KEYS` — comma-separated `key-id:Fernet-key` values. The first

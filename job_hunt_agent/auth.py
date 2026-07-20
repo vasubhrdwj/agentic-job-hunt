@@ -30,6 +30,7 @@ AUTH_THROTTLE_SECRET_ENV = "JOB_HUNT_AUTH_THROTTLE_SECRET"
 PRIVACY_RECEIPT_SECRET_ENV = "JOB_HUNT_PRIVACY_RECEIPT_SECRET"
 LEGACY_OWNER_ID_ENV = "JOB_HUNT_OWNER_ID"
 LEGACY_RECOVERY_TOKEN_HASH_ENV = "JOB_HUNT_OWNER_TOKEN_HASH"
+LEGACY_RECOVERY_REQUIRED_ENV = "JOB_HUNT_LEGACY_RECOVERY_REQUIRED"
 DEFAULT_SESSION_TTL_DAYS = 30
 DEFAULT_SESSION_COOKIE = "job_hunt_session"
 DEFAULT_SIGNUP_MODE = "closed"
@@ -111,16 +112,59 @@ def legacy_recovery_configured() -> bool:
     return bool(_HASH_RE.fullmatch(configured_hash) and owner_id and len(owner_id) <= 64)
 
 
+def legacy_recovery_required() -> bool:
+    """Require an explicit migration result before hosted signup can open."""
+
+    value = os.getenv(LEGACY_RECOVERY_REQUIRED_ENV, "0").strip().lower()
+    if value in {"1", "true", "yes", "on"}:
+        return True
+    if value in {"0", "false", "no", "off"}:
+        return False
+    raise AuthConfigError(
+        f"{LEGACY_RECOVERY_REQUIRED_ENV} must be a boolean value"
+    )
+
+
+def legacy_recovery_state(
+    session: Session,
+) -> Literal["not_required", "pending", "complete", "misconfigured"]:
+    """Classify the one-time migration without treating broken config as success."""
+
+    try:
+        required = legacy_recovery_required()
+    except AuthConfigError:
+        return "misconfigured"
+    try:
+        owner_id = _legacy_owner_id()
+    except AuthConfigError:
+        return "misconfigured" if required else "not_required"
+    owner = session.get(Owner, owner_id)
+    if owner is None:
+        unsecured_owner_exists = session.scalar(
+            select(Owner.id)
+            .outerjoin(
+                OwnerCredential,
+                OwnerCredential.owner_id == Owner.id,
+            )
+            .where(OwnerCredential.owner_id.is_(None))
+            .limit(1)
+        ) is not None
+        if required and unsecured_owner_exists:
+            return "misconfigured"
+        # A fresh database, or a workspace deleted through the privacy flow,
+        # has no legacy data left to recover.
+        return "complete" if required else "not_required"
+    if session.get(OwnerCredential, owner_id) is not None:
+        return "complete"
+    if not legacy_recovery_configured():
+        return "misconfigured" if required else "not_required"
+    return "pending"
+
+
 def legacy_recovery_available(session: Session) -> bool:
     """Expose only whether the configured legacy workspace still needs an account."""
 
-    if not legacy_recovery_configured():
-        return False
-    owner_id = _legacy_owner_id()
-    return (
-        session.get(Owner, owner_id) is not None
-        and session.get(OwnerCredential, owner_id) is None
-    )
+    return legacy_recovery_state(session) == "pending"
 
 
 def session_cookie_name() -> str:
