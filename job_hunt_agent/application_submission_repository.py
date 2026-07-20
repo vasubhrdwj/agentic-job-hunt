@@ -34,6 +34,7 @@ from .application_submission_schemas import (
     ReadyToApplyTransitionCreate,
     ScreeningTransitionCreate,
 )
+from .evidence_repository import _lock_owner_evidence_fence
 from .job_queue import utcnow
 from .models.application import ActionItem, Application, ApplicationActivityEvent
 from .models.application_artifact import (
@@ -122,6 +123,14 @@ def transition_application(
     """Move one application forward and replace its next action atomically."""
 
     current = _as_utc(now or utcnow())
+    owner: Owner | None = None
+    if isinstance(payload, ReadyToApplyTransitionCreate):
+        # Evidence mutations take this same owner-scoped fence before locking
+        # an evidence row.  Acquire it before the application row so the final
+        # freshness validation cannot race a concurrent edit or retirement.
+        owner = _lock_owner_evidence_fence(session, owner_id)
+        if owner is None:
+            return None
     application = _owned_application(
         session,
         owner_id,
@@ -167,7 +176,8 @@ def transition_application(
         expected=expected_application_version,
         actual=application.version,
     )
-    owner = session.scalar(select(Owner).where(Owner.id == owner_id))
+    if owner is None:
+        owner = session.scalar(select(Owner).where(Owner.id == owner_id))
     if owner is None:
         raise ApplicationSubmissionRepositoryError("application owner is unavailable")
     local_today = _owner_local_date(current, owner.timezone)

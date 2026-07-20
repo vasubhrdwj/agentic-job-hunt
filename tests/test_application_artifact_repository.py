@@ -8,7 +8,9 @@ from io import BytesIO
 import pytest
 from docx import Document
 from sqlalchemy import func, select
+from sqlalchemy.dialects import postgresql
 
+import job_hunt_agent.application_artifact_repository as artifact_repository
 from job_hunt_agent.application_artifact_repository import (
     create_application_artifact_revision,
     load_approved_tailored_resume_docx,
@@ -78,6 +80,62 @@ def _reviewed_pack(database, keyring, resume_id):
     assert reviewed is not None and reviewed.pack is not None
     assert reviewed.current_revision is not None and reviewed.review_event is not None
     return reviewed
+
+
+def test_approved_resume_export_requests_the_pack_writer_lock(
+    pack_workspace,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    database, keyring, _resume_id = pack_workspace
+    observed: list[bool] = []
+
+    monkeypatch.setattr(
+        artifact_repository,
+        "_owned_application",
+        lambda _session, _owner_id, _application_id: object(),
+    )
+
+    def observe_pack(
+        _session,
+        _owner_id: str,
+        _application_id: str,
+        *,
+        for_update: bool = False,
+    ):
+        observed.append(for_update)
+        return None
+
+    monkeypatch.setattr(artifact_repository, "_owned_pack", observe_pack)
+    with pytest.raises(ResourceConflict, match="approve the current materials"):
+        with database.session() as session:
+            load_approved_tailored_resume_docx(
+                session,
+                owner_id="owner-a",
+                application_id="application1",
+                keyring=keyring,
+            )
+
+    assert observed == [True]
+
+
+def test_pack_writer_lock_is_emitted_for_postgres() -> None:
+    statements = []
+
+    class CapturingSession:
+        def scalar(self, statement):
+            statements.append(statement)
+            return None
+
+    artifact_repository._owned_pack(  # noqa: SLF001 - focused lock-contract test.
+        CapturingSession(),  # type: ignore[arg-type]
+        "owner-a",
+        "application1",
+        for_update=True,
+    )
+
+    assert len(statements) == 1
+    sql = str(statements[0].compile(dialect=postgresql.dialect()))
+    assert sql.rstrip().endswith("FOR UPDATE")
 
 
 def test_deterministic_generation_is_grounded_exact_encrypted_and_approvable(

@@ -128,7 +128,15 @@ def load_approved_tailored_resume_docx(
     application = _owned_application(session, owner_id, application_id)
     if application is None:
         return None
-    pack = _owned_pack(session, owner_id, application_id)
+    # Serialize the approval/current-revision decision with the same pack-row
+    # lock used by artifact writers. Without this boundary, a concurrent draft
+    # could supersede the approval between our latest-revision reads.
+    pack = _owned_pack(
+        session,
+        owner_id,
+        application_id,
+        for_update=True,
+    )
     if pack is None:
         raise ResourceConflict("approve the current materials before downloading a resume")
     revision = _latest_artifact_revision(session, pack)
@@ -1181,13 +1189,16 @@ def _owned_pack(
     session: Session,
     owner_id: str,
     application_id: str,
+    *,
+    for_update: bool = False,
 ) -> ApplicationPack | None:
-    return session.scalar(
-        select(ApplicationPack).where(
-            ApplicationPack.owner_id == owner_id,
-            ApplicationPack.application_id == application_id,
-        )
+    statement = select(ApplicationPack).where(
+        ApplicationPack.owner_id == owner_id,
+        ApplicationPack.application_id == application_id,
     )
+    if for_update:
+        statement = statement.with_for_update()
+    return session.scalar(statement)
 
 
 def _owned_pack_by_id(

@@ -10,7 +10,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from .job_queue import utcnow
-from .models import AchievementEvidence, ResumeVersion
+from .models import AchievementEvidence, Owner
 from .private_payloads import (
     PrivatePayloadBindingError,
     decrypt_private_payload,
@@ -110,6 +110,13 @@ def update_achievement_evidence(
     now: datetime | None = None,
 ) -> AchievementEvidenceResponse | None:
     current = now or utcnow()
+    # Readiness validation also acquires this owner row before any application
+    # or evidence rows.  Holding the shared fence through commit makes an
+    # evidence edit/retirement and a ready-to-apply transition serial: the
+    # transition either validates the pre-change evidence first, or observes
+    # the committed change and fails closed.
+    if _lock_owner_evidence_fence(session, owner_id) is None:
+        return None
     row = session.scalar(
         select(AchievementEvidence)
         .where(
@@ -170,6 +177,18 @@ def update_achievement_evidence(
     row.updated_at = current
     session.flush()
     return _evidence_response(row, keyring)
+
+
+def _lock_owner_evidence_fence(session: Session, owner_id: str) -> Owner | None:
+    """Serialize evidence mutations with evidence-dependent readiness checks.
+
+    Callers must acquire this fence before locking narrower application or
+    evidence rows so the cross-repository lock order remains deterministic.
+    """
+
+    return session.scalar(
+        select(Owner).where(Owner.id == owner_id).with_for_update()
+    )
 
 
 def _apply_approval_transition(

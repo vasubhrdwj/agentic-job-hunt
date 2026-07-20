@@ -24,9 +24,11 @@ from sqlalchemy.engine import make_url
 import job_hunt_agent.application_submission_repository as submission_repository
 from job_hunt_agent.application_artifact_repository import (
     create_application_artifact_revision,
+    load_approved_tailored_resume_docx,
     record_application_artifact_event,
 )
 from job_hunt_agent.application_artifact_schemas import (
+    ApplicationArtifactBlocker,
     ApplicationArtifactEventCreate,
     ApplicationArtifactRevisionCreate,
     ApplicationArtifactStatus,
@@ -37,6 +39,7 @@ from job_hunt_agent.application_pack_repository import (
     record_application_pack_event,
 )
 from job_hunt_agent.application_pack_schemas import (
+    ApplicationPackBlocker,
     ApplicationPackCreate,
     ApplicationPackEventCreate,
     ApplicationPackRevisionCreate,
@@ -55,7 +58,12 @@ from job_hunt_agent.contact_search_repository import (
 )
 from job_hunt_agent.contact_search_worker import reconcile_terminal_contact_plans
 from job_hunt_agent.database import Database
+from job_hunt_agent.evidence_repository import (
+    create_achievement_evidence,
+    update_achievement_evidence,
+)
 from job_hunt_agent.models import (
+    AchievementEvidence,
     Application,
     ApplicationArtifactEvent,
     ApplicationArtifactRevision,
@@ -89,6 +97,10 @@ from job_hunt_agent.outreach_schemas import (
     OutreachMessageCreate,
 )
 from job_hunt_agent.profile_repository import create_or_reuse_resume_version
+from job_hunt_agent.profile_schemas import (
+    AchievementEvidenceCreate,
+    AchievementEvidencePatch,
+)
 from job_hunt_agent.repository_errors import ResourceConflict
 from job_hunt_agent.security import DataKeyring
 
@@ -893,6 +905,73 @@ def test_pack_creation_and_undo_overlap_without_a_lock_order_deadlock(
         )
 
 
+def test_approved_resume_download_waits_for_a_concurrent_draft_and_fails_closed(
+    postgres_workspace: _PostgresWorkspace,
+) -> None:
+    graph = _seed_pursuit(postgres_workspace)
+    ids = _seed_reviewed_materials(postgres_workspace, graph)
+    suffix = graph.owner_id.removeprefix("pg-undo-")
+    draft_id = uuid4().hex
+
+    def create_superseding_draft() -> str:
+        with postgres_workspace.database.session() as session:
+            _set_postgres_timeouts(session)
+            pack = session.scalar(
+                select(ApplicationPack)
+                .where(
+                    ApplicationPack.owner_id == graph.owner_id,
+                    ApplicationPack.id == ids["pack"],
+                )
+                .with_for_update()
+            )
+            assert pack is not None
+            session.add(
+                ApplicationArtifactRevision(
+                    id=draft_id,
+                    owner_id=graph.owner_id,
+                    application_id=graph.application_id,
+                    application_pack_id=ids["pack"],
+                    grounding_revision_id=ids["grounding"],
+                    parent_artifact_revision_id=ids["artifact"],
+                    revision_number=2,
+                    source="deterministic",
+                    generator_version="application-artifacts-deterministic-v1",
+                    encrypted_payload="concurrent-draft-ciphertext",
+                    encryption_key_id="pg-undo-v1",
+                    content_hash=_sha256(f"concurrent-draft:{suffix}"),
+                    created_at=NOW + timedelta(minutes=1),
+                )
+            )
+            pack.version += 1
+            pack.updated_at = NOW + timedelta(minutes=1)
+            session.flush()
+            return draft_id
+
+    def download_after_writer_lock():
+        try:
+            with postgres_workspace.database.session() as session:
+                _set_postgres_timeouts(session)
+                return load_approved_tailored_resume_docx(
+                    session,
+                    owner_id=graph.owner_id,
+                    application_id=graph.application_id,
+                    keyring=postgres_workspace.keyring,
+                )
+        except ResourceConflict as exc:
+            return exc
+
+    written_id, download_result = _run_forced_overlap(
+        postgres_workspace.database,
+        table_name="application_packs",
+        writer=create_superseding_draft,
+        undo=download_after_writer_lock,
+    )
+
+    assert written_id == draft_id
+    assert isinstance(download_result, ResourceConflict)
+    assert "approve the current materials" in str(download_result)
+
+
 def test_ready_to_apply_finishes_before_waiting_undo_and_undo_fails_safely(
     postgres_workspace: _PostgresWorkspace,
     monkeypatch: pytest.MonkeyPatch,
@@ -1014,6 +1093,170 @@ def test_ready_to_apply_finishes_before_waiting_undo_and_undo_fails_safely(
             NOW + timedelta(minutes=3),
         )
         assert restored is not None and restored.state.value == "inbox"
+
+
+def test_evidence_retirement_finishes_before_waiting_readiness_and_blocks_it(
+    postgres_workspace: _PostgresWorkspace,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    graph = _seed_pursuit(postgres_workspace)
+    ids = _seed_reviewed_materials(postgres_workspace, graph)
+    suffix = graph.owner_id.removeprefix("pg-undo-")
+
+    with postgres_workspace.database.session() as session:
+        created = create_achievement_evidence(
+            session,
+            owner_id=graph.owner_id,
+            payload=AchievementEvidenceCreate(
+                statement="Built reliable Python distributed systems.",
+                skills=["Python", "distributed systems"],
+                origin="owner_entered",
+            ),
+            keyring=postgres_workspace.keyring,
+            now=NOW,
+        )
+        approved = update_achievement_evidence(
+            session,
+            owner_id=graph.owner_id,
+            evidence_id=created.id,
+            patch=AchievementEvidencePatch(approval_state="approved"),
+            expected_version=created.version,
+            keyring=postgres_workspace.keyring,
+            now=NOW + timedelta(seconds=1),
+        )
+        assert approved is not None
+        evidence_id = approved.id
+        evidence_version = approved.version
+
+    def locked_posting_state(session, *, application, lock):
+        statement = select(JobPosting).where(
+            JobPosting.owner_id == application.owner_id,
+            JobPosting.id == application.job_posting_id,
+        )
+        if lock:
+            statement = statement.with_for_update()
+        posting = session.scalar(statement)
+        posting_version = session.scalar(
+            select(JobPostingVersion).where(
+                JobPostingVersion.owner_id == application.owner_id,
+                JobPostingVersion.id == application.pursued_posting_version_id,
+            )
+        )
+        assert posting is not None and posting_version is not None
+        return posting, posting_version, [f"{graph.canonical_url}/apply"], True
+
+    def evidence_is_approved(session) -> bool:
+        return (
+            session.scalar(
+                select(AchievementEvidence.approval_state).where(
+                    AchievementEvidence.owner_id == graph.owner_id,
+                    AchievementEvidence.id == evidence_id,
+                )
+            )
+            == "approved"
+        )
+
+    def pack_projection(session, **_kwargs):
+        return SimpleNamespace(
+            status=ApplicationPackStatus.reviewed,
+            pack=SimpleNamespace(id=ids["pack"]),
+            current_revision=SimpleNamespace(id=ids["grounding"]),
+            review_event=SimpleNamespace(id=ids["review"]),
+            blockers=(
+                []
+                if evidence_is_approved(session)
+                else [ApplicationPackBlocker.mapped_evidence_changed]
+            ),
+        )
+
+    def artifact_projection(session, **_kwargs):
+        return SimpleNamespace(
+            status=ApplicationArtifactStatus.approved,
+            pack=SimpleNamespace(id=ids["pack"]),
+            current_revision=SimpleNamespace(id=ids["artifact"]),
+            approved_revision=SimpleNamespace(id=ids["artifact"]),
+            current_event=SimpleNamespace(id=ids["approval"]),
+            approval_event=SimpleNamespace(id=ids["approval"]),
+            tailored_resume_version=SimpleNamespace(id=ids["tailored_resume"]),
+            blockers=(
+                []
+                if evidence_is_approved(session)
+                else [ApplicationArtifactBlocker.grounding_evidence_changed]
+            ),
+        )
+
+    monkeypatch.setattr(
+        submission_repository,
+        "_posting_state",
+        locked_posting_state,
+    )
+    monkeypatch.setattr(
+        submission_repository,
+        "load_application_pack",
+        pack_projection,
+    )
+    monkeypatch.setattr(
+        submission_repository,
+        "load_application_artifacts",
+        artifact_projection,
+    )
+    payload = ReadyToApplyTransitionCreate(
+        to_stage="ready_to_apply",
+        application_pack_id=ids["pack"],
+        application_pack_revision_id=ids["grounding"],
+        application_pack_review_event_id=ids["review"],
+        application_artifact_revision_id=ids["artifact"],
+        application_artifact_approval_event_id=ids["approval"],
+        tailored_resume_version_id=ids["tailored_resume"],
+        next_action_due_on=date(2026, 7, 19),
+        confirm_ready=True,
+    )
+
+    def retire_evidence():
+        with postgres_workspace.database.session() as session:
+            _set_postgres_timeouts(session)
+            return update_achievement_evidence(
+                session,
+                owner_id=graph.owner_id,
+                evidence_id=evidence_id,
+                patch=AchievementEvidencePatch(approval_state="retired"),
+                expected_version=evidence_version,
+                keyring=postgres_workspace.keyring,
+                now=NOW + timedelta(minutes=1),
+            )
+
+    def become_ready():
+        try:
+            with postgres_workspace.database.session() as session:
+                _set_postgres_timeouts(session)
+                return submission_repository.transition_application(
+                    session,
+                    owner_id=graph.owner_id,
+                    application_id=graph.application_id,
+                    payload=payload,
+                    expected_application_version=1,
+                    idempotency_key=f"ready-after-retire-{suffix}",
+                    keyring=postgres_workspace.keyring,
+                    now=NOW + timedelta(minutes=2),
+                )
+        except ResourceConflict as exc:
+            return exc
+
+    retired, readiness_result = _run_forced_overlap(
+        postgres_workspace.database,
+        table_name="owners",
+        writer=retire_evidence,
+        undo=become_ready,
+    )
+
+    assert retired is not None and retired.approval_state == "retired"
+    assert isinstance(readiness_result, ResourceConflict)
+    assert "grounding review is no longer ready" in str(readiness_result)
+    with postgres_workspace.database.session() as session:
+        application = session.get(Application, graph.application_id)
+        assert application is not None
+        assert application.stage == "pursuing"
+        assert application.version == 1
 
 
 def test_three_transaction_cycle_is_broken_by_undo_application_nowait(

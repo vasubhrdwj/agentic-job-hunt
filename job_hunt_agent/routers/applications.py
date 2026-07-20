@@ -670,8 +670,9 @@ def create_application_router(
         "/api/applications/{application_id}/application-artifacts/approved-resume.docx",
         response_class=Response,
         description=(
-            "Download an ATS-safe DOCX built only from the exact current approved "
-            "tailored-resume artifact. Draft and superseded approvals fail closed."
+            "Download a single-column, upload-ready DOCX built only from the exact "
+            "current approved tailored-resume artifact. Draft and superseded "
+            "approvals fail closed."
         ),
         responses={
             200: {
