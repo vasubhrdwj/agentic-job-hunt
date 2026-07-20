@@ -1,6 +1,72 @@
 {
   "components": {
     "schemas": {
+      "AccountClaimRequest": {
+        "properties": {
+          "email": {
+            "maxLength": 320,
+            "title": "Email",
+            "type": "string"
+          },
+          "password": {
+            "maxLength": 128,
+            "minLength": 12,
+            "title": "Password",
+            "type": "string"
+          }
+        },
+        "required": [
+          "email",
+          "password"
+        ],
+        "title": "AccountClaimRequest",
+        "type": "object"
+      },
+      "AccountCreateRequest": {
+        "properties": {
+          "display_name": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Display Name"
+          },
+          "email": {
+            "maxLength": 320,
+            "title": "Email",
+            "type": "string"
+          },
+          "password": {
+            "maxLength": 128,
+            "minLength": 12,
+            "title": "Password",
+            "type": "string"
+          },
+          "timezone": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Timezone"
+          }
+        },
+        "required": [
+          "email",
+          "password"
+        ],
+        "title": "AccountCreateRequest",
+        "type": "object"
+      },
       "AchievementEvidenceCreate": {
         "additionalProperties": false,
         "properties": {
@@ -7779,6 +7845,9 @@
             "title": "Current Title",
             "type": "string"
           },
+          "employer_evidence": {
+            "$ref": "#/components/schemas/EmployerEvidenceResponse"
+          },
           "follow_up_due_at": {
             "anyOf": [
               {
@@ -7877,6 +7946,13 @@
             "minimum": 1.0,
             "title": "Wave",
             "type": "integer"
+          },
+          "why_relevant": {
+            "description": "Saved role-specific selection rationale; this is an app assessment, not an independently verified fact about the person.",
+            "maxLength": 2000,
+            "minLength": 1,
+            "title": "Why Relevant",
+            "type": "string"
           }
         },
         "required": [
@@ -7889,6 +7965,8 @@
           "current_title",
           "current_company",
           "category",
+          "why_relevant",
+          "employer_evidence",
           "bench_rank",
           "wave",
           "bench_state",
@@ -10659,15 +10737,20 @@
       },
       "SessionCreateRequest": {
         "properties": {
-          "owner_token": {
-            "maxLength": 512,
-            "minLength": 32,
-            "title": "Owner Token",
+          "email": {
+            "maxLength": 320,
+            "title": "Email",
+            "type": "string"
+          },
+          "password": {
+            "maxLength": 128,
+            "title": "Password",
             "type": "string"
           }
         },
         "required": [
-          "owner_token"
+          "email",
+          "password"
         ],
         "title": "SessionCreateRequest",
         "type": "object"
@@ -10687,6 +10770,21 @@
       },
       "SessionResponse": {
         "properties": {
+          "account_attached": {
+            "title": "Account Attached",
+            "type": "boolean"
+          },
+          "account_email": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Account Email"
+          },
           "display_name": {
             "title": "Display Name",
             "type": "string"
@@ -10715,13 +10813,19 @@
           "display_name",
           "timezone",
           "local_date",
-          "expires_at"
+          "expires_at",
+          "account_attached",
+          "account_email"
         ],
         "title": "SessionResponse",
         "type": "object"
       },
       "SessionStatusResponse": {
         "properties": {
+          "signup_enabled": {
+            "title": "Signup Enabled",
+            "type": "boolean"
+          },
           "state": {
             "enum": [
               "ready",
@@ -10732,7 +10836,8 @@
           }
         },
         "required": [
-          "state"
+          "state",
+          "signup_enabled"
         ],
         "title": "SessionStatusResponse",
         "type": "object"
@@ -11798,6 +11903,93 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/api/accounts": {
+      "post": {
+        "operationId": "signup_api_accounts_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AccountCreateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Signup",
+        "tags": [
+          "account-session"
+        ]
+      }
+    },
+    "/api/accounts/claim": {
+      "post": {
+        "operationId": "claim_legacy_workspace_api_accounts_claim_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AccountClaimRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OwnerSessionCookie": []
+          }
+        ],
+        "summary": "Claim Legacy Workspace",
+        "tags": [
+          "account-session"
+        ]
+      }
+    },
     "/api/applications": {
       "get": {
         "operationId": "list_owner_applications_api_applications_get",
@@ -20220,7 +20412,7 @@
         ],
         "summary": "Delete Session",
         "tags": [
-          "owner-session"
+          "account-session"
         ]
       },
       "get": {
@@ -20244,7 +20436,7 @@
         ],
         "summary": "Get Session",
         "tags": [
-          "owner-session"
+          "account-session"
         ]
       },
       "post": {
@@ -20283,7 +20475,7 @@
         },
         "summary": "Create Session",
         "tags": [
-          "owner-session"
+          "account-session"
         ]
       }
     },
@@ -20304,7 +20496,7 @@
         },
         "summary": "Session Status",
         "tags": [
-          "owner-session"
+          "account-session"
         ]
       }
     },

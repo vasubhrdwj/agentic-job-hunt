@@ -4,6 +4,40 @@
  */
 
 export interface paths {
+    "/api/accounts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Signup */
+        post: operations["signup_api_accounts_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/accounts/claim": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Claim Legacy Workspace */
+        post: operations["claim_legacy_workspace_api_accounts_claim_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/applications": {
         parameters: {
             query?: never;
@@ -1061,6 +1095,24 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** AccountClaimRequest */
+        AccountClaimRequest: {
+            /** Email */
+            email: string;
+            /** Password */
+            password: string;
+        };
+        /** AccountCreateRequest */
+        AccountCreateRequest: {
+            /** Display Name */
+            display_name?: string | null;
+            /** Email */
+            email: string;
+            /** Password */
+            password: string;
+            /** Timezone */
+            timezone?: string | null;
+        };
         /** AchievementEvidenceCreate */
         AchievementEvidenceCreate: {
             /**
@@ -3987,6 +4039,7 @@ export interface components {
             current_company: string;
             /** Current Title */
             current_title: string;
+            employer_evidence: components["schemas"]["EmployerEvidenceResponse"];
             /** Follow Up Due At */
             follow_up_due_at?: string | null;
             follow_up_message?: components["schemas"]["OutreachMessageVersionResponse"] | null;
@@ -4007,6 +4060,11 @@ export interface components {
             sequence_id: string;
             /** Wave */
             wave: number;
+            /**
+             * Why Relevant
+             * @description Saved role-specific selection rationale; this is an app assessment, not an independently verified fact about the person.
+             */
+            why_relevant: string;
         };
         /**
          * OutreachReplyCreate
@@ -5103,8 +5161,10 @@ export interface components {
         };
         /** SessionCreateRequest */
         SessionCreateRequest: {
-            /** Owner Token */
-            owner_token: string;
+            /** Email */
+            email: string;
+            /** Password */
+            password: string;
         };
         /** SessionDeleteResponse */
         SessionDeleteResponse: {
@@ -5113,6 +5173,10 @@ export interface components {
         };
         /** SessionResponse */
         SessionResponse: {
+            /** Account Attached */
+            account_attached: boolean;
+            /** Account Email */
+            account_email: string | null;
             /** Display Name */
             display_name: string;
             /**
@@ -5132,6 +5196,8 @@ export interface components {
         };
         /** SessionStatusResponse */
         SessionStatusResponse: {
+            /** Signup Enabled */
+            signup_enabled: boolean;
             /**
              * State
              * @enum {string}
@@ -5553,6 +5619,72 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    signup_api_accounts_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AccountCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SessionResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    claim_legacy_workspace_api_accounts_claim_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AccountClaimRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SessionResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_owner_applications_api_applications_get: {
         parameters: {
             query?: {
