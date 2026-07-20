@@ -5,7 +5,15 @@ from __future__ import annotations
 from enum import Enum
 from typing import Literal, Self
 
-from pydantic import BaseModel, ConfigDict, Field, StrictInt, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    StrictBool,
+    StrictInt,
+    field_validator,
+    model_validator,
+)
 
 from .application_schemas import OpaqueId, UTCDateTime
 from .profile_schemas import AchievementEvidenceResponse
@@ -65,6 +73,14 @@ class ApplicationPackBlocker(str, Enum):
 
 class ApplicationPackCreate(ApplicationPackContractModel):
     base_resume_version_id: OpaqueId
+    require_sole_current_base_resume: StrictBool = Field(
+        default=False,
+        description=(
+            "Atomically require base_resume_version_id to still be the owner's "
+            "current base resume and sole saved resume. Automatic preparation "
+            "sets this; explicit owner-selected creation may leave it false."
+        ),
+    )
     owner_job_description: str | None = Field(
         default=None,
         min_length=1,
@@ -275,6 +291,13 @@ class ApplicationPackEventResponse(ApplicationPackContractModel):
 class ApplicationPackResponse(ApplicationPackContractModel):
     data_source: Literal["database"] = "database"
     application_id: OpaqueId
+    attributed_resume_version_id: OpaqueId | None = Field(
+        default=None,
+        description=(
+            "Resume referenced by the unchanged saved-search version captured "
+            "when pursuit began. Null when exact attribution cannot be proven."
+        ),
+    )
     status: ApplicationPackStatus
     pack: ApplicationPackSummary | None = None
     current_revision: ApplicationPackRevisionResponse | None = None

@@ -285,7 +285,7 @@ def create_or_reuse_resume_version(
     make_base: bool = True,
     now: datetime | None = None,
 ) -> CreateResumeResult:
-    _require_owner(session, owner_id)
+    _require_owner(session, owner_id, for_update=True)
     normalized_label = " ".join(label.split())
     if not normalized_label or len(normalized_label) > 120:
         raise ValueError("resume label must be 1-120 characters")
@@ -589,8 +589,16 @@ def _normalized_tokens(values: list[str], *, field: str, limit: int) -> list[str
     return normalized
 
 
-def _require_owner(session: Session, owner_id: str) -> None:
-    if session.get(Owner, owner_id) is None:
+def _require_owner(
+    session: Session,
+    owner_id: str,
+    *,
+    for_update: bool = False,
+) -> None:
+    statement = select(Owner).where(Owner.id == owner_id)
+    if for_update:
+        statement = statement.with_for_update()
+    if session.scalar(statement) is None:
         raise ValueError("owner_id does not exist")
 
 

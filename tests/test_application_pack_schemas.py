@@ -8,6 +8,7 @@ import pytest
 from pydantic import ValidationError
 
 from job_hunt_agent.application_pack_schemas import (
+    ApplicationPackCreate,
     ApplicationPackEventCreate,
     ApplicationPackRequirementReview,
     ApplicationPackRevisionCreate,
@@ -59,6 +60,24 @@ def _revision(**updates: object) -> ApplicationPackRevisionResponse:
     }
     values.update(updates)
     return ApplicationPackRevisionResponse.model_validate(values)
+
+
+def test_automatic_pack_start_precondition_is_explicit_and_strict() -> None:
+    manual = ApplicationPackCreate(base_resume_version_id="resume1")
+    automatic = ApplicationPackCreate(
+        base_resume_version_id="resume1",
+        require_sole_current_base_resume=True,
+    )
+
+    assert manual.require_sole_current_base_resume is False
+    assert automatic.require_sole_current_base_resume is True
+    with pytest.raises(ValidationError):
+        ApplicationPackCreate.model_validate(
+            {
+                "base_resume_version_id": "resume1",
+                "require_sole_current_base_resume": 1,
+            }
+        )
 
 
 def test_requirement_review_requires_truthful_coverage_and_exact_types() -> None:

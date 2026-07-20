@@ -22,6 +22,7 @@ export type ApplicationPackBlocker =
 
 export interface ApplicationPackCreate {
   base_resume_version_id: string;
+  require_sole_current_base_resume?: true;
   owner_job_description: string | null;
 }
 
@@ -111,6 +112,7 @@ export interface ApplicationPackEventResponse {
 export interface ApplicationPackResponse {
   data_source: "database";
   application_id: string;
+  attributed_resume_version_id: string | null;
   status: ApplicationPackStatus;
   pack: ApplicationPackSummary | null;
   current_revision: ApplicationPackRevisionResponse | null;

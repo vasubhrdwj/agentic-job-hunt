@@ -58,6 +58,7 @@ function reviewedResponse(): ApplicationPackResponse {
   return {
     data_source: "database",
     application_id: "application-1",
+    attributed_resume_version_id: "resume-1",
     status: "reviewed",
     pack: {
       id: "pack-1",

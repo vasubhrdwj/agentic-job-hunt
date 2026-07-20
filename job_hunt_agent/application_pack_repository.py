@@ -36,12 +36,15 @@ from .job_queue import utcnow
 from .models import (
     AchievementEvidence,
     Application,
+    ApplicationMetricSnapshot,
     ApplicationPack,
     ApplicationPackEvent,
     ApplicationPackRevision,
     JobPosting,
     JobPostingVersion,
+    Owner,
     ResumeVersion,
+    SavedSearch,
 )
 from .mutation_receipts import claim_owner_mutation, complete_owner_mutation
 from .private_payloads import decrypt_private_payload, encrypt_private_payload
@@ -142,7 +145,18 @@ def create_application_pack(
         namespace=f"application_pack.create:{application.id}",
         idempotency_key=idempotency_key,
         request={
-            "payload": payload.model_dump(mode="json"),
+            # Preserve the pre-auto-start request shape when the new atomic
+            # base-resume guard is unused, so an older pending receipt can
+            # still replay after deployment.
+            "payload": {
+                "base_resume_version_id": payload.base_resume_version_id,
+                "owner_job_description": payload.owner_job_description,
+                **(
+                    {"require_sole_current_base_resume": True}
+                    if payload.require_sole_current_base_resume
+                    else {}
+                ),
+            },
             "expected_application_version": expected_application_version,
         },
         now=current,
@@ -179,14 +193,22 @@ def create_application_pack(
     )
     if posting_version is None:
         raise ApplicationPackRepositoryError("application posting version is unavailable")
-    resume = load_resume_version(
+    resume_row = _resume_for_pack_creation(
         session,
         owner_id=owner_id,
         resume_version_id=payload.base_resume_version_id,
+        require_sole_current_base=payload.require_sole_current_base_resume,
+    )
+    if resume_row is None:
+        raise ValueError("base_resume_version_id does not exist for owner")
+    resume = load_resume_version(
+        session,
+        owner_id=owner_id,
+        resume_version_id=resume_row.id,
         keyring=keyring,
     )
-    if resume is None:
-        raise ValueError("base_resume_version_id does not exist for owner")
+    if resume is None:  # pragma: no cover - the locked owner row was just loaded.
+        raise ApplicationPackRepositoryError("locked resume version became unavailable")
 
     description, description_source = _select_job_description(
         posting_version,
@@ -484,6 +506,10 @@ def _pack_response(
     pack: ApplicationPack | None,
     keyring: DataKeyring,
 ) -> ApplicationPackResponse:
+    attributed_resume_version_id = _attributed_resume_version_id(
+        session,
+        application=application,
+    )
     approved = list_approved_evidence_for_use(
         session,
         owner_id=application.owner_id,
@@ -523,6 +549,7 @@ def _pack_response(
             blockers.append(ApplicationPackBlocker.posting_closed)
         return ApplicationPackResponse(
             application_id=application.id,
+            attributed_resume_version_id=attributed_resume_version_id,
             status=ApplicationPackStatus.not_started,
             current_approved_evidence=approved,
             blockers=blockers,
@@ -578,6 +605,7 @@ def _pack_response(
         blockers.append(ApplicationPackBlocker.mapped_evidence_changed)
     return ApplicationPackResponse(
         application_id=application.id,
+        attributed_resume_version_id=attributed_resume_version_id,
         status=status,
         pack=_pack_summary(pack),
         current_revision=current_response,
@@ -1100,6 +1128,36 @@ def _owned_application(
     return session.scalar(statement)
 
 
+def _attributed_resume_version_id(
+    session: Session,
+    *,
+    application: Application,
+) -> str | None:
+    """Recover a pursuit-time resume only while its saved search is unchanged."""
+
+    return session.scalar(
+        select(SavedSearch.resume_version_id)
+        .select_from(ApplicationMetricSnapshot)
+        .join(
+            SavedSearch,
+            (SavedSearch.owner_id == ApplicationMetricSnapshot.owner_id)
+            & (SavedSearch.id == ApplicationMetricSnapshot.saved_search_id),
+        )
+        .join(
+            ResumeVersion,
+            (ResumeVersion.owner_id == SavedSearch.owner_id)
+            & (ResumeVersion.id == SavedSearch.resume_version_id),
+        )
+        .where(
+            ApplicationMetricSnapshot.owner_id == application.owner_id,
+            ApplicationMetricSnapshot.application_id == application.id,
+            ApplicationMetricSnapshot.acquisition_source == "job_hunt_search",
+            ApplicationMetricSnapshot.attribution_status == "captured",
+            ApplicationMetricSnapshot.saved_search_version == SavedSearch.version,
+        )
+    )
+
+
 def _owned_pack(
     session: Session,
     owner_id: str,
@@ -1132,6 +1190,63 @@ def _owned_pack_by_id(
     if for_update:
         statement = statement.with_for_update()
     return session.scalar(statement)
+
+
+def _owned_resume(
+    session: Session,
+    *,
+    owner_id: str,
+    resume_version_id: str,
+    for_update: bool = False,
+) -> ResumeVersion | None:
+    statement = select(ResumeVersion).where(
+        ResumeVersion.owner_id == owner_id,
+        ResumeVersion.id == resume_version_id,
+    )
+    if for_update:
+        statement = statement.with_for_update()
+    return session.scalar(statement)
+
+
+def _resume_for_pack_creation(
+    session: Session,
+    *,
+    owner_id: str,
+    resume_version_id: str,
+    require_sole_current_base: bool,
+) -> ResumeVersion | None:
+    if not require_sole_current_base:
+        return _owned_resume(
+            session,
+            owner_id=owner_id,
+            resume_version_id=resume_version_id,
+            for_update=True,
+        )
+
+    # Resume creation also locks this owner row. That shared serialization
+    # boundary prevents a concurrent insert from appearing after the automatic
+    # one-choice check but before this immutable pack is created.
+    owner = session.scalar(
+        select(Owner).where(Owner.id == owner_id).with_for_update()
+    )
+    if owner is None:
+        return None
+    resumes = list(
+        session.scalars(
+            select(ResumeVersion)
+            .where(ResumeVersion.owner_id == owner_id)
+            .order_by(ResumeVersion.id)
+            .with_for_update()
+        )
+    )
+    selected = next((row for row in resumes if row.id == resume_version_id), None)
+    if selected is None:
+        return None
+    if len(resumes) != 1 or not selected.is_base:
+        raise ResourceConflict(
+            "saved resume choices changed; reload and choose the resume to pin"
+        )
+    return selected
 
 
 def _latest_revision(

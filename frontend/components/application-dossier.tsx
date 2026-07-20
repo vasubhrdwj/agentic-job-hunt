@@ -140,6 +140,7 @@ export function ApplicationDossier({
           applicationId={application.id}
           applicationVersion={application.version}
           applicationStage={application.stage}
+          onApplicationChanged={refreshApplication}
           onReviewed={refreshMaterialsAfterReview}
         />
       );

@@ -8,7 +8,9 @@ from typing import Any
 
 import pytest
 from sqlalchemy import func, select
+from sqlalchemy.dialects import postgresql
 
+import job_hunt_agent.application_pack_repository as pack_repository
 from job_hunt_agent.application_pack_repository import (
     create_application_pack,
     create_application_pack_revision,
@@ -28,15 +30,18 @@ from job_hunt_agent.evidence_repository import (
 from job_hunt_agent.models import (
     AchievementEvidence,
     Application,
+    ApplicationMetricSnapshot,
     ApplicationPack,
     ApplicationPackEvent,
     ApplicationPackRevision,
     Base,
+    CareerTrack,
     JobPosting,
     JobPostingVersion,
     Owner,
     OwnerMutationReceipt,
     OwnerOpportunity,
+    SavedSearch,
 )
 from job_hunt_agent.mutation_receipts import MutationIdempotencyConflict
 from job_hunt_agent.profile_repository import (
@@ -254,6 +259,110 @@ def _review_payload(
     )
 
 
+def test_not_started_pack_suggests_the_unchanged_attributed_search_resume(
+    pack_workspace: tuple[Database, DataKeyring, str],
+) -> None:
+    database, keyring, base_resume_id = pack_workspace
+    with database.session() as session:
+        alternate = create_or_reuse_resume_version(
+            session,
+            owner_id="owner-a",
+            label="Backend search resume",
+            content="PRIVATE BACKEND RESUME: Python, Kafka, and distributed systems.",
+            source="pasted",
+            keyring=keyring,
+            make_base=False,
+            now=NOW + timedelta(minutes=1),
+        )
+        assert alternate.resume.id != base_resume_id
+        session.add(
+            CareerTrack(
+                id="track-attributed",
+                owner_id="owner-a",
+                name="Backend track",
+                role_families=["Backend Engineer"],
+                seniority_levels=["mid"],
+                target_locations=["India"],
+                priorities={},
+                active=True,
+                version=1,
+                created_at=NOW,
+                updated_at=NOW,
+            )
+        )
+        session.flush()
+        session.add(
+            SavedSearch(
+                id="search-attributed",
+                owner_id="owner-a",
+                career_track_id="track-attributed",
+                resume_version_id=alternate.resume.id,
+                name="Backend search",
+                criteria_schema_version=1,
+                criteria={"role_keywords": ["backend"]},
+                pack="backend_india",
+                use_self_rag=False,
+                cadence="manual",
+                schedule={"local_time": None, "days_of_week": []},
+                timezone="Asia/Kolkata",
+                active=True,
+                version=3,
+                created_at=NOW,
+                updated_at=NOW,
+            )
+        )
+        session.flush()
+        session.add(
+            ApplicationMetricSnapshot(
+                id="metric-attributed",
+                owner_id="owner-a",
+                application_id="application1",
+                job_posting_id="posting1",
+                pursued_posting_version_id="postingversion1",
+                acquisition_source="job_hunt_search",
+                attribution_status="captured",
+                saved_search_id="search-attributed",
+                saved_search_version=3,
+                saved_search_name="Backend search",
+                career_track_id="track-attributed",
+                career_track_version=1,
+                career_track_name="Backend track",
+                assessment_state="not_assessed",
+                assessment_band=None,
+                assessment_algorithm_version=None,
+                assessment_reason="not_requested",
+                recorded_at=NOW,
+                created_at=NOW,
+            )
+        )
+        attributed_resume_id = alternate.resume.id
+
+    with database.session() as session:
+        projection = load_application_pack(
+            session,
+            owner_id="owner-a",
+            application_id="application1",
+            keyring=keyring,
+        )
+        assert projection is not None
+        assert projection.attributed_resume_version_id == attributed_resume_id
+
+    with database.session() as session:
+        search = session.get(SavedSearch, "search-attributed")
+        assert search is not None
+        search.version += 1
+
+    with database.session() as session:
+        changed = load_application_pack(
+            session,
+            owner_id="owner-a",
+            application_id="application1",
+            keyring=keyring,
+        )
+        assert changed is not None
+        assert changed.attributed_resume_version_id is None
+
+
 def test_create_pins_inputs_extracts_exact_spans_and_encrypts_private_snapshots(
     pack_workspace: tuple[Database, DataKeyring, str],
 ) -> None:
@@ -311,6 +420,121 @@ def test_create_pins_inputs_extracts_exact_spans_and_encrypts_private_snapshots(
                 idempotency_key="pack-create-1",
                 keyring=keyring,
             )
+
+
+def test_automatic_create_requires_the_resume_to_still_be_current_base(
+    pack_workspace: tuple[Database, DataKeyring, str],
+) -> None:
+    database, keyring, stale_resume_id = pack_workspace
+    with database.session() as session:
+        promoted = create_or_reuse_resume_version(
+            session,
+            owner_id="owner-a",
+            label="New current base",
+            content="A newer base resume with Python and distributed systems.",
+            source="pasted",
+            keyring=keyring,
+            make_base=True,
+            now=NOW + timedelta(minutes=2),
+        )
+        assert promoted.resume.is_base is True
+
+    with pytest.raises(ResourceConflict, match="saved resume choices changed"):
+        with database.session() as session:
+            create_application_pack(
+                session,
+                owner_id="owner-a",
+                application_id="application1",
+                payload=ApplicationPackCreate(
+                    base_resume_version_id=stale_resume_id,
+                    require_sole_current_base_resume=True,
+                ),
+                expected_application_version=1,
+                idempotency_key="automatic-stale-base",
+                keyring=keyring,
+            )
+
+    with database.session() as session:
+        assert session.scalar(select(func.count(ApplicationPack.id))) == 0
+
+
+def test_automatic_create_accepts_the_locked_current_base(
+    pack_workspace: tuple[Database, DataKeyring, str],
+) -> None:
+    database, keyring, resume_id = pack_workspace
+    with database.session() as session:
+        created = create_application_pack(
+            session,
+            owner_id="owner-a",
+            application_id="application1",
+            payload=ApplicationPackCreate(
+                base_resume_version_id=resume_id,
+                require_sole_current_base_resume=True,
+            ),
+            expected_application_version=1,
+            idempotency_key="automatic-current-base",
+            keyring=keyring,
+        )
+
+    assert created is not None and created.pack is not None
+    assert created.pack.base_resume_version_id == resume_id
+
+
+def test_automatic_create_rejects_a_new_non_base_alternate(
+    pack_workspace: tuple[Database, DataKeyring, str],
+) -> None:
+    database, keyring, resume_id = pack_workspace
+    with database.session() as session:
+        alternate = create_or_reuse_resume_version(
+            session,
+            owner_id="owner-a",
+            label="Explicit alternate",
+            content="A different owner-created resume for another backend track.",
+            source="pasted",
+            keyring=keyring,
+            make_base=False,
+            now=NOW + timedelta(minutes=2),
+        )
+        assert alternate.resume.is_base is False
+
+    with pytest.raises(ResourceConflict, match="saved resume choices changed"):
+        with database.session() as session:
+            create_application_pack(
+                session,
+                owner_id="owner-a",
+                application_id="application1",
+                payload=ApplicationPackCreate(
+                    base_resume_version_id=resume_id,
+                    require_sole_current_base_resume=True,
+                ),
+                expected_application_version=1,
+                idempotency_key="automatic-new-alternate",
+                keyring=keyring,
+            )
+
+
+def test_automatic_base_precondition_locks_owner_and_resume_inventory() -> None:
+    statements = []
+
+    class CapturingSession:
+        def scalar(self, statement):
+            statements.append(statement)
+            return object()
+
+        def scalars(self, statement):
+            statements.append(statement)
+            return []
+
+    pack_repository._resume_for_pack_creation(  # noqa: SLF001 - lock contract.
+        CapturingSession(),  # type: ignore[arg-type]
+        owner_id="owner-a",
+        resume_version_id="resume-a",
+        require_sole_current_base=True,
+    )
+
+    assert len(statements) == 2
+    sql = [str(item.compile(dialect=postgresql.dialect())) for item in statements]
+    assert all(item.rstrip().endswith("FOR UPDATE") for item in sql)
 
 
 def test_review_revisions_are_immutable_and_latest_review_event_wins(

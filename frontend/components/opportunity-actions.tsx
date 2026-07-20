@@ -9,6 +9,7 @@ import type {
   OpportunityDecisionPayload,
   TodayOpportunityItem,
 } from "@/lib/opportunity-types";
+import { defaultPursuitSavedSearchId } from "@/lib/application-fit-context";
 import {
   inputClasses,
   primaryButtonClasses,
@@ -91,11 +92,7 @@ export function OpportunityActions({
     pursueTriggerRef.current = event.currentTarget;
     setInitialDueOn(dateOffset(ownerLocalDate, 1));
     setAcquisitionSource("job_hunt_search");
-    setSelectedSavedSearchId(
-      opportunity.discovered_by.length === 1
-        ? opportunity.discovered_by[0].saved_search_id
-        : "",
-    );
+    setSelectedSavedSearchId(defaultPursuitSavedSearchId(opportunity));
     setPursueDialogError(null);
     pursueDialogRef.current?.showModal();
   }
@@ -289,8 +286,8 @@ export function OpportunityActions({
                 const next = event.target.value as ApplicationAcquisitionSource;
                 setAcquisitionSource(next);
                 setSelectedSavedSearchId(
-                  next === "job_hunt_search" && opportunity.discovered_by.length === 1
-                    ? opportunity.discovered_by[0].saved_search_id
+                  next === "job_hunt_search"
+                    ? defaultPursuitSavedSearchId(opportunity)
                     : "",
                 );
                 setPursueDialogError(null);

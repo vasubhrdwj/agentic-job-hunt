@@ -1,7 +1,14 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useEffectEvent,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 
 import {
   createApplicationPack,
@@ -38,6 +45,8 @@ import type {
   ResumeVersionSummary,
 } from "@/lib/workspace-types";
 import type { ApplicationStage } from "@/lib/application-types";
+import { buildAutomaticApplicationPackStartPlan } from "@/lib/application-pack-auto-start";
+import { preferredApplicationPackResumeId } from "@/lib/application-fit-context";
 import {
   errorText,
   FormField,
@@ -61,13 +70,16 @@ interface PendingMutation {
   key: string;
   fingerprint: string;
   expectedVersion: number;
+  execute: (pending: PendingMutation) => Promise<ApplicationPackResponse>;
   applied: (response: ApplicationPackResponse) => boolean;
   successMessage: string;
+  ambiguousMessage: string;
   onConfirmed?: (response: ApplicationPackResponse) => void;
 }
 
 interface MutationOptions {
   intent: PendingMutation["intent"];
+  idempotencyKey?: string;
   fingerprint: string;
   expectedVersion: number;
   execute: (pending: PendingMutation) => Promise<ApplicationPackResponse>;
@@ -125,11 +137,13 @@ export function ApplicationPack({
   applicationId,
   applicationVersion,
   applicationStage,
+  onApplicationChanged,
   onReviewed,
 }: {
   applicationId: string;
   applicationVersion: number;
   applicationStage: ApplicationStage;
+  onApplicationChanged?: () => Promise<void>;
   onReviewed?: (projection: ApplicationPackResponse) => void;
 }) {
   const [projection, setProjection] = useState<ApplicationPackResponse | null>(null);
@@ -154,6 +168,7 @@ export function ApplicationPack({
   const unresolvedIntentRef = useRef<PendingMutation["intent"] | null>(null);
   const requestGeneration = useRef(0);
   const descriptionDirtyRef = useRef(false);
+  const autoStartAttemptedKeyRef = useRef<string | null>(null);
 
   const setDirtyState = useCallback((value: boolean) => {
     dirtyRef.current = value;
@@ -256,10 +271,11 @@ export function ApplicationPack({
       if (resumeResult.status === "fulfilled") {
         const nextResumes = resumeResult.value;
         setResumes(nextResumes);
-        setSelectedResumeId((current) => {
-          if (current && nextResumes.some((resume) => resume.id === current)) return current;
-          return nextResumes.find((resume) => resume.is_base)?.id ?? nextResumes[0]?.id ?? "";
-        });
+        setSelectedResumeId((current) => preferredApplicationPackResumeId({
+          currentResumeId: current,
+          attributedResumeId: next.attributed_resume_version_id,
+          resumes: nextResumes,
+        }));
       } else {
         setLoadError(errorText(
           resumeResult.reason,
@@ -296,11 +312,7 @@ export function ApplicationPack({
   function pendingFor(options: MutationOptions): PendingMutation {
     const existing = pendingMutation.current;
     if (existing) {
-      if (
-        existing.intent !== options.intent ||
-        existing.fingerprint !== options.fingerprint ||
-        existing.expectedVersion !== options.expectedVersion
-      ) {
+      if (existing.intent !== options.intent) {
         throw new Error(
           "A different action still has an unconfirmed result. Retry that unchanged action before editing or starting another one.",
         );
@@ -311,9 +323,12 @@ export function ApplicationPack({
       intent: options.intent,
       fingerprint: options.fingerprint,
       expectedVersion: options.expectedVersion,
-      key: createIdempotencyKey(`application-pack:${applicationId}:${options.intent}`),
+      key: options.idempotencyKey ??
+        createIdempotencyKey(`application-pack:${applicationId}:${options.intent}`),
+      execute: options.execute,
       applied: options.applied,
       successMessage: options.successMessage,
+      ambiguousMessage: options.ambiguousMessage,
       onConfirmed: options.onConfirmed,
     };
     pendingMutation.current = created;
@@ -336,21 +351,21 @@ export function ApplicationPack({
     setActionError(null);
     setNotice(null);
     try {
-      const next = await options.execute(pending);
+      const next = await pending.execute(pending);
       if (requestGeneration.current !== generation) return false;
       const accepted = acceptResponse(next, requestedApplicationId, generation);
       const confirmed =
-        next.application_id === requestedApplicationId && options.applied(next);
+        next.application_id === requestedApplicationId && pending.applied(next);
       const current = projectionRef.current;
       const confirmedByCurrent = Boolean(
-        current?.application_id === requestedApplicationId && options.applied(current),
+        current?.application_id === requestedApplicationId && pending.applied(current),
       );
       if ((accepted && confirmed) || confirmedByCurrent) {
         const saved = confirmedByCurrent ? current! : next;
         pendingMutation.current = null;
         setUnresolvedState(null);
-        options.onConfirmed?.(saved);
-        setNotice(options.successMessage);
+        pending.onConfirmed?.(saved);
+        setNotice(pending.successMessage);
         return true;
       }
       if (!accepted) {
@@ -374,9 +389,10 @@ export function ApplicationPack({
       if (conflict) {
         pendingMutation.current = null;
         setUnresolvedState(null);
+        await onApplicationChanged?.();
         await refresh(false);
         setActionError(
-          "This application pack changed in another tab. The latest saved state is shown and your unsaved review remains here. Review it before saving again.",
+          "This application or pack changed in another tab. The latest parent and pack state are being shown; review them before retrying.",
         );
         return false;
       }
@@ -386,20 +402,20 @@ export function ApplicationPack({
           const checked = await getApplicationPack(requestedApplicationId);
           const accepted = acceptResponse(checked, requestedApplicationId, generation);
           const current = projectionRef.current;
-          const confirmed = accepted && options.applied(checked);
+          const confirmed = accepted && pending.applied(checked);
           const confirmedByCurrent = Boolean(
-            current?.application_id === requestedApplicationId && options.applied(current),
+            current?.application_id === requestedApplicationId && pending.applied(current),
           );
           if (confirmed || confirmedByCurrent) {
             const saved = confirmedByCurrent ? current! : checked;
             pendingMutation.current = null;
             setUnresolvedState(null);
-            options.onConfirmed?.(saved);
-            setNotice(`${options.successMessage} Confirmed from the saved record.`);
+            pending.onConfirmed?.(saved);
+            setNotice(`${pending.successMessage} Confirmed from the saved record.`);
             return true;
           }
           if (
-            options.intent !== "start" &&
+            pending.intent !== "start" &&
             checked.pack &&
             checked.pack.version > pending.expectedVersion
           ) {
@@ -413,9 +429,9 @@ export function ApplicationPack({
         } catch {
           // Keep the exact payload and receipt so an unchanged retry remains safe.
         }
-        setUnresolvedState(options.intent);
+        setUnresolvedState(pending.intent);
         setActionError(
-          `${options.ambiguousMessage} Retry the same unchanged action; it cannot create a duplicate.`,
+          `${pending.ambiguousMessage} Retry the same unchanged action; it cannot create a duplicate.`,
         );
         return false;
       }
@@ -465,6 +481,66 @@ export function ApplicationPack({
       },
     });
   }
+
+  const selectedResume = resumes.find((resume) => resume.id === selectedResumeId) ?? null;
+  const startingResumeChoiceCount = resumes.length;
+  const automaticStartPlan = useMemo(() =>
+    buildAutomaticApplicationPackStartPlan({
+      applicationId,
+      applicationVersion,
+      applicationStage,
+      initialLoadComplete: !loading,
+      projection,
+      selectedResume,
+      startingResumeChoiceCount,
+    }), [
+      applicationId,
+      applicationStage,
+      applicationVersion,
+      loading,
+      projection,
+      selectedResume,
+      startingResumeChoiceCount,
+    ]);
+  const runAutomaticStart = useEffectEvent(runMutation);
+
+  useEffect(() => {
+    if (
+      !automaticStartPlan ||
+      busy ||
+      unresolvedIntent ||
+      autoStartAttemptedKeyRef.current === automaticStartPlan.idempotencyKey
+    ) return;
+
+    autoStartAttemptedKeyRef.current = automaticStartPlan.idempotencyKey;
+    const { payload } = automaticStartPlan;
+    void runAutomaticStart({
+      intent: "start",
+      idempotencyKey: automaticStartPlan.idempotencyKey,
+      fingerprint: JSON.stringify(payload),
+      expectedVersion: automaticStartPlan.expectedApplicationVersion,
+      execute: (pending) => createApplicationPack(
+        applicationId,
+        pending.expectedVersion,
+        pending.key,
+        payload,
+      ),
+      applied: (next) => Boolean(
+        next.pack?.base_resume_version_id === payload.base_resume_version_id &&
+        next.current_revision &&
+        next.current_revision.job_description_source === "persisted_description"
+      ),
+      successMessage: "Grounding review prepared automatically from the saved role and base resume.",
+      ambiguousMessage: "The automatic grounding-review start could not be confirmed.",
+      onConfirmed: (next) => hydrateDrafts(next, true),
+    });
+  }, [
+    applicationId,
+    automaticStartPlan,
+    busy,
+    hydrateDrafts,
+    unresolvedIntent,
+  ]);
 
   function changeCoverage(
     requirementId: string,
@@ -684,7 +760,6 @@ export function ApplicationPack({
     "owner_job_description_required",
   );
   const postingClosed = projection.blockers.includes("posting_closed");
-  const selectedResume = resumes.find((resume) => resume.id === selectedResumeId) ?? null;
   const revision = projection.current_revision;
   const preparedPlan = prepareRequirementProposals({
     packStatus: projection.status,
@@ -854,7 +929,9 @@ export function ApplicationPack({
               </FormField>
             ) : (
               <StatusMessage kind="info">
-                The server will use the description preserved with the exact posting version you pursued.
+                {startingResumeChoiceCount === 1
+                  ? "The exact saved role description and your only saved resume are ready, so this grounded review prepares itself. You still approve every fit decision and final application package."
+                  : "Multiple starting resumes are available. Choose the version you want to pin, then start the grounded review; the app will not silently choose for you."}
               </StatusMessage>
             )}
 
