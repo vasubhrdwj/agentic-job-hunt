@@ -15,6 +15,7 @@ export type OwnerAccessState =
 export type OwnerAccess = {
   state: OwnerAccessState;
   signupEnabled: boolean;
+  legacyRecoveryEnabled: boolean;
 };
 
 type AccountCredentials = {
@@ -24,6 +25,10 @@ type AccountCredentials = {
 
 type AccountSignup = AccountCredentials & {
   displayName: string;
+};
+
+type LegacyAccountRecovery = AccountCredentials & {
+  recoveryToken: string;
 };
 
 export async function getOwnerAccessState(): Promise<OwnerAccess> {
@@ -38,6 +43,7 @@ export async function getOwnerAccessState(): Promise<OwnerAccess> {
       return {
         state: "setup_required",
         signupEnabled: statusBody.signup_enabled,
+        legacyRecoveryEnabled: statusBody.legacy_recovery_enabled,
       };
     }
 
@@ -46,15 +52,24 @@ export async function getOwnerAccessState(): Promise<OwnerAccess> {
       credentials: "same-origin",
     });
     if (sessionResponse.ok) {
-      return { state: "signed_in", signupEnabled: statusBody.signup_enabled };
+      return {
+        state: "signed_in",
+        signupEnabled: statusBody.signup_enabled,
+        legacyRecoveryEnabled: statusBody.legacy_recovery_enabled,
+      };
     }
     if (sessionResponse.status === 401) {
-      return { state: "ready", signupEnabled: statusBody.signup_enabled };
+      return {
+        state: "ready",
+        signupEnabled: statusBody.signup_enabled,
+        legacyRecoveryEnabled: statusBody.legacy_recovery_enabled,
+      };
     }
     if (sessionResponse.status === 503) {
       return {
         state: "setup_required",
         signupEnabled: statusBody.signup_enabled,
+        legacyRecoveryEnabled: statusBody.legacy_recovery_enabled,
       };
     }
     return unavailableAccess();
@@ -122,7 +137,9 @@ export async function createAccount({
     throw new Error("New account creation is currently closed.");
   }
   if (response.status === 409) {
-    throw new Error("An account already uses that email. Sign in instead.");
+    throw new Error(
+      "That email already has an account, or a previous workspace must be recovered first.",
+    );
   }
   if (response.status === 422) {
     throw new Error(
@@ -139,6 +156,44 @@ export async function createAccount({
     throw new Error("The job-search service is not online yet.");
   }
   if (!response.ok) throw new Error("Unable to create your account right now.");
+  return parseOwnerSession(await response.json());
+}
+
+export async function recoverLegacyWorkspace({
+  email,
+  password,
+  recoveryToken,
+}: LegacyAccountRecovery): Promise<OwnerSession> {
+  const response = await fetch("/api/accounts/recover", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      recovery_token: recoveryToken.trim(),
+      email: email.trim(),
+      password,
+    }),
+    credentials: "same-origin",
+  });
+  if (response.status === 401) {
+    throw new Error("The previous access key is incorrect.");
+  }
+  if (response.status === 409) {
+    throw new Error(
+      "That workspace is already secured or this email belongs to another account.",
+    );
+  }
+  if (response.status === 422) {
+    throw new Error(
+      "Check the email, new password, and complete previous access key.",
+    );
+  }
+  if (response.status === 429) {
+    throw new Error("Recovery is temporarily limited. Wait briefly and try again.");
+  }
+  if (response.status === 502 || response.status === 503 || response.status === 504) {
+    throw new Error("The job-search service is temporarily unavailable.");
+  }
+  if (!response.ok) throw new Error("Unable to recover this workspace right now.");
   return parseOwnerSession(await response.json());
 }
 
@@ -184,7 +239,11 @@ export async function deleteOwnerSession(): Promise<void> {
 }
 
 function unavailableAccess(): OwnerAccess {
-  return { state: "unavailable", signupEnabled: false };
+  return {
+    state: "unavailable",
+    signupEnabled: false,
+    legacyRecoveryEnabled: false,
+  };
 }
 
 function browserTimezone(): string {

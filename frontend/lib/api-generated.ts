@@ -38,6 +38,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/accounts/recover": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Recover Legacy Workspace */
+        post: operations["recover_legacy_workspace_api_accounts_recover_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/applications": {
         parameters: {
             query?: never;
@@ -3530,6 +3547,15 @@ export interface components {
              */
             seniority: "junior" | "mid" | "senior" | "staff";
         };
+        /** LegacyAccountRecoveryRequest */
+        LegacyAccountRecoveryRequest: {
+            /** Email */
+            email: string;
+            /** Password */
+            password: string;
+            /** Recovery Token */
+            recovery_token: string;
+        };
         /**
          * MatchAssessmentState
          * @enum {string}
@@ -5196,6 +5222,8 @@ export interface components {
         };
         /** SessionStatusResponse */
         SessionStatusResponse: {
+            /** Legacy Recovery Enabled */
+            legacy_recovery_enabled: boolean;
             /** Signup Enabled */
             signup_enabled: boolean;
             /**
@@ -5662,6 +5690,39 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["AccountClaimRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SessionResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    recover_legacy_workspace_api_accounts_recover_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LegacyAccountRecoveryRequest"];
             };
         };
         responses: {

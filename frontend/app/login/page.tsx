@@ -11,11 +11,12 @@ import {
 import {
   createAccount,
   getOwnerAccessState,
+  recoverLegacyWorkspace,
   signInAccount,
   type OwnerAccessState,
 } from "@/lib/session";
 
-type LoginMode = "sign_in" | "create_account";
+type LoginMode = "sign_in" | "create_account" | "recover_workspace";
 
 export default function LoginPage() {
   const [mode, setMode] = useState<LoginMode>("sign_in");
@@ -24,12 +25,14 @@ export default function LoginPage() {
   const [confirmEmail, setConfirmEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  const [recoveryToken, setRecoveryToken] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [accessState, setAccessState] = useState<OwnerAccessState | "checking">(
     "checking",
   );
   const [signupEnabled, setSignupEnabled] = useState(false);
+  const [legacyRecoveryEnabled, setLegacyRecoveryEnabled] = useState(false);
   const [connectionAttempt, setConnectionAttempt] = useState(0);
   const workspaceDeleted = useSyncExternalStore(
     subscribeToLocation,
@@ -46,8 +49,23 @@ export default function LoginPage() {
         return;
       }
       setSignupEnabled(access.signupEnabled);
+      setLegacyRecoveryEnabled(access.legacyRecoveryEnabled);
       setAccessState(access.state);
-      if (!access.signupEnabled) setMode("sign_in");
+      setMode((currentMode) => {
+        if (access.legacyRecoveryEnabled && currentMode === "sign_in") {
+          return "recover_workspace";
+        }
+        if (!access.signupEnabled && currentMode === "create_account") {
+          return "sign_in";
+        }
+        if (
+          !access.legacyRecoveryEnabled &&
+          currentMode === "recover_workspace"
+        ) {
+          return "sign_in";
+        }
+        return currentMode;
+      });
     });
     return () => {
       cancelled = true;
@@ -59,16 +77,20 @@ export default function LoginPage() {
     setError(null);
     setPassword("");
     setConfirmPassword("");
+    setRecoveryToken("");
   }
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError(null);
-    if (mode === "create_account" && normalizedEmail(email) !== normalizedEmail(confirmEmail)) {
+    if (
+      mode === "create_account" &&
+      normalizedEmail(email) !== normalizedEmail(confirmEmail)
+    ) {
       setError("Email addresses do not match.");
       return;
     }
-    if (mode === "create_account" && password !== confirmPassword) {
+    if (mode !== "sign_in" && password !== confirmPassword) {
       setError("Passwords do not match.");
       return;
     }
@@ -77,6 +99,9 @@ export default function LoginPage() {
       if (mode === "create_account") {
         await createAccount({ displayName, email, password });
         window.location.replace("/profile?welcome=1");
+      } else if (mode === "recover_workspace") {
+        await recoverLegacyWorkspace({ email, password, recoveryToken });
+        window.location.replace("/account?secured=1");
       } else {
         await signInAccount({ email, password });
         window.location.replace("/");
@@ -90,6 +115,9 @@ export default function LoginPage() {
   }
 
   const creatingAccount = mode === "create_account";
+  const recoveringWorkspace = mode === "recover_workspace";
+  const settingCredentials = creatingAccount || recoveringWorkspace;
+  const showModePicker = signupEnabled || legacyRecoveryEnabled;
 
   return (
     <main className="mx-auto flex w-full max-w-md flex-1 flex-col justify-center px-6 py-16">
@@ -97,11 +125,16 @@ export default function LoginPage() {
         Job Hunt Signal
       </p>
       <h1 className="mt-2 text-3xl font-semibold tracking-tight">
-        {creatingAccount ? "Create your job-search account" : "Sign in to your workspace"}
+        {creatingAccount
+          ? "Create your job-search account"
+          : recoveringWorkspace
+            ? "Recover your previous workspace"
+            : "Sign in to your workspace"}
       </h1>
       <p className="mt-3 text-sm leading-6 text-zinc-600 dark:text-zinc-400">
-        Each account has its own profile, resumes, searches, applications, and
-        outreach history.
+        {recoveringWorkspace
+          ? "Use the previous private access key once, then choose the normal email and password you will use from now on."
+          : "Each account has its own profile, resumes, searches, applications, and outreach history."}
       </p>
 
       {workspaceDeleted ? (
@@ -161,27 +194,39 @@ export default function LoginPage() {
 
       {accessState === "ready" ? (
         <section className="mt-8 rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm dark:border-zinc-800 dark:bg-zinc-900/70">
-          {signupEnabled ? (
+          {showModePicker ? (
             <div
-              className="grid grid-cols-2 rounded-xl bg-zinc-100 p-1 dark:bg-zinc-950"
+              className={`grid rounded-xl bg-zinc-100 p-1 dark:bg-zinc-950 ${
+                signupEnabled && legacyRecoveryEnabled ? "grid-cols-3" : "grid-cols-2"
+              }`}
               aria-label="Account access"
             >
               <ModeButton
-                selected={!creatingAccount}
+                selected={mode === "sign_in"}
                 onClick={() => selectMode("sign_in")}
               >
                 Sign in
               </ModeButton>
-              <ModeButton
-                selected={creatingAccount}
-                onClick={() => selectMode("create_account")}
-              >
-                Create account
-              </ModeButton>
+              {signupEnabled ? (
+                <ModeButton
+                  selected={creatingAccount}
+                  onClick={() => selectMode("create_account")}
+                >
+                  Create account
+                </ModeButton>
+              ) : null}
+              {legacyRecoveryEnabled ? (
+                <ModeButton
+                  selected={recoveringWorkspace}
+                  onClick={() => selectMode("recover_workspace")}
+                >
+                  Recover old data
+                </ModeButton>
+              ) : null}
             </div>
           ) : null}
 
-          <form onSubmit={submit} className={signupEnabled ? "mt-6 space-y-5" : "space-y-5"}>
+          <form onSubmit={submit} className={showModePicker ? "mt-6 space-y-5" : "space-y-5"}>
             {creatingAccount ? (
               <div>
                 <label htmlFor="display-name" className="text-sm font-medium">
@@ -199,6 +244,36 @@ export default function LoginPage() {
                   onChange={(event) => setDisplayName(event.target.value)}
                   className="mt-2 w-full rounded-lg border border-zinc-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 dark:border-zinc-700 dark:bg-zinc-900 dark:focus:ring-indigo-950"
                 />
+              </div>
+            ) : null}
+
+            {creatingAccount ? (
+              <p className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-xs leading-5 text-blue-900 dark:border-blue-900 dark:bg-blue-950/40 dark:text-blue-100">
+                This starts a new, empty workspace. If you used the old version and
+                want its saved résumé and applications, choose Recover old data instead.
+              </p>
+            ) : null}
+
+            {recoveringWorkspace ? (
+              <div>
+                <label htmlFor="recovery-token" className="text-sm font-medium">
+                  Previous private access key
+                </label>
+                <input
+                  id="recovery-token"
+                  name="recovery-token"
+                  type="password"
+                  autoComplete="off"
+                  required
+                  minLength={32}
+                  maxLength={512}
+                  value={recoveryToken}
+                  onChange={(event) => setRecoveryToken(event.target.value)}
+                  className="mt-2 w-full rounded-lg border border-zinc-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 dark:border-zinc-700 dark:bg-zinc-900 dark:focus:ring-indigo-950"
+                />
+                <p className="mt-2 text-xs leading-5 text-zinc-500">
+                  This is used only for this one recovery and is not your new password.
+                </p>
               </div>
             ) : null}
 
@@ -242,13 +317,13 @@ export default function LoginPage() {
 
             <div>
               <label htmlFor="password" className="text-sm font-medium">
-                Password
+                {recoveringWorkspace ? "Create a new password" : "Password"}
               </label>
               <input
                 id="password"
                 name="password"
                 type="password"
-                autoComplete={creatingAccount ? "new-password" : "current-password"}
+                autoComplete={settingCredentials ? "new-password" : "current-password"}
                 required
                 minLength={12}
                 maxLength={128}
@@ -258,13 +333,13 @@ export default function LoginPage() {
                 className="mt-2 w-full rounded-lg border border-zinc-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 dark:border-zinc-700 dark:bg-zinc-900 dark:focus:ring-indigo-950"
               />
               <p id="password-help" className="mt-2 text-xs leading-5 text-zinc-500">
-                {creatingAccount
+                {settingCredentials
                   ? "Use at least 12 characters and a password unique to this app."
                   : "Password recovery is not available in this beta yet."}
               </p>
             </div>
 
-            {creatingAccount ? (
+            {settingCredentials ? (
               <div>
                 <label htmlFor="confirm-password" className="text-sm font-medium">
                   Confirm password
@@ -302,14 +377,18 @@ export default function LoginPage() {
               {submitting
                 ? creatingAccount
                   ? "Creating account…"
-                  : "Signing in…"
+                  : recoveringWorkspace
+                    ? "Recovering workspace…"
+                    : "Signing in…"
                 : creatingAccount
                   ? "Create account"
-                  : "Sign in"}
+                  : recoveringWorkspace
+                    ? "Recover and sign in"
+                    : "Sign in"}
             </button>
           </form>
 
-          {!signupEnabled ? (
+          {!signupEnabled && !legacyRecoveryEnabled ? (
             <p className="mt-5 border-t border-zinc-200 pt-4 text-xs leading-5 text-zinc-500 dark:border-zinc-800">
               New account creation is closed on this deployment. Existing accounts
               can still sign in.
@@ -319,7 +398,7 @@ export default function LoginPage() {
       ) : null}
 
       <p className="mt-6 text-center text-xs leading-5 text-zinc-500">
-        Local beta: email verification and password recovery are not available yet.
+        Beta: email verification and password recovery are not available yet.
         Account passwords are used only to access this job-search app.
       </p>
     </main>

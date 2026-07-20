@@ -8,6 +8,7 @@ import {
 import {
   claimWorkspaceAccount,
   createAccount,
+  recoverLegacyWorkspace,
   signInAccount,
 } from "../lib/session";
 
@@ -71,23 +72,115 @@ test("session parsing rejects inconsistent account state", () => {
   );
 });
 
-test("session status explicitly controls whether signup is offered", () => {
+test("session status explicitly controls signup and legacy recovery", () => {
   assert.deepEqual(
-    parseSessionStatus({ state: "ready", signup_enabled: true }),
-    { state: "ready", signup_enabled: true },
+    parseSessionStatus({
+      state: "ready",
+      signup_enabled: true,
+      legacy_recovery_enabled: true,
+    }),
+    {
+      state: "ready",
+      signup_enabled: true,
+      legacy_recovery_enabled: true,
+    },
   );
   assert.deepEqual(
-    parseSessionStatus({ state: "ready", signup_enabled: false }),
-    { state: "ready", signup_enabled: false },
+    parseSessionStatus({
+      state: "ready",
+      signup_enabled: false,
+      legacy_recovery_enabled: false,
+    }),
+    {
+      state: "ready",
+      signup_enabled: false,
+      legacy_recovery_enabled: false,
+    },
   );
   assert.deepEqual(
     parseSessionStatus({ state: "ready" }),
-    { state: "ready", signup_enabled: false },
+    {
+      state: "ready",
+      signup_enabled: false,
+      legacy_recovery_enabled: false,
+    },
   );
   assert.throws(
     () => parseSessionStatus({ state: "ready", signup_enabled: "yes" }),
     /invalid session status response/,
   );
+  assert.throws(
+    () => parseSessionStatus({ state: "ready", legacy_recovery_enabled: "yes" }),
+    /invalid session status response/,
+  );
+});
+
+test("legacy recovery sends the complete access key and new credentials", async () => {
+  const originalFetch = globalThis.fetch;
+  const calls: Array<{ url: string; init?: RequestInit }> = [];
+  globalThis.fetch = (async (input, init) => {
+    calls.push({ url: String(input), init });
+    return Response.json(ACCOUNT_SESSION);
+  }) as typeof fetch;
+
+  try {
+    const recovered = await recoverLegacyWorkspace({
+      recoveryToken: "  previous-private-access-key  ",
+      email: "  VASU@example.com  ",
+      password: "new-password-kept-exact",
+    });
+    assert.deepEqual(recovered, ACCOUNT_SESSION);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0]?.url, "/api/accounts/recover");
+  assert.equal(calls[0]?.init?.method, "POST");
+  assert.equal(calls[0]?.init?.credentials, "same-origin");
+  assert.equal(
+    new Headers(calls[0]?.init?.headers).get("content-type"),
+    "application/json",
+  );
+  assert.deepEqual(JSON.parse(String(calls[0]?.init?.body)), {
+    recovery_token: "previous-private-access-key",
+    email: "VASU@example.com",
+    password: "new-password-kept-exact",
+  });
+});
+
+test("legacy recovery maps safe errors for every expected failure class", async () => {
+  const originalFetch = globalThis.fetch;
+  let responseStatus = 401;
+  globalThis.fetch = (async () =>
+    Response.json({ detail: "private upstream detail" }, { status: responseStatus })) as typeof fetch;
+
+  const cases: Array<[number, RegExp]> = [
+    [401, /previous access key is incorrect/i],
+    [409, /workspace is already secured or this email belongs to another account/i],
+    [422, /check the email, new password, and complete previous access key/i],
+    [429, /recovery is temporarily limited/i],
+    [502, /job-search service is temporarily unavailable/i],
+    [503, /job-search service is temporarily unavailable/i],
+    [504, /job-search service is temporarily unavailable/i],
+    [500, /unable to recover this workspace right now/i],
+  ];
+
+  try {
+    for (const [status, message] of cases) {
+      responseStatus = status;
+      await assert.rejects(
+        () => recoverLegacyWorkspace({
+          recoveryToken: "previous-private-access-key",
+          email: "vasu@example.com",
+          password: "new-password-kept-exact",
+        }),
+        message,
+      );
+    }
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 });
 
 test("account actions send email credentials only to their intended endpoints", async () => {

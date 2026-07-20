@@ -6546,6 +6546,34 @@
         "title": "JobCriteria",
         "type": "object"
       },
+      "LegacyAccountRecoveryRequest": {
+        "properties": {
+          "email": {
+            "maxLength": 320,
+            "title": "Email",
+            "type": "string"
+          },
+          "password": {
+            "maxLength": 128,
+            "minLength": 12,
+            "title": "Password",
+            "type": "string"
+          },
+          "recovery_token": {
+            "maxLength": 512,
+            "minLength": 32,
+            "title": "Recovery Token",
+            "type": "string"
+          }
+        },
+        "required": [
+          "recovery_token",
+          "email",
+          "password"
+        ],
+        "title": "LegacyAccountRecoveryRequest",
+        "type": "object"
+      },
       "MatchAssessmentState": {
         "enum": [
           "assessed",
@@ -10822,6 +10850,10 @@
       },
       "SessionStatusResponse": {
         "properties": {
+          "legacy_recovery_enabled": {
+            "title": "Legacy Recovery Enabled",
+            "type": "boolean"
+          },
           "signup_enabled": {
             "title": "Signup Enabled",
             "type": "boolean"
@@ -10837,7 +10869,8 @@
         },
         "required": [
           "state",
-          "signup_enabled"
+          "signup_enabled",
+          "legacy_recovery_enabled"
         ],
         "title": "SessionStatusResponse",
         "type": "object"
@@ -11985,6 +12018,47 @@
           }
         ],
         "summary": "Claim Legacy Workspace",
+        "tags": [
+          "account-session"
+        ]
+      }
+    },
+    "/api/accounts/recover": {
+      "post": {
+        "operationId": "recover_legacy_workspace_api_accounts_recover_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LegacyAccountRecoveryRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Recover Legacy Workspace",
         "tags": [
           "account-session"
         ]

@@ -22,6 +22,7 @@ export type OwnerSession = OwnerSessionCore &
 export type SessionStatus = {
   state: "ready" | "setup_required";
   signup_enabled: boolean;
+  legacy_recovery_enabled: boolean;
 };
 
 const RUN_STATUSES = new Set([
@@ -204,12 +205,18 @@ export function parseOwnerSession(value: unknown): OwnerSession {
 export function parseSessionStatus(value: unknown): SessionStatus {
   const body = record(value);
   const signupEnabled = body?.signup_enabled ?? false;
+  const legacyRecoveryEnabled = body?.legacy_recovery_enabled ?? false;
   if (
     !body ||
     (body.state !== "ready" && body.state !== "setup_required") ||
-    typeof signupEnabled !== "boolean"
+    typeof signupEnabled !== "boolean" ||
+    typeof legacyRecoveryEnabled !== "boolean"
   ) {
     return invalid("session status");
   }
-  return { ...body, signup_enabled: signupEnabled } as SessionStatus;
+  return {
+    ...body,
+    signup_enabled: signupEnabled,
+    legacy_recovery_enabled: legacyRecoveryEnabled,
+  } as SessionStatus;
 }
