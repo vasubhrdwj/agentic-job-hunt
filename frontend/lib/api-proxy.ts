@@ -3,6 +3,7 @@ import type { NextRequest } from "next/server";
 import { BackendConfigError, backendBaseUrl } from "./backend-url";
 
 const DEFAULT_MAX_REQUEST_BYTES = 512 * 1024;
+const RESUME_UPLOAD_MAX_REQUEST_BYTES = 4 * 1024 * 1024;
 const DEFAULT_MAX_RESPONSE_BYTES = 8 * 1024 * 1024;
 const PRIVACY_EXPORT_MAX_RESPONSE_BYTES = 32 * 1024 * 1024;
 const DEFAULT_UPSTREAM_TIMEOUT_MS = 20_000;
@@ -199,6 +200,13 @@ function isPrivacyExport(method: string, segments: string[]): boolean {
     && segments[0] === "privacy" && segments[1] === "export";
 }
 
+function isResumeUpload(method: string, segments: string[]): boolean {
+  return method === "POST" && segments.length === 3
+    && segments[0] === "me"
+    && segments[1] === "resume-versions"
+    && segments[2] === "upload";
+}
+
 async function hasValidOwnerSession(
   request: NextRequest,
   signal: AbortSignal,
@@ -224,6 +232,10 @@ export async function proxyApiRequest(
 ): Promise<Response> {
   const method = request.method.toUpperCase();
   const privacyExport = isPrivacyExport(method, segments);
+  const resumeUpload = isResumeUpload(method, segments);
+  const maxRequestBytes = resumeUpload
+    ? RESUME_UPLOAD_MAX_REQUEST_BYTES
+    : MAX_REQUEST_BYTES;
   const maxResponseBytes = privacyExport
     ? PRIVACY_EXPORT_MAX_RESPONSE_BYTES
     : MAX_RESPONSE_BYTES;
@@ -252,17 +264,19 @@ export async function proxyApiRequest(
     const declaredRequestBytes = hasBody
       ? contentLength(request.headers, "request")
       : null;
-    if (declaredRequestBytes !== null && declaredRequestBytes > MAX_REQUEST_BYTES) {
+    if (declaredRequestBytes !== null && declaredRequestBytes > maxRequestBytes) {
       return jsonProblem(
         413,
         "request_too_large",
-        `Request body exceeds the ${MAX_REQUEST_BYTES}-byte limit.`,
+        resumeUpload
+          ? "Resume files must be 3 MB or smaller."
+          : `Request body exceeds the ${maxRequestBytes}-byte limit.`,
       );
     }
     const requestBody = hasBody
       ? await readBodyWithLimit(
           request.body,
-          MAX_REQUEST_BYTES,
+          maxRequestBytes,
           "request",
           abortController.signal,
         )
@@ -330,7 +344,9 @@ export async function proxyApiRequest(
         ? jsonProblem(
             413,
             "request_too_large",
-            `Request body exceeds the ${MAX_REQUEST_BYTES}-byte limit.`,
+            resumeUpload
+              ? "Resume files must be 3 MB or smaller."
+              : `Request body exceeds the ${maxRequestBytes}-byte limit.`,
           )
         : jsonProblem(
             privacyExport ? 413 : 502,

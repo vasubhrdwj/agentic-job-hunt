@@ -38,6 +38,15 @@ export interface ResumeVersionDetail extends ResumeVersionSummary {
   content: string;
 }
 
+export interface ResumeImportReport {
+  resume_version: ResumeVersionSummary;
+  imported_profile_fields: string[];
+  achievement_suggestions_created: number;
+  missing_profile_fields: string[];
+  warnings: string[];
+  parsed_sections?: string[];
+}
+
 export interface CandidateProfileWrite {
   career_thesis: string | null;
   current_title: string | null;

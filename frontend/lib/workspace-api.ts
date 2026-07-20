@@ -5,6 +5,7 @@ import type {
   CareerTrack,
   CareerTrackCreate,
   FieldError,
+  ResumeImportReport,
   ResumeVersionDetail,
   ResumeVersionSummary,
   SavedSearch,
@@ -178,6 +179,31 @@ export async function createResumeVersion(
   });
   const data = await expectJson<ResumeVersionDetail>(response);
   return { data, etag: responseEtag(response, data.version) };
+}
+
+export async function uploadResumeVersion({
+  file,
+  label,
+  setAsBase,
+  idempotencyKey,
+}: {
+  file: File;
+  label?: string;
+  setAsBase?: boolean;
+  idempotencyKey: string;
+}): Promise<ResumeImportReport> {
+  const body = new FormData();
+  body.set("file", file);
+  if (label) body.set("label", label);
+  if (setAsBase !== undefined) {
+    body.set("set_as_base", setAsBase ? "true" : "false");
+  }
+  const response = await fetch("/api/me/resume-versions/upload", {
+    method: "POST",
+    headers: { "Idempotency-Key": idempotencyKey },
+    body,
+  });
+  return expectJson<ResumeImportReport>(response);
 }
 
 export async function makeBaseResume(
