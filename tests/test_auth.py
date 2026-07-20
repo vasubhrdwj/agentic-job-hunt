@@ -17,6 +17,8 @@ from job_hunt_agent.auth import (
     claim_account,
     create_account,
     create_owner_session,
+    legacy_recovery_available,
+    legacy_recovery_configured,
     load_owner_session,
     normalize_email,
     revoke_owner_session,
@@ -56,6 +58,46 @@ def test_signup_mode_is_explicit_and_fail_closed(
     monkeypatch.setenv("JOB_HUNT_SIGNUP_MODE", "typo")
     with pytest.raises(AuthConfigError, match="open.*closed"):
         signup_enabled()
+
+
+def test_legacy_recovery_configuration_and_availability_are_fail_closed(
+    auth_db: Database,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    recovery_token = "legacy-recovery-token-with-at-least-32-characters"
+    monkeypatch.delenv("JOB_HUNT_OWNER_ID", raising=False)
+    monkeypatch.delenv("JOB_HUNT_OWNER_TOKEN_HASH", raising=False)
+    assert legacy_recovery_configured() is False
+    with auth_db.session() as session:
+        assert legacy_recovery_available(session) is False
+
+    monkeypatch.setenv("JOB_HUNT_OWNER_ID", "legacy-owner")
+    monkeypatch.setenv("JOB_HUNT_OWNER_TOKEN_HASH", "not-a-sha256-hash")
+    assert legacy_recovery_configured() is False
+
+    monkeypatch.setenv(
+        "JOB_HUNT_OWNER_TOKEN_HASH",
+        hash_access_token(recovery_token),
+    )
+    assert legacy_recovery_configured() is True
+    with auth_db.session() as session:
+        assert legacy_recovery_available(session) is False
+        session.add(
+            Owner(id="legacy-owner", display_name="Vasu", timezone="Asia/Kolkata")
+        )
+
+    with auth_db.session() as session:
+        assert legacy_recovery_available(session) is True
+        session.add(
+            OwnerCredential(
+                owner_id="legacy-owner",
+                normalized_email="vasu@example.com",
+                password_hash=auth_module.hash_password(PASSWORD),
+            )
+        )
+
+    with auth_db.session() as session:
+        assert legacy_recovery_available(session) is False
 
 
 def test_account_email_is_normalized_password_is_argon2id_and_owner_id_is_generated(

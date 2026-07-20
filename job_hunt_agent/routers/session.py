@@ -20,7 +20,9 @@ from ..auth import (
     consume_signup_capacity,
     create_account,
     create_owner_session,
+    legacy_recovery_available,
     load_owner_session,
+    recover_legacy_account,
     revoke_owner_session,
     session_cookie_name,
     signup_enabled,
@@ -46,6 +48,12 @@ class AccountClaimRequest(BaseModel):
     password: str = Field(min_length=12, max_length=128)
 
 
+class LegacyAccountRecoveryRequest(BaseModel):
+    recovery_token: str = Field(min_length=32, max_length=512)
+    email: str = Field(max_length=320)
+    password: str = Field(min_length=12, max_length=128)
+
+
 class SessionResponse(BaseModel):
     owner_id: str
     display_name: str
@@ -63,6 +71,7 @@ class SessionDeleteResponse(BaseModel):
 class SessionStatusResponse(BaseModel):
     state: Literal["ready", "setup_required"]
     signup_enabled: bool
+    legacy_recovery_enabled: bool
 
 
 @dataclass(frozen=True)
@@ -92,10 +101,17 @@ def create_session_router(
             and database.reachable()
             and database.migrations_current()
         )
+        recovery_enabled = False
+        if database_ready and database is not None:
+            with database.session() as session:
+                recovery_enabled = legacy_recovery_available(session)
         response.headers["Cache-Control"] = "no-store, max-age=0"
         return SessionStatusResponse(
             state="ready" if database_ready else "setup_required",
-            signup_enabled=database_ready and signup_enabled(),
+            signup_enabled=(
+                database_ready and signup_enabled() and not recovery_enabled
+            ),
+            legacy_recovery_enabled=database_ready and recovery_enabled,
         )
 
     @router.post("/api/accounts", response_model=SessionResponse, status_code=201)
@@ -108,6 +124,13 @@ def create_session_router(
         if not signup_enabled():
             raise HTTPException(status_code=403, detail="signup is closed")
         db = require_migrated_database(database)
+        with db.session() as recovery_session:
+            recovery_pending = legacy_recovery_available(recovery_session)
+        if recovery_pending:
+            raise HTTPException(
+                status_code=409,
+                detail="recover the previous workspace before creating new accounts",
+            )
         timezone_name = _validated_timezone(payload.timezone or "UTC")
         with db.session() as throttle_session:
             signup_capacity = consume_signup_capacity(throttle_session)
@@ -139,6 +162,50 @@ def create_session_router(
         except (AccountConflict, IntegrityError) as exc:
             raise HTTPException(status_code=409, detail="account cannot be created") from exc
         _set_session_cookie(response, token=grant.token, expires_at=grant.expires_at, production=production)
+        return result
+
+    @router.post("/api/accounts/recover", response_model=SessionResponse)
+    def recover_legacy_workspace(
+        payload: LegacyAccountRecoveryRequest,
+        request: Request,
+        response: Response,
+    ) -> SessionResponse:
+        _require_allowed_origin(request, allowed_origins, production=production)
+        db = require_migrated_database(database)
+        try:
+            with db.session() as session:
+                credential = recover_legacy_account(
+                    session,
+                    recovery_token=payload.recovery_token,
+                    email=payload.email,
+                    password=payload.password,
+                )
+                grant = create_owner_session(session, credential.owner_id)
+                result = _load_session_response(session, grant.token)
+        except PermissionError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="workspace recovery details are incorrect",
+            ) from exc
+        except AuthCapacityExceeded as exc:
+            raise HTTPException(
+                status_code=429,
+                detail="workspace recovery is busy; try again shortly",
+                headers={"Retry-After": "5"},
+            ) from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        except (AccountConflict, IntegrityError) as exc:
+            raise HTTPException(
+                status_code=409,
+                detail="workspace cannot be recovered with these details",
+            ) from exc
+        _set_session_cookie(
+            response,
+            token=grant.token,
+            expires_at=grant.expires_at,
+            production=production,
+        )
         return result
 
     @router.post("/api/session", response_model=SessionResponse)

@@ -186,13 +186,21 @@ def test_session_status_reports_only_sanitized_setup_readiness(
     ready = client.get("/api/session/status")
     assert ready.status_code == 200
     assert ready.headers["cache-control"] == "no-store, max-age=0"
-    assert ready.json() == {"state": "ready", "signup_enabled": False}
+    assert ready.json() == {
+        "state": "ready",
+        "signup_enabled": False,
+        "legacy_recovery_enabled": False,
+    }
     assert "account_email" not in ready.text
 
     monkeypatch.setenv("JOB_HUNT_SIGNUP_MODE", "open")
     open_signup = client.get("/api/session/status")
     assert open_signup.status_code == 200
-    assert open_signup.json() == {"state": "ready", "signup_enabled": True}
+    assert open_signup.json() == {
+        "state": "ready",
+        "signup_enabled": True,
+        "legacy_recovery_enabled": False,
+    }
     assert "count" not in open_signup.text
 
 
@@ -1002,6 +1010,7 @@ def test_legacy_liveness_remains_available_without_durable_database(
         assert client.get("/api/session/status").json() == {
             "state": "setup_required",
             "signup_enabled": False,
+            "legacy_recovery_enabled": False,
         }
         login = client.post(
             "/api/session",

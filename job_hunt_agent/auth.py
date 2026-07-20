@@ -28,6 +28,8 @@ SESSION_COOKIE_ENV = "JOB_HUNT_SESSION_COOKIE"
 SIGNUP_MODE_ENV = "JOB_HUNT_SIGNUP_MODE"
 AUTH_THROTTLE_SECRET_ENV = "JOB_HUNT_AUTH_THROTTLE_SECRET"
 PRIVACY_RECEIPT_SECRET_ENV = "JOB_HUNT_PRIVACY_RECEIPT_SECRET"
+LEGACY_OWNER_ID_ENV = "JOB_HUNT_OWNER_ID"
+LEGACY_RECOVERY_TOKEN_HASH_ENV = "JOB_HUNT_OWNER_TOKEN_HASH"
 DEFAULT_SESSION_TTL_DAYS = 30
 DEFAULT_SESSION_COOKIE = "job_hunt_session"
 DEFAULT_SIGNUP_MODE = "closed"
@@ -40,6 +42,7 @@ AUTH_WINDOW = timedelta(minutes=15)
 AUTH_BLOCK = timedelta(minutes=15)
 _SIGNUP_GLOBAL_BUCKET = "sgn"
 _AUTH_THROTTLE_ADVISORY_NAMESPACE = 0x4A4F4241
+_HASH_RE = re.compile(r"^[a-fA-F0-9]{64}$")
 _EMAIL_RE = re.compile(
     r"^[a-z0-9.!#$%&'*+/=?^_`{|}~-]+@"
     r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?"
@@ -98,6 +101,26 @@ def signup_mode() -> Literal["open", "closed"]:
 
 def signup_enabled() -> bool:
     return signup_mode() == "open"
+
+
+def legacy_recovery_configured() -> bool:
+    """Return whether the retired access key can prove one migration claim."""
+
+    configured_hash = os.getenv(LEGACY_RECOVERY_TOKEN_HASH_ENV, "").strip()
+    owner_id = os.getenv(LEGACY_OWNER_ID_ENV, "").strip()
+    return bool(_HASH_RE.fullmatch(configured_hash) and owner_id and len(owner_id) <= 64)
+
+
+def legacy_recovery_available(session: Session) -> bool:
+    """Expose only whether the configured legacy workspace still needs an account."""
+
+    if not legacy_recovery_configured():
+        return False
+    owner_id = _legacy_owner_id()
+    return (
+        session.get(Owner, owner_id) is not None
+        and session.get(OwnerCredential, owner_id) is None
+    )
 
 
 def session_cookie_name() -> str:
@@ -262,6 +285,64 @@ def claim_account(
         .where(
             OwnerSession.owner_id == owner_id,
             OwnerSession.token_hash != current_token_hash,
+            OwnerSession.revoked_at.is_(None),
+        )
+        .values(revoked_at=current)
+    )
+    session.flush()
+    return credential
+
+
+def recover_legacy_account(
+    session: Session,
+    *,
+    recovery_token: str,
+    email: str,
+    password: str,
+    now: datetime | None = None,
+) -> OwnerCredential:
+    """Attach normal credentials after one proof with the retired access key."""
+
+    configured_hash = os.getenv(LEGACY_RECOVERY_TOKEN_HASH_ENV, "").strip()
+    candidate = recovery_token.strip()
+    if (
+        not _HASH_RE.fullmatch(configured_hash)
+        or len(candidate) < 32
+        or not hmac.compare_digest(
+            configured_hash.lower(),
+            hash_access_token(candidate).lower(),
+        )
+    ):
+        raise PermissionError("legacy recovery denied")
+
+    normalized_email = normalize_email(email)
+    current = now or datetime.now(timezone.utc)
+    owner_id = _legacy_owner_id()
+    owner = session.scalar(
+        select(Owner).where(Owner.id == owner_id).with_for_update()
+    )
+    if owner is None or session.get(OwnerCredential, owner_id) is not None:
+        raise AccountConflict("legacy workspace cannot be recovered")
+    if session.scalar(
+        select(OwnerCredential.owner_id).where(
+            OwnerCredential.normalized_email == normalized_email
+        )
+    ) is not None:
+        raise AccountConflict("account cannot be recovered")
+
+    password_hash = hash_password(password)
+    credential = OwnerCredential(
+        owner_id=owner_id,
+        normalized_email=normalized_email,
+        password_hash=password_hash,
+        created_at=current,
+        updated_at=current,
+    )
+    session.add(credential)
+    session.execute(
+        update(OwnerSession)
+        .where(
+            OwnerSession.owner_id == owner_id,
             OwnerSession.revoked_at.is_(None),
         )
         .values(revoked_at=current)
@@ -522,6 +603,13 @@ def _auth_throttle_secret() -> bytes:
     if not configured:
         configured = "local-development-auth-throttle-key"
     return configured.encode("utf-8")
+
+
+def _legacy_owner_id() -> str:
+    value = os.getenv(LEGACY_OWNER_ID_ENV, "").strip()
+    if not value or len(value) > 64:
+        raise AuthConfigError(f"{LEGACY_OWNER_ID_ENV} must be 1-64 characters")
+    return value
 
 
 def _as_utc(value: datetime) -> datetime:
