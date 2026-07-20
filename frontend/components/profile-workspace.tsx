@@ -1,6 +1,13 @@
 "use client";
 
-import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
+import {
+  type DragEvent,
+  FormEvent,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 
 import {
   createCareerTrack,
@@ -15,7 +22,16 @@ import {
   reviewEvidence,
   saveCandidateProfile,
   updateCareerTrack,
+  uploadResumeVersion,
 } from "@/lib/workspace-api";
+import {
+  formatResumeFileSize,
+  profileGapLabels,
+  RESUME_FILE_ACCEPT,
+  resumeImportPresentation,
+  resumeLabelFromFilename,
+  validateResumeFile,
+} from "@/lib/resume-upload";
 import type {
   AchievementEvidence,
   AuthorizationStatus,
@@ -23,6 +39,7 @@ import type {
   CandidateProfileWrite,
   CareerPriorities,
   CareerTrack,
+  ResumeImportReport,
   ResumeVersionSummary,
   Versioned,
   WorkAuthorization,
@@ -100,6 +117,17 @@ export function ProfileWorkspace() {
     kind: "error" | "success";
     text: string;
   } | null>(null);
+
+  const [resumeFile, setResumeFile] = useState<File | null>(null);
+  const [uploadLabel, setUploadLabel] = useState("");
+  const [uploadSetAsBase, setUploadSetAsBase] = useState(true);
+  const [uploadPending, setUploadPending] = useState(false);
+  const [uploadDragging, setUploadDragging] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const [uploadWarning, setUploadWarning] = useState<string | null>(null);
+  const [uploadReport, setUploadReport] = useState<ResumeImportReport | null>(null);
+  const uploadInput = useRef<HTMLInputElement | null>(null);
+  const uploadKey = useRef<string | null>(null);
 
   const [resumeLabel, setResumeLabel] = useState("Base resume");
   const [resumeContent, setResumeContent] = useState("");
@@ -200,12 +228,97 @@ export function ProfileWorkspace() {
   }, [hydrateProfile]);
 
   async function refreshResumeData() {
-    const [nextProfile, nextResumes] = await Promise.all([
+    const [nextProfile, nextResumes, nextEvidence] = await Promise.all([
       getCandidateProfile(),
       listResumeVersions(),
+      listEvidence(),
     ]);
     setProfile(nextProfile);
     setResumes(nextResumes);
+    setEvidence(nextEvidence);
+    hydrateProfile(nextProfile?.data ?? null);
+  }
+
+  function selectResumeFile(file: File | null) {
+    if (!file) return;
+    const validationError = validateResumeFile(file);
+    if (validationError) {
+      setResumeFile(null);
+      setUploadReport(null);
+      setUploadWarning(null);
+      setUploadError(validationError);
+      if (uploadInput.current) uploadInput.current.value = "";
+      return;
+    }
+    setResumeFile(file);
+    setUploadLabel(resumeLabelFromFilename(file.name));
+    uploadKey.current = null;
+    setUploadReport(null);
+    setUploadWarning(null);
+    setUploadError(null);
+  }
+
+  function clearResumeFile() {
+    setResumeFile(null);
+    setUploadLabel("");
+    uploadKey.current = null;
+    setUploadError(null);
+    if (uploadInput.current) uploadInput.current.value = "";
+  }
+
+  function dropResume(event: DragEvent<HTMLDivElement>) {
+    event.preventDefault();
+    setUploadDragging(false);
+    if (uploadPending) return;
+    if (event.dataTransfer.files.length !== 1) {
+      setUploadError("Drop one resume file at a time.");
+      return;
+    }
+    selectResumeFile(event.dataTransfer.files.item(0));
+  }
+
+  async function uploadResume(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!resumeFile) {
+      setUploadError("Choose a PDF, DOCX, or TXT resume first.");
+      return;
+    }
+    const validationError = validateResumeFile(resumeFile);
+    if (validationError) {
+      setUploadError(validationError);
+      return;
+    }
+
+    setUploadPending(true);
+    setUploadError(null);
+    setUploadWarning(null);
+    setUploadReport(null);
+    uploadKey.current ??= createIdempotencyKey("resume-upload");
+    try {
+      const report = await uploadResumeVersion({
+        file: resumeFile,
+        label: uploadLabel.trim() || undefined,
+        setAsBase: uploadSetAsBase || resumes.length === 0,
+        idempotencyKey: uploadKey.current,
+      });
+      uploadKey.current = null;
+      setUploadReport(report);
+      setResumeFile(null);
+      setUploadLabel("");
+      if (uploadInput.current) uploadInput.current.value = "";
+      try {
+        await refreshResumeData();
+      } catch (error) {
+        const detail = errorText(error, "Reload the page to see the latest profile.");
+        setUploadWarning(
+          `Your resume was imported, but the latest profile could not be refreshed. ${detail}`,
+        );
+      }
+    } catch (error) {
+      setUploadError(errorText(error, "Unable to import this resume."));
+    } finally {
+      setUploadPending(false);
+    }
   }
 
   async function saveAboutYou(event: FormEvent<HTMLFormElement>) {
@@ -489,78 +602,29 @@ export function ProfileWorkspace() {
 
   const baseResume =
     profile?.data.base_resume ?? resumes.find((resume) => resume.is_base) ?? null;
+  const profileHighlights = [
+    profile?.data.current_title?.trim() ?? "",
+    profile?.data.current_location?.trim() ?? "",
+    profile?.data.years_of_experience !== null && profile?.data.years_of_experience !== undefined
+      ? `${profile.data.years_of_experience} years of experience`
+      : "",
+  ].filter(Boolean);
+  const profileGaps = profileGapLabels({
+    currentTitle: profile?.data.current_title ?? "",
+    currentLocation: profile?.data.current_location ?? "",
+    yearsOfExperience: profile?.data.years_of_experience?.toString() ?? "",
+    careerThesis: profile?.data.career_thesis ?? "",
+    noticeDays: profile?.data.notice_period_days?.toString() ?? "",
+    workModeCount: profile?.data.work_modes.length ?? 0,
+    authorizationCount: profile?.data.work_authorizations.length ?? 0,
+  });
 
   return (
     <div className="space-y-8">
       <WorkspaceSection
         eyebrow="Step 1"
-        title="About you"
-        description="Save the facts and preferences you otherwise repeat in every search. Nothing here starts a provider call."
-      >
-        <form onSubmit={saveAboutYou} className="space-y-5">
-          <div className="grid gap-5 sm:grid-cols-3">
-            <FormField label="Current title" htmlFor="current-title">
-              <input id="current-title" value={currentTitle} onChange={(event) => setCurrentTitle(event.target.value)} className={inputClasses} placeholder="Senior Backend Engineer" />
-            </FormField>
-            <FormField label="Home location" htmlFor="current-location">
-              <input id="current-location" value={currentLocation} onChange={(event) => setCurrentLocation(event.target.value)} className={inputClasses} placeholder="Bengaluru, India" />
-            </FormField>
-            <FormField label="Professional experience (years)" htmlFor="years-of-experience" hint="Optional. Used to check stated experience requirements.">
-              <input id="years-of-experience" type="number" min={0} max={60} step="0.1" inputMode="decimal" value={yearsOfExperience} onChange={(event) => setYearsOfExperience(event.target.value)} className={inputClasses} placeholder="1" />
-            </FormField>
-          </div>
-
-          <FormField label="Career direction" htmlFor="career-thesis" hint="A short, honest description of what would make your next role better.">
-            <textarea id="career-thesis" value={careerThesis} onChange={(event) => setCareerThesis(event.target.value)} className={textareaClasses} placeholder="I want broader platform ownership and strong engineering mentorship…" />
-          </FormField>
-
-          <div className="grid gap-5 sm:grid-cols-2">
-            <ChoiceGroup legend="Preferred work modes" options={WORK_MODES} selected={workModes} onToggle={(value) => toggleValue(workModes, value, setWorkModes)} />
-            <ChoiceGroup legend="Employment types" options={EMPLOYMENT_TYPES} selected={employmentTypes} onToggle={(value) => toggleValue(employmentTypes, value, setEmploymentTypes)} />
-          </div>
-
-          <FormField label="Notice period (days)" htmlFor="notice-days" hint="Optional. Use 0 if you can start immediately.">
-            <input id="notice-days" type="number" min={0} max={365} value={noticeDays} onChange={(event) => setNoticeDays(event.target.value)} className={inputClasses} />
-          </FormField>
-
-          <fieldset className="space-y-3">
-            <legend className="text-sm font-medium">Work authorization</legend>
-            <div className="flex justify-end">
-              <button type="button" className={secondaryButtonClasses} onClick={() => setAuthorizations((items) => [...items, { country_code: "IN", status: "citizen" }])}>
-                Add country
-              </button>
-            </div>
-            {authorizations.length === 0 ? (
-              <p className="text-sm text-zinc-500">No work authorization added yet.</p>
-            ) : (
-              authorizations.map((authorization, index) => (
-                <div key={`${authorization.country_code}-${index}`} className="grid gap-3 rounded-lg border border-zinc-200 p-3 sm:grid-cols-[8rem_1fr_auto] dark:border-zinc-800">
-                  <label className="sr-only" htmlFor={`authorization-country-${index}`}>Country code</label>
-                  <input id={`authorization-country-${index}`} maxLength={2} value={authorization.country_code} onChange={(event) => setAuthorizations((items) => items.map((item, itemIndex) => itemIndex === index ? { ...item, country_code: event.target.value.toUpperCase() } : item))} className={inputClasses} aria-label="Two-letter country code" />
-                  <label className="sr-only" htmlFor={`authorization-status-${index}`}>Authorization status</label>
-                  <select id={`authorization-status-${index}`} value={authorization.status} onChange={(event) => setAuthorizations((items) => items.map((item, itemIndex) => itemIndex === index ? { ...item, status: event.target.value as AuthorizationStatus } : item))} className={inputClasses}>
-                    {AUTHORIZATION_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-                  </select>
-                  <button type="button" className={secondaryButtonClasses} onClick={() => setAuthorizations((items) => items.filter((_, itemIndex) => itemIndex !== index))}>Remove</button>
-                </div>
-              ))
-            )}
-          </fieldset>
-
-          {profileMessage ? <StatusMessage kind={profileMessage.kind}>{profileMessage.text}</StatusMessage> : null}
-          <div className="flex flex-wrap gap-3">
-            <button type="submit" disabled={profilePending} className={primaryButtonClasses}>
-              {profilePending ? "Saving…" : profile ? "Save changes" : "Save about me"}
-            </button>
-            {profileMessage?.kind === "error" ? <button type="button" onClick={() => void reload()} className={secondaryButtonClasses}>Reload newer profile</button> : null}
-          </div>
-        </form>
-      </WorkspaceSection>
-
-      <WorkspaceSection
-        eyebrow="Step 2"
-        title="Base resume"
-        description="Resume versions are immutable and encrypted. Saving creates a new version; it never overwrites an older one."
+        title="Import your resume"
+        description="Upload your existing resume once. The app extracts its text into an encrypted immutable version, fills facts it can verify, and discards the original file after reading it."
       >
         <div className="space-y-6">
           {baseResume ? (
@@ -571,25 +635,153 @@ export function ProfileWorkspace() {
             <StatusMessage kind="info">Add a base resume so saved searches and ordinary new hunts can prefill it.</StatusMessage>
           )}
 
-          <form onSubmit={addResume} className="space-y-4">
-            <FormField label="Version label" htmlFor="resume-label">
-              <input id="resume-label" value={resumeLabel} onChange={(event) => setResumeLabel(event.target.value)} className={inputClasses} placeholder="Backend resume · July 2026" />
-            </FormField>
-            <FormField label="Resume text" htmlFor="resume-content" hint="Paste plain text. It is encrypted before durable storage.">
-              <textarea id="resume-content" rows={14} value={resumeContent} onChange={(event) => setResumeContent(event.target.value)} className={`${textareaClasses} font-mono`} placeholder="Your name\nExperience…" />
-            </FormField>
-            <label className="flex items-center gap-2 text-sm">
-              <input type="checkbox" checked={setAsBase} onChange={(event) => setSetAsBase(event.target.checked)} />
-              Use this as my base resume
-            </label>
-            {resumeMessage ? <StatusMessage kind={resumeMessage.kind}>{resumeMessage.text}</StatusMessage> : null}
-            <div className="flex flex-wrap gap-3">
-              <button type="submit" disabled={resumePending} className={primaryButtonClasses}>
-                {resumePending ? "Encrypting and saving…" : "Save new resume version"}
+          <form onSubmit={uploadResume} className="space-y-4">
+            <div
+              onDragEnter={(event) => {
+                event.preventDefault();
+                if (!uploadPending) setUploadDragging(true);
+              }}
+              onDragOver={(event) => {
+                event.preventDefault();
+                event.dataTransfer.dropEffect = "copy";
+              }}
+              onDragLeave={() => setUploadDragging(false)}
+              onDrop={dropResume}
+              className={`rounded-xl border-2 border-dashed px-5 py-8 text-center transition ${
+                uploadDragging
+                  ? "border-indigo-500 bg-indigo-50 dark:bg-indigo-950/30"
+                  : "border-zinc-300 bg-zinc-50/70 dark:border-zinc-700 dark:bg-zinc-950/40"
+              }`}
+            >
+              <input
+                ref={uploadInput}
+                id="resume-file"
+                type="file"
+                accept={RESUME_FILE_ACCEPT}
+                className="sr-only"
+                disabled={uploadPending}
+                aria-describedby="resume-file-help"
+                onChange={(event) => selectResumeFile(event.target.files?.item(0) ?? null)}
+              />
+              <p className="text-sm font-semibold">Drop your resume here</p>
+              <p id="resume-file-help" className="mt-1 text-xs leading-5 text-zinc-500">
+                PDF, DOCX, or TXT · 3 MB maximum
+              </p>
+              <button
+                type="button"
+                disabled={uploadPending}
+                onClick={() => uploadInput.current?.click()}
+                className={`${secondaryButtonClasses} mt-4`}
+              >
+                Choose a file
               </button>
-              {resumeMessage?.kind === "error" ? <button type="button" onClick={() => void refreshResumeData().catch((error) => setResumeMessage({ kind: "error", text: errorText(error, "Unable to reload resume versions.") }))} className={secondaryButtonClasses}>Reload resume versions</button> : null}
             </div>
+
+            {resumeFile ? (
+              <div className="rounded-lg border border-zinc-200 p-4 dark:border-zinc-800">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-medium">{resumeFile.name}</p>
+                    <p className="mt-1 text-xs text-zinc-500">
+                      {formatResumeFileSize(resumeFile.size)} · ready to import
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    disabled={uploadPending}
+                    onClick={clearResumeFile}
+                    className={secondaryButtonClasses}
+                  >
+                    Remove
+                  </button>
+                </div>
+              </div>
+            ) : null}
+
+            {resumeFile ? (
+              <details className="rounded-lg border border-zinc-200 p-4 dark:border-zinc-800">
+                <summary className="cursor-pointer text-sm font-medium">Import options</summary>
+                <div className="mt-4 grid gap-4 sm:grid-cols-2">
+                  <FormField
+                    label={<>Version label <span className="font-normal text-zinc-500">(optional)</span></>}
+                    htmlFor="upload-resume-label"
+                  >
+                    <input
+                      id="upload-resume-label"
+                      value={uploadLabel}
+                      onChange={(event) => {
+                        setUploadLabel(event.target.value);
+                        uploadKey.current = null;
+                      }}
+                      className={inputClasses}
+                      placeholder="Backend resume · July 2026"
+                    />
+                  </FormField>
+                  <label className="flex items-center gap-2 self-end pb-3 text-sm">
+                    <input
+                      type="checkbox"
+                      checked={uploadSetAsBase || resumes.length === 0}
+                      disabled={resumes.length === 0 || uploadPending}
+                      onChange={(event) => {
+                        setUploadSetAsBase(event.target.checked);
+                        uploadKey.current = null;
+                      }}
+                    />
+                    Use this as my base resume
+                  </label>
+                </div>
+              </details>
+            ) : null}
+
+            {uploadPending ? (
+              <div role="status" aria-live="polite" className="space-y-2">
+                <p className="text-sm font-medium">Uploading and reading your resume…</p>
+                <progress
+                  aria-label="Resume import in progress"
+                  className="h-2 w-full overflow-hidden rounded-full accent-indigo-600"
+                />
+                <p className="text-xs text-zinc-500">This usually takes a few seconds.</p>
+              </div>
+            ) : null}
+
+            {uploadError ? <StatusMessage kind="error">{uploadError}</StatusMessage> : null}
+            {uploadReport ? <ResumeImportSummary report={uploadReport} /> : null}
+            {uploadWarning ? <StatusMessage kind="info">{uploadWarning}</StatusMessage> : null}
+
+            <button
+              type="submit"
+              disabled={!resumeFile || uploadPending}
+              className={primaryButtonClasses}
+            >
+              {uploadPending ? "Importing…" : "Import resume"}
+            </button>
           </form>
+
+          <details className="rounded-lg border border-zinc-200 p-4 dark:border-zinc-800">
+            <summary className="cursor-pointer text-sm font-medium">
+              Can’t upload? Paste plain text instead
+            </summary>
+            <p className="mt-2 text-xs leading-5 text-zinc-500">
+              This fallback saves the text as a resume version, but it does not import profile details automatically.
+            </p>
+            <form onSubmit={addResume} className="mt-4 space-y-4">
+              <FormField label="Version label" htmlFor="resume-label">
+                <input id="resume-label" value={resumeLabel} onChange={(event) => setResumeLabel(event.target.value)} className={inputClasses} placeholder="Backend resume · July 2026" />
+              </FormField>
+              <FormField label="Resume text" htmlFor="resume-content" hint="Paste plain text. It is encrypted before durable storage.">
+                <textarea id="resume-content" rows={14} value={resumeContent} onChange={(event) => setResumeContent(event.target.value)} className={`${textareaClasses} font-mono`} placeholder="Your name\nExperience…" />
+              </FormField>
+              <label className="flex items-center gap-2 text-sm">
+                <input type="checkbox" checked={setAsBase || resumes.length === 0} disabled={resumes.length === 0 || resumePending} onChange={(event) => setSetAsBase(event.target.checked)} />
+                Use this as my base resume
+              </label>
+              <button type="submit" disabled={resumePending} className={primaryButtonClasses}>
+                {resumePending ? "Encrypting and saving…" : "Save pasted resume"}
+              </button>
+            </form>
+          </details>
+
+          {resumeMessage ? <StatusMessage kind={resumeMessage.kind}>{resumeMessage.text}</StatusMessage> : null}
 
           <div>
             <h3 className="text-sm font-semibold">Saved versions</h3>
@@ -614,6 +806,103 @@ export function ProfileWorkspace() {
             )}
           </div>
         </div>
+      </WorkspaceSection>
+
+      <WorkspaceSection
+        eyebrow="Step 2"
+        title="Review your profile"
+        description="The resume importer fills factual details it can verify. Open this only to correct them or add preferences a resume usually cannot answer."
+      >
+        <div className="rounded-lg border border-zinc-200 bg-zinc-50/70 p-4 dark:border-zinc-800 dark:bg-zinc-950/40">
+          <p className="text-xs font-semibold uppercase tracking-[0.12em] text-zinc-500">
+            Profile summary
+          </p>
+          <p className="mt-2 text-sm leading-6">
+            {profileHighlights.length > 0
+              ? profileHighlights.join(" · ")
+              : "No factual profile details have been imported yet."}
+          </p>
+          {profileGaps.length > 0 ? (
+            <div className="mt-3 border-t border-zinc-200 pt-3 dark:border-zinc-800">
+              <p className="text-xs text-zinc-500">Useful details still missing</p>
+              <ul className="mt-2 flex flex-wrap gap-1.5" aria-label="Missing profile details">
+                {profileGaps.map((detail) => (
+                  <li key={detail} className="rounded-full bg-zinc-200/70 px-2 py-0.5 text-xs text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300">
+                    {detail}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : (
+            <p className="mt-3 border-t border-zinc-200 pt-3 text-xs text-emerald-700 dark:border-zinc-800 dark:text-emerald-400">
+              Core profile details are complete.
+            </p>
+          )}
+        </div>
+
+        <details className="mt-4 rounded-lg border border-zinc-200 p-4 dark:border-zinc-800">
+          <summary className="cursor-pointer text-sm font-medium">
+            Review or edit profile details
+          </summary>
+          <form onSubmit={saveAboutYou} className="mt-5 space-y-5">
+            <div className="grid gap-5 sm:grid-cols-3">
+              <FormField label="Current title" htmlFor="current-title">
+                <input id="current-title" value={currentTitle} onChange={(event) => setCurrentTitle(event.target.value)} className={inputClasses} placeholder="Senior Backend Engineer" />
+              </FormField>
+              <FormField label="Home location" htmlFor="current-location">
+                <input id="current-location" value={currentLocation} onChange={(event) => setCurrentLocation(event.target.value)} className={inputClasses} placeholder="Bengaluru, India" />
+              </FormField>
+              <FormField label="Professional experience (years)" htmlFor="years-of-experience" hint="Optional. Used to check stated experience requirements.">
+                <input id="years-of-experience" type="number" min={0} max={60} step="0.1" inputMode="decimal" value={yearsOfExperience} onChange={(event) => setYearsOfExperience(event.target.value)} className={inputClasses} placeholder="1" />
+              </FormField>
+            </div>
+
+            <FormField label="Career direction" htmlFor="career-thesis" hint="A short, honest description of what would make your next role better.">
+              <textarea id="career-thesis" value={careerThesis} onChange={(event) => setCareerThesis(event.target.value)} className={textareaClasses} placeholder="I want broader platform ownership and strong engineering mentorship…" />
+            </FormField>
+
+            <div className="grid gap-5 sm:grid-cols-2">
+              <ChoiceGroup legend="Preferred work modes" options={WORK_MODES} selected={workModes} onToggle={(value) => toggleValue(workModes, value, setWorkModes)} />
+              <ChoiceGroup legend="Employment types" options={EMPLOYMENT_TYPES} selected={employmentTypes} onToggle={(value) => toggleValue(employmentTypes, value, setEmploymentTypes)} />
+            </div>
+
+            <FormField label="Notice period (days)" htmlFor="notice-days" hint="Optional. Use 0 if you can start immediately.">
+              <input id="notice-days" type="number" min={0} max={365} value={noticeDays} onChange={(event) => setNoticeDays(event.target.value)} className={inputClasses} />
+            </FormField>
+
+            <fieldset className="space-y-3">
+              <legend className="text-sm font-medium">Work authorization</legend>
+              <div className="flex justify-end">
+                <button type="button" className={secondaryButtonClasses} onClick={() => setAuthorizations((items) => [...items, { country_code: "IN", status: "citizen" }])}>
+                  Add country
+                </button>
+              </div>
+              {authorizations.length === 0 ? (
+                <p className="text-sm text-zinc-500">No work authorization added yet.</p>
+              ) : (
+                authorizations.map((authorization, index) => (
+                  <div key={`${authorization.country_code}-${index}`} className="grid gap-3 rounded-lg border border-zinc-200 p-3 sm:grid-cols-[8rem_1fr_auto] dark:border-zinc-800">
+                    <label className="sr-only" htmlFor={`authorization-country-${index}`}>Country code</label>
+                    <input id={`authorization-country-${index}`} maxLength={2} value={authorization.country_code} onChange={(event) => setAuthorizations((items) => items.map((item, itemIndex) => itemIndex === index ? { ...item, country_code: event.target.value.toUpperCase() } : item))} className={inputClasses} aria-label="Two-letter country code" />
+                    <label className="sr-only" htmlFor={`authorization-status-${index}`}>Authorization status</label>
+                    <select id={`authorization-status-${index}`} value={authorization.status} onChange={(event) => setAuthorizations((items) => items.map((item, itemIndex) => itemIndex === index ? { ...item, status: event.target.value as AuthorizationStatus } : item))} className={inputClasses}>
+                      {AUTHORIZATION_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                    </select>
+                    <button type="button" className={secondaryButtonClasses} onClick={() => setAuthorizations((items) => items.filter((_, itemIndex) => itemIndex !== index))}>Remove</button>
+                  </div>
+                ))
+              )}
+            </fieldset>
+
+            {profileMessage ? <StatusMessage kind={profileMessage.kind}>{profileMessage.text}</StatusMessage> : null}
+            <div className="flex flex-wrap gap-3">
+              <button type="submit" disabled={profilePending} className={primaryButtonClasses}>
+                {profilePending ? "Saving…" : profile ? "Save changes" : "Save about me"}
+              </button>
+              {profileMessage?.kind === "error" ? <button type="button" onClick={() => void reload()} className={secondaryButtonClasses}>Reload newer profile</button> : null}
+            </div>
+          </form>
+        </details>
       </WorkspaceSection>
 
       <WorkspaceSection
@@ -681,47 +970,134 @@ export function ProfileWorkspace() {
 
       <WorkspaceSection
         eyebrow="Step 4"
-        title="Achievement evidence"
-        description="Store concrete, truthful achievements. New entries stay pending until you explicitly approve them; this phase does not invent or parse claims."
+        title="Resume-backed achievements"
+        description="Exact claims extracted from an uploaded resume are ready automatically for fit assessment and grounded drafts. Add or manage claims manually only when you need to."
       >
-        <form onSubmit={addEvidence} className="space-y-4">
-          <FormField label="Achievement" htmlFor="evidence-statement">
-            <textarea id="evidence-statement" value={evidenceStatement} onChange={(event) => setEvidenceStatement(event.target.value)} className={textareaClasses} placeholder="Reduced deployment rollback time from 40 minutes to 8 minutes by…" />
-          </FormField>
-          <div className="grid gap-4 sm:grid-cols-2">
-            <FormField label="Skills" htmlFor="evidence-skills" hint="Comma-separated">
-              <input id="evidence-skills" value={evidenceSkills} onChange={(event) => setEvidenceSkills(event.target.value)} className={inputClasses} placeholder="Python, Kubernetes, incident response" />
-            </FormField>
-            <FormField label="Related resume" htmlFor="evidence-resume" hint="Optional provenance link">
-              <select id="evidence-resume" value={evidenceResumeId} onChange={(event) => setEvidenceResumeId(event.target.value)} className={inputClasses}>
-                <option value="">No resume link</option>
-                {resumes.map((resume) => <option key={resume.id} value={resume.id}>{resume.label}</option>)}
-              </select>
-            </FormField>
-          </div>
-          {evidenceMessage ? <StatusMessage kind={evidenceMessage.kind}>{evidenceMessage.text}</StatusMessage> : null}
-          <div className="flex flex-wrap gap-3">
-            <button type="submit" disabled={evidencePending} className={primaryButtonClasses}>{evidencePending ? "Saving…" : "Add pending achievement"}</button>
-            {evidenceMessage?.kind === "error" ? <button type="button" onClick={() => void listEvidence().then(setEvidence).catch((error) => setEvidenceMessage({ kind: "error", text: errorText(error, "Unable to reload achievements.") }))} className={secondaryButtonClasses}>Reload achievements</button> : null}
-          </div>
-        </form>
-
-        <div className="mt-7 space-y-3">
-          {evidence.length === 0 ? <p className="text-sm text-zinc-500">No achievement evidence yet.</p> : evidence.map((item) => (
+        <div className="space-y-3">
+          {evidence.length === 0 ? (
+            <p className="rounded-lg border border-zinc-200 bg-zinc-50/70 p-4 text-sm text-zinc-500 dark:border-zinc-800 dark:bg-zinc-950/40">
+              No achievements imported yet. Upload a resume above and the app will keep its concrete claims linked to that source.
+            </p>
+          ) : evidence.map((item) => (
             <article key={item.id} className="rounded-lg border border-zinc-200 p-4 dark:border-zinc-800">
               <div className="flex flex-wrap items-start justify-between gap-3">
-                <div><p className="text-sm leading-6">{item.statement}</p><p className="mt-2 text-xs text-zinc-500">{item.skills.length ? item.skills.join(" · ") : "No skills tagged"}</p></div>
-                <span className="rounded-full bg-zinc-100 px-2.5 py-1 text-xs font-medium capitalize dark:bg-zinc-800">{item.approval_state}</span>
-              </div>
-              <div className="mt-3 flex flex-wrap gap-2">
-                {item.approval_state === "pending" ? <><button type="button" disabled={evidenceReviewId === item.id} onClick={() => void setEvidenceState(item, "approved")} className={primaryButtonClasses}>Approve</button><button type="button" disabled={evidenceReviewId === item.id} onClick={() => void setEvidenceState(item, "rejected")} className={secondaryButtonClasses}>Reject</button></> : null}
-                {item.approval_state === "approved" ? <button type="button" disabled={evidenceReviewId === item.id} onClick={() => void setEvidenceState(item, "retired")} className={secondaryButtonClasses}>Retire</button> : null}
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm leading-6">{item.statement}</p>
+                  <p className="mt-2 text-xs text-zinc-500">
+                    {item.origin === "resume_suggestion" ? "From resume" : "Added manually"}
+                    {item.skills.length ? ` · ${item.skills.join(" · ")}` : ""}
+                  </p>
+                </div>
+                <span className="rounded-full bg-zinc-100 px-2.5 py-1 text-xs font-medium dark:bg-zinc-800">
+                  {item.approval_state === "approved" ? "Ready" : titleCase(item.approval_state)}
+                </span>
               </div>
             </article>
           ))}
         </div>
+
+        <details className="mt-4 rounded-lg border border-zinc-200 p-4 dark:border-zinc-800">
+          <summary className="cursor-pointer text-sm font-medium">
+            Add or manage achievements manually
+          </summary>
+          <p className="mt-2 text-xs leading-5 text-zinc-500">
+            Manually added claims stay pending until you approve them. This keeps unverified text out of fit assessments and messages.
+          </p>
+          <form onSubmit={addEvidence} className="mt-5 space-y-4">
+            <FormField label="Achievement" htmlFor="evidence-statement">
+              <textarea id="evidence-statement" value={evidenceStatement} onChange={(event) => setEvidenceStatement(event.target.value)} className={textareaClasses} placeholder="Reduced deployment rollback time from 40 minutes to 8 minutes by…" />
+            </FormField>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <FormField label="Skills" htmlFor="evidence-skills" hint="Comma-separated">
+                <input id="evidence-skills" value={evidenceSkills} onChange={(event) => setEvidenceSkills(event.target.value)} className={inputClasses} placeholder="Python, Kubernetes, incident response" />
+              </FormField>
+              <FormField label="Related resume" htmlFor="evidence-resume" hint="Optional provenance link">
+                <select id="evidence-resume" value={evidenceResumeId} onChange={(event) => setEvidenceResumeId(event.target.value)} className={inputClasses}>
+                  <option value="">No resume link</option>
+                  {resumes.map((resume) => <option key={resume.id} value={resume.id}>{resume.label}</option>)}
+                </select>
+              </FormField>
+            </div>
+            {evidenceMessage ? <StatusMessage kind={evidenceMessage.kind}>{evidenceMessage.text}</StatusMessage> : null}
+            <div className="flex flex-wrap gap-3">
+              <button type="submit" disabled={evidencePending} className={primaryButtonClasses}>{evidencePending ? "Saving…" : "Add for review"}</button>
+              {evidenceMessage?.kind === "error" ? <button type="button" onClick={() => void listEvidence().then(setEvidence).catch((error) => setEvidenceMessage({ kind: "error", text: errorText(error, "Unable to reload achievements.") }))} className={secondaryButtonClasses}>Reload achievements</button> : null}
+            </div>
+          </form>
+
+          {evidence.some((item) => item.approval_state === "pending" || item.approval_state === "approved") ? (
+            <div className="mt-6 border-t border-zinc-200 pt-5 dark:border-zinc-800">
+              <h3 className="text-sm font-semibold">Review controls</h3>
+              <ul className="mt-3 space-y-3">
+                {evidence
+                  .filter((item) => item.approval_state === "pending" || item.approval_state === "approved")
+                  .map((item) => (
+                    <li key={item.id} className="rounded-lg border border-zinc-200 p-3 dark:border-zinc-800">
+                      <p className="line-clamp-2 text-sm leading-6">{item.statement}</p>
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        {item.approval_state === "pending" ? (
+                          <>
+                            <button type="button" disabled={evidenceReviewId === item.id} onClick={() => void setEvidenceState(item, "approved")} className={primaryButtonClasses}>Approve</button>
+                            <button type="button" disabled={evidenceReviewId === item.id} onClick={() => void setEvidenceState(item, "rejected")} className={secondaryButtonClasses}>Reject</button>
+                          </>
+                        ) : (
+                          <button type="button" disabled={evidenceReviewId === item.id} onClick={() => void setEvidenceState(item, "retired")} className={secondaryButtonClasses}>Retire</button>
+                        )}
+                      </div>
+                    </li>
+                  ))}
+              </ul>
+            </div>
+          ) : null}
+        </details>
       </WorkspaceSection>
     </div>
+  );
+}
+
+function ResumeImportSummary({ report }: { report: ResumeImportReport }) {
+  const summary = resumeImportPresentation(report);
+  const resume = report.resume_version;
+
+  return (
+    <StatusMessage kind="success">
+      <p className="font-semibold">Resume imported</p>
+      <p className="mt-1 leading-6">
+        <strong>{resume.label}</strong> · {resume.character_count.toLocaleString()} characters
+        {resume.is_base ? " · set as your base resume" : ""}
+      </p>
+      <div className="mt-3 space-y-1 text-xs leading-5">
+        {summary.parsedSections.length > 0 ? (
+          <p><strong>Sections read:</strong> {summary.parsedSections.join(", ")}</p>
+        ) : null}
+        {summary.importedProfileDetails.length > 0 ? (
+          <p><strong>Profile filled:</strong> {summary.importedProfileDetails.join(", ")}</p>
+        ) : null}
+        <p>
+          <strong>Achievements imported:</strong> {summary.achievementCount}
+        </p>
+      </div>
+      {summary.missingDetails.length > 0 ? (
+        <div className="mt-3 border-t border-emerald-200 pt-3 dark:border-emerald-900">
+          <p className="text-xs font-medium">Worth adding later</p>
+          <ul className="mt-2 flex flex-wrap gap-1.5" aria-label="Missing profile details">
+            {summary.missingDetails.map((detail) => (
+              <li
+                key={detail}
+                className="rounded-full border border-emerald-300/80 bg-white/60 px-2 py-0.5 text-xs dark:border-emerald-800 dark:bg-emerald-950/60"
+              >
+                {detail}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+      {report.warnings.length > 0 ? (
+        <ul className="mt-3 list-disc space-y-1 pl-4 text-xs">
+          {report.warnings.map((warning) => <li key={warning}>{warning}</li>)}
+        </ul>
+      ) : null}
+    </StatusMessage>
   );
 }
 

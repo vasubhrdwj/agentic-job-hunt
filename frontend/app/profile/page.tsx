@@ -21,7 +21,7 @@ export default async function ProfilePage({
       <WorkspaceHeader
         active="profile"
         title="Your job-search foundation"
-        description="Save your resume, preferences, career targets, and approved evidence once. You stay in control: nothing on this page searches the web or calls an AI provider."
+        description="Start with your resume. The app imports the facts and achievements it can verify; you only review gaps and add the preferences a resume cannot answer."
       />
       {showWelcome ? (
         <div
@@ -30,8 +30,9 @@ export default async function ProfilePage({
         >
           <p className="font-medium">Your account is ready.</p>
           <p className="mt-1">
-            Add your basic preferences and resume here first. The app will use
-            this foundation to assess roles and prepare grounded application help.
+            Upload your resume here first. The app will use this foundation to
+            assess roles and prepare grounded application help, then show only
+            the details it still needs from you.
           </p>
         </div>
       ) : null}
