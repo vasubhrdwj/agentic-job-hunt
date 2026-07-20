@@ -5,9 +5,6 @@ Next.js 16 (App Router) + Tailwind + TypeScript. Drives the FastAPI backend in [
 ## Run locally
 
 ```bash
-# repo root: create the private credential and configure its printed hash
-.venv/bin/python scripts/generate_owner_token.py
-
 cd frontend
 cp .env.example .env.local   # server-only API_BASE_URL points at FastAPI
 npm ci
@@ -38,16 +35,19 @@ On Windows PowerShell, use `$env:USE_MOCKS = "1"` before each command.
 
 Open <http://localhost:3000>.
 
-The root page redirects to owner login until the backend validates the opaque
+The root page redirects to account login until the backend validates the opaque
 HttpOnly session. Browser requests use the same-origin `/api/*` Route Handler.
 It forwards a small header allowlist and only the `job_hunt_session` cookie to
 the server-only `API_BASE_URL`; the FastAPI origin is not exposed in browser
 JavaScript. The proxy caps request/response sizes and aborts slow upstreams.
+Production requires an explicit HTTPS `API_BASE_URL`; it does not fall back to
+localhost or forward the session cookie over plain HTTP.
 
 ## Pages
 
-- `/login` — exchange the generated private workspace access key for an
-  HttpOnly session.
+- `/login` — sign in or create a separate account with email and password.
+- `/account` — attach an account to a pre-account workspace or review the
+  current account identity.
 - `/` — authenticated resume + criteria input and "Run hunt" button.
 - `/privacy` — resume, provider-retention, tracing, and deletion disclosure.
 - `/runs/[runId]` — private status/review page; polls queued/running runs, supports cancellation, and shows terminal failures.

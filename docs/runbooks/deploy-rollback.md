@@ -67,6 +67,13 @@ origin and run one provider-free saved-search scan. Confirm:
 Prefer an application-only rollback when the previous application supports the
 current schema. Keep the database at the newer revision and run the smoke.
 
+Revision `20260720_0019` changes the login request from the retired shared key
+to email/password accounts. Once any credential exists, its downgrade refuses
+to discard account access, and application code from before `0019` cannot sign
+users in against the new request contract. Back up before this upgrade and use
+a forward fix or restore that verified pre-upgrade backup into an empty target;
+do not roll only the web service back across this boundary.
+
 A schema downgrade is a last resort. The gate permits only the immediately
 previous revision, requires a verified current backup from the exact same
 database, and still allows the migration itself to refuse when rows would be

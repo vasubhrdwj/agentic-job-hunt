@@ -40,7 +40,8 @@ However, the practical search loop is not yet product-ready:
 - compensation preferences are stored but not applied;
 - automatic scheduled scans are not connected;
 - onboarding requires substantial manual entry; and
-- the single owner access key is not a multi-user account system.
+- owner-scoped email/password accounts are implemented, but email verification,
+  password recovery, and broad-public abuse controls are not yet implemented.
 
 ## Product metrics
 
@@ -206,8 +207,8 @@ Use these assessments to rank Today and assign reach, core, and hedge lanes.
 
 **Additional effort:** 18–28 person-weeks.
 
-Add multi-user authentication and recovery, administration, quota and cost
-controls, at least 100 maintained company boards per declared segment,
+Complete account recovery and email verification, administration, quota and
+cost controls, at least 100 maintained company boards per declared segment,
 segment-aware ranking, automated Chromium/Firefox/WebKit acceptance,
 operational dashboards, and a formal security/privacy review.
 
@@ -230,7 +231,7 @@ operational dashboards, and a formal security/privacy review.
 
 Add a maintainable source platform covering hundreds of company boards,
 multiple role/region segments, semantic skill and experience reasoning,
-self-service accounts and billing, scalable queues and caching, disaster
+self-service account recovery and billing, scalable queues and caching, disaster
 recovery, provider failover, notifications, integrations, support tooling, and
 formal accessibility/security/privacy release processes.
 

@@ -171,20 +171,22 @@ search cadences are timezone-correct and enqueue durable role scans while the
 background service is awake. On free hosting, sleep can defer a scheduled slot
 until the next app visit; **Scan roles** remains the exact on-demand path.
 
-For the private local workspace:
+For the local multi-user workspace:
 
 ```bash
 cp .env.example .env
 # Replace POSTGRES_PASSWORD= with the output of: openssl rand -hex 24
-.venv/bin/python scripts/generate_owner_token.py  # save token; copy printed env values
+# Generate JOB_HUNT_DATA_KEYS as described in .env.example.
 docker compose build migrate web worker
 docker compose up -d postgres
 docker compose run --rm migrate
 docker compose up web worker frontend
 ```
 
-Open <http://localhost:3000>, enter the generated private access key, and keep
-`ENABLE_PRACTICAL_MODE=1` whenever real provider calls are possible.
+Open <http://localhost:3000> and create an email/password account. Each account
+gets a separate owner-scoped profile, resume history, searches, applications,
+contacts, and outreach history. Keep `ENABLE_PRACTICAL_MODE=1` whenever real
+provider calls are possible.
 
 If `postgres_data` already exists from the old fixed-password setup, PostgreSQL
 does not change that stored role password merely because `.env` changed. Start
@@ -278,7 +280,10 @@ python -m job_hunt_agent.worker --once   # process one queued run and exit
 Endpoints:
 
 ```
-POST   /api/session                 { owner_token } → HttpOnly owner session
+POST   /api/accounts                { email, password, display_name, timezone }
+                                    → separate owner workspace + HttpOnly session
+POST   /api/session                 { email, password } → HttpOnly owner session
+POST   /api/accounts/claim          authenticated legacy workspace → account
 POST   /api/hunt                    { resume_text, criteria, pack, provider_consent: true }
                                     → 202 { run_id, status: queued, access_token }
 GET    /api/runs/{run_id}           owner session cookie
@@ -359,8 +364,10 @@ Configure persistence and CORS via env:
   defaults to read-only; use the practical workspace for new work.
 - `LEGACY_HUNT_API_SUNSET` / `LEGACY_HUNT_DEPRECATION_URL` — validated
   compatibility sunset metadata. The production link must use HTTPS.
-- `JOB_HUNT_OWNER_TOKEN_HASH` — SHA-256 of the generated private workspace
-  access key. The environment name is retained for compatibility.
+- `JOB_HUNT_SIGNUP_MODE` — `open` allows new accounts; `closed` permits only
+  existing accounts to sign in. It defaults to closed when omitted. The hosted
+  blueprint stays closed until the legacy workspace is claimed and email
+  verification, recovery, and scan/storage abuse controls are available.
 - `JOB_HUNT_PRIVACY_RECEIPT_SECRET` — stable 32+ character server-only HMAC
   secret so deletion idempotency survives owner-login credential rotation.
 - `JOB_HUNT_DATA_KEYS` — comma-separated `key-id:Fernet-key` values. The first
@@ -469,19 +476,21 @@ vercel --prod
 Set the server-only `API_BASE_URL` to `https://<service>.onrender.com` (shown at
 the top of the Render service page). After Vercel prints the production URL,
 update Render's `ALLOWED_ORIGINS` env var to that exact HTTPS origin without a
-trailing slash.
+trailing slash. Production rejects a missing or non-HTTPS `API_BASE_URL`
+instead of silently falling back to localhost.
 
 Queued smoke test:
 
 ```bash
 API=http://localhost:8000  # web and worker must share DATABASE_URL
 ORIGIN=http://localhost:3000
-OWNER_TOKEN=<the one-time token saved in your password manager>
+EMAIL=<your account email>
+PASSWORD=<your account password>
 curl $API/health
 curl -c /tmp/job-hunt-owner.cookies -X POST $API/api/session \
   -H "Origin: $ORIGIN" \
   -H "Content-Type: application/json" \
-  -d "{\"owner_token\":\"$OWNER_TOKEN\"}"
+  -d "{\"email\":\"$EMAIL\",\"password\":\"$PASSWORD\"}"
 curl -b /tmp/job-hunt-owner.cookies -X POST $API/api/hunt \
   -H "Origin: $ORIGIN" \
   -H "Content-Type: application/json" \

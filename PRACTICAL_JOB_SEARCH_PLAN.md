@@ -1,7 +1,7 @@
 # Practical Job Search Control Room — Implementable Plan
 
 **Status:** Phases 0–6C are implemented; cross-browser release checks remain an explicit manual matrix until pinned browser binaries are available in CI
-**Primary user:** one private owner using the product for a real job search
+**Primary users:** a limited beta of job seekers, each with an isolated owner-scoped workspace
 **North-star metric:** qualified interviews for genuinely better roles per hour of user effort
 **First complete release:** durable opportunity radar + application pipeline + five-person contact bench + manual, staged outreach
 
@@ -45,7 +45,7 @@ career profile
 
 - Automatic mass applications
 - Automatic LinkedIn or email sending
-- Public signup or multi-tenant SaaS
+- Unbounded public SaaS scale, organization accounts, or team administration
 - A generic AI chat screen
 - Unsupported compensation estimates presented as facts
 - One opaque “fit percentage” that hides trade-offs
@@ -176,29 +176,31 @@ Server-side rules, not hidden buttons, enforce cooldowns, idempotency, maximum w
 
 ### 4.1 Deployment decision
 
-The practical product targets one private, always-on workspace:
+The practical product uses owner-scoped, durable workspaces:
 
 - **Postgres 16** is the durable system of record.
 - **FastAPI web process** serves owner-scoped APIs.
 - **Worker process** claims durable background jobs with leases, heartbeats, and retries.
 - **Scheduler tick inside the worker** enqueues due saved searches idempotently.
 - **Next.js frontend** calls the API through a same-origin `/api` proxy.
-- **No Redis or Celery initially.** Postgres is sufficient for this single-owner workload.
+- **No Redis or Celery initially.** Postgres is sufficient for the current bounded workload.
 
 Local development uses Docker Compose with a persistent Postgres volume. Hosted use requires managed Postgres plus both web and worker services. The current free Render blueprint with ephemeral `/tmp` SQLite is a demo path and cannot pass the release gate.
 
 ### 4.2 Owner access
 
-Do not build public accounts. Build one secure owner workspace:
+Use a secure account for each owner workspace:
 
 - Store `owner_id` on every personal record from day one.
-- `POST /api/session` accepts the private owner token, compares it to `JOB_HUNT_OWNER_TOKEN_HASH`, and returns a random opaque session in an `HttpOnly`, `Secure`, `SameSite=Strict` cookie.
+- `POST /api/accounts` creates a server-generated owner workspace with an Argon2id-hashed email/password credential when signup is open.
+- `POST /api/session` verifies email/password and returns a random opaque session in an `HttpOnly`, `Secure`, `SameSite=Strict` cookie.
 - Store only the session-token hash, owner, creation time, and expiry.
 - Require an origin/CSRF check for mutations.
 - Permit a development bypass only when bound to loopback and `ENVIRONMENT != production`; reject it at production startup.
 - Reuse the current `DataKeyring` to encrypt persistent resume text, generated application material, and other sensitive free text.
 
-This fixes the current problem where a run is inaccessible in a new tab or browser session while avoiding a premature multi-user auth system.
+This makes profiles, resumes, searches, applications, contacts, and outreach
+separate per account while keeping provider credentials server-side.
 
 ### 4.3 Background job kinds
 

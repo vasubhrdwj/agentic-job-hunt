@@ -12,11 +12,16 @@ services:
     envVars:
       - key: ENVIRONMENT
         value: production
-      # Production defaults to the authenticated private workspace. This
-      # blueprint intentionally will not start without managed Postgres and an
-      # owner-token hash; the old public paid-provider endpoint is unsafe.
+      # Production uses owner-scoped email/password accounts. The legacy
+      # shared access key is no longer accepted by the application.
       - key: ENABLE_PRACTICAL_MODE
         value: "1"
+      # Keep hosted signup closed while the existing workspace is claimed and
+      # until email verification, recovery, and per-account scan/storage limits
+      # are deployed. The account endpoints still support an explicitly opened
+      # controlled beta, with a separate owner-scoped workspace per account.
+      - key: JOB_HUNT_SIGNUP_MODE
+        value: closed
       # Free-tier bridge: the web process also runs one durable interactive
       # queue thread while the service is awake. Contact discovery is enabled
       # only when the provider safeguards below are fully configured; legacy
@@ -41,10 +46,6 @@ services:
       # accepting traffic. A failed migration exits the container.
       - key: MIGRATE_ON_START
         value: "1"
-      - key: JOB_HUNT_OWNER_ID
-        value: owner
-      - key: JOB_HUNT_OWNER_TOKEN_HASH
-        sync: false
       - key: JOB_HUNT_PRIVACY_RECEIPT_SECRET
         sync: false
       - key: ENABLE_TRACING
@@ -87,6 +88,15 @@ services:
         sync: false
       - key: SERPAPI_API_KEY
         sync: false
+      # Contact discovery makes several provider queries per new plan. These
+      # UTC-window caps keep any explicitly opened controlled beta inside a bounded budget;
+      # idempotent retries and active-plan reuse do not consume another slot.
+      - key: JOB_HUNT_CONTACT_PLAN_OWNER_DAILY_LIMIT
+        value: "2"
+      - key: JOB_HUNT_CONTACT_PLAN_GLOBAL_DAILY_LIMIT
+        value: "5"
+      - key: JOB_HUNT_CONTACT_PLAN_GLOBAL_MONTHLY_LIMIT
+        value: "80"
       - key: PHOENIX_API_KEY
         sync: false
       - key: PHOENIX_COLLECTOR_ENDPOINT

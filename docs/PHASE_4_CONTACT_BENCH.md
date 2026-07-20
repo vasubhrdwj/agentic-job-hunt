@@ -88,7 +88,8 @@ internal ranking components as candidate quality.
   one initial send and one follow-up per person, and reject premature follow-up
   or no-reply actions.
 - Enforce 30-day person cooldowns and at most three cold employee contacts for
-  one company in a rolling seven-day window.
+  one company in a rolling seven-day window before releasing text for copy,
+  then recheck those limits when the owner records the exact version as sent.
 - Pause the sequence after a useful reply; stop it after an introduction,
   referral, do-not-contact request, or explicit owner stop. Every later
   mutation rechecks posting/application state and stops instead of acting when
