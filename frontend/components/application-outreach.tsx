@@ -156,7 +156,6 @@ export function ApplicationOutreach({
   const [drafts, setDrafts] = useState<Record<DraftKey, string>>({});
   const [dirtyFlags, setDirtyFlags] = useState<Partial<Record<DraftKey, boolean>>>({});
   const [channels, setChannels] = useState<Record<string, OutreachChannel>>({});
-  const [sendConfirmations, setSendConfirmations] = useState<Record<string, boolean>>({});
   const [outcomeChoices, setOutcomeChoices] = useState<Record<string, OutreachNonReplyOutcome | "">>({});
   const [controlMode, setControlMode] = useState<ControlMode | null>(null);
   const [controlReason, setControlReason] = useState("");
@@ -202,7 +201,6 @@ export function ApplicationOutreach({
         const prepared = prepareGroundedOutreachDrafts(approvedGrounding, {
           applicationContactId: recipient.application_contact_id,
           publicName: recipient.public_name,
-          currentTitle: recipient.current_title,
           category: recipient.category,
         });
         for (const kind of ["initial", "follow_up"] as const) {
@@ -476,7 +474,7 @@ export function ApplicationOutreach({
         pending.receiptKey,
       ),
       applied: (next) => next.sequence !== null,
-      successMessage: "Manual outreach started. Wave 1 is ready for your review.",
+      successMessage: "Manual outreach started. Up to five eligible leads are ready for your review.",
       ambiguousMessage: "We could not confirm whether manual outreach started.",
     });
   }
@@ -484,6 +482,7 @@ export function ApplicationOutreach({
   async function saveMessage(
     recipient: OutreachRecipient,
     kind: OutreachMessageKind,
+    copyAfterSave = false,
   ) {
     const sequence = outreachRef.current?.sequence;
     if (!sequence) return;
@@ -530,6 +529,16 @@ export function ApplicationOutreach({
       if (draftValues.current[key] === body) {
         dirtyDrafts.current.delete(key);
         setDirtyFlags((current) => ({ ...current, [key]: false }));
+      }
+      if (copyAfterSave) {
+        const currentOutreach = outreachRef.current;
+        if (!currentOutreach) return;
+        const latest = findMessage(
+          currentOutreach,
+          recipient.application_contact_id,
+          kind,
+        );
+        if (latest) await copyMessage(recipient, latest);
       }
     }
   }
@@ -589,17 +598,13 @@ export function ApplicationOutreach({
     const sequence = outreachRef.current?.sequence;
     if (!sequence) return;
     const channel = channels[message.id] ?? "linkedin";
-    if (!sendConfirmations[message.id]) {
-      setActionError("Confirm that you sent this exact saved version before recording it.");
-      return;
-    }
     const payload: OutreachEventCreate = {
       event_type: "marked_sent",
       message_version_id: message.id,
       channel,
       confirm_exact_version: true,
     };
-    const sent = await runMutation({
+    await runMutation({
       intent: `sent:${message.id}`,
       fingerprint: JSON.stringify(payload),
       expectedVersion: sequence.version,
@@ -617,9 +622,6 @@ export function ApplicationOutreach({
       successMessage: `${kindLabel(message.kind)} recorded as manually sent via ${channelLabel(channel)}.`,
       ambiguousMessage: "We could not confirm the manual send record.",
     });
-    if (sent) {
-      setSendConfirmations((current) => ({ ...current, [message.id]: false }));
-    }
   }
 
   async function recordOutcome(recipient: OutreachRecipient) {
@@ -866,7 +868,7 @@ export function ApplicationOutreach({
       : contactSearchRunning
         ? "Wait for the contact refresh to finish."
         : !benchReady
-          ? "Build a verified contact bench above first."
+          ? "Build a source-backed contact bench above first."
           : null
   );
   const replyUi: ReplyUi = {
@@ -965,10 +967,18 @@ export function ApplicationOutreach({
 
       {outreach?.status === "not_started" ? (
         <div className="mt-6 rounded-xl border border-zinc-200 p-4 sm:p-5 dark:border-zinc-800">
-          <h3 className="font-semibold">Start with a small, safe first wave</h3>
+          <h3 className="font-semibold">Start one useful, bounded first wave</h3>
           <p className="mt-2 max-w-2xl text-sm leading-6 text-zinc-600 dark:text-zinc-400">
-            The strongest role-relevant person and, when useful, one recruiter will
-            be ready first. Everyone else stays in reserve until the current wave is resolved.
+            Up to five eligible, distinct leads can be prepared together, with a
+            separate draft and manual send record for each person. Peers, a likely
+            team leader, and a recruiter are preferred when the source results allow it.
+            Nothing is sent automatically.
+          </p>
+          <p className="mt-2 max-w-2xl text-xs leading-5 text-zinc-500">
+            Safety limits still apply at send time: one initial message per person,
+            a 30-day person cooldown, and at most three cold employee contacts at the
+            same company in seven days. Recruiters and known warm paths are exempt
+            from the company cold-contact count.
           </p>
           {startBlockedReason ? (
             <p className="mt-3 text-sm font-medium text-amber-800 dark:text-amber-300">
@@ -1042,11 +1052,9 @@ export function ApplicationOutreach({
                     draftsPrepared={prepareGroundedOutreachDrafts(approvedGrounding, {
                       applicationContactId: recipient.application_contact_id,
                       publicName: recipient.public_name,
-                      currentTitle: recipient.current_title,
                       category: recipient.category,
                     }) !== null}
                     channelByMessage={channels}
-                    sendConfirmationByMessage={sendConfirmations}
                     locallyCopied={locallyCopied}
                     manualCopyFallback={manualCopyFallback}
                     outcomeChoice={outcomeChoices[recipient.application_contact_id] ?? ""}
@@ -1059,7 +1067,6 @@ export function ApplicationOutreach({
                       const prepared = prepareGroundedOutreachDrafts(approvedGrounding, {
                         applicationContactId: recipient.application_contact_id,
                         publicName: recipient.public_name,
-                        currentTitle: recipient.current_title,
                         category: recipient.category,
                       });
                       const preparedBody = kind === "initial"
@@ -1076,16 +1083,12 @@ export function ApplicationOutreach({
                       setDirtyFlags((current) => ({ ...current, [key]: dirty }));
                       setDrafts((current) => ({ ...current, [key]: value }));
                     }}
-                    onSave={(kind) => void saveMessage(recipient, kind)}
+                    onSave={(kind, copyAfterSave) => void saveMessage(recipient, kind, copyAfterSave)}
                     onCopy={(message) => void copyMessage(recipient, message)}
                     onManualCopy={(message) => void copyMessage(recipient, message, true)}
                     onChannelChange={(messageId, channel) => setChannels((current) => ({
                       ...current,
                       [messageId]: channel,
-                    }))}
-                    onSendConfirmation={(messageId, checked) => setSendConfirmations((current) => ({
-                      ...current,
-                      [messageId]: checked,
                     }))}
                     onMarkSent={(message) => void markSent(recipient, message)}
                     onOutcomeChange={(outcome) => setOutcomeChoices((current) => ({
@@ -1267,7 +1270,7 @@ function RecipientSummaryList({
               <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                 <div className="min-w-0">
                   <p className="break-words font-medium">{recipient.public_name}</p>
-                  <p className="break-words text-sm text-zinc-500">{recipient.current_title}</p>
+                  <p className="break-words text-sm text-zinc-500">Source result: {recipient.current_title}</p>
                 </div>
                 <span className="shrink-0 text-xs font-medium text-zinc-500">
                   {recipient.outcome
@@ -1303,7 +1306,6 @@ function RecipientCard({
   followUpDirty,
   draftsPrepared,
   channelByMessage,
-  sendConfirmationByMessage,
   locallyCopied,
   manualCopyFallback,
   outcomeChoice,
@@ -1315,7 +1317,6 @@ function RecipientCard({
   onCopy,
   onManualCopy,
   onChannelChange,
-  onSendConfirmation,
   onMarkSent,
   onOutcomeChange,
   onRecordOutcome,
@@ -1329,7 +1330,6 @@ function RecipientCard({
   followUpDirty: boolean;
   draftsPrepared: boolean;
   channelByMessage: Record<string, OutreachChannel>;
-  sendConfirmationByMessage: Record<string, boolean>;
   locallyCopied: Record<string, boolean>;
   manualCopyFallback: Record<string, boolean>;
   outcomeChoice: OutreachNonReplyOutcome | "";
@@ -1337,11 +1337,10 @@ function RecipientCard({
   unresolvedIntent: string | null;
   replyUi: ReplyUi;
   onDraftChange: (kind: OutreachMessageKind, value: string) => void;
-  onSave: (kind: OutreachMessageKind) => void;
+  onSave: (kind: OutreachMessageKind, copyAfterSave: boolean) => void;
   onCopy: (message: OutreachMessageVersion) => void;
   onManualCopy: (message: OutreachMessageVersion) => void;
   onChannelChange: (messageId: string, channel: OutreachChannel) => void;
-  onSendConfirmation: (messageId: string, checked: boolean) => void;
   onMarkSent: (message: OutreachMessageVersion) => void;
   onOutcomeChange: (outcome: OutreachNonReplyOutcome | "") => void;
   onRecordOutcome: () => void;
@@ -1375,7 +1374,7 @@ function RecipientCard({
             </span>
           </div>
           <p className="mt-1 break-words text-sm text-zinc-600 dark:text-zinc-400">
-            {recipient.current_title} · {recipient.current_company}
+            Source result: {recipient.current_title} · {recipient.current_company}
           </p>
           <p className="mt-1 text-xs text-zinc-500">Bench #{recipient.bench_rank} · Wave {recipient.wave}</p>
         </div>
@@ -1423,14 +1422,12 @@ function RecipientCard({
           locallyCopied={initial ? Boolean(locallyCopied[initial.id]) : false}
           manualCopyFallback={initial ? Boolean(manualCopyFallback[initial.id]) : false}
           channel={initial ? channelByMessage[initial.id] ?? "linkedin" : "linkedin"}
-          sendConfirmed={initial ? Boolean(sendConfirmationByMessage[initial.id]) : false}
           copyAvailable={active}
           onChange={(value) => onDraftChange("initial", value)}
-          onSave={() => onSave("initial")}
+          onSave={(copyAfterSave) => onSave("initial", copyAfterSave)}
           onCopy={() => initial && onCopy(initial)}
           onManualCopy={() => initial && onManualCopy(initial)}
           onChannelChange={(channel) => initial && onChannelChange(initial.id, channel)}
-          onSendConfirmation={(checked) => initial && onSendConfirmation(initial.id, checked)}
           onMarkSent={() => initial && onMarkSent(initial)}
         />
       ) : null}
@@ -1451,7 +1448,6 @@ function RecipientCard({
             locallyCopied={followUp ? Boolean(locallyCopied[followUp.id]) : false}
             manualCopyFallback={followUp ? Boolean(manualCopyFallback[followUp.id]) : false}
             channel={followUp ? channelByMessage[followUp.id] ?? "linkedin" : "linkedin"}
-            sendConfirmed={followUp ? Boolean(sendConfirmationByMessage[followUp.id]) : false}
             copyAvailable={active && deadlineReached(recipient.follow_up_due_at)}
             unavailableCopyReason={
               !deadlineReached(recipient.follow_up_due_at)
@@ -1459,11 +1455,10 @@ function RecipientCard({
                 : undefined
             }
             onChange={(value) => onDraftChange("follow_up", value)}
-            onSave={() => onSave("follow_up")}
+            onSave={(copyAfterSave) => onSave("follow_up", copyAfterSave)}
             onCopy={() => followUp && onCopy(followUp)}
             onManualCopy={() => followUp && onManualCopy(followUp)}
             onChannelChange={(channel) => followUp && onChannelChange(followUp.id, channel)}
-            onSendConfirmation={(checked) => followUp && onSendConfirmation(followUp.id, checked)}
             onMarkSent={() => followUp && onMarkSent(followUp)}
           />
         </div>
@@ -1545,7 +1540,6 @@ function MessageEditor({
   locallyCopied,
   manualCopyFallback,
   channel,
-  sendConfirmed,
   copyAvailable,
   unavailableCopyReason,
   onChange,
@@ -1553,7 +1547,6 @@ function MessageEditor({
   onCopy,
   onManualCopy,
   onChannelChange,
-  onSendConfirmation,
   onMarkSent,
 }: {
   recipientId: string;
@@ -1569,15 +1562,13 @@ function MessageEditor({
   locallyCopied: boolean;
   manualCopyFallback: boolean;
   channel: OutreachChannel;
-  sendConfirmed: boolean;
   copyAvailable: boolean;
   unavailableCopyReason?: string;
   onChange: (value: string) => void;
-  onSave: () => void;
+  onSave: (copyAfterSave: boolean) => void;
   onCopy: () => void;
   onManualCopy: () => void;
   onChannelChange: (channel: OutreachChannel) => void;
-  onSendConfirmation: (checked: boolean) => void;
   onMarkSent: () => void;
 }) {
   const inputId = `${kind}-${recipientId}`;
@@ -1593,7 +1584,7 @@ function MessageEditor({
   );
   const canMarkSent = Boolean(
     enabled && saved?.copied_at && !saved.sent_at && savedMatches && copyAvailable &&
-    sendConfirmed && !blocked(sentIntent),
+    !blocked(sentIntent),
   );
 
   if (saved?.sent_at) return <SentMessageSummary message={saved} />;
@@ -1610,7 +1601,7 @@ function MessageEditor({
       </div>
       <p id={`${inputId}-help`} className="mt-1 text-xs leading-5 text-zinc-500">
         {prepared
-          ? "Prepared from this role’s exact approved materials and this person’s public facts. Review and edit it before saving; nothing sends automatically."
+          ? "Prepared from this role’s exact approved materials and the person’s public search result. Review and edit it; nothing sends automatically."
           : "Keep it specific and truthful. The text is saved exactly as written, and nothing sends automatically."}
       </p>
       <textarea
@@ -1634,10 +1625,16 @@ function MessageEditor({
             value.length > MAX_MESSAGE_CHARS ||
             blocked(saveIntent)
           }
-          onClick={onSave}
+          onClick={() => onSave(copyAvailable)}
           className={primaryButtonClasses}
         >
-          {saved ? "Save as new version" : "Save exact message"}
+          {copyAvailable
+            ? saved
+              ? "Save new version & copy"
+              : "Save & copy exact message"
+            : saved
+              ? "Save as new version"
+              : "Save exact message"}
         </button>
         {saved ? (
           <span className="text-xs text-zinc-500">
@@ -1698,7 +1695,7 @@ function MessageEditor({
           {saved.copied_at ? (
             <div className="mt-4 border-t border-zinc-200 pt-4 dark:border-zinc-800">
               <p className="text-sm font-semibold">After you send it yourself</p>
-              <div className="mt-3 grid gap-3 sm:grid-cols-[minmax(0,12rem)_1fr] sm:items-start">
+              <div className="mt-3 max-w-xs">
                 <label className="text-sm">
                   <span className="block font-medium">Channel</span>
                   <select
@@ -1712,22 +1709,6 @@ function MessageEditor({
                     <option value="other">Other</option>
                   </select>
                 </label>
-                <label className="flex min-h-11 items-start gap-3 rounded-lg border border-zinc-200 p-3 text-sm dark:border-zinc-800">
-                  <input
-                    type="checkbox"
-                    checked={sendConfirmed}
-                    disabled={
-                      !enabled ||
-                      !savedMatches ||
-                      !copyAvailable ||
-                      Boolean(busy) ||
-                      Boolean(unresolvedIntent)
-                    }
-                    onChange={(event) => onSendConfirmation(event.target.checked)}
-                    className="mt-0.5 h-5 w-5 shrink-0 accent-indigo-600"
-                  />
-                  <span>I sent this exact saved version {saved.version_number} myself.</span>
-                </label>
               </div>
               <button
                 type="button"
@@ -1735,7 +1716,7 @@ function MessageEditor({
                 onClick={onMarkSent}
                 className={`${primaryButtonClasses} mt-3 w-full sm:w-auto`}
               >
-                Record exact version as sent
+                I sent version {saved.version_number} — record via {channelLabel(channel)}
               </button>
             </div>
           ) : null}

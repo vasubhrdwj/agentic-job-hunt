@@ -34,6 +34,7 @@ from .models import (
 from .mutation_receipts import claim_owner_mutation, complete_owner_mutation
 from .outreach_schemas import (
     ApplicationOutreachResponse,
+    MAX_OUTREACH_RECIPIENTS,
     OutreachCopiedEventCreate,
     OutreachCopiedTimelineEvent,
     OutreachEventCreate,
@@ -388,7 +389,7 @@ def start_outreach_sequence(
     keyring: DataKeyring,
     now: datetime | None = None,
 ) -> ApplicationOutreachResponse | None:
-    """Pin the last completed bench and unlock only the safe first wave."""
+    """Pin the last completed bench and unlock one bounded, useful first wave."""
 
     current = _as_utc(now or utcnow())
     application = session.scalar(
@@ -480,7 +481,9 @@ def start_outreach_sequence(
         .with_for_update()
     )
     if contact_plan is None:
-        raise ResourceConflict("find and verify at least one person before starting outreach")
+        raise ResourceConflict(
+            "find at least one source-backed person before starting outreach"
+        )
 
     rows = list(
         session.execute(
@@ -507,7 +510,6 @@ def start_outreach_sequence(
         raise OutreachRepositoryError("completed contact plan has no selected contacts")
 
     eligible: list[tuple[ApplicationContact, Contact]] = []
-    ineligible: list[tuple[ApplicationContact, Contact]] = []
     for application_contact, contact in rows:
         last_sent = _last_initial_send_for_contact(
             session,
@@ -528,44 +530,33 @@ def start_outreach_sequence(
             and application_contact.bench_state in {"reserve", "ready"}
             and (cooldown_until is None or cooldown_until <= current)
         )
-        (eligible if is_eligible else ineligible).append((application_contact, contact))
+        if is_eligible:
+            eligible.append((application_contact, contact))
 
     if not eligible:
-        raise ResourceConflict("all verified people are restricted or in cooldown")
+        raise ResourceConflict(
+            "all source-backed people are restricted or in cooldown"
+        )
 
-    primary = next(
-        (item for item in eligible if item[0].category != "recruiter"),
-        eligible[0],
-    )
-    recruiter = next(
-        (
-            item
-            for item in eligible
-            if item[0].category == "recruiter" and item[0].id != primary[0].id
-        ),
-        None,
-    )
-    first_wave_ids = {primary[0].id}
-    if primary[0].category != "recruiter" and recruiter is not None:
-        first_wave_ids.add(recruiter[0].id)
-
-    remaining_eligible = [item for item in eligible if item[0].id not in first_wave_ids]
-    ordered_remaining = remaining_eligible + ineligible
-    next_wave = 2
+    # Contact discovery already ranks a category-diverse bench.  Make every
+    # currently eligible, distinct person in that bounded bench available at
+    # once instead of hiding most of the useful leads behind week-long serial
+    # waves.  Message bodies and send assertions remain per-person, while the
+    # person cooldown and company rolling-window throttle are still enforced
+    # at the consequential ``marked_sent`` transition.
+    first_wave = _diverse_initial_wave(eligible)
+    first_wave_ids = {application_contact.id for application_contact, _ in first_wave}
     for application_contact, _contact in rows:
         if application_contact.id in first_wave_ids:
-            wave = 1
             bench_state = "ready"
             unlocked_at = current
         else:
-            match = next(item for item in ordered_remaining if item[0].id == application_contact.id)
-            wave = next_wave
-            next_wave += 1
-            if match in remaining_eligible:
-                bench_state = "reserve"
-            else:
-                bench_state = "stopped"
+            # A pinned row that is restricted or cooling down is history, not
+            # a silently scheduled future contact.  A later search can assess
+            # it again from fresh source evidence.
+            bench_state = "stopped"
             unlocked_at = None
+        wave = 1
         if (
             application_contact.wave != wave
             or application_contact.bench_state != bench_state
@@ -620,6 +611,43 @@ def start_outreach_sequence(
         application_id=application_id,
         keyring=keyring,
     )
+
+
+def _diverse_initial_wave(
+    eligible: list[tuple[ApplicationContact, Contact]],
+) -> list[tuple[ApplicationContact, Contact]]:
+    """Return at most five distinct leads, preferring useful role coverage."""
+
+    selected: list[tuple[ApplicationContact, Contact]] = []
+    selected_contact_ids: set[str] = set()
+
+    def take_first(categories: set[str]) -> None:
+        for item in eligible:
+            application_contact, contact = item
+            if (
+                contact.id not in selected_contact_ids
+                and application_contact.category in categories
+            ):
+                selected.append(item)
+                selected_contact_ids.add(contact.id)
+                return
+
+    # Warm paths are the most useful when present, followed by one engineering
+    # peer, one likely team leader/hiring manager, and one recruiter.  Remaining
+    # capacity follows the persisted bench rank.
+    take_first({"warm_path"})
+    take_first({"team_peer", "adjacent_peer"})
+    take_first({"team_leader"})
+    take_first({"recruiter"})
+    for item in eligible:
+        contact = item[1]
+        if contact.id in selected_contact_ids:
+            continue
+        selected.append(item)
+        selected_contact_ids.add(contact.id)
+        if len(selected) >= MAX_OUTREACH_RECIPIENTS:
+            break
+    return selected[:MAX_OUTREACH_RECIPIENTS]
 
 
 def save_outreach_message(

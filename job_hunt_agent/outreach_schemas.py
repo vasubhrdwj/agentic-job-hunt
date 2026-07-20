@@ -296,7 +296,7 @@ class OutreachSentAttemptResponse(OutreachContractModel):
 
 
 class OutreachRecipientResponse(OutreachContractModel):
-    """One pinned verified recipient and their latest message projections."""
+    """One pinned source-backed recipient and latest message projections."""
 
     sequence_id: OpaqueId
     application_contact_id: OpaqueId
@@ -629,10 +629,8 @@ class ApplicationOutreachResponse(OutreachContractModel):
         distinct_waves = list(dict.fromkeys(waves))
         if distinct_waves != list(range(1, max(waves) + 1)):
             raise ValueError("recipient waves must start at one and be consecutive")
-        if waves.count(1) > 2 or any(waves.count(wave) > 1 for wave in distinct_waves[1:]):
-            raise ValueError(
-                "wave one permits at most two recipients and later waves only one"
-            )
+        if any(waves.count(wave) > 1 for wave in distinct_waves[1:]):
+            raise ValueError("legacy later waves may contain only one recipient")
         if any(item.sequence_id != self.sequence.id for item in self.recipients):
             raise ValueError("all recipients must belong to the returned sequence")
         if (

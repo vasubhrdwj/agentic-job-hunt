@@ -19,7 +19,6 @@ export interface ApprovedOutreachGrounding {
 export interface OutreachRecipientFacts {
   applicationContactId: string;
   publicName: string;
-  currentTitle: string;
   category: ContactCategory;
 }
 
@@ -89,9 +88,8 @@ export function prepareGroundedOutreachDrafts(
   const name = compact(recipient.publicName);
   if (!name) return null;
   const greetingName = name.split(" ")[0] ?? name;
-  const title = compact(recipient.currentTitle);
   const initialBase = `Hi ${greetingName} — I’m applying for ${grounding.roleTitle} at ${grounding.companyName}. One relevant proof point: ${grounding.evidence.statement}`;
-  const initial = fitDraft(initialBase, initialCta(recipient.category, title));
+  const initial = fitDraft(initialBase, initialCta(recipient.category));
   const followUp = fitDraft(
     `Hi ${greetingName} — just following up on my note about ${grounding.roleTitle} at ${grounding.companyName}.`,
     followUpCta(recipient.category),
@@ -139,19 +137,15 @@ export function outreachDraftIsDirty({
   return value !== (savedBody ?? preparedBody);
 }
 
-function initialCta(category: ContactCategory, title: string): string {
+function initialCta(category: ContactCategory): string {
   if (category === "recruiter") {
     return "Would you be open to sharing whether that background matches what the hiring team is prioritizing? Thanks.";
   }
   if (category === "team_leader") {
-    return title
-      ? `Given your perspective as ${title}, what problem does this hire most need to solve? Thanks.`
-      : "What problem does this hire most need to solve? Thanks.";
+    return "What problem does this hire most need to solve? Thanks.";
   }
   if (category === "team_peer" || category === "adjacent_peer") {
-    return title
-      ? `Given your perspective as ${title}, what does the team value most in candidates? Thanks.`
-      : "What does the team value most in candidates? Thanks.";
+    return "What does the team value most in candidates? Thanks.";
   }
   return "Would you be open to sharing what the team values most in candidates, or who would be best to ask? Thanks.";
 }

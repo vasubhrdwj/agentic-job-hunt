@@ -45,7 +45,6 @@ test("uses the exact latest approved artifact revision and records provenance", 
   const drafts = prepareGroundedOutreachDrafts(grounding, {
     applicationContactId: "contact-1",
     publicName: "Priya Shah",
-    currentTitle: "Staff Backend Engineer",
     category: "team_peer",
   });
   assert.ok(drafts);
@@ -116,18 +115,17 @@ test("customizes conservative calls to action by recipient category", () => {
   const recruiter = prepareGroundedOutreachDrafts(grounding, {
     applicationContactId: "recruiter",
     publicName: "Asha Rao",
-    currentTitle: "Technical Recruiter",
     category: "recruiter",
   });
   const leader = prepareGroundedOutreachDrafts(grounding, {
     applicationContactId: "leader",
     publicName: "Dev Mehta",
-    currentTitle: "Engineering Director",
     category: "team_leader",
   });
   assert.ok(recruiter && leader);
   assert.match(recruiter.initial, /hiring team is prioritizing/);
   assert.match(leader.initial, /problem does this hire most need to solve/);
+  assert.doesNotMatch(leader.initial, /Engineering Director/);
   assert.notEqual(recruiter.initial, leader.initial);
 });
 
@@ -141,7 +139,6 @@ test("output is deterministic and LinkedIn-friendly", () => {
   const recipient = {
     applicationContactId: "peer",
     publicName: "Priya Shah",
-    currentTitle: "Staff Backend Engineer",
     category: "team_peer" as const,
   };
   const first = prepareGroundedOutreachDrafts(grounding, recipient);
@@ -208,13 +205,11 @@ test("fails closed for one recipient without claiming other recipients were prep
   const tooLongRecipient = prepareGroundedOutreachDrafts(grounding, {
     applicationContactId: "contact-long",
     publicName: "x".repeat(LINKEDIN_FRIENDLY_DRAFT_LIMIT),
-    currentTitle: "Staff Engineer",
     category: "team_peer",
   });
   const normalRecipient = prepareGroundedOutreachDrafts(grounding, {
     applicationContactId: "contact-normal",
     publicName: "Priya Shah",
-    currentTitle: "Staff Engineer",
     category: "team_peer",
   });
   assert.equal(tooLongRecipient, null);

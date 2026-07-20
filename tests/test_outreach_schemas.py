@@ -373,24 +373,26 @@ def test_started_response_requires_one_ordered_owner_scoped_sequence() -> None:
         )
 
 
-def test_wave_one_can_hold_two_purposes_while_later_waves_are_single() -> None:
+def test_wave_one_can_hold_five_distinct_people_while_legacy_later_waves_are_single() -> None:
     response = ApplicationOutreachResponse(
         application_id="application1",
         status="active",
         sequence=_sequence(),
         recipients=[
             _recipient(rank=1, wave=1),
+            _recipient(rank=2, wave=1),
+            _recipient(rank=3, wave=1),
             _recipient(rank=4, wave=1),
-            _recipient(rank=2, wave=2),
-            _recipient(rank=3, wave=3),
+            _recipient(rank=5, wave=1),
         ],
     )
 
     assert [(item.wave, item.bench_rank) for item in response.recipients] == [
         (1, 1),
+        (1, 2),
+        (1, 3),
         (1, 4),
-        (2, 2),
-        (3, 3),
+        (1, 5),
     ]
 
     with pytest.raises(ValidationError):

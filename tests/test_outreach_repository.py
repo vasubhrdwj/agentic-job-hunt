@@ -496,7 +496,7 @@ def test_not_started_is_database_only_and_owner_isolated(
     assert missing is None
 
 
-def test_start_unlocks_strongest_non_recruiter_and_top_recruiter_then_replays(
+def test_start_unlocks_up_to_five_diverse_people_together_then_replays(
     outreach_db: Database,
     keyring: DataKeyring,
 ) -> None:
@@ -508,11 +508,16 @@ def test_start_unlocks_strongest_non_recruiter_and_top_recruiter_then_replays(
         for item in first.recipients
     ] == [
         ("application-contact-1", 1, "ready"),
+        ("application-contact-2", 1, "ready"),
+        ("application-contact-3", 1, "ready"),
         ("application-contact-4", 1, "ready"),
-        ("application-contact-2", 2, "reserve"),
-        ("application-contact-3", 3, "reserve"),
-        ("application-contact-5", 4, "reserve"),
+        ("application-contact-5", 1, "ready"),
     ]
+    assert {item.category.value for item in first.recipients} >= {
+        "team_peer",
+        "team_leader",
+        "recruiter",
+    }
     assert all(item.no_reply_eligible_at is None for item in first.recipients)
 
     replay = _start(outreach_db, keyring, now=NOW + timedelta(minutes=1))
@@ -520,6 +525,8 @@ def test_start_unlocks_strongest_non_recruiter_and_top_recruiter_then_replays(
     assert _sequence(replay).version == 1
     with outreach_db.session() as session:
         assert session.scalar(select(func.count(OutreachEvent.id))) == 1
+        assert session.scalar(select(func.count(OutreachMessageVersion.id))) == 0
+        assert session.scalar(select(func.count(ApplicationContact.id))) == 5
 
 
 @pytest.mark.parametrize(
@@ -635,11 +642,16 @@ def test_exact_v1_v2_are_encrypted_and_latest_body_survives_fresh_reload(
     assert _recipient(fresh, "application-contact-1").initial_message.body == body_v2
 
 
-def test_reserve_cannot_be_drafted_and_copy_is_not_a_send(
+def test_ineligible_pinned_contact_cannot_be_drafted_and_copy_is_not_a_send(
     outreach_db: Database,
     keyring: DataKeyring,
 ) -> None:
+    with outreach_db.session() as session:
+        blocked = session.get(ApplicationContact, "application-contact-2")
+        assert blocked is not None
+        blocked.cooldown_until = NOW + timedelta(days=1)
     response = _start(outreach_db, keyring)
+    assert _recipient(response, "application-contact-2").bench_state.value == "stopped"
     with pytest.raises(ResourceConflict):
         _save(
             outreach_db,
@@ -647,8 +659,8 @@ def test_reserve_cannot_be_drafted_and_copy_is_not_a_send(
             response,
             recipient_id="application-contact-2",
             kind="initial",
-            body="This reserve must stay locked.",
-            key="reserve-save",
+            body="This ineligible contact must stay locked.",
+            key="ineligible-save",
             now=NOW + timedelta(minutes=1),
         )
 
@@ -684,6 +696,82 @@ def test_reserve_cannot_be_drafted_and_copy_is_not_a_send(
                 OutreachEvent.event_type == "marked_sent"
             )
         ) == 0
+
+
+def test_five_ready_people_have_independent_drafts_and_one_send_channel_each(
+    outreach_db: Database,
+    keyring: DataKeyring,
+) -> None:
+    response = _start(outreach_db, keyring)
+    for rank in range(1, 6):
+        response = _save(
+            outreach_db,
+            keyring,
+            response,
+            recipient_id=f"application-contact-{rank}",
+            kind="initial",
+            body=f"Exact person-specific message {rank}",
+            key=f"person-{rank}-save",
+            now=NOW + timedelta(minutes=rank),
+        )
+
+    assert [
+        _recipient(response, f"application-contact-{rank}").initial_message.body
+        for rank in range(1, 6)
+    ] == [f"Exact person-specific message {rank}" for rank in range(1, 6)]
+    first_message = _recipient(response, "application-contact-1").initial_message
+    assert first_message is not None
+    response = _record(
+        outreach_db,
+        keyring,
+        response,
+        payload=OutreachCopiedEventCreate(
+            event_type="copied",
+            message_version_id=first_message.id,
+        ),
+        key="person-1-copy",
+        now=NOW + timedelta(minutes=6),
+    )
+    response = _record(
+        outreach_db,
+        keyring,
+        response,
+        payload=OutreachMarkedSentEventCreate(
+            event_type="marked_sent",
+            message_version_id=first_message.id,
+            channel="linkedin",
+            confirm_exact_version=True,
+        ),
+        key="person-1-linkedin-send",
+        now=NOW + timedelta(minutes=7),
+    )
+    with pytest.raises(ResourceConflict, match="already marked sent"):
+        _record(
+            outreach_db,
+            keyring,
+            response,
+            payload=OutreachMarkedSentEventCreate(
+                event_type="marked_sent",
+                message_version_id=first_message.id,
+                channel="email",
+                confirm_exact_version=True,
+            ),
+            key="person-1-duplicate-email-send",
+            now=NOW + timedelta(minutes=8),
+        )
+
+    with outreach_db.session() as session:
+        attempts = list(
+            session.scalars(
+                select(OutreachEvent).where(
+                    OutreachEvent.event_type == "marked_sent",
+                    OutreachEvent.application_contact_id == "application-contact-1",
+                    OutreachEvent.kind == "initial",
+                )
+            )
+        )
+    assert len(attempts) == 1
+    assert attempts[0].channel == "linkedin"
 
 
 def test_send_requires_copied_exact_latest_version_and_persists_five_business_days(
@@ -935,7 +1023,7 @@ def test_useful_reply_pauses_and_introduction_or_referral_stops(
     assert {item.bench_state.value for item in response.recipients} == {"stopped"}
 
 
-def test_unreachable_and_declined_advance_then_pause_the_next_wave(
+def test_unreachable_keeps_the_shared_wave_open_and_decline_pauses_remaining_people(
     outreach_db: Database,
     keyring: DataKeyring,
 ) -> None:
@@ -953,7 +1041,7 @@ def test_unreachable_and_declined_advance_then_pause_the_next_wave(
         now=NOW + timedelta(minutes=1),
     )
     assert _sequence(response).active_wave == 1
-    assert _recipient(response, "application-contact-2").bench_state.value == "reserve"
+    assert _recipient(response, "application-contact-2").bench_state.value == "ready"
 
     response = _save_copy_send_initial(
         outreach_db,
@@ -973,7 +1061,7 @@ def test_unreachable_and_declined_advance_then_pause_the_next_wave(
         now=NOW + timedelta(minutes=6),
     )
     assert response.status.value == "paused"
-    assert _sequence(response).active_wave == 2
+    assert _sequence(response).active_wave == 1
     assert _recipient(response, "application-contact-2").bench_state.value == "paused"
 
 
@@ -1021,7 +1109,7 @@ def test_person_cooldown_blocks_same_contact_on_another_application(
                     {
                         "code": "verified_contacts_shortfall",
                         "count": 4,
-                        "detail": "Only one verified person was available.",
+                        "detail": "Only one source-backed person was available.",
                     }
                 ],
                 version=1,
@@ -1316,51 +1404,9 @@ def test_fourth_cold_employee_send_at_same_company_within_seven_days_is_blocked(
     keyring: DataKeyring,
 ) -> None:
     response = _start(outreach_db, keyring)
-    response = _save_copy_send_initial(
-        outreach_db,
-        keyring,
-        response,
-        recipient_id="application-contact-1",
-        prefix="cold-one",
-        sent_at=NOW + timedelta(minutes=3),
-    )
-    response = _reply(
-        outreach_db,
-        keyring,
-        response,
-        recipient_id="application-contact-1",
-        reply_kind="declined",
-        key="cold-one-declined",
-        now=NOW + timedelta(minutes=4),
-    )
-    response = _record(
-        outreach_db,
-        keyring,
-        response,
-        payload=OutreachResumeEventCreate(
-            event_type="resume",
-            reason="Continue the company-cap test after reviewing the decline.",
-        ),
-        key="resume-after-cold-one-declined",
-        now=NOW + timedelta(minutes=4, seconds=30),
-    )
-    response = _record(
-        outreach_db,
-        keyring,
-        response,
-        payload=OutreachOutcomeEventCreate(
-            event_type="outcome",
-            application_contact_id="application-contact-4",
-            outcome="unreachable",
-        ),
-        key="recruiter-unreachable-for-cap",
-        now=NOW + timedelta(minutes=5),
-    )
-    assert _sequence(response).active_wave == 2
-
     for index, recipient_id in enumerate(
-        ("application-contact-2", "application-contact-3"),
-        start=2,
+        ("application-contact-1", "application-contact-2", "application-contact-3"),
+        start=1,
     ):
         sent_at = NOW + timedelta(minutes=index * 10)
         response = _save_copy_send_initial(
@@ -1371,28 +1417,8 @@ def test_fourth_cold_employee_send_at_same_company_within_seven_days_is_blocked(
             prefix=f"cold-{index}",
             sent_at=sent_at,
         )
-        response = _reply(
-            outreach_db,
-            keyring,
-            response,
-            recipient_id=recipient_id,
-            reply_kind="declined",
-            key=f"cold-{index}-declined",
-            now=sent_at + timedelta(minutes=1),
-        )
-        response = _record(
-            outreach_db,
-            keyring,
-            response,
-            payload=OutreachResumeEventCreate(
-                event_type="resume",
-                reason="Continue after manually reviewing this decline.",
-            ),
-            key=f"cold-{index}-resume",
-            now=sent_at + timedelta(minutes=2),
-        )
 
-    assert _sequence(response).active_wave == 4
+    assert _sequence(response).active_wave == 1
     response = _save(
         outreach_db,
         keyring,
