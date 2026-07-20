@@ -16,6 +16,7 @@ import type {
   VersionedRetentionReport,
 } from "@/lib/privacy-types";
 import { clearPendingHuntIdempotency } from "@/lib/hunt-idempotency";
+import { clearPendingSubmissionHandoffs } from "@/lib/application-submission-handoff";
 import { clearAllRunAccess } from "@/lib/run-access";
 import { createIdempotencyKey } from "@/lib/workspace-api";
 import {
@@ -168,6 +169,7 @@ export function PrivacyWorkspace() {
       await deleteWorkspace(confirmation, deletionKey.current);
       clearAllRunAccess();
       clearPendingHuntIdempotency();
+      clearPendingSubmissionHandoffs();
       deletionKey.current = null;
       router.replace("/login?workspace_deleted=1");
       router.refresh();

@@ -8,12 +8,18 @@ import {
   transitionApplication,
 } from "@/lib/application-api";
 import type { ApplicationArtifactsResponse } from "@/lib/application-artifact-types";
-import type {
-  ApplicationSubmissionResponse,
-  ApplicationTransitionCreate,
-} from "@/lib/application-submission-types";
+import type { ApplicationSubmissionResponse } from "@/lib/application-submission-types";
 import type { ApplicationStage, ApplicationPostingState } from "@/lib/application-types";
-import { persistedVerifiedDestination } from "@/lib/application-submission-handoff";
+import {
+  inspectAmbiguousTransitionReadback,
+  parsePendingSubmissionHandoff,
+  pendingSubmissionHandoffStorageKey,
+  persistedVerifiedDestination,
+  serializePendingSubmissionHandoff,
+  transitionNavigationDestination,
+  type PendingSubmissionHandoff,
+  type SubmissionHandoffTransition,
+} from "@/lib/application-submission-handoff";
 import { createIdempotencyKey, WorkspaceApiError } from "@/lib/workspace-api";
 import { ApprovedResumeDownload } from "./approved-resume-download";
 import {
@@ -23,14 +29,6 @@ import {
   secondaryButtonClasses,
   StatusMessage,
 } from "./workspace-ui";
-
-interface PendingTransition {
-  key: string;
-  fingerprint: string;
-  payload: ApplicationTransitionCreate;
-  expectedVersion: number;
-  navigateTo: string | null;
-}
 
 export function ApplicationSubmission({
   applicationId,
@@ -63,7 +61,54 @@ export function ApplicationSubmission({
   );
   const [destination, setDestination] = useState("");
   const [hasPending, setHasPending] = useState(false);
-  const pending = useRef<PendingTransition | null>(null);
+  const pending = useRef<PendingSubmissionHandoff | null>(null);
+
+  const clearPendingTransition = useCallback(() => {
+    pending.current = null;
+    setHasPending(false);
+    try {
+      sessionStorage.removeItem(pendingSubmissionHandoffStorageKey(applicationId));
+    } catch {
+      // Storage can be unavailable in hardened browsers; in-memory safety remains.
+    }
+  }, [applicationId]);
+
+  const retainPendingTransition = useCallback((request: PendingSubmissionHandoff) => {
+    try {
+      sessionStorage.setItem(
+        pendingSubmissionHandoffStorageKey(applicationId),
+        serializePendingSubmissionHandoff(applicationId, request),
+      );
+    } catch {
+      return false;
+    }
+    pending.current = request;
+    setHasPending(true);
+    return true;
+  }, [applicationId]);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      const storageKey = pendingSubmissionHandoffStorageKey(applicationId);
+      let raw: string | null = null;
+      try {
+        raw = sessionStorage.getItem(storageKey);
+      } catch {
+        // A missing browser store behaves like no restorable receipt.
+      }
+      const restored = parsePendingSubmissionHandoff(raw, applicationId);
+      pending.current = restored;
+      setHasPending(restored !== null);
+      if (raw && !restored) {
+        try {
+          sessionStorage.removeItem(storageKey);
+        } catch {
+          // Invalid storage is already ignored.
+        }
+      }
+    }, 0);
+    return () => clearTimeout(timer);
+  }, [applicationId]);
 
   const load = useCallback(async (showLoading = false) => {
     if (showLoading) setLoading(true);
@@ -128,7 +173,7 @@ export function ApplicationSubmission({
   }, [effectiveArtifacts]);
 
   async function runTransition(
-    payload: ApplicationTransitionCreate,
+    payload: SubmissionHandoffTransition,
     navigateTo: string | null = null,
   ) {
     if (busy) return;
@@ -145,8 +190,12 @@ export function ApplicationSubmission({
       expectedVersion: applicationVersion,
       navigateTo,
     };
-    pending.current = request;
-    setHasPending(true);
+    if (!retainPendingTransition(request)) {
+      setError(
+        "This browser could not retain the safe retry receipt, so the action was not started. Enable session storage or use this workflow in a standard browser tab.",
+      );
+      return;
+    }
     setBusy(true);
     setError(null);
     setNotice(null);
@@ -165,36 +214,31 @@ export function ApplicationSubmission({
         const saved = await load(false);
         const apiError = reason instanceof WorkspaceApiError ? reason : null;
         const ambiguous = !apiError || apiError.retryable || apiError.code === "mutation_pending";
-        if (saved && transitionMatches(saved, payload)) {
-          pending.current = null;
-          setHasPending(false);
-          await refreshParent();
-          setNotice("The saved transition was confirmed after checking the durable record.");
+        if (ambiguous) {
+          const readback = inspectAmbiguousTransitionReadback(saved, payload);
+          setError(
+            readback.targetStageVisible
+              ? "The requested stage is visible, but this read view omits the exact due date and safe receipt identity. Retry unchanged with the original safe receipt to confirm this request."
+              : `${errorText(reason, "The transition result is not yet confirmed.")} ` +
+                "Your exact request is retained; retry it unchanged with the original safe receipt.",
+          );
         } else if (saved?.submission) {
-          pending.current = null;
-          setHasPending(false);
+          clearPendingTransition();
           await refreshParent();
           setError(
             "A different durable application record already exists. Review the exact saved receipt below; it was not replaced.",
           );
-        } else if (!ambiguous) {
-          pending.current = null;
-          setHasPending(false);
+        } else {
+          clearPendingTransition();
           await refreshParent();
           setError(errorText(reason, "The application transition was rejected."));
-        } else {
-          setError(
-            `${errorText(reason, "The transition result is not yet confirmed.")} ` +
-            "Your exact request is retained; retry it unchanged or check saved state.",
-          );
         }
         return;
       }
 
-      pending.current = null;
-      setHasPending(false);
+      clearPendingTransition();
       const parentRefreshed = await refreshParent();
-      await load(false);
+      const refreshedProjection = await load(false);
       setNotice(
         payload.to_stage === "ready_to_apply"
           ? "This exact pack is ready. Continuing to the verified employer site…"
@@ -202,8 +246,12 @@ export function ApplicationSubmission({
             ? "Your manual application was recorded with the exact materials used."
             : "Your manual application was recorded. Refresh the page if the summary has not updated.",
       );
-      if (request.navigateTo) {
-        window.location.assign(request.navigateTo);
+      const confirmedDestination = transitionNavigationDestination(
+        "same_receipt_confirmed",
+        persistedVerifiedDestination(refreshedProjection, request.navigateTo ?? ""),
+      );
+      if (confirmedDestination) {
+        window.location.assign(confirmedDestination);
       }
     } finally {
       setBusy(false);
@@ -226,24 +274,10 @@ export function ApplicationSubmission({
     setError(null);
     try {
       const saved = await load(false);
-      if (saved && transitionMatches(saved, request.payload)) {
-        pending.current = null;
-        setHasPending(false);
-        await refreshParent();
-        setNotice("The exact transition was confirmed from the durable record.");
-      } else if (saved?.submission) {
-        pending.current = null;
-        setHasPending(false);
-        await refreshParent();
+      const readback = inspectAmbiguousTransitionReadback(saved, request.payload);
+      if (readback.targetStageVisible) {
         setError(
-          "A different durable application record already exists. Review the exact saved receipt below.",
-        );
-      } else if (
-        request.payload.to_stage === "ready_to_apply" &&
-        saved?.stage === "ready_to_apply"
-      ) {
-        setError(
-          "The ready state is visible, but this read view cannot prove it came from the exact pending request. Retry unchanged with the original safe receipt before continuing.",
+          "The requested stage is visible, but this read view omits the exact due date and safe receipt identity. Retry unchanged with the original safe receipt to confirm this request.",
         );
       } else {
         setError(
@@ -328,6 +362,13 @@ export function ApplicationSubmission({
 
       {error ? <div className="mt-4"><StatusMessage kind="error">{error}</StatusMessage></div> : null}
       {notice ? <div className="mt-4"><StatusMessage kind="success">{notice}</StatusMessage></div> : null}
+      {hasPending && !error ? (
+        <div className="mt-4">
+          <StatusMessage kind="info">
+            An exact transition has an unconfirmed result. The original safe receipt was retained in this tab; retry it unchanged before continuing.
+          </StatusMessage>
+        </div>
+      ) : null}
 
       {receipt ? (
         <div className="mt-6 rounded-xl border border-emerald-200 bg-emerald-50 p-4 dark:border-emerald-900 dark:bg-emerald-950/25">
@@ -604,29 +645,4 @@ function newestArtifacts(
   const handedOffVersion = handedOff.pack?.version ?? 0;
   const loadedVersion = independentlyLoaded.pack?.version ?? 0;
   return handedOffVersion >= loadedVersion ? handedOff : independentlyLoaded;
-}
-
-function transitionMatches(
-  projection: ApplicationSubmissionResponse,
-  payload: ApplicationTransitionCreate,
-): boolean {
-  if (payload.to_stage === "ready_to_apply") {
-    // The read projection does not persist the ready request's exact material
-    // references or due date. Only a successful same-receipt replay can prove
-    // that an ambiguous ready mutation was this request.
-    return false;
-  }
-  if (payload.to_stage !== "applied") return false;
-  const submission = projection.submission;
-  return Boolean(
-    submission &&
-    submission.application_pack_id === payload.application_pack_id &&
-    submission.application_pack_revision_id === payload.application_pack_revision_id &&
-    submission.application_pack_review_event_id === payload.application_pack_review_event_id &&
-    submission.application_artifact_revision_id === payload.application_artifact_revision_id &&
-    submission.application_artifact_approval_event_id === payload.application_artifact_approval_event_id &&
-    submission.tailored_resume_version_id === payload.tailored_resume_version_id &&
-    submission.destination_url === payload.destination_url &&
-    submission.applied_on === payload.applied_on
-  );
 }

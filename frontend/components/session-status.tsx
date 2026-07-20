@@ -11,6 +11,7 @@ import {
 } from "@/lib/session";
 import { clearAllRunAccess } from "@/lib/run-access";
 import { clearPendingHuntIdempotency } from "@/lib/hunt-idempotency";
+import { clearPendingSubmissionHandoffs } from "@/lib/application-submission-handoff";
 
 export function SessionStatus() {
   const router = useRouter();
@@ -57,6 +58,7 @@ export function SessionStatus() {
           await deleteOwnerSession();
           clearAllRunAccess();
           clearPendingHuntIdempotency();
+          clearPendingSubmissionHandoffs();
           setSession(null);
           router.replace("/login");
           router.refresh();
