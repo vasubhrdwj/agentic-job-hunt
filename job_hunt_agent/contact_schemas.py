@@ -1,4 +1,4 @@
-"""Strict, provider-free contracts for an application's verified contact bench.
+"""Strict, provider-free contracts for an application's source-backed contact bench.
 
 The read model deliberately separates the latest search attempt from the last
 completed result.  A queued retry can therefore be shown without hiding a
@@ -122,10 +122,20 @@ class ContactShortfallReason(ContactContractModel):
 
 
 class EmployerEvidenceResponse(ContactContractModel):
-    excerpt: str = Field(min_length=1, max_length=1_000)
-    url: HttpsUrl
-    source: str = Field(min_length=1, max_length=64)
-    observed_at: UTCDateTime
+    excerpt: str = Field(
+        min_length=1,
+        max_length=1_000,
+        description="Exact public search-result snippet saved for this lead.",
+    )
+    url: HttpsUrl = Field(description="Public source result supporting the saved snippet.")
+    source: str = Field(
+        min_length=1,
+        max_length=64,
+        description="Public-search provider that returned the result.",
+    )
+    observed_at: UTCDateTime = Field(
+        description="When the source result was captured, not a profile-verification time."
+    )
 
 
 class RelevanceEvidenceResponse(ContactContractModel):
@@ -152,11 +162,33 @@ class ContactBenchItem(ContactContractModel):
     profile_url: HttpsUrl
     profile_source: ContactProfileSource
     lifecycle: ContactLifecycle
-    current_title: str = Field(min_length=1, max_length=300)
-    current_company: str = Field(min_length=1, max_length=200)
+    current_title: str = Field(
+        min_length=1,
+        max_length=300,
+        description="Title parsed from the saved source result; not independently verified.",
+    )
+    current_company: str = Field(
+        min_length=1,
+        max_length=200,
+        description=(
+            "Employer indicated by the saved source result; not independently verified."
+        ),
+    )
     category: ContactCategory
-    confidence: float = Field(ge=MIN_VERIFIED_CONFIDENCE, le=1.0)
-    verified_at: UTCDateTime
+    confidence: float = Field(
+        ge=MIN_VERIFIED_CONFIDENCE,
+        le=1.0,
+        description=(
+            "Legacy numeric heuristic for saved public-source evidence; it is not a "
+            "calibrated probability or independent verification score."
+        ),
+    )
+    verified_at: UTCDateTime = Field(
+        description=(
+            "When source evidence passed the configured threshold; not an independent "
+            "profile or employment verification timestamp."
+        )
+    )
     employer_evidence: EmployerEvidenceResponse
     why_relevant: str = Field(min_length=1, max_length=2_000)
     relationship: RelevanceEvidenceResponse
@@ -202,9 +234,20 @@ class ContactSearchSnapshot(ContactContractModel):
     job_stage: str | None = Field(default=None, min_length=1, max_length=100)
     target_count: Literal[5] = TARGET_CONTACT_COUNT
     candidate_limit: int = Field(ge=TARGET_CONTACT_COUNT, le=MAX_CONTACT_CANDIDATES)
-    confidence_floor: float = Field(ge=MIN_VERIFIED_CONFIDENCE, le=1.0)
+    confidence_floor: float = Field(
+        ge=MIN_VERIFIED_CONFIDENCE,
+        le=1.0,
+        description="Minimum legacy source-evidence heuristic required for selection.",
+    )
     discovered_count: int = Field(ge=0, le=MAX_CONTACT_CANDIDATES)
-    evidence_verified_count: int = Field(ge=0, le=MAX_CONTACT_CANDIDATES)
+    evidence_verified_count: int = Field(
+        ge=0,
+        le=MAX_CONTACT_CANDIDATES,
+        description=(
+            "Results meeting the saved source-evidence threshold; not independently "
+            "verified profiles."
+        ),
+    )
     selected_count: int = Field(ge=0, le=TARGET_CONTACT_COUNT)
     coverage_status: ContactCoverageStatus
     exhausted: bool
@@ -287,7 +330,14 @@ class ContactBenchResult(ContactContractModel):
     contact_plan_id: OpaqueId
     plan_number: int = Field(ge=1)
     target_count: Literal[5] = TARGET_CONTACT_COUNT
-    verified_count: int = Field(ge=0, le=TARGET_CONTACT_COUNT)
+    verified_count: int = Field(
+        ge=0,
+        le=TARGET_CONTACT_COUNT,
+        description=(
+            "Selected source-backed leads. The legacy field name does not imply "
+            "independent profile or employment verification."
+        ),
+    )
     coverage_status: Literal[
         ContactCoverageStatus.met,
         ContactCoverageStatus.partial,
@@ -340,7 +390,14 @@ class ApplicationContactBenchResponse(ContactContractModel):
     application_id: OpaqueId
     status: ContactBenchStatus
     target_count: Literal[5] = TARGET_CONTACT_COUNT
-    verified_count: int = Field(ge=0, le=TARGET_CONTACT_COUNT)
+    verified_count: int = Field(
+        ge=0,
+        le=TARGET_CONTACT_COUNT,
+        description=(
+            "Source-backed leads in the last completed result; not independently "
+            "verified profiles."
+        ),
+    )
     coverage_status: ContactBenchCoverage
     current_search: ContactSearchSnapshot | None = None
     last_completed_result: ContactBenchResult | None = None
@@ -354,7 +411,7 @@ class ApplicationContactBenchResponse(ContactContractModel):
                 self.verified_count != 0
                 or self.coverage_status is not ContactBenchCoverage.not_started
             ):
-                raise ValueError("not_started must report zero verified contacts")
+                raise ValueError("not_started must report zero source-backed leads")
             return self
 
         if self.current_search is None:

@@ -292,7 +292,7 @@ def _contact_item(
     now: datetime,
 ) -> ContactBenchItem:
     if row.verification_status != "verified":
-        raise ContactRepositoryError("selected contact is not verified")
+        raise ContactRepositoryError("selected contact did not meet the source-evidence threshold")
     if row.confidence < max(MIN_VERIFIED_CONFIDENCE, confidence_floor):
         raise ContactRepositoryError("selected contact is below the evidence floor")
     if row.bench_rank is None or row.wave is None:

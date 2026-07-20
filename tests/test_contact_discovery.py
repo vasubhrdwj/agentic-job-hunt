@@ -381,7 +381,7 @@ def test_selection_reports_honest_three_of_five_after_exhaustion() -> None:
     selection = select_contact_bench(discovery)
 
     assert selection.coverage_status is BenchCoverageStatus.partial
-    assert selection.coverage_label == "3/5 verified"
+    assert selection.coverage_label == "3/5 source-backed"
     assert selection.verified_count == 3
     assert len(selection.selected) == 3
     assert selection.exhausted is True

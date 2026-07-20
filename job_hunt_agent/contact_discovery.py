@@ -156,7 +156,7 @@ class ContactEvidence:
 
 @dataclass(frozen=True)
 class DiscoveredContact:
-    """One deduplicated, current-employer-verified public profile."""
+    """One deduplicated public profile supported by a saved search snippet."""
 
     public_name: str
     current_title: str
@@ -264,7 +264,7 @@ class ContactBenchSelection:
 
     @property
     def coverage_label(self) -> str:
-        return f"{self.verified_count}/{self.target_count} verified"
+        return f"{self.verified_count}/{self.target_count} source-backed"
 
 
 def build_contact_queries(role: Role | Mapping[str, object]) -> tuple[DiscoveryQuery, ...]:
@@ -686,7 +686,10 @@ def select_contact_bench(
                 ContactShortfallReason(
                     code="discovery_incomplete",
                     count=missing_count,
-                    detail="Discovery is not proven exhausted; more verified contacts may exist.",
+                    detail=(
+                        "Discovery is not proven exhausted; more source-backed "
+                        "contacts may exist."
+                    ),
                 )
             )
 
@@ -1008,17 +1011,17 @@ def _why_relevant(
     del public_name  # The explanation should be reusable and evidence-focused.
     if category is ContactCategory.recruiter:
         return (
-            f"Their current {current_title} role at {company} can help route interest "
-            f"in the {role_title} opening."
+            f"The saved public-search result describes a {current_title} role at "
+            f"{company}, which may be a useful route for the {role_title} opening."
         )
     if category is ContactCategory.team_leader:
         return (
-            f"Their current {current_title} role at {company} places them near the "
-            f"hiring context for the {role_title} opening."
+            f"The saved public-search result describes a {current_title} role at "
+            f"{company}, which may be near the hiring context for the {role_title} opening."
         )
     return (
-        f"Their current {current_title} role at {company} is a relevant peer signal "
-        f"for the {role_title} opening."
+        f"The saved public-search result describes a {current_title} role at {company}, "
+        f"a potentially relevant peer signal for the {role_title} opening."
     )
 
 

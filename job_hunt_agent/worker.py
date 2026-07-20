@@ -108,7 +108,7 @@ class ClaimedPracticalScan:
 
 @dataclass(frozen=True)
 class ClaimedPracticalContact:
-    """Detached identifiers for one verified-contact discovery claim."""
+    """Detached identifiers for one source-backed contact-discovery claim."""
 
     job_id: str
     run_id: str

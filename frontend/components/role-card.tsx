@@ -52,9 +52,9 @@ export function RoleCard({
       <div className="grid gap-3 md:grid-cols-3">
         {drafts.length === 0 ? (
           <p className="text-sm text-zinc-500">
-            No verified current-employee contacts were found. Try the company
-            team page or a LinkedIn employee search instead of trusting a weak
-            match.
+            No public result met the source-evidence threshold. Try the company
+            team page or a LinkedIn employee search, and confirm the person’s
+            current role before outreach.
           </p>
         ) : (
           drafts.map((draft) => (

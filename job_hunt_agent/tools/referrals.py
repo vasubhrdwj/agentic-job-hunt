@@ -178,7 +178,7 @@ def find_referrals(role: Role) -> list[Person]:
     people = _choose_people(candidates)
     if not people:
         LOGGER.warning(
-            "No verified current employees found for %s - %s. "
+            "No public result met the source-evidence threshold for %s - %s. "
             "Try the company team page or a direct LinkedIn company-employee search.",
             role.company,
             role.title,

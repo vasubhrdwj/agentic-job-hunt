@@ -17,6 +17,10 @@ import type {
   RelevanceEvidenceResponse,
 } from "@/lib/application-types";
 import {
+  sourceEvidenceThresholdLabel,
+  sourceQualifiedRationale,
+} from "@/lib/contact-source-evidence";
+import {
   createIdempotencyKey,
   getOwnerHealth,
   type WorkerCapability,
@@ -389,12 +393,12 @@ export function ApplicationPeople({
             People
           </p>
           <h2 id="application-people-title" className="mt-2 text-xl font-semibold tracking-tight">
-            Build a verified contact bench
+            Build a source-backed contact bench
           </h2>
           <p className="mt-2 max-w-3xl text-sm leading-6 text-zinc-600 dark:text-zinc-400">
-            Find up to five appropriate peers, leaders, and recruiters with public
-            evidence that they currently work at this company. Fewer than five is
-            shown honestly when the evidence is not strong enough.
+            Find up to five appropriate peers, leaders, and recruiters from public
+            search results. We preserve the exact source snippet and confidence used
+            for each lead; this is not independent profile or employment verification.
           </p>
         </div>
         {bench ? (
@@ -403,7 +407,7 @@ export function ApplicationPeople({
               {bench.verified_count}/{bench.target_count}
             </p>
             <p className="text-xs font-medium text-indigo-700 dark:text-indigo-300">
-              evidence-verified
+              source-backed leads
             </p>
           </div>
         ) : null}
@@ -442,7 +446,7 @@ export function ApplicationPeople({
 
         {capabilityChecking ? (
           <StatusMessage kind="info">
-            Checking whether verified-people search is ready…
+            Checking whether public lead search is ready…
           </StatusMessage>
         ) : contactCapability && !contactCapability.available ? (
           <StatusMessage kind="info">
@@ -485,12 +489,12 @@ export function ApplicationPeople({
         {postingState !== "open" ? (
           <StatusMessage kind="info">
             A new people search is unavailable because this posting is {postingState}.
-            Any previously verified contacts remain visible for review.
+            Any previously saved contact leads remain visible for review.
           </StatusMessage>
         ) : null}
         {!applicationContactable ? (
           <StatusMessage kind="info">
-            {contactSearchBlockedCopy} Any previously verified people remain
+            {contactSearchBlockedCopy} Any previously saved people remain
             available for review.
           </StatusMessage>
         ) : null}
@@ -522,8 +526,8 @@ export function ApplicationPeople({
         {result ? <ContactResult result={result} /> : null}
 
         <p className="border-t border-zinc-200 pt-4 text-xs leading-5 text-zinc-500 dark:border-zinc-800 dark:text-zinc-400">
-          This search only finds profiles and preserves evidence. Any message work
-          is an explicit, separately tracked manual action below.
+          Source snippets can be stale or wrong. Open the source before outreach when
+          the person’s current role matters. No message is sent automatically.
         </p>
       </div>
     </section>
@@ -616,14 +620,16 @@ function SearchStatus({
   if (search.coverage_status === "met") {
     return (
       <StatusMessage kind="success">
-        Five distinct contacts met the current-employer evidence requirement.
+        Five distinct public-profile leads met the saved source-evidence threshold.
+        This is search-result evidence, not current-employer verification.
       </StatusMessage>
     );
   }
   return (
       <StatusMessage kind="info">
         The search completed with {search.selected_count} of {search.target_count}
-        {" "}verified contacts. The result is intentionally not padded.
+        {" "}source-backed leads. The result is intentionally not padded and does
+        not claim independent profile verification.
       </StatusMessage>
   );
 }
@@ -644,11 +650,11 @@ function ContactResult({
     <div className="space-y-5">
       <div>
         <h3 className="font-semibold">
-          {result.verified_count}/{result.target_count} evidence-verified people
+          {result.verified_count}/{result.target_count} source-backed leads
         </h3>
         <p className="mt-1 text-sm text-zinc-500">
-          Ranked for relevance and category diversity; each person has preserved
-          current-employer evidence.
+          Ranked for relevance and category diversity. Each lead preserves the
+          public search snippet and source used at discovery time.
         </p>
       </div>
 
@@ -687,7 +693,7 @@ function ContactResult({
         </ol>
       ) : (
         <p className="rounded-xl border border-zinc-200 p-4 text-sm text-zinc-600 dark:border-zinc-800 dark:text-zinc-400">
-          No public profile met the current-employer evidence floor in this search.
+          No public-profile result met the configured source-evidence floor in this search.
         </p>
       )}
     </div>
@@ -716,20 +722,23 @@ function ContactCard({ contact }: { contact: ContactBenchItem }) {
             </span>
           </div>
           <p className="mt-1 break-words text-sm text-zinc-600 dark:text-zinc-400">
-            {contact.current_title} at {contact.current_company}
+            Search result: {contact.current_title} at {contact.current_company}
           </p>
         </div>
       </div>
 
       <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-zinc-500">
         <span className="font-medium text-emerald-700 dark:text-emerald-300">
-          {Math.round(contact.confidence * 100)}% evidence confidence
+          {sourceEvidenceThresholdLabel(contact.confidence)}
         </span>
-        <span>Verified {formatDate(contact.verified_at)}</span>
+        <span>Source checked {formatDate(contact.verified_at)}</span>
       </div>
 
       <p className="mt-4 break-words text-sm leading-6 text-zinc-700 [overflow-wrap:anywhere] dark:text-zinc-300">
-        {contact.why_relevant}
+        {sourceQualifiedRationale(
+          contact.why_relevant,
+          CATEGORY_LABELS[contact.category],
+        )}
       </p>
 
       <div className="mt-4 flex flex-wrap gap-2">
@@ -746,10 +755,10 @@ function ContactCard({ contact }: { contact: ContactBenchItem }) {
           href={contact.employer_evidence.url}
           target="_blank"
           rel="noopener noreferrer"
-          aria-label={`Review employer evidence for ${contact.public_name} (opens in new tab)`}
+          aria-label={`Review source evidence for ${contact.public_name} (opens in new tab)`}
           className={secondaryButtonClasses}
         >
-          Review employer evidence ↗
+          Review source result ↗
         </a>
       </div>
 
@@ -758,7 +767,7 @@ function ContactCard({ contact }: { contact: ContactBenchItem }) {
           “{contact.employer_evidence.excerpt}”
         </p>
         <p className="mt-2 text-xs text-zinc-500">
-          {sourceLabel(contact.employer_evidence.source)} · checked {formatDate(contact.employer_evidence.observed_at)}
+          {sourceLabel(contact.employer_evidence.source)} search snippet · captured {formatDate(contact.employer_evidence.observed_at)}
         </p>
       </div>
 
@@ -825,12 +834,12 @@ function RelevanceFact({
 
 function runningLabel(search: ContactSearchSnapshot): string {
   if (search.job_stage === "discovering_contacts") {
-    return "Searching public profiles and checking current-employer evidence…";
+    return "Searching public results and preserving source snippets…";
   }
   if (search.job_stage === "finalizing_contacts") {
-    return "Finalizing the verified contact bench…";
+    return "Finalizing the source-backed contact bench…";
   }
-  return "Building the verified contact bench…";
+  return "Building the source-backed contact bench…";
 }
 
 function applicationContactBlockCopy(
@@ -853,7 +862,7 @@ function applicationContactBlockCopy(
 }
 
 function searchButtonLabel(status: ApplicationContactBenchResponse["status"]): string {
-  if (status === "not_started") return "Find 5 verified people";
+  if (status === "not_started") return "Find up to 5 people";
   if (status === "completed") return "Refresh contact bench";
   return "Try contact search again";
 }
@@ -884,15 +893,15 @@ function contactCapabilityUnavailableCopy(
   reason: WorkerCapability["reason"],
 ): string {
   if (reason === "unsupported_kind") {
-    return "Verified-people search is not enabled on the current service. No new search will be queued.";
+    return "Public lead search is not enabled on the current service. No new search will be queued.";
   }
   if (reason === "incompatible_build") {
-    return "Verified-people search is paused while the service deployment finishes.";
+    return "Public lead search is paused while the service deployment finishes.";
   }
   if (reason === "no_fresh_worker") {
-    return "Verified-people search is waking up or temporarily offline. No new search will be queued yet.";
+    return "Public lead search is waking up or temporarily offline. No new search will be queued yet.";
   }
-  return "Verified-people search readiness could not be confirmed, so starting a search is safely paused.";
+  return "Public lead search readiness could not be confirmed, so starting a search is safely paused.";
 }
 
 function contactRequestError(reason: unknown, fallback: string): string {

@@ -1,6 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
+import { sourceQualifiedRationale } from "@/lib/contact-source-evidence";
 import type { OutreachDraft } from "@/lib/types";
 
 export function DraftCard({ draft }: { draft: OutreachDraft }) {
@@ -42,12 +43,12 @@ export function DraftCard({ draft }: { draft: OutreachDraft }) {
           {draft.person.verified_current_employer &&
           draft.person.confidence >= 0.5 ? (
             <p className="mt-1 text-[10px] font-medium text-emerald-700 dark:text-emerald-300">
-              Verified current employer ·{" "}
-              {Math.round(draft.person.confidence * 100)}% confidence
+              Public-source employer signal ·{" "}
+              review profile before outreach
             </p>
           ) : (
             <p className="mt-1 text-[10px] font-medium text-amber-700 dark:text-amber-300">
-              Unverified legacy contact
+              Limited legacy source evidence
             </p>
           )}
         </div>
@@ -74,7 +75,7 @@ export function DraftCard({ draft }: { draft: OutreachDraft }) {
 
       <p className="mb-3 text-xs text-zinc-600 dark:text-zinc-400">
         <span className="font-medium">Why relevant:</span>{" "}
-        {draft.person.why_relevant}
+        {sourceQualifiedRationale(draft.person.why_relevant)}
       </p>
 
       <label htmlFor={`legacy-draft-${draft.draft_id}`} className="sr-only">

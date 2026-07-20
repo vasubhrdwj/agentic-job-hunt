@@ -216,16 +216,22 @@ class Role(BaseModel):
 
 
 class Person(BaseModel):
-    """A plausible referral target at the hiring company."""
+    """A plausible referral lead derived from saved public-source evidence."""
 
     name: str = Field(
-        description="Person's full name as it appears on their public profile.",
+        description="Person name parsed from the saved public-source result.",
     )
-    title: str = Field(description="Current job title at the target company.")
+    title: str = Field(
+        description=(
+            "Job title indicated by the saved public-source evidence; not "
+            "independently verified as current."
+        )
+    )
     company: str = Field(
         description=(
-            "Company the person currently works at. Should match Role.company "
-            "for a valid referral candidate."
+            "Company named as the person's current employer by the saved public-source "
+            "evidence. Should match Role.company for a usable referral lead; this field "
+            "is not independent employment verification."
         ),
     )
     profile_url: str = Field(
@@ -239,20 +245,27 @@ class Person(BaseModel):
     )
     why_relevant: str = Field(
         description=(
-            "One sentence on why this person is a good referral target for this "
-            "specific role. Should reference something concrete about the role "
-            "or the person's title — not generic praise."
+            "One source-qualified sentence on why this result may be a useful lead "
+            "for the role. It must not turn a search snippet into an independently "
+            "verified title or employer claim."
         ),
     )
     verified_current_employer: bool = Field(
         default=False,
-        description="True only when evidence confirms the person's current employer.",
+        description=(
+            "True only when the saved public search result contains a current-employer "
+            "signal for this company. It means source evidence supports the claim, not "
+            "that the profile or employment was independently verified."
+        ),
     )
     confidence: float = Field(
         default=0.0,
         ge=0,
         le=1,
-        description="Confidence in the referral evidence, from 0 to 1.",
+        description=(
+            "Legacy source-evidence heuristic from 0 to 1; not a calibrated "
+            "probability or independent verification score."
+        ),
     )
 
 
