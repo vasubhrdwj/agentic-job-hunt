@@ -15,7 +15,12 @@ from typing import Annotated, Literal, Self
 from pydantic import BaseModel, ConfigDict, Field, StrictInt, field_validator, model_validator
 
 from .application_schemas import HttpsUrl, OpaqueId, UTCDateTime
-from .contact_schemas import ContactBenchState, ContactCategory, ContactLifecycle
+from .contact_schemas import (
+    ContactBenchState,
+    ContactCategory,
+    ContactLifecycle,
+    EmployerEvidenceResponse,
+)
 
 
 MAX_OUTREACH_RECIPIENTS = 5
@@ -307,6 +312,15 @@ class OutreachRecipientResponse(OutreachContractModel):
     current_title: str = Field(min_length=1, max_length=300)
     current_company: str = Field(min_length=1, max_length=200)
     category: ContactCategory
+    why_relevant: str = Field(
+        min_length=1,
+        max_length=2_000,
+        description=(
+            "Saved role-specific selection rationale; this is an app assessment, "
+            "not an independently verified fact about the person."
+        ),
+    )
+    employer_evidence: EmployerEvidenceResponse
     bench_rank: StrictInt = Field(ge=1, le=MAX_OUTREACH_RECIPIENTS)
     wave: StrictInt = Field(ge=1, le=MAX_OUTREACH_RECIPIENTS)
     bench_state: ContactBenchState

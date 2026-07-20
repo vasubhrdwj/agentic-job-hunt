@@ -131,7 +131,7 @@ def _send_follow_up(
             message_version_id=message.id,
         ),
         key="reply-test-follow-up-copy",
-        now=due - timedelta(minutes=1),
+        now=due,
     )
     response = _record(
         database,

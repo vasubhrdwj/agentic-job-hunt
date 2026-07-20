@@ -99,6 +99,13 @@ def _recipient(
         current_title="Staff Engineer",
         current_company="Example",
         category="team_peer",
+        why_relevant="The saved result suggests work near this hiring team.",
+        employer_evidence={
+            "excerpt": "Public profile result lists a Staff Engineer role at Example.",
+            "url": f"https://www.linkedin.com/in/person-{rank}",
+            "source": "linkedin",
+            "observed_at": NOW,
+        },
         bench_rank=rank,
         wave=rank if wave is None else wave,
         bench_state="ready" if rank == 1 else "reserve",

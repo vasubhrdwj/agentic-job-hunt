@@ -518,6 +518,21 @@ def test_start_unlocks_up_to_five_diverse_people_together_then_replays(
         "team_leader",
         "recruiter",
     }
+    assert all(
+        item.why_relevant
+        == "Works with the team or recruiting function for this role."
+        for item in first.recipients
+    )
+    assert all(
+        item.employer_evidence.excerpt
+        == "Public profile lists a current role at Acme."
+        for item in first.recipients
+    )
+    assert all(
+        item.employer_evidence.source == "linkedin"
+        and str(item.employer_evidence.url).startswith("https://www.linkedin.com/")
+        for item in first.recipients
+    )
     assert all(item.no_reply_eligible_at is None for item in first.recipients)
 
     replay = _start(outreach_db, keyring, now=NOW + timedelta(minutes=1))
@@ -909,6 +924,18 @@ def test_follow_up_cannot_send_early_and_no_reply_obeys_manual_cadence(
         _recipient(response, "application-contact-1").no_reply_eligible_at
         == initial_no_reply_at
     )
+    with pytest.raises(ResourceConflict, match="follow-up window is not due"):
+        _record(
+            outreach_db,
+            keyring,
+            response,
+            payload=OutreachCopiedEventCreate(
+                event_type="copied",
+                message_version_id=follow_up.id,
+            ),
+            key="follow-early-copy",
+            now=due - timedelta(seconds=1),
+        )
     response = _record(
         outreach_db,
         keyring,
@@ -917,23 +944,9 @@ def test_follow_up_cannot_send_early_and_no_reply_obeys_manual_cadence(
             event_type="copied",
             message_version_id=follow_up.id,
         ),
-        key="follow-copy",
-        now=sent_at + timedelta(days=1, minutes=1),
+        key="follow-due-copy",
+        now=due,
     )
-    with pytest.raises(ResourceConflict):
-        _record(
-            outreach_db,
-            keyring,
-            response,
-            payload=OutreachMarkedSentEventCreate(
-                event_type="marked_sent",
-                message_version_id=follow_up.id,
-                channel="linkedin",
-                confirm_exact_version=True,
-            ),
-            key="follow-early-send",
-            now=due - timedelta(seconds=1),
-        )
     response = _record(
         outreach_db,
         keyring,
@@ -1069,12 +1082,29 @@ def test_person_cooldown_blocks_same_contact_on_another_application(
     outreach_db: Database,
     keyring: DataKeyring,
 ) -> None:
-    sent_at = NOW + timedelta(minutes=3)
-    _save_copy_send_initial(
+    released_at = NOW + timedelta(minutes=2)
+    response = _save(
         outreach_db,
         keyring,
         _start(outreach_db, keyring),
-        sent_at=sent_at,
+        recipient_id="application-contact-1",
+        kind="initial",
+        body="Reserve this exact message before external copy.",
+        key="cooldown-copy-save",
+        now=NOW + timedelta(minutes=1),
+    )
+    message = _recipient(response, "application-contact-1").initial_message
+    assert message is not None
+    _record(
+        outreach_db,
+        keyring,
+        response,
+        payload=OutreachCopiedEventCreate(
+            event_type="copied",
+            message_version_id=message.id,
+        ),
+        key="cooldown-copy-release",
+        now=released_at,
     )
     with outreach_db.session() as session:
         _seed_application_graph(
@@ -1135,7 +1165,7 @@ def test_person_cooldown_blocks_same_contact_on_another_application(
             outreach_db,
             keyring,
             key="start-second-application",
-            now=sent_at + timedelta(days=1),
+            now=released_at + timedelta(days=1),
             application_id="application-b",
         )
 
@@ -1205,6 +1235,7 @@ def test_presaved_follow_up_cannot_be_used_after_useful_reply_and_resume(
     )
     follow_up = _recipient(response, "application-contact-1").follow_up_message
     assert follow_up is not None
+    reply_at = max(due + timedelta(minutes=1), NOW + timedelta(days=2))
     if action == "send":
         response = _record(
             outreach_db,
@@ -1215,7 +1246,7 @@ def test_presaved_follow_up_cannot_be_used_after_useful_reply_and_resume(
                 message_version_id=follow_up.id,
             ),
             key="presaved-follow-up-copy-before-reply",
-            now=NOW + timedelta(days=1, minutes=1),
+            now=due,
         )
     response = _reply(
         outreach_db,
@@ -1224,7 +1255,7 @@ def test_presaved_follow_up_cannot_be_used_after_useful_reply_and_resume(
         recipient_id="application-contact-1",
         reply_kind="useful_reply",
         key=f"presaved-useful-reply-{action}",
-        now=NOW + timedelta(days=2),
+        now=reply_at,
     )
     response = _record(
         outreach_db,
@@ -1235,7 +1266,7 @@ def test_presaved_follow_up_cannot_be_used_after_useful_reply_and_resume(
             reason="The owner reviewed the reply and resumed the sequence.",
         ),
         key=f"presaved-resume-{action}",
-        now=NOW + timedelta(days=2, minutes=1),
+        now=reply_at + timedelta(minutes=1),
     )
 
     payload = (
@@ -1258,7 +1289,7 @@ def test_presaved_follow_up_cannot_be_used_after_useful_reply_and_resume(
             response,
             payload=payload,
             key=f"presaved-blocked-{action}",
-            now=max(due, NOW + timedelta(days=2, minutes=2)),
+            now=reply_at + timedelta(minutes=2),
         )
 
 
@@ -1399,7 +1430,7 @@ def test_posting_closure_on_next_mutation_atomically_stops_without_saving_messag
         ) == ["sequence_started", "stopped"]
 
 
-def test_fourth_cold_employee_send_at_same_company_within_seven_days_is_blocked(
+def test_fourth_cold_employee_copy_at_same_company_within_seven_days_is_blocked(
     outreach_db: Database,
     keyring: DataKeyring,
 ) -> None:
@@ -1425,41 +1456,34 @@ def test_fourth_cold_employee_send_at_same_company_within_seven_days_is_blocked(
         response,
         recipient_id="application-contact-5",
         kind="initial",
-        body="The fourth cold employee message must be blocked at send time.",
+        body="The fourth cold employee message must be blocked before copy.",
         key="cold-four-save",
         now=NOW + timedelta(minutes=40),
     )
     fourth = _recipient(response, "application-contact-5").initial_message
     assert fourth is not None
-    response = _record(
-        outreach_db,
-        keyring,
-        response,
-        payload=OutreachCopiedEventCreate(
-            event_type="copied",
-            message_version_id=fourth.id,
-        ),
-        key="cold-four-copy",
-        now=NOW + timedelta(minutes=41),
-    )
     with pytest.raises(ResourceConflict, match="three cold employee contacts"):
         _record(
             outreach_db,
             keyring,
             response,
-            payload=OutreachMarkedSentEventCreate(
-                event_type="marked_sent",
+            payload=OutreachCopiedEventCreate(
+                event_type="copied",
                 message_version_id=fourth.id,
-                channel="linkedin",
-                confirm_exact_version=True,
             ),
-            key="cold-four-send",
-            now=NOW + timedelta(minutes=42),
+            key="cold-four-copy",
+            now=NOW + timedelta(minutes=41),
         )
     with outreach_db.session() as session:
         assert session.scalar(
             select(func.count(OutreachEvent.id)).where(
                 OutreachEvent.event_type == "marked_sent",
+                OutreachEvent.kind == "initial",
+            )
+        ) == 3
+        assert session.scalar(
+            select(func.count(OutreachEvent.id)).where(
+                OutreachEvent.event_type == "copied",
                 OutreachEvent.kind == "initial",
             )
         ) == 3

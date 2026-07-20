@@ -17,6 +17,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from .application_schemas import CONTACTABLE_APPLICATION_STAGE_VALUES
+from .contact_schemas import EmployerEvidenceResponse
 from .job_queue import utcnow
 from .models import (
     Application,
@@ -266,6 +267,16 @@ def load_application_outreach(
 
     recipients: list[OutreachRecipientResponse] = []
     for application_contact, contact in recipient_rows:
+        employer_evidence_values = (
+            application_contact.employer_evidence_excerpt,
+            application_contact.employer_evidence_url,
+            application_contact.employer_evidence_source,
+            application_contact.employer_evidence_observed_at,
+        )
+        if any(value is None for value in employer_evidence_values):
+            raise OutreachRepositoryError(
+                "a pinned outreach recipient has incomplete employer evidence"
+            )
         initial = latest_messages.get((application_contact.id, "initial"))
         follow_up = latest_messages.get((application_contact.id, "follow_up"))
         outcome_event = latest_outcomes.get(application_contact.id)
@@ -284,6 +295,15 @@ def load_application_outreach(
                 current_title=application_contact.current_title,
                 current_company=application_contact.current_company,
                 category=application_contact.category,
+                why_relevant=application_contact.why_relevant,
+                employer_evidence=EmployerEvidenceResponse(
+                    excerpt=cast(str, application_contact.employer_evidence_excerpt),
+                    url=cast(str, application_contact.employer_evidence_url),
+                    source=cast(str, application_contact.employer_evidence_source),
+                    observed_at=_as_utc(
+                        cast(datetime, application_contact.employer_evidence_observed_at)
+                    ),
+                ),
                 bench_rank=cast(int, application_contact.bench_rank),
                 wave=cast(int, application_contact.wave),
                 bench_state=application_contact.bench_state,
@@ -511,7 +531,7 @@ def start_outreach_sequence(
 
     eligible: list[tuple[ApplicationContact, Contact]] = []
     for application_contact, contact in rows:
-        last_sent = _last_initial_send_for_contact(
+        last_sent = _last_initial_release_for_contact(
             session,
             owner_id=owner_id,
             contact_id=contact.id,
@@ -542,8 +562,9 @@ def start_outreach_sequence(
     # currently eligible, distinct person in that bounded bench available at
     # once instead of hiding most of the useful leads behind week-long serial
     # waves.  Message bodies and send assertions remain per-person, while the
-    # person cooldown and company rolling-window throttle are still enforced
-    # at the consequential ``marked_sent`` transition.
+    # person cooldown and company rolling-window throttle are enforced before
+    # the app releases a message for external copy, then checked again when the
+    # owner records the exact message as sent.
     first_wave = _diverse_initial_wave(eligible)
     first_wave_ids = {application_contact.id for application_contact, _ in first_wave}
     for application_contact, _contact in rows:
@@ -1374,6 +1395,24 @@ def _record_copy(
         kind=message.kind,
     ) is not None:
         raise ResourceConflict("the message was already marked sent")
+    if message.kind == "follow_up":
+        _require_follow_up_release_due(
+            session,
+            sequence=sequence,
+            application_contact=application_contact,
+            now=now,
+        )
+    else:
+        _enforce_initial_release_limits(
+            session,
+            sequence=sequence,
+            application_contact=application_contact,
+            contact=contact,
+            now=now,
+        )
+        application_contact.cooldown_until = now + timedelta(days=PERSON_COOLDOWN_DAYS)
+        application_contact.version += 1
+        application_contact.updated_at = now
     _add_sequence_event(
         session,
         sequence=sequence,
@@ -1439,43 +1478,20 @@ def _record_marked_sent(
 
     follow_up_due_at: datetime | None = None
     if message.kind == "follow_up":
-        initial_sent = _sent_event(
+        _require_follow_up_release_due(
             session,
             sequence=sequence,
-            application_contact_id=application_contact.id,
-            kind="initial",
+            application_contact=application_contact,
+            now=now,
         )
-        if initial_sent is None or initial_sent.follow_up_due_at is None:
-            raise ResourceConflict("an initial send is required before a follow-up")
-        if now < _as_utc(initial_sent.follow_up_due_at):
-            raise ResourceConflict("the five-business-day follow-up window is not due")
     else:
-        # One owner row is the shared throttle lock across every application.
-        # This makes the person cooldown and company rolling-window count one
-        # serial decision even when two sequences are marked sent concurrently.
-        owner = session.scalar(
-            select(Owner)
-            .where(Owner.id == sequence.owner_id)
-            .with_for_update()
-        )
-        if owner is None:
-            raise OutreachRepositoryError("outreach owner is missing")
-        last_sent = _last_initial_send_for_contact(
+        owner = _enforce_initial_release_limits(
             session,
-            owner_id=sequence.owner_id,
-            contact_id=contact.id,
+            sequence=sequence,
+            application_contact=application_contact,
+            contact=contact,
+            now=now,
         )
-        if last_sent is not None and _as_utc(last_sent) + timedelta(
-            days=PERSON_COOLDOWN_DAYS
-        ) > now:
-            raise ResourceConflict("this person was contacted within the last 30 days")
-        if application_contact.category not in {"recruiter", "warm_path"}:
-            _enforce_company_cold_limit(
-                session,
-                sequence=sequence,
-                application_contact=application_contact,
-                now=now,
-            )
         follow_up_due_at = add_business_days(
             now,
             FOLLOW_UP_BUSINESS_DAYS,
@@ -2077,13 +2093,14 @@ def _latest_outcome(
     )
 
 
-def _last_initial_send_for_contact(
+def _last_initial_release_for_contact(
     session: Session,
     *,
     owner_id: str,
     contact_id: str,
+    exclude_application_contact_id: str | None = None,
 ) -> datetime | None:
-    return session.scalar(
+    statement = (
         select(func.max(OutreachEvent.occurred_at))
         .join(
             ApplicationContact,
@@ -2092,11 +2109,72 @@ def _last_initial_send_for_contact(
         )
         .where(
             OutreachEvent.owner_id == owner_id,
-            OutreachEvent.event_type == "marked_sent",
+            OutreachEvent.event_type.in_(("copied", "marked_sent")),
             OutreachEvent.kind == "initial",
             ApplicationContact.contact_id == contact_id,
         )
     )
+    if exclude_application_contact_id is not None:
+        statement = statement.where(
+            ApplicationContact.id != exclude_application_contact_id
+        )
+    return session.scalar(statement)
+
+
+def _enforce_initial_release_limits(
+    session: Session,
+    *,
+    sequence: OutreachSequence,
+    application_contact: ApplicationContact,
+    contact: Contact,
+    now: datetime,
+) -> Owner:
+    """Reserve one external-send slot under an owner-wide transaction lock."""
+
+    owner = session.scalar(
+        select(Owner)
+        .where(Owner.id == sequence.owner_id)
+        .with_for_update()
+    )
+    if owner is None:
+        raise OutreachRepositoryError("outreach owner is missing")
+    last_release = _last_initial_release_for_contact(
+        session,
+        owner_id=sequence.owner_id,
+        contact_id=contact.id,
+        exclude_application_contact_id=application_contact.id,
+    )
+    if last_release is not None and _as_utc(last_release) + timedelta(
+        days=PERSON_COOLDOWN_DAYS
+    ) > now:
+        raise ResourceConflict("this person was contacted within the last 30 days")
+    if application_contact.category not in {"recruiter", "warm_path"}:
+        _enforce_company_cold_limit(
+            session,
+            sequence=sequence,
+            application_contact=application_contact,
+            now=now,
+        )
+    return owner
+
+
+def _require_follow_up_release_due(
+    session: Session,
+    *,
+    sequence: OutreachSequence,
+    application_contact: ApplicationContact,
+    now: datetime,
+) -> None:
+    initial_sent = _sent_event(
+        session,
+        sequence=sequence,
+        application_contact_id=application_contact.id,
+        kind="initial",
+    )
+    if initial_sent is None or initial_sent.follow_up_due_at is None:
+        raise ResourceConflict("an initial send is required before a follow-up")
+    if now < _as_utc(initial_sent.follow_up_due_at):
+        raise ResourceConflict("the five-business-day follow-up window is not due")
 
 
 def _enforce_company_cold_limit(
@@ -2117,9 +2195,10 @@ def _enforce_company_cold_limit(
         )
         .where(
             OutreachEvent.owner_id == sequence.owner_id,
-            OutreachEvent.event_type == "marked_sent",
+            OutreachEvent.event_type.in_(("copied", "marked_sent")),
             OutreachEvent.kind == "initial",
             OutreachEvent.occurred_at >= cutoff,
+            ApplicationContact.contact_id != application_contact.contact_id,
             func.lower(func.trim(ApplicationContact.current_company))
             == application_contact.current_company.strip().lower(),
             ApplicationContact.category.not_in(("recruiter", "warm_path")),
