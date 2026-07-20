@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
   MAX_RESUME_FILE_BYTES,
+  MAX_RESUME_LABEL_CHARACTERS,
   formatResumeFileSize,
   profileGapLabels,
   resumeImportPresentation,
@@ -38,6 +39,10 @@ test("resume upload derives a readable optional label and file size", () => {
   assert.equal(formatResumeFileSize(100), "100 B");
   assert.equal(formatResumeFileSize(1_025), "2 KB");
   assert.equal(formatResumeFileSize(1.5 * 1024 * 1024), "1.5 MB");
+  assert.equal(
+    resumeLabelFromFilename(`${"a".repeat(140)}.pdf`).length,
+    MAX_RESUME_LABEL_CHARACTERS,
+  );
 });
 
 test("import report becomes a concise, deduplicated UI summary", () => {

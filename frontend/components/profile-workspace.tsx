@@ -26,6 +26,7 @@ import {
 } from "@/lib/workspace-api";
 import {
   formatResumeFileSize,
+  MAX_RESUME_LABEL_CHARACTERS,
   profileGapLabels,
   RESUME_FILE_ACCEPT,
   resumeImportPresentation,
@@ -251,7 +252,9 @@ export function ProfileWorkspace() {
       return;
     }
     setResumeFile(file);
-    setUploadLabel(resumeLabelFromFilename(file.name));
+    // Leave the label absent unless the owner explicitly customizes it. The
+    // backend derives and safely bounds the default from the uploaded filename.
+    setUploadLabel("");
     uploadKey.current = null;
     setUploadReport(null);
     setUploadWarning(null);
@@ -624,7 +627,7 @@ export function ProfileWorkspace() {
       <WorkspaceSection
         eyebrow="Step 1"
         title="Import your resume"
-        description="Upload your existing resume once. The app extracts its text into an encrypted immutable version, fills facts it can verify, and discards the original file after reading it."
+        description="Upload your existing resume once. The app extracts its text into an encrypted immutable version, fills a few profile details conservatively, flags estimates, and discards the original file after reading it."
       >
         <div className="space-y-6">
           {baseResume ? (
@@ -659,7 +662,9 @@ export function ProfileWorkspace() {
                 type="file"
                 accept={RESUME_FILE_ACCEPT}
                 className="sr-only"
+                tabIndex={-1}
                 disabled={uploadPending}
+                aria-label="Resume file"
                 aria-describedby="resume-file-help"
                 onChange={(event) => selectResumeFile(event.target.files?.item(0) ?? null)}
               />
@@ -709,12 +714,13 @@ export function ProfileWorkspace() {
                     <input
                       id="upload-resume-label"
                       value={uploadLabel}
+                      maxLength={MAX_RESUME_LABEL_CHARACTERS}
                       onChange={(event) => {
                         setUploadLabel(event.target.value);
                         uploadKey.current = null;
                       }}
                       className={inputClasses}
-                      placeholder="Backend resume · July 2026"
+                      placeholder={resumeLabelFromFilename(resumeFile.name)}
                     />
                   </FormField>
                   <label className="flex items-center gap-2 self-end pb-3 text-sm">
@@ -811,7 +817,7 @@ export function ProfileWorkspace() {
       <WorkspaceSection
         eyebrow="Step 2"
         title="Review your profile"
-        description="The resume importer fills factual details it can verify. Open this only to correct them or add preferences a resume usually cannot answer."
+        description="The importer fills a few details it can extract conservatively. Open this to correct an estimate or add preferences a resume usually cannot answer."
       >
         <div className="rounded-lg border border-zinc-200 bg-zinc-50/70 p-4 dark:border-zinc-800 dark:bg-zinc-950/40">
           <p className="text-xs font-semibold uppercase tracking-[0.12em] text-zinc-500">
@@ -820,7 +826,7 @@ export function ProfileWorkspace() {
           <p className="mt-2 text-sm leading-6">
             {profileHighlights.length > 0
               ? profileHighlights.join(" · ")
-              : "No factual profile details have been imported yet."}
+              : "No title, location, or experience is saved yet."}
           </p>
           {profileGaps.length > 0 ? (
             <div className="mt-3 border-t border-zinc-200 pt-3 dark:border-zinc-800">
@@ -1060,44 +1066,49 @@ function ResumeImportSummary({ report }: { report: ResumeImportReport }) {
   const resume = report.resume_version;
 
   return (
-    <StatusMessage kind="success">
-      <p className="font-semibold">Resume imported</p>
-      <p className="mt-1 leading-6">
-        <strong>{resume.label}</strong> · {resume.character_count.toLocaleString()} characters
-        {resume.is_base ? " · set as your base resume" : ""}
-      </p>
-      <div className="mt-3 space-y-1 text-xs leading-5">
-        {summary.parsedSections.length > 0 ? (
-          <p><strong>Sections read:</strong> {summary.parsedSections.join(", ")}</p>
-        ) : null}
-        {summary.importedProfileDetails.length > 0 ? (
-          <p><strong>Profile filled:</strong> {summary.importedProfileDetails.join(", ")}</p>
-        ) : null}
-        <p>
-          <strong>Achievements imported:</strong> {summary.achievementCount}
+    <div className="space-y-3">
+      <StatusMessage kind="success">
+        <p className="font-semibold">Resume imported</p>
+        <p className="mt-1 leading-6">
+          <strong>{resume.label}</strong> · {resume.character_count.toLocaleString()} characters
+          {resume.is_base ? " · set as your base resume" : ""}
         </p>
-      </div>
-      {summary.missingDetails.length > 0 ? (
-        <div className="mt-3 border-t border-emerald-200 pt-3 dark:border-emerald-900">
-          <p className="text-xs font-medium">Worth adding later</p>
-          <ul className="mt-2 flex flex-wrap gap-1.5" aria-label="Missing profile details">
-            {summary.missingDetails.map((detail) => (
-              <li
-                key={detail}
-                className="rounded-full border border-emerald-300/80 bg-white/60 px-2 py-0.5 text-xs dark:border-emerald-800 dark:bg-emerald-950/60"
-              >
-                {detail}
-              </li>
-            ))}
-          </ul>
+        <div className="mt-3 space-y-1 text-xs leading-5">
+          {summary.parsedSections.length > 0 ? (
+            <p><strong>Sections read:</strong> {summary.parsedSections.join(", ")}</p>
+          ) : null}
+          {summary.importedProfileDetails.length > 0 ? (
+            <p><strong>Profile filled:</strong> {summary.importedProfileDetails.join(", ")}</p>
+          ) : null}
+          <p>
+            <strong>Achievements imported:</strong> {summary.achievementCount}
+          </p>
         </div>
-      ) : null}
+        {summary.missingDetails.length > 0 ? (
+          <div className="mt-3 border-t border-emerald-200 pt-3 dark:border-emerald-900">
+            <p className="text-xs font-medium">Worth adding later</p>
+            <ul className="mt-2 flex flex-wrap gap-1.5" aria-label="Missing profile details">
+              {summary.missingDetails.map((detail) => (
+                <li
+                  key={detail}
+                  className="rounded-full border border-emerald-300/80 bg-white/60 px-2 py-0.5 text-xs dark:border-emerald-800 dark:bg-emerald-950/60"
+                >
+                  {detail}
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
+      </StatusMessage>
       {report.warnings.length > 0 ? (
-        <ul className="mt-3 list-disc space-y-1 pl-4 text-xs">
-          {report.warnings.map((warning) => <li key={warning}>{warning}</li>)}
-        </ul>
+        <StatusMessage kind="warning">
+          <p className="font-semibold">Review these estimates</p>
+          <ul className="mt-2 list-disc space-y-1 pl-4 text-xs leading-5">
+            {report.warnings.map((warning) => <li key={warning}>{warning}</li>)}
+          </ul>
+        </StatusMessage>
       ) : null}
-    </StatusMessage>
+    </div>
   );
 }
 

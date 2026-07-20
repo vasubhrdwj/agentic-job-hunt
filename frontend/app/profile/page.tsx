@@ -21,7 +21,7 @@ export default async function ProfilePage({
       <WorkspaceHeader
         active="profile"
         title="Your job-search foundation"
-        description="Start with your resume. The app imports the facts and achievements it can verify; you only review gaps and add the preferences a resume cannot answer."
+        description="Start with your resume. The app conservatively extracts profile details and exact resume claims; you only review estimates, fill gaps, and add preferences a resume cannot answer."
       />
       {showWelcome ? (
         <div

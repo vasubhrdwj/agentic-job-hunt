@@ -1,6 +1,7 @@
 import type { ResumeImportReport } from "./workspace-types";
 
 export const MAX_RESUME_FILE_BYTES = 3 * 1024 * 1024;
+export const MAX_RESUME_LABEL_CHARACTERS = 120;
 export const RESUME_FILE_ACCEPT = ".pdf,.docx,.txt";
 
 const SUPPORTED_RESUME_EXTENSIONS = new Set(["pdf", "docx", "txt"]);
@@ -55,7 +56,7 @@ export function resumeLabelFromFilename(filename: string): string {
     .replace(/[_-]+/g, " ")
     .replace(/\s+/g, " ")
     .trim();
-  return label || "Resume";
+  return (label || "Resume").slice(0, MAX_RESUME_LABEL_CHARACTERS).trimEnd();
 }
 
 export function formatResumeFileSize(bytes: number): string {
