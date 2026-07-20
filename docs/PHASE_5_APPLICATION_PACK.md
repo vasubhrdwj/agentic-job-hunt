@@ -11,7 +11,7 @@ role:
 
 ```text
 pursued application
-  -> select one immutable resume
+  -> automatically select the current immutable base resume when safe
   -> pin it with the pursued posting version in one application pack
   -> extract required/preferred statements as exact JD source spans
   -> review each statement against currently approved achievements
@@ -32,11 +32,15 @@ approval. The system never opens, fills, or submits an employer form.
 
 ## Delivered Phase 5A workflow
 
-### Start one pinned pack
+### Prepare one pinned pack
 
-The dossier shows **Fit and evidence review** before **People**. The owner
-selects one saved immutable resume; the current base resume is selected by
-default when available. Creating the pack pins:
+The dossier shows **Fit and evidence review** before **People**. When the exact
+persisted job description and current immutable base resume are both available,
+and there is no other saved resume to choose, the dossier
+creates this deterministic starting snapshot automatically. This
+removes a setup click without approving any requirement or final material. If
+the owner must paste a missing JD or wants an alternate resume, creation stays
+explicit. Creating the pack pins:
 
 - the owner and application;
 - the application's immutable `pursued_posting_version_id`;
@@ -373,7 +377,8 @@ Phase 5 does **not** include:
 - an `uncertain` requirement importance;
 - model/provider processing, automatic resume-to-evidence parsing, or freeform
   AI rewriting;
-- PDF/DOCX rendering or export;
+- PDF export or freeform document rendering (the exact approved single-column
+  DOCX download is delivered);
 - application-form scraping, browser automation, form filling, or submission;
 - live company research beyond the pinned JD;
 - a synthetic ATS score or LLM truth verdict;

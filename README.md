@@ -1,6 +1,13 @@
 # Job Hunt Signal
 
-An agent that runs a focused, evidence-based job hunt — and **learns to write better outreach from real outcomes in its own traces**. Paste a resume and criteria: it searches verified first-party company boards, filters for freshness and employment type, ranks roles against the resume, and drafts outreach only for contacts whose current employer can be verified. If the evidence is weak, it returns fewer results instead of inventing them.
+A private job-search copilot that turns a saved profile into a ranked, actionable
+pipeline. It scans a curated set of first-party company boards, removes stale or
+location-ineligible roles, ranks the complete result set by transparent fit,
+prepares grounded application and interview material, and finds up to five
+source-backed outreach leads for each pursued role. Weak evidence is shown as a
+gap instead of being invented. The owner still reviews claims and personally
+submits applications or sends messages; the app does the research, ordering,
+grounding, drafting, and follow-up organization around those decisions.
 
 > Submission for the Arize × Google hackathon (Gemini 3 + Agent Builder + Phoenix).
 > **Live app:** https://agentic-job-hunt.vercel.app · **Demo video:** _[add link after upload]_ · **Writeup:** [demo/DEVPOST.md](demo/DEVPOST.md)
@@ -18,9 +25,9 @@ pip install -r requirements.txt
 cp .env.example .env  # fill in GOOGLE_API_KEY, SERPAPI_API_KEY, PHOENIX_*
 ```
 
-## Practical product rebuild
+## Practical product
 
-The repository is being upgraded from a one-run hackathon demo into a private
+The repository has been rebuilt from a one-run hackathon demo into a private
 job-search workspace. The implementable product plan is in
 [`PRACTICAL_JOB_SEARCH_PLAN.md`](PRACTICAL_JOB_SEARCH_PLAN.md); the delivered
 foundation and first reusable job-search workflow are documented in
@@ -30,7 +37,7 @@ durable opportunity radar is documented in
 [`docs/PHASE_2_OPPORTUNITY_RADAR.md`](docs/PHASE_2_OPPORTUNITY_RADAR.md). The
 first practical application checkpoint is documented in
 [`docs/PHASE_3_APPLICATION_PIPELINE.md`](docs/PHASE_3_APPLICATION_PIPELINE.md).
-The verified-contact bench and manual outreach workflow are documented in
+The source-backed contact bench and manual outreach workflow are documented in
 [`docs/PHASE_4_CONTACT_BENCH.md`](docs/PHASE_4_CONTACT_BENCH.md). The delivered
 provider-free grounding, application-material, and exact manual-submission
 checkpoints are documented in
@@ -74,29 +81,34 @@ machine to `pursuing -> ready_to_apply -> applied`; every transition completes
 the prior task, creates exactly one new dated task, and appends an immutable
 activity event.
 
-Phase 4A–4D2 add the durable verified-contact bench, its provider-backed worker,
+Phase 4A–4D2 add the durable source-backed contact bench, its provider-backed worker,
 the practical dossier experience, and a safe manual-outreach workspace. Each
 pursued application can explicitly and idempotently queue a public-profile
 search, retain a 12-person
 evidence-backed discovery pool, and atomically publish a deterministic, diverse
 bench of up to five. The dossier polls real progress, preserves the last good
 bench during refresh failures, shows public evidence and checked dates, and
-reports honest shortfalls such as `3/5 verified`. Restricted contacts and closed
+reports honest shortfalls such as `3/5 source-backed`. A source snippet is not
+presented as independent employment verification. Restricted contacts and closed
 postings fail visibly closed. The outreach API pins one completed bench, unlocks
-only the strongest role-relevant person plus an optional recruiter with a
-distinct purpose, encrypts every exact message revision, and records copy and
-manual send assertions separately. It persists the five-business-day follow-up
-date, enforces one follow-up, 30-day person cooldowns, company volume limits,
-idempotency, and reply-driven pause/stop rules. Reads remain database-only and
-nothing sends automatically. The dossier adds an exact-message composer,
+up to five eligible distinct leads together, encrypts every exact message
+revision, and records copy and manual send assertions separately. It persists
+the five-business-day follow-up date, enforces one follow-up, 30-day person
+cooldowns, company volume limits, idempotency, and reply-driven pause/stop
+rules. Reads remain database-only and nothing sends automatically. The dossier
+adds a separate grounded draft for each person, an exact-message composer,
 clipboard-first copy tracking, separate send confirmation, follow-up timing,
 outcome logging, and pause/resume/stop controls while preserving unsaved text
 through refresh and ambiguous network failures.
 
 Phase 5 adds a provider-free application workflow before the People workspace.
-The **Fit and evidence review** pins one immutable resume and the pursued posting
-version, extracts exact `required` and `preferred` JD spans, maps only approved
-achievement evidence, and records explicit immutable review events.
+When the pursued posting already has a usable description and the base resume
+is the only saved resume, the **Fit and evidence review** prepares
+itself without an extra start click. It
+pins that immutable resume and posting version, extracts exact `required` and
+`preferred` JD spans, maps only approved achievement evidence, and records
+explicit immutable review events. Owner-pasted descriptions and alternate
+resumes remain explicit choices, and no fit decision is auto-approved.
 **Application materials** then creates an exact tailored-resume diff, company
 note, and answers to owner-entered questions with claim-level evidence or
 pinned-JD provenance. Unanswerable questions stay visibly blocked; approving
@@ -131,7 +143,7 @@ Continue or Waiting decision against the exact current action and next date.
 Its fixed 14-day application funnel keeps sample sizes, recent censored work,
 missing attribution, and late conversions visible. Source, career-track, and
 assessment segments use immutable pursuit-time snapshots only. Outreach is
-reported by verified contact type and bench position, while contacts two
+reported by source-evidence contact type and bench position, while contacts two
 through five are shown as observed rescue rates—not causal uplift—from exact
 initial and follow-up replies.
 
@@ -152,11 +164,12 @@ Deletion revokes every owner session while leaving other owners and system
 state untouched. See [the privacy-control contract](docs/PHASE_6_PRIVACY_CONTROLS.md)
 for export omissions, provider-side limits, and downgrade safety.
 
-The separate **Legacy hunt** remains available when you explicitly want the
-current end-to-end flow with resume matching, at least five appropriate
-referral leads per returned role, and draft generation. Cadence preferences
-are stored and timezone-correct, but automatic scan dispatch is deliberately
-not connected yet.
+The separate **Legacy hunt archive** is read-only for retained historical runs;
+it cannot start new provider work. New job-search work uses saved searches,
+Today, applications, source-backed People results, and grounded drafts. Saved
+search cadences are timezone-correct and enqueue durable role scans while the
+background service is awake. On free hosting, sleep can defer a scheduled slot
+until the next app visit; **Scan roles** remains the exact on-demand path.
 
 For the private local workspace:
 
@@ -210,7 +223,9 @@ Add `--trace` to emit OpenTelemetry spans to your Phoenix project, or `--use-moc
 - Known employment-type mismatches are filtered. A posting with no explicit
   employment evidence remains visible as `unknown` so missing source metadata
   cannot silently hide an otherwise relevant role.
-- Referral candidates require current-employer evidence and confidence of at least 0.5. No verified candidate means no draft, plus honest guidance in the UI.
+- Referral candidates require a saved current-employer source signal and confidence
+  of at least 0.5. No source-backed candidate means no draft, plus honest guidance
+  in the UI; this threshold is not independent employment verification.
 - Past drafts are retrieved by logged outcome first (`introduced`/`replied` before neutral or `no_reply`), with judge score used only as a tiebreaker.
 
 ## The self-improvement loop
@@ -401,7 +416,8 @@ in-place operations and require a migration-current, identity-matched archive.
 
 `render.yaml` keeps the deployment on Render's free web tier and enables one
 embedded durable worker in that process. A user request wakes the web and
-worker together; interrupted leases recover after a restart. The bridge always
+worker together; due scheduled searches are durably enqueued on that wake, and
+interrupted leases recover after a restart. The bridge always
 supports provider-free role scans and also supports explicit contact searches
 when `SERPAPI_API_KEY` is configured. Missing contact configuration never
 disables role scans, and the bridge never claims legacy provider jobs.
@@ -517,7 +533,7 @@ After the worker succeeds, `GET /api/runs/{run_id}` returns:
     "run_id": "<trace-correlated id>",
     "roles": [
       {
-        "company": "<verified company>",
+        "company": "<company from first-party posting>",
         "title": "<title from posting>",
         "url": "<first-party apply URL>",
         "location": "<location from posting>",
@@ -538,7 +554,7 @@ After the worker succeeds, `GET /api/runs/{run_id}` returns:
 }
 ```
 
-An empty `outreach` array means no current employee met the verification bar;
+An empty `outreach` array means no public-profile result met the source-evidence bar;
 the UI explains how to continue the search manually.
 
 ## Layout

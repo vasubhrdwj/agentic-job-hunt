@@ -9,10 +9,10 @@ Phase 1 removes the most repetitive part of the current workflow. The owner
 stores a base resume and job preferences once, then launches a deliberate hunt
 from a saved search without repasting or reconstructing criteria.
 
-This slice does **not** claim that automatic scanning is live. Saving or editing
-a profile/search makes zero provider calls. Scheduled scan execution arrives in
-the opportunity-radar phase after its worker handler and persistence model are
-ready.
+At Phase 1 delivery, saving or editing a profile/search made zero provider calls
+and scheduled execution was intentionally deferred. Phase 2 now connects due
+saved searches to the durable scan worker while the hosted service is awake;
+editing profile/search data itself still makes no provider call.
 
 ## First usable flow
 
@@ -28,7 +28,8 @@ sign in
   -> launch the existing durable hunt
 ```
 
-The existing one-off hunt remains available throughout the migration.
+This was the first migration flow. New legacy hunts are now retired; retained
+runs remain readable in the Legacy hunt archive.
 
 ## Product boundaries
 
@@ -42,15 +43,15 @@ The existing one-off hunt remains available throughout the migration.
   resume parsing or generated claims in this slice.
 - `Run now` is a projection, not a provider action. The owner still reviews the
   provider disclosure and explicitly launches the hunt.
-- Manual cadence is honest and immediately useful. Daily/weekdays/weekly
-  schedules may be stored with a timezone and next-run projection, but the UI
-  labels them as awaiting the scan-worker phase until dispatch is connected.
+- Manual cadence remains available. Daily/weekdays/weekly schedules now create
+  durable scans while the background service is awake, with an explicit free-
+  hosting sleep caveat and an on-demand **Scan roles** fallback.
 
 ## Non-technical UI
 
 ### Home
 
-- Keep `New hunt` usable.
+- Keep retained legacy runs readable without starting new legacy work.
 - When a base resume exists, prefill it instead of showing a blank textarea.
 - Show a compact saved-search selector above the hunt form.
 - Selecting a search fills the form; it never starts work automatically.
@@ -64,9 +65,9 @@ Use four plain-language sections:
    work modes, notice period, and a short career direction.
 2. **Base resume** — current encrypted resume, version metadata, and `Make base`
    for another immutable version.
-3. **Career targets** — named role families, allowed seniorities, target
-   locations, and simple 0–5 priorities for compensation, scope, learning,
-   company quality, and flexibility.
+3. **Career targets** — named role families, allowed seniorities, and target
+   locations. Stored preference weights remain advanced metadata and are
+   explicitly not presented as part of current ranking.
 4. **Achievement evidence** — manual truthful claims with an explicit pending,
    approved, rejected, or retired review state.
 

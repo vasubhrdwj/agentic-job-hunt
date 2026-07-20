@@ -90,18 +90,19 @@ This checkpoint does not claim any of the following:
   follow-ups; or
 - automatic applications or external messages.
 
-## Immediate next checkpoint: verified contact bench
+## Immediate next checkpoint: source-backed contact bench
 
 The locked next product checkpoint is:
 
-> For every pursued role, discover a larger candidate pool and retain at least
-> five distinct, appropriate, currently employed, evidence-backed contacts when
-> five can be verified.
+> For every pursued role, discover a larger candidate pool and retain up to
+> five distinct, appropriate public-profile leads when their saved source
+> evidence meets the configured threshold.
 
 Five remains a coverage target, not permission to invent or pad results. A
-shortfall must be shown honestly, such as `3 of 5 verified`, with structured
-reasons. Contacts will be sequenced progressively and nothing will be sent
-automatically. This contact bench is **not implemented in Phase 3A**.
+shortfall must be shown honestly, such as `3 of 5 source-backed`, with structured
+reasons. Up to five eligible leads can be prepared together, but every message
+and send record remains separate and nothing is sent automatically. This
+contact bench was **not implemented in Phase 3A**; Phase 4 now delivers it.
 
 ## Checkpoint gate
 

@@ -1,10 +1,10 @@
 # Phase 2 — Durable Opportunity Radar
 
-**Status:** 2A1 is pushed in commit `31043a9`. The complete manual radar
-vertical (2A2–2A4) is implemented and passes hermetic backend/frontend gates,
-including retry replay, content reversion, pinned scan settings, trusted apply
-links, and terminal-worker recovery. The real-Postgres concurrency gate and
-authoritative lifecycle closure remain pending.
+**Status:** The complete durable radar is implemented, including manual scans,
+automatic due-slot dispatch while the background service is awake, retry
+replay, pinned scan settings, trusted apply links, and terminal-worker recovery.
+Free hosting can sleep, so a scheduled slot may be picked up on the next app
+wake; the manual **Scan roles** path remains available.
 
 ## Outcome
 
@@ -80,14 +80,16 @@ scan architecture.
 
 ### 2A3 — Search-only worker and API
 
-**Implemented for manual scans.**
+**Implemented for manual and scheduled scans.**
 
 - `POST /api/saved-searches/{id}/scans` creates or replays one scan.
 - `GET /api/scans/{id}` reports real persisted progress and degradation.
 - The worker fetches search results without referral discovery, drafting,
   self-RAG, resume transmission, or model calls.
-- Automatic cadence dispatch stays disabled until manual scans and retry
-  finalization pass the release gate.
+- Due active searches are claimed oldest-first with PostgreSQL row locks and
+  durable slot keys. Each scheduled scan pins the exact search version,
+  criteria, pack, and source inventory before advancing the next local-time
+  slot. Manual, inactive, future, or invalid searches cannot create work.
 
 ### 2A4 — Today review inbox
 
@@ -132,23 +134,24 @@ Phase 2A is complete when:
    a later scan is degraded;
 8. watch, dismiss, and undo survive refresh and reject stale edits;
 9. first-party apply URLs and all unknown facts remain explicit; and
-10. the existing full hunt, five-contact output, profile, and saved-search flows
-    continue to pass their release gates.
+10. the read-only legacy archive, source-backed contact output, profile, and
+    saved-search flows continue to pass their release gates.
 
 ## Current verification
 
-- Full backend: 565 passed, 8 skipped, and 16 subtests passed.
+- The repository-wide backend, frontend unit, API-contract, lint, typecheck,
+  and production-build gates pass on the current release candidate.
 - Search-worker tests prove retry convergence, three durable mock
   opportunities, first-party URL enforcement, source-failure retention, and
   zero hunt/referral/drafting/resume/model calls.
 - The same posting across scans creates one opportunity and one immutable
   version; changed source facts add a version; two searches retain two
   provenance edges.
-- Frontend API contract generation, lint, typecheck, and a production webpack
+- Frontend API contract generation, lint, typecheck, and a production Next.js
   build pass for `/today`, `/jobs/[id]`, `/searches`, and `/hunt`.
-- Real PostgreSQL was not reachable from the restricted QA sandbox, so the
-  concurrent native-key upsert gate still needs its configured CI or local
-  Docker run.
+- PostgreSQL concurrency tests are included and run when `TEST_DATABASE_URL`
+  points at a disposable database. Restricted local runs skip those destructive
+  overlap cases while still compiling and asserting the PostgreSQL lock SQL.
 - Complete-board fetching and two-authoritative-omission closure remain
   deliberately disabled. Current criteria-filtered or partial scans never
   close or hide an existing opportunity.

@@ -1,4 +1,4 @@
-# Phase 4 — Verified contact bench
+# Phase 4 — Source-backed contact bench
 
 **Status:** Phase 4A through 4D2 are implemented.
 
@@ -7,11 +7,13 @@
 Each pursued application can build a durable bench of up to five distinct,
 appropriate people from a larger discovery pool. Five is the target, never a
 padding requirement: if only three people have sufficient evidence, the
-product must persist and display `3/5 verified` with structured reasons.
+product must persist and display `3/5 source-backed` with structured reasons.
 
-The contact search finds and verifies public professional profiles. The 4D
-workspace preserves owner-written message versions and explicit manual actions,
-but it does **not** generate or send a message.
+The contact search finds public professional-profile results and preserves the
+exact source snippet used for each lead. It does not independently verify a
+person's current employment. The 4D workspace prepares grounded drafts,
+preserves owner-written message versions, and records explicit manual actions,
+but it does **not** send a message.
 
 ## Product rules
 
@@ -19,15 +21,15 @@ but it does **not** generate or send a message.
   leaders, recruiters, and explicit owner-provided warm paths.
 - Select at most five after evidence checks, deterministic scoring, identity
   deduplication, cooldown checks, and category diversity.
-- Require current-employer evidence observed from a named public source,
-  including a bounded excerpt, HTTPS URL, observation time, and confidence of
+- Require a current-employer signal observed in a named public search result,
+  including a bounded excerpt, HTTPS URL, observation time, and heuristic score
   at least `0.75` before a person can enter the bench.
 - Preserve the exact evidence and score components used for this application.
 - Treat provider failures as incomplete/retryable work, not proof that no more
   suitable people exist.
 - Keep reads database-only. Provider work belongs in the durable worker and
   runs outside long database transactions.
-- Never send automatically. Later outreach remains a manual, staged workflow.
+- Never send automatically. Outreach remains a manual, per-person workflow.
 
 ## Checkpoints
 
@@ -60,7 +62,7 @@ provider.
 
 ### 4C — Practical dossier experience
 
-- Show `N/5 verified`, real progress, evidence links and checked dates,
+- Show `N/5 source-backed`, real progress, evidence links and capture dates,
   category/relevance labels, and structured shortfall reasons.
 - Preserve the last good bench during retries and polling failures.
 - Offer only profile/evidence review actions in this phase and state clearly
@@ -78,8 +80,8 @@ internal ranking components as candidate quality.
 #### 4D1 — Durable safety boundary
 
 - Pin one completed contact plan to one owner-scoped outreach sequence.
-- Unlock the strongest non-recruiter and, when present, one recruiter for a
-  distinct purpose; keep every later person as an ordered reserve.
+- Unlock up to five eligible, distinct leads together, preferring warm paths,
+  engineering peers, likely team leaders, and recruiters when available.
 - Persist immutable encrypted message revisions. Copying and manually marking
   one exact version sent are separate idempotent events.
 - Persist a timezone-correct five-business-day follow-up date, allow at most
@@ -113,7 +115,7 @@ internal ranking components as candidate quality.
 - Every selected person has preserved employer evidence and a normalized HTTPS
   public profile URL.
 - Cross-owner references, duplicate identities, duplicate ranks, and
-  under-evidenced “verified” rows fail closed.
+  under-evidenced source-backed rows fail closed.
 - An exhausted partial plan requires structured shortfall reasons.
 - Contact-bench reads never invoke a provider or worker.
 - Upgrade, schema check, downgrade, and re-upgrade all succeed.
@@ -125,7 +127,7 @@ internal ranking components as candidate quality.
   requests.
 - The generic worker claims `discover_contacts`, keeps its lease alive, performs
   provider work without an open database transaction, and atomically publishes
-  no more than 12 candidates and five verified reserves.
+  no more than 12 candidates and five source-backed leads.
 - Cancellation, lease loss, posting closure, stale plan references, retries,
   configuration failures, and provider exhaustion produce explicit durable
   states without partial publication or private error leakage.
@@ -136,7 +138,7 @@ internal ranking components as candidate quality.
 
 ## Phase 4C definition of done
 
-- A not-started dossier offers an explicit **Find 5 verified people** action;
+- A not-started dossier offers an explicit **Find up to 5 people** action;
   merely opening the page never starts provider work.
 - Queued and running attempts poll without overlapping requests, back off after
   transient failures, and never clear the last completed bench.
@@ -153,8 +155,9 @@ internal ranking components as candidate quality.
 
 - Starting outreach is owner-scoped, same-origin, version checked, idempotent,
   and pins exactly one completed evidence-backed bench.
-- Only the safe first wave is ready; later recipients remain server-enforced
-  reserves and cannot be drafted or marked sent.
+- Up to five eligible leads can be drafted in the first wave. Each person keeps
+  a separate exact message and manual-send record; cooldown and company-volume
+  checks still run when a send is recorded.
 - Exact v1/v2 message bodies are encrypted at rest, survive reload, and the
   version manually marked sent remains auditable.
 - Copy never implies send. Mark-sent requires a prior copy of the exact latest
@@ -169,8 +172,8 @@ internal ranking components as candidate quality.
 
 ## Phase 4D2 definition of done
 
-- The dossier starts outreach only after a completed verified bench exists and
-  clearly separates ready recipients from later reserves.
+- The dossier starts outreach only after a completed source-backed bench exists
+  and clearly separates eligible leads from restricted or cooling-down history.
 - Unsaved owner text survives refreshes and conflicts. Saving creates a new
   immutable version without changing the text or implying that it was sent.
 - Copy writes the exact saved body to the Clipboard before recording a copy
@@ -186,6 +189,6 @@ internal ranking components as candidate quality.
 - Retryable or lost mutation responses reconcile durable state before a retry,
   reuse one idempotency key for the same intent, and never optimistically claim
   that a save, copy, send, or outcome succeeded.
-- Desktop and mobile browser QA cover start, ready/reserve waves, save/copy/send,
+- Desktop and mobile browser QA cover start, eligible/restricted leads, save/copy/send,
   follow-up timing, outcomes, pause/resume/stop, refresh preservation, and
   terminal role states without console errors.
