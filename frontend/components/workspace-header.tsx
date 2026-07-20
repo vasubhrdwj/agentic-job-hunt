@@ -8,6 +8,7 @@ type WorkspaceSection =
   | "review"
   | "searches"
   | "profile"
+  | "account"
   | "privacy"
   | "hunt";
 
@@ -21,6 +22,7 @@ const NAV_ITEMS: Array<{
   { href: "/review", label: "Weekly review", section: "review" },
   { href: "/searches", label: "Saved searches", section: "searches" },
   { href: "/profile", label: "Profile", section: "profile" },
+  { href: "/account", label: "Account", section: "account" },
   { href: "/privacy", label: "Privacy", section: "privacy" },
 ];
 
@@ -47,7 +49,7 @@ export function WorkspaceHeader({
       <p className="max-w-2xl text-sm leading-6 text-zinc-600 dark:text-zinc-400">
         {description}
       </p>
-      <nav aria-label="Private workspace" className="flex flex-wrap gap-2">
+      <nav aria-label="Workspace navigation" className="flex flex-wrap gap-2">
         {NAV_ITEMS.map((item) => {
           const selected = item.section === active;
           return (

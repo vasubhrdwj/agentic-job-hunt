@@ -1,4 +1,3 @@
-import type { components } from "./api-generated";
 import type {
   HuntCreatedResponse,
   OutcomesResponse,
@@ -6,8 +5,24 @@ import type {
   RunStateResponse,
 } from "./types";
 
-type ApiSchemas = components["schemas"];
-export type OwnerSession = ApiSchemas["SessionResponse"];
+type OwnerSessionCore = {
+  owner_id: string;
+  display_name: string;
+  timezone: string;
+  local_date: string;
+  expires_at: string;
+};
+
+export type OwnerSession = OwnerSessionCore &
+  (
+    | { account_attached: true; account_email: string }
+    | { account_attached: false; account_email: null }
+  );
+
+export type SessionStatus = {
+  state: "ready" | "setup_required";
+  signup_enabled: boolean;
+};
 
 const RUN_STATUSES = new Set([
   "queued",
@@ -159,6 +174,8 @@ export function parseOutcomesResponse(value: unknown): OutcomesResponse {
 
 export function parseOwnerSession(value: unknown): OwnerSession {
   const body = record(value);
+  const accountAttached = body?.account_attached ?? false;
+  const accountEmail = body?.account_email ?? null;
   if (
     !body ||
     typeof body.owner_id !== "string" ||
@@ -166,9 +183,33 @@ export function parseOwnerSession(value: unknown): OwnerSession {
     typeof body.timezone !== "string" ||
     typeof body.local_date !== "string" ||
     !/^\d{4}-\d{2}-\d{2}$/.test(body.local_date) ||
-    typeof body.expires_at !== "string"
+    typeof body.expires_at !== "string" ||
+    typeof accountAttached !== "boolean" ||
+    !(
+      accountEmail === null ||
+      (typeof accountEmail === "string" && accountEmail.length > 0)
+    ) ||
+    (accountAttached && accountEmail === null) ||
+    (!accountAttached && accountEmail !== null)
   ) {
     return invalid("owner session");
   }
-  return value as OwnerSession;
+  return {
+    ...body,
+    account_attached: accountAttached,
+    account_email: accountEmail,
+  } as OwnerSession;
+}
+
+export function parseSessionStatus(value: unknown): SessionStatus {
+  const body = record(value);
+  const signupEnabled = body?.signup_enabled ?? false;
+  if (
+    !body ||
+    (body.state !== "ready" && body.state !== "setup_required") ||
+    typeof signupEnabled !== "boolean"
+  ) {
+    return invalid("session status");
+  }
+  return { ...body, signup_enabled: signupEnabled } as SessionStatus;
 }

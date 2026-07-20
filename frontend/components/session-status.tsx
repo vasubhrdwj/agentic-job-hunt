@@ -34,7 +34,7 @@ export function SessionStatus() {
   }, []);
 
   if (!loaded) {
-    return <span className="text-xs text-zinc-500">Checking private workspace…</span>;
+    return <span className="text-xs text-zinc-500">Checking your session…</span>;
   }
   if (!session) {
     return (
@@ -42,15 +42,26 @@ export function SessionStatus() {
         href="/login"
         className="text-sm font-medium text-zinc-700 underline underline-offset-4 hover:text-zinc-950 dark:text-zinc-300 dark:hover:text-white"
       >
-        Owner sign in
+        Sign in
       </Link>
     );
   }
   return (
     <div className="flex items-center gap-3 text-sm">
-      <span className="text-zinc-600 dark:text-zinc-400">
-        Private workspace · {session.display_name}
-      </span>
+      <Link
+        href="/account"
+        className="text-zinc-600 hover:text-zinc-950 dark:text-zinc-400 dark:hover:text-white"
+      >
+        Signed in · {session.display_name}
+      </Link>
+      {!session.account_attached ? (
+        <Link
+          href="/account"
+          className="rounded-full border border-amber-300 bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-950 hover:bg-amber-100 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-100 dark:hover:bg-amber-950"
+        >
+          Secure account
+        </Link>
+      ) : null}
       <button
         type="button"
         className="font-medium text-zinc-700 underline underline-offset-4 hover:text-zinc-950 dark:text-zinc-300 dark:hover:text-white"
