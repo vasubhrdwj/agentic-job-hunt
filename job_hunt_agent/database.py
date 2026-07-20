@@ -20,7 +20,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 
 DATABASE_URL_ENV = "DATABASE_URL"
-MIGRATION_HEAD = "20260715_0018"
+MIGRATION_HEAD = "20260720_0019"
 PRODUCTION_POSTGRES_SSL_MODES = frozenset({"require", "verify-ca", "verify-full"})
 
 

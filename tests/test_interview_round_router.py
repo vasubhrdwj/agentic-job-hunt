@@ -29,11 +29,10 @@ from job_hunt_agent.owner_workspace import (
 from job_hunt_agent.routers.applications import create_application_router
 from job_hunt_agent.routers.session import create_session_router
 from job_hunt_agent.routers.workspace import install_workspace_error_handler
-from job_hunt_agent.security import hash_access_token
+from tests.auth_helpers import login_test_account, seed_test_account
 from tests.test_interview_round_schemas import _application, _round
 
 
-OWNER_TOKEN = "interview-round-owner-token-more-than-thirty-two-characters"
 ORIGIN = "http://localhost:3000"
 
 
@@ -151,11 +150,10 @@ def interview_round_client(
 ) -> Iterator[tuple[TestClient, FakeInterviewRoundStore]]:
     database_url = f"sqlite+pysqlite:///{tmp_path / 'interview-round-router.db'}"
     monkeypatch.setenv("DATABASE_URL", database_url)
-    monkeypatch.setenv("JOB_HUNT_OWNER_ID", "owner")
-    monkeypatch.setenv("JOB_HUNT_OWNER_TOKEN_HASH", hash_access_token(OWNER_TOKEN))
     monkeypatch.setenv("JOB_HUNT_SESSION_TTL_DAYS", "30")
     command.upgrade(Config("alembic.ini"), "head")
     database = Database(database_url)
+    seed_test_account(database)
     store = FakeInterviewRoundStore()
     app = FastAPI()
     app.include_router(
@@ -176,11 +174,7 @@ def interview_round_client(
 
 
 def _login(client: TestClient) -> None:
-    response = client.post(
-        "/api/session",
-        headers={"Origin": ORIGIN},
-        json={"owner_token": OWNER_TOKEN},
-    )
+    response = login_test_account(client, origin=ORIGIN)
     assert response.status_code == 200, response.text
 
 

@@ -28,7 +28,7 @@ def _uuid_hex() -> str:
 
 
 class Owner(Base):
-    """Private workspace owner; Phase 0 intentionally creates no public users."""
+    """Private workspace owner and root of every user-owned record."""
 
     __tablename__ = "owners"
 
@@ -44,6 +44,12 @@ class Owner(Base):
 
     sessions: Mapped[list["OwnerSession"]] = relationship(
         back_populates="owner", cascade="all, delete-orphan"
+    )
+    credential: Mapped["OwnerCredential | None"] = relationship(
+        back_populates="owner",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+        uselist=False,
     )
     hunt_runs: Mapped[list["HuntRun"]] = relationship(
         back_populates="owner", cascade="all, delete-orphan", passive_deletes=True
@@ -68,6 +74,48 @@ class OwnerSession(Base):
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     owner: Mapped[Owner] = relationship(back_populates="sessions")
+
+
+class OwnerCredential(Base):
+    """Email/password login attached one-to-one to an owner workspace."""
+
+    __tablename__ = "owner_credentials"
+
+    owner_id: Mapped[str] = mapped_column(
+        ForeignKey("owners.id", ondelete="CASCADE"), primary_key=True
+    )
+    normalized_email: Mapped[str] = mapped_column(
+        String(254), nullable=False, unique=True
+    )
+    password_hash: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
+    )
+
+    owner: Mapped[Owner] = relationship(back_populates="credential")
+
+
+class AuthThrottleBucket(Base):
+    """Fixed-cardinality, keyed login throttle with no raw identifier data."""
+
+    __tablename__ = "auth_throttle_buckets"
+    __table_args__ = (
+        CheckConstraint("length(bucket_id) = 3", name="bucket_id_length"),
+        CheckConstraint("failure_count >= 0", name="failure_count_nonnegative"),
+    )
+
+    bucket_id: Mapped[str] = mapped_column(String(3), primary_key=True)
+    failure_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    window_started_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    blocked_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
+    )
 
 
 class BackgroundJob(Base):

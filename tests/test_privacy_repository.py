@@ -10,7 +10,7 @@ from pathlib import Path
 import pytest
 from sqlalchemy import func, select
 
-from job_hunt_agent.auth import create_owner_session
+from job_hunt_agent.auth import create_owner_session, hash_password
 from job_hunt_agent.database import Database
 from job_hunt_agent.models import (
     BackgroundJob,
@@ -19,6 +19,7 @@ from job_hunt_agent.models import (
     CandidateProfile,
     HuntRun,
     Owner,
+    OwnerCredential,
     OwnerPrivacySetting,
     OwnerSession,
     PrivacyDeletionReceipt,
@@ -146,6 +147,13 @@ def test_export_is_owner_scoped_decrypts_plaintext_and_never_emits_secrets(
     _seed_profile(privacy_db, "owner-b", "OWNER-B-PRIVATE-MARKER")
     with privacy_db.session() as session:
         create_owner_session(session, "owner-a", now=NOW)
+        session.add(
+            OwnerCredential(
+                owner_id="owner-a",
+                normalized_email="owner-a@example.com",
+                password_hash=hash_password("correct-horse-battery-staple"),
+            )
+        )
 
     keyring = load_data_keyring(production=False)
     with privacy_db.session() as session:
@@ -167,9 +175,22 @@ def test_export_is_owner_scoped_decrypts_plaintext_and_never_emits_secrets(
     assert "encrypted_payload" not in serialized
     assert "encryption_key_id" not in serialized
     assert "token_hash" not in serialized
+    assert "correct-horse-battery-staple" not in serialized
+    assert "$argon2" not in serialized
     assert "owner_sessions" not in exported.tables
+    credential_export = exported.tables["owner_credentials"][0]
+    assert credential_export["owner_id"] == "owner-a"
+    assert credential_export["normalized_email"] == "owner-a@example.com"
+    assert "password_hash" not in credential_export
     assert any(
         omission.table == "owner_sessions"
+        and omission.reason == "security_metadata"
+        and omission.row_count == 1
+        for omission in exported.omissions
+    )
+    assert any(
+        omission.table == "owner_credentials"
+        and omission.field == "password_hash"
         and omission.reason == "security_metadata"
         and omission.row_count == 1
         for omission in exported.omissions

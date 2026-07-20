@@ -9,7 +9,7 @@ from alembic import command
 from alembic.config import Config
 from sqlalchemy import inspect
 
-from job_hunt_agent.database import Database
+from job_hunt_agent.database import MIGRATION_HEAD, Database
 from job_hunt_agent.models import Owner, OwnerPrivacySetting, PrivacyDeletionReceipt
 
 
@@ -33,7 +33,7 @@ def test_privacy_migration_matches_models_and_receipt_has_no_owner_fk(
 
     database = Database(url)
     try:
-        assert database.current_migration_revision() == REVISION
+        assert database.current_migration_revision() == MIGRATION_HEAD
         inspector = inspect(database.engine)
         assert {
             "owner_privacy_settings",

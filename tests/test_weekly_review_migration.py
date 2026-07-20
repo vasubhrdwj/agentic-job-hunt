@@ -14,7 +14,7 @@ from job_hunt_agent.models import Owner, OwnerMutationReceipt
 
 
 REVISION = "20260715_0016"
-CURRENT_REVISION = "20260715_0018"
+CURRENT_REVISION = "20260720_0019"
 PREVIOUS_REVISION = "20260715_0015"
 
 

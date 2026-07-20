@@ -39,7 +39,12 @@ from .routers.workspace import (
     create_workspace_router,
     install_workspace_error_handler,
 )
-from .auth import session_cookie_name
+from .auth import (
+    AUTH_THROTTLE_SECRET_ENV,
+    AuthConfigError,
+    session_cookie_name,
+    signup_mode,
+)
 from .routers.session import (
     AuthenticatedOwner,
     create_session_router,
@@ -208,6 +213,10 @@ def _validate_production_config() -> None:
     # typo cannot silently reopen or hide the compatibility API.
     legacy_mode = legacy_hunt_api_mode(production=_is_production())
     legacy_deprecation_headers(legacy_mode, production=_is_production())
+    try:
+        signup_mode()
+    except AuthConfigError as exc:
+        raise RuntimeError(f"Invalid account config: {exc}") from exc
     if not _is_production():
         return
 
@@ -219,11 +228,9 @@ def _validate_production_config() -> None:
             f"{PRIVACY_RECEIPT_SECRET_ENV} must be a stable 32+ character "
             "secret when ENVIRONMENT=production"
         )
-
-    if _practical_mode_enabled():
-        for name in ("JOB_HUNT_OWNER_ID", "JOB_HUNT_OWNER_TOKEN_HASH"):
-            if not os.getenv(name, "").strip():
-                errors.append(f"{name} is required when practical mode is enabled")
+    throttle_secret = os.getenv(AUTH_THROTTLE_SECRET_ENV, "").strip()
+    if throttle_secret and len(throttle_secret) < 32:
+        errors.append(f"{AUTH_THROTTLE_SECRET_ENV} must be at least 32 characters")
 
     allowed_origins = _parse_allowed_origins()
     if "*" in allowed_origins:
@@ -465,6 +472,7 @@ def create_app() -> FastAPI:
         response = await call_next(request)
         if (
             request.url.path in {"/api/hunt", "/api/session", "/api/health", "/ready"}
+            or request.url.path.startswith("/api/accounts")
             or request.url.path.startswith("/api/runs/")
             or request.url.path.startswith("/api/me/")
             or request.url.path.startswith("/api/career-tracks")

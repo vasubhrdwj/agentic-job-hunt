@@ -11,7 +11,11 @@ from sqlalchemy.exc import SQLAlchemyError
 
 import job_hunt_agent.sqlalchemy_contact_workspace as workspace_module
 from job_hunt_agent.contact_repository import ContactRepositoryError
-from job_hunt_agent.contact_search_repository import ContactSearchRepositoryError
+from job_hunt_agent.contact_search_budget import ContactSearchBudgetConfigError
+from job_hunt_agent.contact_search_repository import (
+    ContactSearchBudgetExceeded,
+    ContactSearchRepositoryError,
+)
 from job_hunt_agent.contact_schemas import ApplicationContactBenchResponse
 from job_hunt_agent.mutation_receipts import (
     MutationIdempotencyConflict,
@@ -237,6 +241,57 @@ def test_contact_store_maps_expected_create_conflicts(
         )
 
     assert caught.value.code == code
+
+
+def test_contact_store_preserves_safe_budget_conflict_code_and_message(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    store = SqlAlchemyContactWorkspaceStore(FakeDatabase())  # type: ignore[arg-type]
+
+    def fail_create(*_args, **_kwargs):
+        raise ContactSearchBudgetExceeded(
+            "Contact search has reached today's beta capacity. "
+            "Try again after 00:00 UTC.",
+            window="global_day",
+        )
+
+    monkeypatch.setattr(workspace_module, "create_contact_search", fail_create)
+
+    with pytest.raises(WorkspaceConflict) as caught:
+        store.create_application_contact_search(
+            owner_id="owner-a",
+            application_id="application1",
+            expected_application_version=1,
+            idempotency_key="contacts-budget",
+        )
+
+    assert caught.value.code == "contact_search_budget_exhausted"
+    assert str(caught.value) == (
+        "Contact search has reached today's beta capacity. "
+        "Try again after 00:00 UTC."
+    )
+
+
+def test_contact_store_sanitizes_invalid_budget_configuration(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    store = SqlAlchemyContactWorkspaceStore(FakeDatabase())  # type: ignore[arg-type]
+
+    def fail_create(*_args, **_kwargs):
+        raise ContactSearchBudgetConfigError("PRIVATE_BAD_BUDGET")
+
+    monkeypatch.setattr(workspace_module, "create_contact_search", fail_create)
+
+    with pytest.raises(WorkspaceUnavailable) as caught:
+        store.create_application_contact_search(
+            owner_id="owner-a",
+            application_id="application1",
+            expected_application_version=1,
+            idempotency_key="contacts-invalid-budget",
+        )
+
+    assert str(caught.value) == "contact search budget configuration is unavailable"
+    assert "PRIVATE_BAD_BUDGET" not in str(caught.value)
 
 
 def test_contact_store_sanitizes_contact_search_invariant_failures(

@@ -1,4 +1,4 @@
-"""Private single-owner session endpoints."""
+"""Multi-user account and opaque-session endpoints."""
 
 from __future__ import annotations
 
@@ -10,21 +10,40 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from fastapi import APIRouter, HTTPException, Request, Response, Security, status
 from fastapi.security import APIKeyCookie
 from pydantic import BaseModel, Field
+from sqlalchemy.exc import IntegrityError
 
 from ..auth import (
-    AuthConfigError,
-    authenticate_owner_token,
+    AccountConflict,
+    AuthCapacityExceeded,
+    authenticate_account,
+    claim_account,
+    consume_signup_capacity,
+    create_account,
     create_owner_session,
     load_owner_session,
-    owner_access_configured,
     revoke_owner_session,
     session_cookie_name,
+    signup_enabled,
 )
 from ..database import Database
+from ..models import OwnerCredential
 
 
 class SessionCreateRequest(BaseModel):
-    owner_token: str = Field(min_length=32, max_length=512)
+    email: str = Field(max_length=320)
+    password: str = Field(max_length=128)
+
+
+class AccountCreateRequest(BaseModel):
+    email: str = Field(max_length=320)
+    password: str = Field(min_length=12, max_length=128)
+    display_name: str | None = Field(default=None, max_length=200)
+    timezone: str | None = Field(default=None, max_length=64)
+
+
+class AccountClaimRequest(BaseModel):
+    email: str = Field(max_length=320)
+    password: str = Field(min_length=12, max_length=128)
 
 
 class SessionResponse(BaseModel):
@@ -33,6 +52,8 @@ class SessionResponse(BaseModel):
     timezone: str
     local_date: date
     expires_at: datetime
+    account_attached: bool
+    account_email: str | None
 
 
 class SessionDeleteResponse(BaseModel):
@@ -41,6 +62,7 @@ class SessionDeleteResponse(BaseModel):
 
 class SessionStatusResponse(BaseModel):
     state: Literal["ready", "setup_required"]
+    signup_enabled: bool
 
 
 @dataclass(frozen=True)
@@ -50,6 +72,8 @@ class AuthenticatedOwner:
     timezone: str
     local_date: date
     expires_at: datetime
+    account_attached: bool
+    account_email: str | None
 
 
 def create_session_router(
@@ -58,7 +82,7 @@ def create_session_router(
     allowed_origins: list[str],
     production: bool,
 ) -> APIRouter:
-    router = APIRouter(tags=["owner-session"])
+    router = APIRouter(tags=["account-session"])
     owner_cookie = _owner_cookie_security()
 
     @router.get("/api/session/status", response_model=SessionStatusResponse)
@@ -70,12 +94,52 @@ def create_session_router(
         )
         response.headers["Cache-Control"] = "no-store, max-age=0"
         return SessionStatusResponse(
-            state=(
-                "ready"
-                if database_ready and owner_access_configured()
-                else "setup_required"
-            )
+            state="ready" if database_ready else "setup_required",
+            signup_enabled=database_ready and signup_enabled(),
         )
+
+    @router.post("/api/accounts", response_model=SessionResponse, status_code=201)
+    def signup(
+        payload: AccountCreateRequest,
+        request: Request,
+        response: Response,
+    ) -> SessionResponse:
+        _require_allowed_origin(request, allowed_origins, production=production)
+        if not signup_enabled():
+            raise HTTPException(status_code=403, detail="signup is closed")
+        db = require_migrated_database(database)
+        timezone_name = _validated_timezone(payload.timezone or "UTC")
+        with db.session() as throttle_session:
+            signup_capacity = consume_signup_capacity(throttle_session)
+        if not signup_capacity:
+            raise HTTPException(
+                status_code=429,
+                detail="signup temporarily unavailable; try again later",
+                headers={"Retry-After": "900"},
+            )
+        try:
+            with db.session() as session:
+                owner = create_account(
+                    session,
+                    email=payload.email,
+                    password=payload.password,
+                    display_name=payload.display_name or "Job seeker",
+                    timezone_name=timezone_name,
+                )
+                grant = create_owner_session(session, owner.id)
+                result = _load_session_response(session, grant.token)
+        except AuthCapacityExceeded as exc:
+            raise HTTPException(
+                status_code=429,
+                detail="account creation is busy; try again shortly",
+                headers={"Retry-After": "5"},
+            ) from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        except (AccountConflict, IntegrityError) as exc:
+            raise HTTPException(status_code=409, detail="account cannot be created") from exc
+        _set_session_cookie(response, token=grant.token, expires_at=grant.expires_at, production=production)
+        return result
 
     @router.post("/api/session", response_model=SessionResponse)
     def create_session(
@@ -85,45 +149,77 @@ def create_session_router(
     ) -> SessionResponse:
         _require_allowed_origin(request, allowed_origins, production=production)
         db = require_migrated_database(database)
-        try:
-            owner_id = authenticate_owner_token(payload.owner_token)
-        except AuthConfigError as exc:
-            raise HTTPException(
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail="owner session is not configured",
-            ) from exc
-        except PermissionError as exc:
+        with db.session() as session:
+            authentication = authenticate_account(
+                session,
+                email=payload.email,
+                password=payload.password,
+            )
+            if authentication.authenticated:
+                assert authentication.owner_id is not None
+                grant = create_owner_session(session, authentication.owner_id)
+                result = _load_session_response(session, grant.token)
+            else:
+                grant = None
+                result = None
+        if grant is None or result is None:
+            if authentication.throttled:
+                raise HTTPException(
+                    status_code=429,
+                    detail="sign-in temporarily unavailable; try again later",
+                    headers={"Retry-After": "900"},
+                )
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="owner access denied",
+                detail="email or password is incorrect",
+            )
+        _set_session_cookie(response, token=grant.token, expires_at=grant.expires_at, production=production)
+        return result
+
+    @router.post("/api/accounts/claim", response_model=SessionResponse)
+    def claim_legacy_workspace(
+        payload: AccountClaimRequest,
+        request: Request,
+        response: Response,
+        _session_cookie: str | None = Security(owner_cookie),
+    ) -> SessionResponse:
+        owner = require_owner_mutation(
+            database,
+            request,
+            allowed_origins=allowed_origins,
+            production=production,
+        )
+        db = require_migrated_database(database)
+        token = request.cookies.get(session_cookie_name()) or ""
+        try:
+            with db.session() as session:
+                claim_account(
+                    session,
+                    owner_id=owner.owner_id,
+                    email=payload.email,
+                    password=payload.password,
+                    current_session_token=token,
+                )
+                revoke_owner_session(session, token)
+                grant = create_owner_session(session, owner.owner_id)
+                result = _load_session_response(session, grant.token)
+        except AuthCapacityExceeded as exc:
+            raise HTTPException(
+                status_code=429,
+                detail="account security is busy; try again shortly",
+                headers={"Retry-After": "5"},
             ) from exc
-
-        with db.session() as session:
-            grant = create_owner_session(session, owner_id)
-            stored = load_owner_session(session, grant.token, touch=False)
-            assert stored is not None
-            display_name = stored.owner.display_name
-            owner_timezone = stored.owner.timezone
-            owner_local_date = _local_date(owner_timezone)
-
-        response.set_cookie(
-            key=session_cookie_name(),
-            value=grant.token,
-            max_age=max(1, int((grant.expires_at - datetime.now(grant.expires_at.tzinfo)).total_seconds())),
-            expires=grant.expires_at,
-            path="/",
-            secure=production,
-            httponly=True,
-            samesite="strict",
-        )
-        response.headers["Cache-Control"] = "no-store, max-age=0"
-        return SessionResponse(
-            owner_id=grant.owner_id,
-            display_name=display_name,
-            timezone=owner_timezone,
-            local_date=owner_local_date,
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        except (AccountConflict, IntegrityError) as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        _set_session_cookie(
+            response,
+            token=grant.token,
             expires_at=grant.expires_at,
+            production=production,
         )
+        return result
 
     @router.get("/api/session", response_model=SessionResponse)
     def get_session(
@@ -133,13 +229,7 @@ def create_session_router(
     ) -> SessionResponse:
         owner = require_owner_session(database, request)
         response.headers["Cache-Control"] = "no-store, max-age=0"
-        return SessionResponse(
-            owner_id=owner.owner_id,
-            display_name=owner.display_name,
-            timezone=owner.timezone,
-            local_date=owner.local_date,
-            expires_at=owner.expires_at,
-        )
+        return _owner_response(owner)
 
     @router.delete("/api/session", response_model=SessionDeleteResponse)
     def delete_session(
@@ -194,13 +284,80 @@ def require_owner_session(database: Database | None, request: Request) -> Authen
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="owner session required",
             )
+        credential = session.get(OwnerCredential, stored.owner_id)
         return AuthenticatedOwner(
             owner_id=stored.owner_id,
             display_name=stored.owner.display_name,
             timezone=stored.owner.timezone,
             local_date=_local_date(stored.owner.timezone),
             expires_at=stored.expires_at,
+            account_attached=credential is not None,
+            account_email=credential.normalized_email if credential else None,
         )
+
+
+def _load_session_response(session, token: str) -> SessionResponse:
+    stored = load_owner_session(session, token, touch=False)
+    assert stored is not None
+    credential = session.get(OwnerCredential, stored.owner_id)
+    return SessionResponse(
+        owner_id=stored.owner_id,
+        display_name=stored.owner.display_name,
+        timezone=stored.owner.timezone,
+        local_date=_local_date(stored.owner.timezone),
+        expires_at=stored.expires_at,
+        account_attached=credential is not None,
+        account_email=credential.normalized_email if credential else None,
+    )
+
+
+def _owner_response(owner: AuthenticatedOwner) -> SessionResponse:
+    return SessionResponse(
+        owner_id=owner.owner_id,
+        display_name=owner.display_name,
+        timezone=owner.timezone,
+        local_date=owner.local_date,
+        expires_at=owner.expires_at,
+        account_attached=owner.account_attached,
+        account_email=owner.account_email,
+    )
+
+
+def _set_session_cookie(
+    response: Response,
+    *,
+    token: str,
+    expires_at: datetime,
+    production: bool,
+) -> None:
+    response.set_cookie(
+        key=session_cookie_name(),
+        value=token,
+        max_age=max(
+            1,
+            int(
+                (
+                    expires_at
+                    - datetime.now(expires_at.tzinfo or timezone.utc)
+                ).total_seconds()
+            ),
+        ),
+        expires=expires_at,
+        path="/",
+        secure=production,
+        httponly=True,
+        samesite="strict",
+    )
+    response.headers["Cache-Control"] = "no-store, max-age=0"
+
+
+def _validated_timezone(timezone_name: str) -> str:
+    normalized = timezone_name.strip()
+    try:
+        ZoneInfo(normalized)
+    except (ValueError, ZoneInfoNotFoundError) as exc:
+        raise HTTPException(status_code=422, detail="timezone must be a valid IANA timezone") from exc
+    return normalized
 
 
 def _local_date(timezone_name: str) -> date:
@@ -231,7 +388,7 @@ def _owner_cookie_security() -> APIKeyCookie:
     return APIKeyCookie(
         name=session_cookie_name(),
         scheme_name="OwnerSessionCookie",
-        description="Opaque HttpOnly session issued by POST /api/session.",
+        description="Opaque HttpOnly session issued after account authentication.",
         auto_error=False,
     )
 

@@ -39,9 +39,14 @@ from job_hunt_agent.security import hash_access_token, load_data_keyring
 from job_hunt_agent.sqlalchemy_application_workspace import (
     SqlAlchemyApplicationWorkspaceStore,
 )
+from tests.auth_helpers import (
+    TEST_ACCOUNT_EMAIL,
+    TEST_ACCOUNT_PASSWORD,
+    login_test_account,
+    seed_test_account,
+)
 
 
-OWNER_TOKEN = "phase-zero-owner-token-with-more-than-thirty-two-characters"
 ALLOWED_ORIGIN = "http://localhost:3000"
 
 
@@ -104,8 +109,7 @@ def practical_client(
     monkeypatch.setenv("ENABLE_PRACTICAL_MODE", "1")
     monkeypatch.setenv("ENABLE_TRACING", "0")
     monkeypatch.setenv("ALLOWED_ORIGINS", ALLOWED_ORIGIN)
-    monkeypatch.setenv("JOB_HUNT_OWNER_ID", "owner")
-    monkeypatch.setenv("JOB_HUNT_OWNER_TOKEN_HASH", hash_access_token(OWNER_TOKEN))
+    monkeypatch.setenv("JOB_HUNT_SIGNUP_MODE", "closed")
     monkeypatch.setenv("JOB_HUNT_SESSION_TTL_DAYS", "30")
     monkeypatch.setenv("JOB_HUNT_WORKER_HEARTBEAT_MAX_AGE_SECONDS", "90")
     monkeypatch.delenv("RENDER_GIT_COMMIT", raising=False)
@@ -115,17 +119,14 @@ def practical_client(
     app = create_app()
     database = app.state.practical_database
     assert isinstance(database, Database)
+    seed_test_account(database)
     with TestClient(app) as client:
         yield client, database
     database.dispose()
 
 
 def _login(client: TestClient) -> dict[str, object]:
-    response = client.post(
-        "/api/session",
-        headers={"Origin": ALLOWED_ORIGIN},
-        json={"owner_token": OWNER_TOKEN},
-    )
+    response = login_test_account(client, origin=ALLOWED_ORIGIN)
     assert response.status_code == 200, response.text
     return response.json()
 
@@ -155,17 +156,15 @@ def test_owner_session_survives_requests_and_is_stored_only_as_a_hash(
     assert body["display_name"] == "Owner"
     assert body["timezone"] == "UTC"
     assert isinstance(body["local_date"], str)
-    assert OWNER_TOKEN not in str(body)
+    assert TEST_ACCOUNT_PASSWORD not in str(body)
+    assert body["account_attached"] is True
+    assert body["account_email"] == TEST_ACCOUNT_EMAIL
     set_cookie = client.cookies.get("job_hunt_session")
     assert set_cookie is not None
-    header = client.post(
-        "/api/session",
-        headers={"Origin": ALLOWED_ORIGIN},
-        json={"owner_token": OWNER_TOKEN},
-    ).headers["set-cookie"]
+    header = login_test_account(client, origin=ALLOWED_ORIGIN).headers["set-cookie"]
     assert "HttpOnly" in header
     assert "SameSite=strict" in header
-    assert OWNER_TOKEN not in header
+    assert TEST_ACCOUNT_PASSWORD not in header
 
     current = client.get("/api/session")
     assert current.status_code == 200
@@ -187,32 +186,31 @@ def test_session_status_reports_only_sanitized_setup_readiness(
     ready = client.get("/api/session/status")
     assert ready.status_code == 200
     assert ready.headers["cache-control"] == "no-store, max-age=0"
-    assert ready.json() == {"state": "ready"}
-    assert OWNER_TOKEN not in ready.text
+    assert ready.json() == {"state": "ready", "signup_enabled": False}
+    assert "account_email" not in ready.text
 
-    monkeypatch.delenv("JOB_HUNT_OWNER_TOKEN_HASH")
-    setup_required = client.get("/api/session/status")
-    assert setup_required.status_code == 200
-    assert setup_required.json() == {"state": "setup_required"}
-    assert "database" not in setup_required.text
-    assert "token" not in setup_required.text
+    monkeypatch.setenv("JOB_HUNT_SIGNUP_MODE", "open")
+    open_signup = client.get("/api/session/status")
+    assert open_signup.status_code == 200
+    assert open_signup.json() == {"state": "ready", "signup_enabled": True}
+    assert "count" not in open_signup.text
 
 
-def test_invalid_token_and_wrong_origin_fail_closed(
+def test_invalid_credentials_and_wrong_origin_fail_closed(
     practical_client: tuple[TestClient, Database],
 ) -> None:
     client, _database = practical_client
     wrong_origin = client.post(
         "/api/session",
         headers={"Origin": "https://attacker.invalid"},
-        json={"owner_token": OWNER_TOKEN},
+        json={"email": TEST_ACCOUNT_EMAIL, "password": TEST_ACCOUNT_PASSWORD},
     )
     assert wrong_origin.status_code == 403
 
     invalid = client.post(
         "/api/session",
         headers={"Origin": ALLOWED_ORIGIN},
-        json={"owner_token": "wrong-owner-token-with-more-than-thirty-two-characters"},
+        json={"email": TEST_ACCOUNT_EMAIL, "password": "wrong-password-value"},
     )
     assert invalid.status_code == 401
     assert client.get("/api/session").status_code == 401
@@ -1002,11 +1000,12 @@ def test_legacy_liveness_remains_available_without_durable_database(
         assert client.get("/api/career-tracks").status_code == 404
         assert client.get("/api/saved-searches").status_code == 404
         assert client.get("/api/session/status").json() == {
-            "state": "setup_required"
+            "state": "setup_required",
+            "signup_enabled": False,
         }
         login = client.post(
             "/api/session",
-            json={"owner_token": OWNER_TOKEN},
+            json={"email": TEST_ACCOUNT_EMAIL, "password": TEST_ACCOUNT_PASSWORD},
         )
         assert login.status_code == 503
 

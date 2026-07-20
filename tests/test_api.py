@@ -605,11 +605,6 @@ def test_production_config_accepts_required_env(
         "DATABASE_URL",
         "postgresql+psycopg://job_hunt:secret@postgres.invalid/job_hunt?sslmode=require",
     )
-    monkeypatch.setenv("JOB_HUNT_OWNER_ID", "owner")
-    monkeypatch.setenv(
-        "JOB_HUNT_OWNER_TOKEN_HASH",
-        hash_access_token("production-owner-token-with-more-than-32-characters"),
-    )
     with pytest.raises(
         RuntimeError,
         match="JOB_HUNT_PRIVACY_RECEIPT_SECRET must be a stable 32\\+ character",

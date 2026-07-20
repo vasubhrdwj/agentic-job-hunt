@@ -7,7 +7,7 @@ import os
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response, Security, status
 from fastapi.security import APIKeyCookie
 
-from ..auth import OWNER_TOKEN_HASH_ENV, session_cookie_name
+from ..auth import session_cookie_name
 from ..database import Database
 from ..privacy_repository import (
     PrivacyConflict,
@@ -231,9 +231,7 @@ def _receipt_secret(*, production: bool) -> str:
 
     secret = os.getenv(PRIVACY_RECEIPT_SECRET_ENV, "").strip()
     if not secret and not production:
-        # Development remains convenient, but production receipt identity must
-        # never change when the owner-login credential is rotated.
-        secret = os.getenv(OWNER_TOKEN_HASH_ENV, "").strip()
+        secret = "local-development-privacy-receipt-secret"
     if len(secret) < 32:
         raise WorkspaceApiError(
             503,

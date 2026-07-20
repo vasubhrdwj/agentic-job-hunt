@@ -23,10 +23,9 @@ from job_hunt_agent.owner_workspace import WorkspaceUnavailable
 from job_hunt_agent.routers.applications import create_application_router
 from job_hunt_agent.routers.session import create_session_router
 from job_hunt_agent.routers.workspace import install_workspace_error_handler
-from job_hunt_agent.security import hash_access_token
+from tests.auth_helpers import login_test_account, seed_test_account
 
 
-OWNER_TOKEN = "today-action-owner-token-with-more-than-thirty-two-characters"
 ORIGIN = "http://localhost:3000"
 NOW = datetime(2026, 7, 15, 8, 0, tzinfo=timezone.utc)
 
@@ -68,11 +67,10 @@ def action_center_client(
 ) -> Iterator[tuple[TestClient, FakeTodayApplicationActionStore]]:
     database_url = f"sqlite+pysqlite:///{tmp_path / 'action-router.db'}"
     monkeypatch.setenv("DATABASE_URL", database_url)
-    monkeypatch.setenv("JOB_HUNT_OWNER_ID", "owner")
-    monkeypatch.setenv("JOB_HUNT_OWNER_TOKEN_HASH", hash_access_token(OWNER_TOKEN))
     monkeypatch.setenv("JOB_HUNT_SESSION_TTL_DAYS", "30")
     command.upgrade(Config("alembic.ini"), "head")
     database = Database(database_url)
+    seed_test_account(database)
     store = FakeTodayApplicationActionStore()
     app = FastAPI()
     app.include_router(
@@ -97,11 +95,7 @@ def action_center_client(
 
 
 def _login(client: TestClient) -> None:
-    response = client.post(
-        "/api/session",
-        headers={"Origin": ORIGIN},
-        json={"owner_token": OWNER_TOKEN},
-    )
+    response = login_test_account(client, origin=ORIGIN)
     assert response.status_code == 200, response.text
 
 

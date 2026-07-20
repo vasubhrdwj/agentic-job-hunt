@@ -170,8 +170,10 @@ def main(argv: Sequence[str] | None = None) -> int:
 
 def _is_data_loss_refusal(exc: RuntimeError) -> bool:
     message = str(exc).strip().lower()
-    return message.startswith("cannot downgrade ") or message.startswith(
-        "refusing privacy-controls downgrade"
+    return (
+        message.startswith("cannot downgrade ")
+        or message.startswith("refusing privacy-controls downgrade")
+        or message.startswith("refusing account-auth downgrade")
     )
 
 

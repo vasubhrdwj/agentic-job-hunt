@@ -17,11 +17,13 @@ from .application_pack import ApplicationPack, ApplicationPackEvent, Application
 from .application_submission import ApplicationSubmission
 from .contact import ApplicationContact, Contact, ContactPlan
 from .foundation import (
+    AuthThrottleBucket,
     BackgroundJob,
     BackgroundJobEvent,
     HuntOutcome,
     HuntRun,
     Owner,
+    OwnerCredential,
     OwnerSession,
     WorkerHeartbeat,
 )
@@ -68,6 +70,7 @@ __all__ = [
     "ApplicationActionReview",
     "ApplicationMetricSnapshot",
     "ApplicationContact",
+    "AuthThrottleBucket",
     "BackgroundJob",
     "BackgroundJobEvent",
     "AchievementEvidence",
@@ -82,6 +85,7 @@ __all__ = [
     "JobPostingAlias",
     "JobPostingVersion",
     "Owner",
+    "OwnerCredential",
     "OwnerMutationReceipt",
     "OwnerOpportunity",
     "OwnerSession",

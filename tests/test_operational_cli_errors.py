@@ -9,14 +9,20 @@ import pytest
 from scripts import import_legacy_hunts, migration_gate
 
 
+@pytest.mark.parametrize(
+    "refusal",
+    [
+        "Cannot downgrade 20260715_0018 without losing privacy data",
+        "refusing account-auth downgrade while owner credentials exist",
+    ],
+)
 def test_migration_gate_formats_data_bearing_downgrade_refusal(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
+    refusal: str,
 ) -> None:
     def refuse_downgrade(*_args: object, **_kwargs: object) -> object:
-        raise RuntimeError(
-            "Cannot downgrade 20260715_0018 without losing privacy data"
-        )
+        raise RuntimeError(refusal)
 
     monkeypatch.setattr(migration_gate, "guarded_downgrade", refuse_downgrade)
 
@@ -34,10 +40,7 @@ def test_migration_gate_formats_data_bearing_downgrade_refusal(
     captured = capsys.readouterr()
     assert result == 2
     assert captured.out == ""
-    assert captured.err == (
-        "migration gate failed: "
-        "Cannot downgrade 20260715_0018 without losing privacy data\n"
-    )
+    assert captured.err == f"migration gate failed: {refusal}\n"
     assert "Traceback" not in captured.err
 
 

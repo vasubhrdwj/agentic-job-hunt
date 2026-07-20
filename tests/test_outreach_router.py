@@ -25,10 +25,9 @@ from job_hunt_agent.outreach_schemas import (
 from job_hunt_agent.routers.applications import create_application_router
 from job_hunt_agent.routers.session import create_session_router
 from job_hunt_agent.routers.workspace import install_workspace_error_handler
-from job_hunt_agent.security import hash_access_token
+from tests.auth_helpers import login_test_account, seed_test_account
 
 
-OWNER_TOKEN = "outreach-owner-token-with-more-than-thirty-two-characters"
 ORIGIN = "http://localhost:3000"
 NOW = datetime(2026, 7, 14, 8, 0, tzinfo=timezone.utc)
 
@@ -61,6 +60,13 @@ def _outreach(*, version: int) -> ApplicationOutreachResponse:
                 "current_title": "Senior Backend Engineer",
                 "current_company": "Example",
                 "category": "team_peer",
+                "why_relevant": "Works on backend systems near this hiring team.",
+                "employer_evidence": {
+                    "excerpt": "Public profile lists a Senior Backend Engineer role at Example.",
+                    "url": "https://www.linkedin.com/in/asha-example",
+                    "source": "linkedin",
+                    "observed_at": NOW,
+                },
                 "bench_rank": 1,
                 "wave": 1,
                 "bench_state": "ready",
@@ -203,12 +209,11 @@ def outreach_client(
 ) -> Iterator[tuple[TestClient, FakeOutreachStore]]:
     database_url = f"sqlite+pysqlite:///{tmp_path / 'outreach-router.db'}"
     monkeypatch.setenv("DATABASE_URL", database_url)
-    monkeypatch.setenv("JOB_HUNT_OWNER_ID", "owner")
-    monkeypatch.setenv("JOB_HUNT_OWNER_TOKEN_HASH", hash_access_token(OWNER_TOKEN))
     monkeypatch.setenv("JOB_HUNT_SESSION_TTL_DAYS", "30")
     command.upgrade(Config("alembic.ini"), "head")
 
     database = Database(database_url)
+    seed_test_account(database)
     store = FakeOutreachStore()
     app = FastAPI()
     app.include_router(
@@ -233,11 +238,7 @@ def outreach_client(
 
 
 def _login(client: TestClient) -> None:
-    response = client.post(
-        "/api/session",
-        headers={"Origin": ORIGIN},
-        json={"owner_token": OWNER_TOKEN},
-    )
+    response = login_test_account(client, origin=ORIGIN)
     assert response.status_code == 200, response.text
 
 

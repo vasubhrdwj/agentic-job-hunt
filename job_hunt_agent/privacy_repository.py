@@ -62,6 +62,7 @@ _SENSITIVE_COLUMNS = {
     "lease_owner",
     "lease_token",
     "mutation_hash",
+    "password_hash",
     "request_hash",
     "source_fingerprint",
     "token_hash",

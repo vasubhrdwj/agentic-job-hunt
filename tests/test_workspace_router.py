@@ -35,10 +35,9 @@ from job_hunt_agent.routers.workspace import (
     create_workspace_router,
     install_workspace_error_handler,
 )
-from job_hunt_agent.security import hash_access_token
+from tests.auth_helpers import login_test_account, seed_test_account
 
 
-OWNER_TOKEN = "workspace-owner-token-with-more-than-thirty-two-characters"
 ORIGIN = "http://localhost:3000"
 
 
@@ -232,11 +231,10 @@ def workspace_client(
 ) -> Iterator[tuple[TestClient, FakeWorkspaceStore]]:
     database_url = f"sqlite+pysqlite:///{tmp_path / 'workspace.db'}"
     monkeypatch.setenv("DATABASE_URL", database_url)
-    monkeypatch.setenv("JOB_HUNT_OWNER_ID", "owner")
-    monkeypatch.setenv("JOB_HUNT_OWNER_TOKEN_HASH", hash_access_token(OWNER_TOKEN))
     monkeypatch.setenv("JOB_HUNT_SESSION_TTL_DAYS", "30")
     command.upgrade(Config("alembic.ini"), "head")
     database = Database(database_url)
+    seed_test_account(database)
     store = FakeWorkspaceStore()
     app = FastAPI()
     app.include_router(
@@ -261,11 +259,7 @@ def workspace_client(
 
 
 def _login(client: TestClient) -> None:
-    response = client.post(
-        "/api/session",
-        headers={"Origin": ORIGIN},
-        json={"owner_token": OWNER_TOKEN},
-    )
+    response = login_test_account(client, origin=ORIGIN)
     assert response.status_code == 200, response.text
 
 
