@@ -134,7 +134,7 @@ export default function LoginPage() {
       </h1>
       <p className="mt-3 text-sm leading-6 text-zinc-600 dark:text-zinc-400">
         {recoveringWorkspace
-          ? "Use the previous private access key once, then choose the normal email and password you will use from now on."
+          ? "Use your old sign-in key once, then choose the normal email and password you will use from now on."
           : "Each account has its own profile, resumes, searches, applications, and outreach history."}
       </p>
 
