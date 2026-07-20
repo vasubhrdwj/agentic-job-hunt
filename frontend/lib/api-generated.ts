@@ -118,7 +118,7 @@ export interface paths {
         };
         /**
          * Download Owner Approved Tailored Resume
-         * @description Download an ATS-safe DOCX built only from the exact current approved tailored-resume artifact. Draft and superseded approvals fail closed.
+         * @description Download a single-column, upload-ready DOCX built only from the exact current approved tailored-resume artifact. Draft and superseded approvals fail closed.
          */
         get: operations["download_owner_approved_tailored_resume_api_applications__application_id__application_artifacts_approved_resume_docx_get"];
         put?: never;
@@ -1612,7 +1612,10 @@ export interface components {
              * @constant
              */
             target_count: 5;
-            /** Verified Count */
+            /**
+             * Verified Count
+             * @description Source-backed leads in the last completed result; not independently verified profiles.
+             */
             verified_count: number;
         };
         /** ApplicationDetailResponse */
@@ -1874,6 +1877,12 @@ export interface components {
              * @description Exact owner-supplied job description. Accepted only when the pinned posting version has no persisted description.
              */
             owner_job_description?: string | null;
+            /**
+             * Require Sole Current Base Resume
+             * @description Atomically require base_resume_version_id to still be the owner's current base resume and sole saved resume. Automatic preparation sets this; explicit owner-selected creation may leave it false.
+             * @default false
+             */
+            require_sole_current_base_resume: boolean;
         };
         /**
          * ApplicationPackDescriptionSource
@@ -1976,6 +1985,11 @@ export interface components {
         ApplicationPackResponse: {
             /** Application Id */
             application_id: string;
+            /**
+             * Attributed Resume Version Id
+             * @description Resume referenced by the unchanged saved-search version captured when pursuit began. Null when exact attribution cannot be proven.
+             */
+            attributed_resume_version_id?: string | null;
             /** Blockers */
             blockers?: components["schemas"]["ApplicationPackBlocker"][];
             /** Current Approved Evidence */
@@ -2466,15 +2480,24 @@ export interface components {
             bench_rank: number;
             bench_state: components["schemas"]["ContactBenchState"];
             category: components["schemas"]["ContactCategory"];
-            /** Confidence */
+            /**
+             * Confidence
+             * @description Legacy numeric heuristic for saved public-source evidence; it is not a calibrated probability or independent verification score.
+             */
             confidence: number;
             /** Contact Id */
             contact_id: string;
             /** Cooldown Until */
             cooldown_until?: string | null;
-            /** Current Company */
+            /**
+             * Current Company
+             * @description Employer indicated by the saved source result; not independently verified.
+             */
             current_company: string;
-            /** Current Title */
+            /**
+             * Current Title
+             * @description Title parsed from the saved source result; not independently verified.
+             */
             current_title: string;
             employer_evidence: components["schemas"]["EmployerEvidenceResponse"];
             /** Id */
@@ -2500,6 +2523,7 @@ export interface components {
             /**
              * Verified At
              * Format: date-time
+             * @description When source evidence passed the configured threshold; not an independent profile or employment verification timestamp.
              */
             verified_at: string;
             /** Version */
@@ -2540,7 +2564,10 @@ export interface components {
              * @constant
              */
             target_count: 5;
-            /** Verified Count */
+            /**
+             * Verified Count
+             * @description Selected source-backed leads. The legacy field name does not imply independent profile or employment verification.
+             */
             verified_count: number;
         };
         /**
@@ -2585,7 +2612,10 @@ export interface components {
         ContactSearchSnapshot: {
             /** Candidate Limit */
             candidate_limit: number;
-            /** Confidence Floor */
+            /**
+             * Confidence Floor
+             * @description Minimum legacy source-evidence heuristic required for selection.
+             */
             confidence_floor: number;
             coverage_status: components["schemas"]["ContactCoverageStatus"];
             /**
@@ -2597,7 +2627,10 @@ export interface components {
             discovered_count: number;
             /** Error Code */
             error_code?: string | null;
-            /** Evidence Verified Count */
+            /**
+             * Evidence Verified Count
+             * @description Results meeting the saved source-evidence threshold; not independently verified profiles.
+             */
             evidence_verified_count: number;
             /** Exhausted */
             exhausted: boolean;
@@ -2699,16 +2732,26 @@ export interface components {
         DismissReason: "not_relevant" | "seniority_mismatch" | "location_or_mode" | "compensation" | "not_a_better_move" | "company" | "already_applied" | "closed_or_invalid" | "duplicate" | "other";
         /** EmployerEvidenceResponse */
         EmployerEvidenceResponse: {
-            /** Excerpt */
+            /**
+             * Excerpt
+             * @description Exact public search-result snippet saved for this lead.
+             */
             excerpt: string;
             /**
              * Observed At
              * Format: date-time
+             * @description When the source result was captured, not a profile-verification time.
              */
             observed_at: string;
-            /** Source */
+            /**
+             * Source
+             * @description Public-search provider that returned the result.
+             */
             source: string;
-            /** Url */
+            /**
+             * Url
+             * @description Public source result supporting the saved snippet.
+             */
             url: string;
         };
         /**
@@ -3929,7 +3972,7 @@ export interface components {
         };
         /**
          * OutreachRecipientResponse
-         * @description One pinned verified recipient and their latest message projections.
+         * @description One pinned source-backed recipient and latest message projections.
          */
         OutreachRecipientResponse: {
             /** Application Contact Id */
@@ -4257,23 +4300,23 @@ export interface components {
         };
         /**
          * Person
-         * @description A plausible referral target at the hiring company.
+         * @description A plausible referral lead derived from saved public-source evidence.
          */
         Person: {
             /**
              * Company
-             * @description Company the person currently works at. Should match Role.company for a valid referral candidate.
+             * @description Company named as the person's current employer by the saved public-source evidence. Should match Role.company for a usable referral lead; this field is not independent employment verification.
              */
             company: string;
             /**
              * Confidence
-             * @description Confidence in the referral evidence, from 0 to 1.
+             * @description Legacy source-evidence heuristic from 0 to 1; not a calibrated probability or independent verification score.
              * @default 0
              */
             confidence: number;
             /**
              * Name
-             * @description Person's full name as it appears on their public profile.
+             * @description Person name parsed from the saved public-source result.
              */
             name: string;
             /**
@@ -4289,18 +4332,18 @@ export interface components {
             source: "linkedin" | "github" | "company_page" | "other";
             /**
              * Title
-             * @description Current job title at the target company.
+             * @description Job title indicated by the saved public-source evidence; not independently verified as current.
              */
             title: string;
             /**
              * Verified Current Employer
-             * @description True only when evidence confirms the person's current employer.
+             * @description True only when the saved public search result contains a current-employer signal for this company. It means source evidence supports the claim, not that the profile or employment was independently verified.
              * @default false
              */
             verified_current_employer: boolean;
             /**
              * Why Relevant
-             * @description One sentence on why this person is a good referral target for this specific role. Should reference something concrete about the role or the person's title — not generic praise.
+             * @description One source-qualified sentence on why this result may be a useful lead for the role. It must not turn a search snippet into an independently verified title or employer claim.
              */
             why_relevant: string;
         };

@@ -1617,6 +1617,7 @@
             "type": "integer"
           },
           "verified_count": {
+            "description": "Source-backed leads in the last completed result; not independently verified profiles.",
             "maximum": 5.0,
             "minimum": 0.0,
             "title": "Verified Count",
@@ -2289,6 +2290,12 @@
             ],
             "description": "Exact owner-supplied job description. Accepted only when the pinned posting version has no persisted description.",
             "title": "Owner Job Description"
+          },
+          "require_sole_current_base_resume": {
+            "default": false,
+            "description": "Atomically require base_resume_version_id to still be the owner's current base resume and sole saved resume. Automatic preparation sets this; explicit owner-selected creation may leave it false.",
+            "title": "Require Sole Current Base Resume",
+            "type": "boolean"
           }
         },
         "required": [
@@ -2581,6 +2588,19 @@
             "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
             "title": "Application Id",
             "type": "string"
+          },
+          "attributed_resume_version_id": {
+            "anyOf": [
+              {
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Resume referenced by the unchanged saved-search version captured when pursuit began. Null when exact attribution cannot be proven.",
+            "title": "Attributed Resume Version Id"
           },
           "blockers": {
             "items": {
@@ -4036,6 +4056,7 @@
             "$ref": "#/components/schemas/ContactCategory"
           },
           "confidence": {
+            "description": "Legacy numeric heuristic for saved public-source evidence; it is not a calibrated probability or independent verification score.",
             "maximum": 1.0,
             "minimum": 0.75,
             "title": "Confidence",
@@ -4059,12 +4080,14 @@
             "title": "Cooldown Until"
           },
           "current_company": {
+            "description": "Employer indicated by the saved source result; not independently verified.",
             "maxLength": 200,
             "minLength": 1,
             "title": "Current Company",
             "type": "string"
           },
           "current_title": {
+            "description": "Title parsed from the saved source result; not independently verified.",
             "maxLength": 300,
             "minLength": 1,
             "title": "Current Title",
@@ -4146,6 +4169,7 @@
             "title": "Unlocked At"
           },
           "verified_at": {
+            "description": "When source evidence passed the configured threshold; not an independent profile or employment verification timestamp.",
             "format": "date-time",
             "title": "Verified At",
             "type": "string"
@@ -4248,6 +4272,7 @@
             "type": "integer"
           },
           "verified_count": {
+            "description": "Selected source-backed leads. The legacy field name does not imply independent profile or employment verification.",
             "maximum": 5.0,
             "minimum": 0.0,
             "title": "Verified Count",
@@ -4347,6 +4372,7 @@
             "type": "integer"
           },
           "confidence_floor": {
+            "description": "Minimum legacy source-evidence heuristic required for selection.",
             "maximum": 1.0,
             "minimum": 0.75,
             "title": "Confidence Floor",
@@ -4381,6 +4407,7 @@
             "title": "Error Code"
           },
           "evidence_verified_count": {
+            "description": "Results meeting the saved source-evidence threshold; not independently verified profiles.",
             "maximum": 12.0,
             "minimum": 0.0,
             "title": "Evidence Verified Count",
@@ -4678,23 +4705,27 @@
         "additionalProperties": false,
         "properties": {
           "excerpt": {
+            "description": "Exact public search-result snippet saved for this lead.",
             "maxLength": 1000,
             "minLength": 1,
             "title": "Excerpt",
             "type": "string"
           },
           "observed_at": {
+            "description": "When the source result was captured, not a profile-verification time.",
             "format": "date-time",
             "title": "Observed At",
             "type": "string"
           },
           "source": {
+            "description": "Public-search provider that returned the result.",
             "maxLength": 64,
             "minLength": 1,
             "title": "Source",
             "type": "string"
           },
           "url": {
+            "description": "Public source result supporting the saved snippet.",
             "maxLength": 2048,
             "minLength": 1,
             "title": "Url",
@@ -7712,7 +7743,7 @@
       },
       "OutreachRecipientResponse": {
         "additionalProperties": false,
-        "description": "One pinned verified recipient and their latest message projections.",
+        "description": "One pinned source-backed recipient and latest message projections.",
         "properties": {
           "application_contact_id": {
             "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
@@ -8549,23 +8580,23 @@
         "type": "object"
       },
       "Person": {
-        "description": "A plausible referral target at the hiring company.",
+        "description": "A plausible referral lead derived from saved public-source evidence.",
         "properties": {
           "company": {
-            "description": "Company the person currently works at. Should match Role.company for a valid referral candidate.",
+            "description": "Company named as the person's current employer by the saved public-source evidence. Should match Role.company for a usable referral lead; this field is not independent employment verification.",
             "title": "Company",
             "type": "string"
           },
           "confidence": {
             "default": 0.0,
-            "description": "Confidence in the referral evidence, from 0 to 1.",
+            "description": "Legacy source-evidence heuristic from 0 to 1; not a calibrated probability or independent verification score.",
             "maximum": 1.0,
             "minimum": 0.0,
             "title": "Confidence",
             "type": "number"
           },
           "name": {
-            "description": "Person's full name as it appears on their public profile.",
+            "description": "Person name parsed from the saved public-source result.",
             "title": "Name",
             "type": "string"
           },
@@ -8586,18 +8617,18 @@
             "type": "string"
           },
           "title": {
-            "description": "Current job title at the target company.",
+            "description": "Job title indicated by the saved public-source evidence; not independently verified as current.",
             "title": "Title",
             "type": "string"
           },
           "verified_current_employer": {
             "default": false,
-            "description": "True only when evidence confirms the person's current employer.",
+            "description": "True only when the saved public search result contains a current-employer signal for this company. It means source evidence supports the claim, not that the profile or employment was independently verified.",
             "title": "Verified Current Employer",
             "type": "boolean"
           },
           "why_relevant": {
-            "description": "One sentence on why this person is a good referral target for this specific role. Should reference something concrete about the role or the person's title \u2014 not generic praise.",
+            "description": "One source-qualified sentence on why this result may be a useful lead for the role. It must not turn a search snippet into an independently verified title or employer claim.",
             "title": "Why Relevant",
             "type": "string"
           }
@@ -12607,7 +12638,7 @@
     },
     "/api/applications/{application_id}/application-artifacts/approved-resume.docx": {
       "get": {
-        "description": "Download an ATS-safe DOCX built only from the exact current approved tailored-resume artifact. Draft and superseded approvals fail closed.",
+        "description": "Download a single-column, upload-ready DOCX built only from the exact current approved tailored-resume artifact. Draft and superseded approvals fail closed.",
         "operationId": "download_owner_approved_tailored_resume_api_applications__application_id__application_artifacts_approved_resume_docx_get",
         "parameters": [
           {
