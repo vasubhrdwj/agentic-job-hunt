@@ -75,6 +75,7 @@ export default function LoginPage() {
   function selectMode(nextMode: LoginMode) {
     setMode(nextMode);
     setError(null);
+    setConfirmEmail("");
     setPassword("");
     setConfirmPassword("");
     setRecoveryToken("");
@@ -84,7 +85,7 @@ export default function LoginPage() {
     event.preventDefault();
     setError(null);
     if (
-      mode === "create_account" &&
+      mode !== "sign_in" &&
       normalizedEmail(email) !== normalizedEmail(confirmEmail)
     ) {
       setError("Email addresses do not match.");
@@ -257,7 +258,7 @@ export default function LoginPage() {
             {recoveringWorkspace ? (
               <div>
                 <label htmlFor="recovery-token" className="text-sm font-medium">
-                  Previous private access key
+                  Old sign-in key
                 </label>
                 <input
                   id="recovery-token"
@@ -272,7 +273,9 @@ export default function LoginPage() {
                   className="mt-2 w-full rounded-lg border border-zinc-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 dark:border-zinc-700 dark:bg-zinc-900 dark:focus:ring-indigo-950"
                 />
                 <p className="mt-2 text-xs leading-5 text-zinc-500">
-                  This is used only for this one recovery and is not your new password.
+                  Paste the same raw 43-character key you previously entered on
+                  this website—not its hash, database URL, or privacy receipt secret.
+                  It is used only for this recovery and is not your new password.
                 </p>
               </div>
             ) : null}
@@ -295,7 +298,7 @@ export default function LoginPage() {
               />
             </div>
 
-            {creatingAccount ? (
+            {settingCredentials ? (
               <div>
                 <label htmlFor="confirm-email" className="text-sm font-medium">
                   Confirm email

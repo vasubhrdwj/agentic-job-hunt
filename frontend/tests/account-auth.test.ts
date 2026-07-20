@@ -157,7 +157,7 @@ test("legacy recovery maps safe errors for every expected failure class", async 
 
   const cases: Array<[number, RegExp]> = [
     [401, /previous access key is incorrect/i],
-    [409, /workspace is already secured or this email belongs to another account/i],
+    [409, /recovery may already be complete.*try sign in/i],
     [422, /check the email, new password, and complete previous access key/i],
     [429, /recovery is temporarily limited/i],
     [502, /job-search service is temporarily unavailable/i],

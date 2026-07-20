@@ -179,7 +179,7 @@ export async function recoverLegacyWorkspace({
   }
   if (response.status === 409) {
     throw new Error(
-      "That workspace is already secured or this email belongs to another account.",
+      "Recovery may already be complete, or this email belongs to another account. Try Sign in with the email and password you just chose.",
     );
   }
   if (response.status === 422) {
