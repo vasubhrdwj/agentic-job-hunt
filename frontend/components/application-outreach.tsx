@@ -37,12 +37,18 @@ import type {
   OutreachTimelineEvent,
 } from "@/lib/outreach-types";
 import {
+  approvedProfileOutreachGrounding,
   approvedOutreachGrounding,
   hydrateOutreachDraft,
   outreachDraftIsDirty,
   prepareGroundedOutreachDrafts,
 } from "@/lib/grounded-outreach-drafts";
-import { createIdempotencyKey, WorkspaceApiError } from "@/lib/workspace-api";
+import type { AchievementEvidence } from "@/lib/workspace-types";
+import {
+  createIdempotencyKey,
+  listEvidence,
+  WorkspaceApiError,
+} from "@/lib/workspace-api";
 import {
   errorText,
   formatDate,
@@ -168,6 +174,8 @@ export function ApplicationOutreach({
     note: "",
     confirmationFingerprint: null,
   });
+  const [profileEvidence, setProfileEvidence] = useState<AchievementEvidence[]>([]);
+  const [profileEvidenceError, setProfileEvidenceError] = useState<string | null>(null);
 
   const requestGeneration = useRef(0);
   const outreachRef = useRef<ApplicationOutreachResponse | null>(null);
@@ -181,10 +189,34 @@ export function ApplicationOutreach({
     roleTitle,
     companyName,
   }), [applicationArtifacts, applicationId, companyName, roleTitle]);
+  const profileGrounding = useMemo(() => approvedProfileOutreachGrounding({
+    evidence: profileEvidence,
+    applicationId,
+    roleTitle,
+    companyName,
+  }), [applicationId, companyName, profileEvidence, roleTitle]);
+  const draftGrounding = approvedGrounding ?? profileGrounding;
+
+  const loadProfileEvidence = useCallback(async () => {
+    try {
+      const next = await listEvidence();
+      setProfileEvidence(next);
+      setProfileEvidenceError(null);
+    } catch (reason) {
+      setProfileEvidenceError(
+        errorText(reason, "Unable to load your approved profile evidence."),
+      );
+    }
+  }, []);
 
   useEffect(() => () => {
     requestGeneration.current += 1;
   }, []);
+
+  useEffect(() => {
+    const timer = setTimeout(() => void loadProfileEvidence(), 0);
+    return () => clearTimeout(timer);
+  }, [loadProfileEvidence]);
 
   useEffect(() => {
     if (!replyEditorAttemptId) return;
@@ -198,11 +230,10 @@ export function ApplicationOutreach({
     setDrafts((current) => {
       const hydrated = { ...current };
       for (const recipient of next.recipients) {
-        const prepared = prepareGroundedOutreachDrafts(approvedGrounding, {
-          applicationContactId: recipient.application_contact_id,
-          publicName: recipient.public_name,
-          category: recipient.category,
-        });
+        const prepared = prepareGroundedOutreachDrafts(
+          draftGrounding,
+          outreachRecipientFacts(recipient),
+        );
         for (const kind of ["initial", "follow_up"] as const) {
           const key = draftKey(recipient.application_contact_id, kind);
           const saved = messageFor(recipient, kind);
@@ -217,7 +248,7 @@ export function ApplicationOutreach({
       draftValues.current = hydrated;
       return hydrated;
     });
-  }, [approvedGrounding]);
+  }, [draftGrounding]);
 
   useEffect(() => {
     const current = outreachRef.current;
@@ -298,11 +329,14 @@ export function ApplicationOutreach({
 
   useEffect(() => {
     function refreshOnFocus() {
-      if (!busy) void refresh(false);
+      if (!busy) {
+        void refresh(false);
+        void loadProfileEvidence();
+      }
     }
     window.addEventListener("focus", refreshOnFocus);
     return () => window.removeEventListener("focus", refreshOnFocus);
-  }, [busy, refresh]);
+  }, [busy, loadProfileEvidence, refresh]);
 
   const getPendingIntent = useCallback((
     intent: string,
@@ -550,44 +584,54 @@ export function ApplicationOutreach({
   ) {
     const sequence = outreachRef.current?.sequence;
     if (!sequence) return;
-    if (!confirmedManualCopy) {
-      try {
-        if (!navigator.clipboard?.writeText) {
-          throw new Error("Clipboard access is unavailable in this browser.");
-        }
-        await navigator.clipboard.writeText(message.body);
-        setLocallyCopied((current) => ({ ...current, [message.id]: true }));
-      } catch (reason) {
-        const detail = errorText(reason, "The Clipboard could not be updated.");
-        setManualCopyFallback((current) => ({ ...current, [message.id]: true }));
-        setActionError(
-          `${detail} No copy was recorded. Select the exact saved text, copy it manually, then use the manual confirmation below.`,
-        );
+    if (confirmedManualCopy) {
+      if (!message.copied_at) {
+        setActionError("This exact message has not been cleared for manual copy.");
         return;
       }
+      setManualCopyFallback((current) => ({ ...current, [message.id]: false }));
+      setLocallyCopied((current) => ({ ...current, [message.id]: true }));
+      setActionError(null);
+      setNotice(`Confirmed a manual copy of saved version ${message.version_number}. Nothing was sent.`);
+      return;
     }
 
-    const intent = `copy:${message.id}`;
-    const copied = await runMutation({
-      intent,
-      fingerprint: message.id,
-      expectedVersion: sequence.version,
-      execute: (pending) => recordApplicationOutreachEvent(
-        applicationId,
-        sequence.id,
-        pending.expectedVersion,
-        pending.receiptKey,
-        { event_type: "copied", message_version_id: message.id },
-      ),
-      applied: (next) => Boolean(findMessageById(next, message.id)?.copied_at),
-      successMessage: confirmedManualCopy
-        ? `Confirmed a manual copy of saved version ${message.version_number}. Nothing was sent.`
-        : `Copied saved version ${message.version_number}. Nothing was sent.`,
-      ambiguousMessage: "The exact text was copied locally, but we could not confirm its saved copy record.",
-    });
-    if (copied) {
-      setLocallyCopied((current) => ({ ...current, [message.id]: false }));
+    let released = Boolean(message.copied_at);
+    if (!released) {
+      const intent = `copy:${message.id}`;
+      released = await runMutation({
+        intent,
+        fingerprint: message.id,
+        expectedVersion: sequence.version,
+        execute: (pending) => recordApplicationOutreachEvent(
+          applicationId,
+          sequence.id,
+          pending.expectedVersion,
+          pending.receiptKey,
+          { event_type: "copied", message_version_id: message.id },
+        ),
+        applied: (next) => Boolean(findMessageById(next, message.id)?.copied_at),
+        successMessage: `Saved version ${message.version_number} is cleared for manual copy. Nothing was sent.`,
+        ambiguousMessage: "We could not confirm whether this exact message was cleared for manual copy.",
+      });
+    }
+    if (!released) return;
+
+    try {
+      if (!navigator.clipboard?.writeText) {
+        throw new Error("Clipboard access is unavailable in this browser.");
+      }
+      await navigator.clipboard.writeText(message.body);
+      setLocallyCopied((current) => ({ ...current, [message.id]: true }));
       setManualCopyFallback((current) => ({ ...current, [message.id]: false }));
+      setActionError(null);
+      setNotice(`Copied saved version ${message.version_number}. Nothing was sent.`);
+    } catch (reason) {
+      const detail = errorText(reason, "The Clipboard could not be updated.");
+      setManualCopyFallback((current) => ({ ...current, [message.id]: true }));
+      setActionError(
+        `${detail} This exact version is cleared for manual copy. Select the saved text, copy it manually, then confirm below.`,
+      );
     }
   }
 
@@ -919,9 +963,10 @@ export function ApplicationOutreach({
             Contact people without losing track
           </h2>
           <p className="mt-2 max-w-3xl text-sm leading-6 text-zinc-600 dark:text-zinc-400">
-            Grounded starting drafts are prepared from the exact approved application
-            package when available. Review or edit, save an exact version, copy it,
-            send it on the person&apos;s profile or by email, then record what happened.
+            Each ready lead gets a distinct starting message from this exact role,
+            your approved profile evidence, and that person&apos;s saved public-source
+            result. An approved application package is preferred when available.
+            Review or edit, save an exact version, then send it yourself.
           </p>
         </div>
         <span className="inline-flex min-h-8 shrink-0 items-center self-start rounded-full border border-emerald-200 bg-emerald-50 px-3 text-xs font-semibold text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-200">
@@ -936,6 +981,16 @@ export function ApplicationOutreach({
       <div aria-live="polite" className="mt-4 space-y-3">
         {notice ? <StatusMessage kind="success">{notice}</StatusMessage> : null}
         {actionError ? <StatusMessage kind="error">{actionError}</StatusMessage> : null}
+        {profileEvidenceError && !approvedGrounding ? (
+          <StatusMessage kind="error">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <span>{profileEvidenceError} Automatic drafts need at least one current approved achievement.</span>
+              <button type="button" onClick={() => void loadProfileEvidence()} className={secondaryButtonClasses}>
+                Try evidence again
+              </button>
+            </div>
+          </StatusMessage>
+        ) : null}
         {loadError && outreach ? (
           <StatusMessage kind="error">
             <div className="flex flex-wrap items-center justify-between gap-3">
@@ -975,10 +1030,10 @@ export function ApplicationOutreach({
             Nothing is sent automatically.
           </p>
           <p className="mt-2 max-w-2xl text-xs leading-5 text-zinc-500">
-            Safety limits still apply at send time: one initial message per person,
-            a 30-day person cooldown, and at most three cold employee contacts at the
-            same company in seven days. Recruiters and known warm paths are exempt
-            from the company cold-contact count.
+            Safety limits apply before copy and are checked again when you record a
+            send: one initial message per person, a 30-day person cooldown, and at
+            most three cold employee contacts at the same company in seven days.
+            Recruiters and known warm paths are exempt from the company count.
           </p>
           {startBlockedReason ? (
             <p className="mt-3 text-sm font-medium text-amber-800 dark:text-amber-300">
@@ -1049,11 +1104,10 @@ export function ApplicationOutreach({
                     draftFollowUp={drafts[draftKey(recipient.application_contact_id, "follow_up")] ?? ""}
                     initialDirty={Boolean(dirtyFlags[draftKey(recipient.application_contact_id, "initial")])}
                     followUpDirty={Boolean(dirtyFlags[draftKey(recipient.application_contact_id, "follow_up")])}
-                    draftsPrepared={prepareGroundedOutreachDrafts(approvedGrounding, {
-                      applicationContactId: recipient.application_contact_id,
-                      publicName: recipient.public_name,
-                      category: recipient.category,
-                    }) !== null}
+                    draftsPrepared={prepareGroundedOutreachDrafts(
+                      draftGrounding,
+                      outreachRecipientFacts(recipient),
+                    ) !== null}
                     channelByMessage={channels}
                     locallyCopied={locallyCopied}
                     manualCopyFallback={manualCopyFallback}
@@ -1064,11 +1118,10 @@ export function ApplicationOutreach({
                     onDraftChange={(kind, value) => {
                       const key = draftKey(recipient.application_contact_id, kind);
                       const saved = messageFor(recipient, kind)?.body ?? null;
-                      const prepared = prepareGroundedOutreachDrafts(approvedGrounding, {
-                        applicationContactId: recipient.application_contact_id,
-                        publicName: recipient.public_name,
-                        category: recipient.category,
-                      });
+                      const prepared = prepareGroundedOutreachDrafts(
+                        draftGrounding,
+                        outreachRecipientFacts(recipient),
+                      );
                       const preparedBody = kind === "initial"
                         ? prepared?.initial ?? ""
                         : prepared?.followUp ?? "";
@@ -1377,6 +1430,24 @@ function RecipientCard({
             Source result: {recipient.current_title} · {recipient.current_company}
           </p>
           <p className="mt-1 text-xs text-zinc-500">Bench #{recipient.bench_rank} · Wave {recipient.wave}</p>
+          <details className="mt-2 text-xs leading-5 text-zinc-500">
+            <summary className="cursor-pointer font-medium">Why this source-backed lead was selected</summary>
+            <p className="mt-2">
+              App rationale (not independently verified): {recipient.why_relevant}
+            </p>
+            <p className="mt-1 border-l-2 border-zinc-300 pl-2 dark:border-zinc-700">
+              Saved {recipient.employer_evidence.source.replaceAll("_", " ")} snippet:
+              {" “"}{recipient.employer_evidence.excerpt}{"”"}
+            </p>
+            <a
+              href={recipient.employer_evidence.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="mt-1 inline-flex min-h-8 items-center font-medium text-indigo-700 hover:underline dark:text-indigo-300"
+            >
+              Review saved source ↗
+            </a>
+          </details>
         </div>
         <a
           href={recipient.profile_url}
@@ -1601,7 +1672,7 @@ function MessageEditor({
       </div>
       <p id={`${inputId}-help`} className="mt-1 text-xs leading-5 text-zinc-500">
         {prepared
-          ? "Prepared from this role’s exact approved materials and the person’s public search result. Review and edit it; nothing sends automatically."
+          ? "Prepared from this exact role, current approved profile evidence, and the person’s qualified public-source result. Approved application materials are preferred when available. Review it; nothing sends automatically."
           : "Keep it specific and truthful. The text is saved exactly as written, and nothing sends automatically."}
       </p>
       <textarea
@@ -1670,18 +1741,13 @@ function MessageEditor({
             onClick={onCopy}
             className={`${secondaryButtonClasses} mt-3 w-full sm:w-auto`}
           >
-            {locallyCopied && !saved.copied_at
-              ? "Retry saving copy record"
+            {locallyCopied
+              ? "Copy exact saved version again"
               : saved.copied_at
-                ? "Copy exact saved version again"
+                ? "Retry copying exact saved version"
                 : "Copy exact saved version"}
           </button>
-          {locallyCopied && !saved.copied_at ? (
-            <p className="mt-2 text-xs text-amber-800 dark:text-amber-300">
-              Copied locally; the saved copy record is still unconfirmed.
-            </p>
-          ) : null}
-          {manualCopyFallback && !saved.copied_at ? (
+          {manualCopyFallback ? (
             <button
               type="button"
               disabled={!canCopy}
@@ -2217,6 +2283,21 @@ function OutreachTimeline({
 
 function draftKey(contactId: string, kind: OutreachMessageKind): DraftKey {
   return `${contactId}:${kind}`;
+}
+
+function outreachRecipientFacts(recipient: OutreachRecipient) {
+  return {
+    applicationContactId: recipient.application_contact_id,
+    publicName: recipient.public_name,
+    category: recipient.category,
+    currentTitle: recipient.current_title,
+    currentCompany: recipient.current_company,
+    whyRelevant: recipient.why_relevant,
+    employerEvidence: {
+      excerpt: recipient.employer_evidence.excerpt,
+      source: recipient.employer_evidence.source,
+    },
+  };
 }
 
 function messageFor(recipient: OutreachRecipient, kind: OutreachMessageKind) {

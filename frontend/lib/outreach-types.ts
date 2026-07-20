@@ -91,12 +91,14 @@ export type OutreachRecipient = Omit<
   | "outcome_at"
   | "sent_attempts"
 > & {
+  employer_evidence: ApiSchemas["EmployerEvidenceResponse"];
   follow_up_due_at: string | null;
   follow_up_message: OutreachMessageVersion | null;
   initial_message: OutreachMessageVersion | null;
   outcome: OutreachOutcome | null;
   outcome_at: string | null;
   sent_attempts: OutreachSentAttempt[];
+  why_relevant: string;
 };
 
 export type OutreachSequence = Omit<
