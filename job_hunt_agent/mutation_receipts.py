@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -49,6 +49,7 @@ def claim_owner_mutation(
     request: BaseModel | dict[str, object],
     now: datetime | None = None,
 ) -> MutationClaim:
+    _ensure_sqlite_outer_write_transaction(session)
     normalized_namespace = namespace.strip()
     normalized_key = idempotency_key.strip()
     if not normalized_namespace or len(normalized_namespace) > 100:
@@ -98,6 +99,24 @@ def claim_owner_mutation(
             raise
         return _existing_claim(existing, request_hash)
     return MutationClaim(receipt_id=receipt.id, replay=None)
+
+
+def _ensure_sqlite_outer_write_transaction(session: Session) -> None:
+    """Keep SAVEPOINT claims inside the caller transaction under SQLite.
+
+    SQLite otherwise defers ``BEGIN`` until the first write and can treat the
+    receipt SAVEPOINT as the outer transaction. Releasing that savepoint would
+    make a pending receipt survive a later caller rollback. A no-op DML starts
+    the real outer transaction without changing durable data.
+    """
+
+    if session.get_bind().dialect.name != "sqlite":
+        return
+    session.execute(
+        update(OwnerMutationReceipt)
+        .where(OwnerMutationReceipt.id == "")
+        .values(version=OwnerMutationReceipt.version)
+    )
 
 
 def load_owner_mutation_replay(
