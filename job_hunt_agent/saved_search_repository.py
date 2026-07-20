@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from datetime import date, datetime, time, timedelta, timezone
 from zoneinfo import ZoneInfo
 
@@ -281,13 +282,20 @@ def _schedule_json(schedule: SavedSearchSchedule) -> dict[str, object]:
 
 
 def _schedule_from_row(row: SavedSearch) -> SavedSearchSchedule:
-    local_time_value = row.schedule.get("local_time")
-    return SavedSearchSchedule(
-        cadence=row.cadence,
-        timezone=row.timezone,
-        local_time=time.fromisoformat(local_time_value) if local_time_value else None,
-        days_of_week=row.schedule.get("days_of_week", []),
-    )
+    if isinstance(row.schedule, Mapping):
+        local_time_value = row.schedule.get("local_time")
+        try:
+            return SavedSearchSchedule(
+                cadence=row.cadence,
+                timezone=row.timezone,
+                local_time=time.fromisoformat(local_time_value) if local_time_value else None,
+                days_of_week=row.schedule.get("days_of_week", []),
+            )
+        except (TypeError, ValueError):
+            pass
+    if not row.active and row.next_scan_at is None:
+        return SavedSearchSchedule(cadence="manual", timezone="UTC")
+    raise ValueError("saved search schedule is invalid")
 
 
 def _owner_search(session: Session, owner_id: str, search_id: str) -> SavedSearch | None:

@@ -16,6 +16,7 @@ import logging
 import os
 import socket
 import threading
+import time
 from dataclasses import dataclass, field
 
 from .config import env_bool, is_production
@@ -25,6 +26,11 @@ from .contact_search_repository import CONTACT_SEARCH_JOB_KIND
 from .database import database_from_env
 from .opportunity_scan_worker import SCAN_JOB_KIND
 from .production_runtime import validate_contact_search_runtime
+from .scheduled_scan_repository import (
+    DEFAULT_SCHEDULED_SCAN_BATCH_SIZE,
+    ScheduledScanBatch,
+    enqueue_due_saved_search_scans,
+)
 from .worker import WORKER_KINDS_ENV, resolve_practical_job_kinds, run_worker_once
 
 
@@ -32,6 +38,7 @@ LOGGER = logging.getLogger(__name__)
 EMBEDDED_SCAN_WORKER_ENV = "ENABLE_EMBEDDED_SCAN_WORKER"
 DEFAULT_IDLE_SLEEP_SECONDS = 1.0
 DEFAULT_ERROR_SLEEP_SECONDS = 5.0
+DEFAULT_SCHEDULER_INTERVAL_SECONDS = 60.0
 
 
 def embedded_scan_worker_enabled() -> bool:
@@ -50,6 +57,8 @@ class EmbeddedScanWorker:
     worker_id: str = field(default_factory=lambda: _worker_id())
     idle_sleep_seconds: float = DEFAULT_IDLE_SLEEP_SECONDS
     error_sleep_seconds: float = DEFAULT_ERROR_SLEEP_SECONDS
+    scheduler_interval_seconds: float = DEFAULT_SCHEDULER_INTERVAL_SECONDS
+    scheduler_batch_size: int = DEFAULT_SCHEDULED_SCAN_BATCH_SIZE
     _stop: threading.Event = field(default_factory=threading.Event, init=False)
     _thread: threading.Thread | None = field(default=None, init=False)
 
@@ -80,7 +89,34 @@ class EmbeddedScanWorker:
             if database is None:  # pragma: no cover - required=True is fail-closed.
                 raise RuntimeError("embedded scan worker requires DATABASE_URL")
             supported_kinds = embedded_worker_job_kinds()
+            next_scheduler_tick = 0.0
             while not self._stop.is_set():
+                monotonic_now = time.monotonic()
+                if (
+                    SCAN_JOB_KIND in supported_kinds
+                    and monotonic_now >= next_scheduler_tick
+                ):
+                    try:
+                        scheduled = _run_scheduled_scan_tick(
+                            database,
+                            limit=self.scheduler_batch_size,
+                        )
+                        if scheduled.invalid_search_count:
+                            LOGGER.warning(
+                                "embedded scan scheduler skipped invalid searches count=%s",
+                                scheduled.invalid_search_count,
+                            )
+                    except Exception as exc:  # noqa: BLE001 - keep queue drain alive.
+                        LOGGER.error(
+                            "embedded scan scheduler cycle failed worker_id=%s error_type=%s",
+                            self.worker_id,
+                            type(exc).__name__,
+                        )
+                    finally:
+                        next_scheduler_tick = time.monotonic() + max(
+                            1.0,
+                            self.scheduler_interval_seconds,
+                        )
                 try:
                     result = run_worker_once(
                         worker_id=self.worker_id,
@@ -101,6 +137,11 @@ class EmbeddedScanWorker:
         finally:
             if database is not None:
                 database.dispose()
+
+
+def _run_scheduled_scan_tick(database, *, limit: int) -> ScheduledScanBatch:
+    with database.session() as session:
+        return enqueue_due_saved_search_scans(session, limit=limit)
 
 
 def embedded_worker_job_kinds() -> frozenset[str]:
@@ -145,6 +186,7 @@ def _worker_id() -> str:
 
 __all__ = [
     "EMBEDDED_SCAN_WORKER_ENV",
+    "DEFAULT_SCHEDULER_INTERVAL_SECONDS",
     "EmbeddedScanWorker",
     "embedded_worker_job_kinds",
     "embedded_scan_worker_enabled",

@@ -27,6 +27,7 @@ const SENIORITY_OPTIONS: Seniority[] = ["junior", "mid", "senior", "staff"];
 const DEFAULT_KEYWORDS =
   "backend engineer, software engineer, backend developer";
 const DEFAULT_LOCATIONS = "India, Remote-India, Bengaluru, Hyderabad";
+const USE_PAST_OUTREACH_EXAMPLES = false;
 const EMPLOYMENT_OPTIONS: {
   value: EmploymentType;
   label: string;
@@ -54,11 +55,8 @@ export function InputForm() {
   const [employmentTypes, setEmploymentTypes] = useState<EmploymentType[]>([
     "full_time",
   ]);
-  const [compMin, setCompMin] = useState("");
-  const [compMax, setCompMax] = useState("");
   const [maxAgeDays, setMaxAgeDays] = useState("45");
   const [country, setCountry] = useState("in");
-  const [useSelfRag, setUseSelfRag] = useState(true);
   const [providerConsent, setProviderConsent] = useState(false);
 
   const [savedSearches, setSavedSearches] = useState<SavedSearch[]>([]);
@@ -78,11 +76,8 @@ export function InputForm() {
       setSeniority(input.criteria.seniority);
       setPack(input.pack);
       setEmploymentTypes(input.criteria.employment_types);
-      setCompMin(input.criteria.comp_min_lpa?.toString() ?? "");
-      setCompMax(input.criteria.comp_max_lpa?.toString() ?? "");
       setMaxAgeDays(input.criteria.max_age_days?.toString() ?? "");
       setCountry(input.criteria.country ?? "in");
-      setUseSelfRag(input.use_self_rag);
       setSelectedSearchId(searchId);
       setPrefillLabel(label);
     },
@@ -160,11 +155,8 @@ export function InputForm() {
       setSeniority("junior");
       setPack("backend_india");
       setEmploymentTypes(["full_time"]);
-      setCompMin("");
-      setCompMax("");
       setMaxAgeDays("45");
       setCountry("in");
-      setUseSelfRag(true);
       setPrefillLabel(null);
       setResume("");
       try {
@@ -230,12 +222,6 @@ export function InputForm() {
       setError("Use a two-letter lowercase country code, such as in or us.");
       return;
     }
-    const minComp = compMin ? Number(compMin) : null;
-    const maxComp = compMax ? Number(compMax) : null;
-    if (minComp !== null && maxComp !== null && minComp > maxComp) {
-      setError("Minimum compensation cannot be higher than maximum compensation.");
-      return;
-    }
     if (!providerConsent) {
       setError("Review and accept the resume-processing disclosure.");
       return;
@@ -245,8 +231,8 @@ export function InputForm() {
       role_keywords: keywordList,
       seniority,
       location: locationList,
-      comp_min_lpa: minComp,
-      comp_max_lpa: maxComp,
+      comp_min_lpa: null,
+      comp_max_lpa: null,
       employment_types: employmentTypes,
       max_age_days: maxAgeDays ? Number(maxAgeDays) : null,
       country: country.trim().toLowerCase(),
@@ -259,16 +245,21 @@ export function InputForm() {
         resume,
         criteria,
         pack,
-        useSelfRag,
+        USE_PAST_OUTREACH_EXAMPLES,
       );
       const result = await postHunt(
         resume,
         criteria,
         pack,
         idempotencyKey,
-        useSelfRag,
+        USE_PAST_OUTREACH_EXAMPLES,
       );
-      await consumeHuntIdempotencyKey(resume, criteria, pack, useSelfRag);
+      await consumeHuntIdempotencyKey(
+        resume,
+        criteria,
+        pack,
+        USE_PAST_OUTREACH_EXAMPLES,
+      );
       router.push(`/runs/${result.run_id}`);
     } catch (err) {
       const message =
@@ -432,22 +423,6 @@ export function InputForm() {
         </Field>
       </div>
 
-      <label className="flex items-start gap-3 rounded-lg border border-zinc-200 bg-white p-4 text-sm dark:border-zinc-800 dark:bg-zinc-900">
-        <input
-          type="checkbox"
-          checked={useSelfRag}
-          onChange={(event) => setUseSelfRag(event.target.checked)}
-          className="mt-1"
-        />
-        <span>
-          <strong>Use high-scoring past outreach examples</strong>
-          <br />
-          <span className="text-zinc-500">
-            Keeps the saved-search drafting preference without changing your criteria.
-          </span>
-        </span>
-      </label>
-
       <fieldset className="space-y-2">
         <legend className="text-sm font-medium text-zinc-900 dark:text-zinc-100">
           Employment types
@@ -482,37 +457,6 @@ export function InputForm() {
           })}
         </div>
       </fieldset>
-
-      <div className="grid gap-6 sm:grid-cols-2">
-        <Field
-          label="Comp min (LPA)"
-          hint="Optional"
-          htmlFor="comp-min"
-        >
-          <input
-            id="comp-min"
-            type="number"
-            min={0}
-            value={compMin}
-            onChange={(e) => setCompMin(e.target.value)}
-            className={inputClasses}
-          />
-        </Field>
-        <Field
-          label="Comp max (LPA)"
-          hint="Optional"
-          htmlFor="comp-max"
-        >
-          <input
-            id="comp-max"
-            type="number"
-            min={0}
-            value={compMax}
-            onChange={(e) => setCompMax(e.target.value)}
-            className={inputClasses}
-          />
-        </Field>
-      </div>
 
       <label className="flex items-start gap-3 rounded-lg border border-zinc-200 bg-white p-4 text-sm dark:border-zinc-800 dark:bg-zinc-900">
         <input

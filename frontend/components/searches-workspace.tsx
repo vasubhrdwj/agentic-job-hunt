@@ -29,6 +29,10 @@ import type {
   Versioned,
 } from "@/lib/workspace-types";
 import { hasMeaningfulCandidateProfile } from "@/lib/workspace-types";
+import {
+  careerTrackSearchPrefill,
+  preferredSavedSearchSeniority,
+} from "@/lib/search-defaults";
 import type { EmploymentType, Seniority } from "@/lib/types";
 import {
   errorText,
@@ -78,7 +82,7 @@ export function SearchesWorkspace() {
   const [resumeId, setResumeId] = useState("");
   const [keywords, setKeywords] = useState("");
   const [locations, setLocations] = useState("");
-  const [seniority, setSeniority] = useState<Seniority>("senior");
+  const [seniority, setSeniority] = useState<Seniority>("junior");
   const [employmentTypes, setEmploymentTypes] = useState<
     Exclude<EmploymentType, "unknown">[]
   >(["full_time"]);
@@ -87,7 +91,7 @@ export function SearchesWorkspace() {
   const [maxAgeDays, setMaxAgeDays] = useState("45");
   const [country, setCountry] = useState("in");
   const [pack, setPack] = useState("backend_india");
-  const [useSelfRag, setUseSelfRag] = useState(true);
+  const [useSelfRag, setUseSelfRag] = useState(false);
   const [searchActive, setSearchActive] = useState(true);
   const [cadence, setCadence] = useState<ScheduleCadence>("manual");
   const [timezone, setTimezone] = useState("UTC");
@@ -104,6 +108,8 @@ export function SearchesWorkspace() {
   const [runError, setRunError] = useState<Record<string, string>>({});
   const createKey = useRef<string | null>(null);
   const scanKeys = useRef<Record<string, string>>({});
+  const keywordsTouched = useRef(false);
+  const locationsTouched = useRef(false);
 
   const refreshRoleScanCapability = useCallback(async () => {
     setRoleScanChecking(true);
@@ -136,15 +142,32 @@ export function SearchesWorkspace() {
       setResumes(nextResumes);
       setTracks(nextTracks);
       setSearches(nextSearches);
-      setTrackId((current) => current || nextTracks.find((track) => track.active)?.id || "");
-      const defaultSeniority = nextTracks.find((track) => track.active)?.seniority_levels[0];
-      if (defaultSeniority) setSeniority((current) => current || defaultSeniority);
+      const selectedTrack =
+        nextTracks.find((track) => track.id === trackId) ??
+        nextTracks.find((track) => track.active);
+      setTrackId(selectedTrack?.id ?? "");
+      if (selectedTrack) {
+        setSeniority((current) =>
+          selectedTrack.seniority_levels.includes(current)
+            ? current
+            : preferredSavedSearchSeniority(
+                selectedTrack.seniority_levels,
+                nextProfile?.data.years_of_experience,
+              ),
+        );
+        if (!editingId && !keywordsTouched.current) {
+          setKeywords(careerTrackSearchPrefill(selectedTrack.role_families));
+        }
+        if (!editingId && !locationsTouched.current) {
+          setLocations(careerTrackSearchPrefill(selectedTrack.target_locations));
+        }
+      }
     } catch (error) {
       setLoadError(errorText(error, "Unable to load saved searches."));
     } finally {
       setLoading(false);
     }
-  }, [refreshRoleScanCapability]);
+  }, [editingId, refreshRoleScanCapability, trackId]);
 
   useEffect(() => {
     let active = true;
@@ -163,11 +186,22 @@ export function SearchesWorkspace() {
         setSearches(nextSearches);
         const detectedTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
         if (detectedTimezone) setTimezone(detectedTimezone);
-        setTrackId(nextTracks.find((track) => track.active)?.id || "");
-        const defaultSeniority = nextTracks.find(
-          (track) => track.active,
-        )?.seniority_levels[0];
-        if (defaultSeniority) setSeniority(defaultSeniority);
+        const activeTrack = nextTracks.find((track) => track.active);
+        setTrackId(activeTrack?.id || "");
+        if (activeTrack) {
+          setSeniority(
+            preferredSavedSearchSeniority(
+              activeTrack.seniority_levels,
+              nextProfile?.data.years_of_experience,
+            ),
+          );
+          if (!keywordsTouched.current) {
+            setKeywords(careerTrackSearchPrefill(activeTrack.role_families));
+          }
+          if (!locationsTouched.current) {
+            setLocations(careerTrackSearchPrefill(activeTrack.target_locations));
+          }
+        }
       })
       .catch((error) => {
         if (active) setLoadError(errorText(error, "Unable to load saved searches."));
@@ -256,6 +290,9 @@ export function SearchesWorkspace() {
       }
       createKey.current = null;
       setName("");
+      setCompMin("");
+      setCompMax("");
+      setUseSelfRag(false);
       setEditingId(null);
       setMessage({
         kind: "success",
@@ -264,7 +301,7 @@ export function SearchesWorkspace() {
             ? "Saved search updated."
             : cadence === "manual"
             ? "Saved search created. Use Scan roles whenever you are ready."
-            : "Saved search and schedule preference created. Automatic scans are not connected yet; use Scan roles for now.",
+            : "Saved search and automatic cadence created. The background service will scan when it is awake; Scan roles remains available anytime.",
       });
       await reload();
     } catch (error) {
@@ -275,6 +312,8 @@ export function SearchesWorkspace() {
   }
 
   function editSearch(search: SavedSearch) {
+    keywordsTouched.current = true;
+    locationsTouched.current = true;
     setEditingId(search.id);
     setName(search.name);
     setTrackId(search.career_track_id);
@@ -302,13 +341,32 @@ export function SearchesWorkspace() {
     setTrackId(nextTrackId);
     const nextTrack = tracks.find((track) => track.id === nextTrackId);
     if (nextTrack && !nextTrack.seniority_levels.includes(seniority)) {
-      setSeniority(nextTrack.seniority_levels[0]);
+      setSeniority(
+        preferredSavedSearchSeniority(
+          nextTrack.seniority_levels,
+          profile?.data.years_of_experience,
+        ),
+      );
+    }
+    if (nextTrack && !editingId && !keywordsTouched.current) {
+      setKeywords(careerTrackSearchPrefill(nextTrack.role_families));
+    }
+    if (nextTrack && !editingId && !locationsTouched.current) {
+      setLocations(careerTrackSearchPrefill(nextTrack.target_locations));
     }
   }
 
   function cancelEdit() {
     setEditingId(null);
     setName("");
+    setCompMin("");
+    setCompMax("");
+    setUseSelfRag(false);
+    keywordsTouched.current = false;
+    locationsTouched.current = false;
+    const selectedTrack = tracks.find((track) => track.id === trackId);
+    setKeywords(careerTrackSearchPrefill(selectedTrack?.role_families ?? []));
+    setLocations(careerTrackSearchPrefill(selectedTrack?.target_locations ?? []));
     createKey.current = null;
     setMessage(null);
   }
@@ -419,7 +477,7 @@ export function SearchesWorkspace() {
           <form onSubmit={saveSearch} className="space-y-5">
             <div className="grid gap-5 sm:grid-cols-2">
               <FormField label="Search name" htmlFor="search-name">
-                <input id="search-name" value={name} onChange={(event) => setName(event.target.value)} className={inputClasses} placeholder="Senior backend · India" />
+                <input id="search-name" value={name} onChange={(event) => setName(event.target.value)} className={inputClasses} placeholder="Backend roles · India" />
               </FormField>
               <FormField label="Career target" htmlFor="search-track">
                 <select id="search-track" value={trackId} onChange={(event) => chooseTrack(event.target.value)} className={inputClasses}>
@@ -440,10 +498,10 @@ export function SearchesWorkspace() {
             </div>
 
             <FormField label="Role keywords" htmlFor="search-keywords" hint="Comma-separated. Include adjacent titles you would genuinely consider.">
-              <input id="search-keywords" value={keywords} onChange={(event) => setKeywords(event.target.value)} className={inputClasses} placeholder="backend engineer, platform engineer, distributed systems" />
+              <input id="search-keywords" value={keywords} onChange={(event) => { keywordsTouched.current = true; setKeywords(event.target.value); }} className={inputClasses} placeholder="backend engineer, platform engineer, distributed systems" />
             </FormField>
             <FormField label="Locations" htmlFor="search-locations" hint="Comma-separated">
-              <input id="search-locations" value={locations} onChange={(event) => setLocations(event.target.value)} className={inputClasses} placeholder="Remote-India, Bengaluru, Hyderabad" />
+              <input id="search-locations" value={locations} onChange={(event) => { locationsTouched.current = true; setLocations(event.target.value); }} className={inputClasses} placeholder="Remote-India, Bengaluru, Hyderabad" />
             </FormField>
 
             <fieldset>
@@ -461,42 +519,36 @@ export function SearchesWorkspace() {
               </div>
             </fieldset>
 
-            <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
-              <FormField label="Min comp (LPA)" htmlFor="search-comp-min"><input id="search-comp-min" type="number" min={0} value={compMin} onChange={(event) => setCompMin(event.target.value)} className={inputClasses} /></FormField>
-              <FormField label="Max comp (LPA)" htmlFor="search-comp-max"><input id="search-comp-max" type="number" min={0} value={compMax} onChange={(event) => setCompMax(event.target.value)} className={inputClasses} /></FormField>
+            <div className="grid gap-5 sm:grid-cols-2">
               <FormField label="Max posting age" htmlFor="search-max-age"><input id="search-max-age" type="number" min={1} max={365} value={maxAgeDays} onChange={(event) => setMaxAgeDays(event.target.value)} className={inputClasses} /></FormField>
               <FormField label="Country code" htmlFor="search-country"><input id="search-country" maxLength={2} value={country} onChange={(event) => setCountry(event.target.value.toLowerCase())} className={inputClasses} /></FormField>
             </div>
 
             <div className="grid gap-5 sm:grid-cols-2">
               <FormField label="Company pack" htmlFor="search-pack"><select id="search-pack" value={pack} onChange={(event) => setPack(event.target.value)} className={inputClasses}><option value="backend_india">Backend · India + remote</option></select></FormField>
-              <FormField label="Cadence preference" htmlFor="search-cadence" hint="Scan roles works today. Other cadences are saved for the upcoming automatic scheduler.">
+              <FormField label="Scan cadence" htmlFor="search-cadence" hint="Scheduled scans run at this local time whenever the background service is awake.">
                 <select id="search-cadence" value={cadence} onChange={(event) => setCadence(event.target.value as ScheduleCadence)} className={inputClasses}>
                   <option value="manual">Manual · Run when I choose</option>
-                  <option value="daily">Daily · Not automated yet</option>
-                  <option value="weekdays">Weekdays · Not automated yet</option>
-                  <option value="weekly">Weekly · Not automated yet</option>
+                  <option value="daily">Daily</option>
+                  <option value="weekdays">Weekdays</option>
+                  <option value="weekly">Weekly</option>
                 </select>
               </FormField>
             </div>
 
             {cadence !== "manual" ? (
-              <div className="space-y-4 rounded-lg border border-amber-200 bg-amber-50 p-4 dark:border-amber-900 dark:bg-amber-950/30">
-                <p className="text-sm text-amber-900 dark:text-amber-100"><strong>Preference only:</strong> automatic scans are not connected yet. You can still use Scan roles.</p>
+              <div className="space-y-4 rounded-lg border border-indigo-200 bg-indigo-50 p-4 dark:border-indigo-900 dark:bg-indigo-950/30">
+                <p className="text-sm text-indigo-900 dark:text-indigo-100"><strong>Automatic while awake:</strong> the free hosted service can sleep, so a scan may begin after you next open the app. Use Scan roles whenever timing matters.</p>
                 <div className="grid gap-4 sm:grid-cols-2">
                   <FormField label="Timezone" htmlFor="search-timezone"><input id="search-timezone" value={timezone} onChange={(event) => setTimezone(event.target.value)} className={inputClasses} /></FormField>
                   <FormField label="Local time" htmlFor="search-time"><input id="search-time" type="time" step={60} value={localTime} onChange={(event) => setLocalTime(event.target.value)} className={inputClasses} /></FormField>
                 </div>
                 {cadence === "weekly" ? (
-                  <fieldset><legend className="text-sm font-medium">Days</legend><div className="mt-2 flex flex-wrap gap-2">{WEEKDAYS.map((day) => { const checked = days.includes(day.value); return <label key={day.value} className={`cursor-pointer rounded-full border px-3 py-2 text-xs focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-amber-700 dark:focus-within:outline-amber-300 ${checked ? "border-amber-600 bg-white dark:bg-zinc-900" : "border-amber-300 dark:border-amber-800"}`}><input type="checkbox" className="sr-only" checked={checked} onChange={() => setDays((items) => checked ? items.filter((item) => item !== day.value) : [...items, day.value])} />{day.label}</label>; })}</div></fieldset>
+                  <fieldset><legend className="text-sm font-medium">Days</legend><div className="mt-2 flex flex-wrap gap-2">{WEEKDAYS.map((day) => { const checked = days.includes(day.value); return <label key={day.value} className={`cursor-pointer rounded-full border px-3 py-2 text-xs focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-indigo-700 dark:focus-within:outline-indigo-300 ${checked ? "border-indigo-600 bg-white dark:bg-zinc-900" : "border-indigo-300 dark:border-indigo-800"}`}><input type="checkbox" className="sr-only" checked={checked} onChange={() => setDays((items) => checked ? items.filter((item) => item !== day.value) : [...items, day.value])} />{day.label}</label>; })}</div></fieldset>
                 ) : null}
               </div>
             ) : null}
 
-            <label className="flex items-start gap-3 rounded-lg border border-zinc-200 p-4 text-sm dark:border-zinc-800">
-              <input type="checkbox" checked={useSelfRag} onChange={(event) => setUseSelfRag(event.target.checked)} className="mt-1" />
-              <span><strong>Use high-scoring past outreach examples</strong><br /><span className="text-zinc-500">Helps draft style when relevant examples exist; it does not reuse unapproved personal claims.</span></span>
-            </label>
             <label className="flex items-start gap-3 text-sm">
               <input type="checkbox" checked={searchActive} onChange={(event) => setSearchActive(event.target.checked)} className="mt-1" />
               <span><strong>Keep this search active</strong><br /><span className="text-zinc-500">Inactive searches remain saved but cannot start a role scan.</span></span>
@@ -552,7 +604,12 @@ export function SearchesWorkspace() {
                 <article key={search.id} className="rounded-xl border border-zinc-200 p-5 dark:border-zinc-800">
                   <div className="flex items-start justify-between gap-3"><div><h3 className="font-semibold">{search.name}</h3><p className="mt-1 text-xs text-zinc-500">{track?.name ?? "Missing career target"} · {resume?.label ?? "Missing resume"}</p></div><span className={`rounded-full px-2 py-1 text-xs ${search.active ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300" : "bg-zinc-100 text-zinc-600 dark:bg-zinc-800"}`}>{search.active ? "Active" : "Inactive"}</span></div>
                   <p className="mt-4 text-sm text-zinc-700 dark:text-zinc-300">{search.criteria.role_keywords.join(", ")}</p>
-                  <dl className="mt-3 grid grid-cols-2 gap-3 text-xs"><div><dt className="text-zinc-500">Locations</dt><dd className="mt-1">{search.criteria.location.join(", ")}</dd></div><div><dt className="text-zinc-500">Cadence</dt><dd className="mt-1 capitalize">{search.schedule.cadence}{search.schedule.cadence !== "manual" ? " · preference only" : ""}</dd></div><div><dt className="text-zinc-500">Last scan</dt><dd className="mt-1">{formatDate(search.last_scan_at)}</dd></div><div><dt className="text-zinc-500">Next automatic scan</dt><dd className="mt-1">Not connected yet</dd></div></dl>
+                  <dl className="mt-3 grid grid-cols-2 gap-3 text-xs"><div><dt className="text-zinc-500">Locations</dt><dd className="mt-1">{search.criteria.location.join(", ")}</dd></div><div><dt className="text-zinc-500">Cadence</dt><dd className="mt-1 capitalize">{search.schedule.cadence}</dd></div><div><dt className="text-zinc-500">Last scan</dt><dd className="mt-1">{formatDate(search.last_scan_at)}</dd></div><div><dt className="text-zinc-500">Next automatic scan</dt><dd className="mt-1">{search.schedule.cadence === "manual" ? "Manual" : formatDate(search.next_scan_at)}</dd></div></dl>
+                  {!search.active ? (
+                    <p className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs leading-5 text-amber-900 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-100">
+                      This search is paused. Review its criteria and schedule, then edit it and turn “Keep this search active” back on when it is ready.
+                    </p>
+                  ) : null}
                   {runError[search.id] ? <div className="mt-3"><StatusMessage kind="error">{runError[search.id]}</StatusMessage></div> : null}
                   <div className="mt-4 flex flex-wrap gap-2">
                     <button

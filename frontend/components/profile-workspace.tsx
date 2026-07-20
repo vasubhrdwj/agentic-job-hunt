@@ -33,6 +33,7 @@ import {
   parseYearsOfExperienceInput,
 } from "@/lib/workspace-types";
 import { careerTrackMatchesPayload } from "@/lib/career-track-update";
+import { DEFAULT_CAREER_TARGET_SENIORITIES } from "@/lib/search-defaults";
 import type { EmploymentType, Seniority } from "@/lib/types";
 import {
   errorText,
@@ -114,7 +115,9 @@ export function ProfileWorkspace() {
 
   const [trackName, setTrackName] = useState("");
   const [roleFamilies, setRoleFamilies] = useState("");
-  const [seniorities, setSeniorities] = useState<Seniority[]>(["senior"]);
+  const [seniorities, setSeniorities] = useState<Seniority[]>([
+    ...DEFAULT_CAREER_TARGET_SENIORITIES,
+  ]);
   const [targetLocations, setTargetLocations] = useState("");
   const [priorities, setPriorities] = useState(DEFAULT_PRIORITIES);
   const [trackActive, setTrackActive] = useState(true);
@@ -354,6 +357,7 @@ export function ProfileWorkspace() {
       trackKey.current = null;
       setTrackName("");
       setRoleFamilies("");
+      setSeniorities([...DEFAULT_CAREER_TARGET_SENIORITIES]);
       setTargetLocations("");
       setTrackActive(true);
       setEditingTrackId(null);
@@ -371,6 +375,7 @@ export function ProfileWorkspace() {
           if (refreshed && careerTrackMatchesPayload(refreshed, payload)) {
             setTrackName("");
             setRoleFamilies("");
+            setSeniorities([...DEFAULT_CAREER_TARGET_SENIORITIES]);
             setTargetLocations("");
             setTrackActive(true);
             setEditingTrackId(null);
@@ -405,6 +410,7 @@ export function ProfileWorkspace() {
     setEditingTrackId(null);
     setTrackName("");
     setRoleFamilies("");
+    setSeniorities([...DEFAULT_CAREER_TARGET_SENIORITIES]);
     setTargetLocations("");
     setTrackActive(true);
     setPriorities(DEFAULT_PRIORITIES);
@@ -613,7 +619,7 @@ export function ProfileWorkspace() {
       <WorkspaceSection
         eyebrow="Step 3"
         title="Career targets"
-        description="Keep separate targets for different kinds of roles. Priorities help future ranking explain what ‘better’ means to you."
+        description="Save the role families, levels, and locations you want once; new searches reuse them as defaults."
       >
         <form onSubmit={addTrack} className="space-y-5">
           <div className="grid gap-5 sm:grid-cols-2">
@@ -634,8 +640,11 @@ export function ProfileWorkspace() {
             <span><strong>Active career target</strong><br /><span className="text-zinc-500">Inactive targets remain saved but cannot power a role scan.</span></span>
           </label>
 
-          <div>
-            <h3 className="text-sm font-medium">What matters most? <span className="font-normal text-zinc-500">0 = not important, 5 = essential</span></h3>
+          <details className="rounded-lg border border-zinc-200 p-4 dark:border-zinc-800">
+            <summary className="cursor-pointer text-sm font-medium">Advanced preference weights</summary>
+            <p className="mt-2 text-xs leading-5 text-zinc-500">
+              These values are saved for future ranking work but do not affect today’s fit order. You can leave the defaults unchanged.
+            </p>
             <div className="mt-3 grid gap-4 sm:grid-cols-2">
               {(Object.keys(priorities) as Array<keyof CareerPriorities>).map((key) => (
                 <label key={key} className="rounded-lg border border-zinc-200 p-3 text-sm dark:border-zinc-800">
@@ -644,7 +653,7 @@ export function ProfileWorkspace() {
                 </label>
               ))}
             </div>
-          </div>
+          </details>
           {trackMessage ? <StatusMessage kind={trackMessage.kind}>{trackMessage.text}</StatusMessage> : null}
           <div className="flex flex-wrap gap-3">
             <button type="submit" disabled={trackPending} className={primaryButtonClasses}>{trackPending ? "Saving…" : editingTrackId ? "Save target changes" : "Save career target"}</button>

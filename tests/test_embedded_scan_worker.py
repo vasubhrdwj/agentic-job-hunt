@@ -9,6 +9,7 @@ from fastapi.testclient import TestClient
 from job_hunt_agent import embedded_scan_worker
 from job_hunt_agent.contact_search_repository import CONTACT_SEARCH_JOB_KIND
 from job_hunt_agent.opportunity_scan_worker import SCAN_JOB_KIND
+from job_hunt_agent.scheduled_scan_repository import ScheduledScanBatch
 from job_hunt_agent.worker import WorkerResult
 
 
@@ -69,12 +70,25 @@ def test_embedded_worker_claims_only_scan_jobs_and_disposes_database(
 ) -> None:
     database = _FakeDatabase()
     called = Event()
+    scheduler_called = Event()
     captured: dict[str, object] = {}
 
     monkeypatch.setattr(
         embedded_scan_worker,
         "database_from_env",
         lambda *, required: database,
+    )
+
+    def fake_scheduler(_database, *, limit):
+        assert _database is database
+        assert limit > 0
+        scheduler_called.set()
+        return ScheduledScanBatch(items=())
+
+    monkeypatch.setattr(
+        embedded_scan_worker,
+        "_run_scheduled_scan_tick",
+        fake_scheduler,
     )
 
     def fake_run_worker_once(**kwargs):
@@ -97,6 +111,7 @@ def test_embedded_worker_claims_only_scan_jobs_and_disposes_database(
     worker.stop(timeout_seconds=2)
 
     assert worker.alive is False
+    assert scheduler_called.is_set()
     assert captured["worker_id"] == "embedded-test"
     assert captured["durable_database"] is database
     assert captured["practical_mode"] is True
@@ -137,6 +152,51 @@ def test_embedded_worker_retries_sanitized_cycle_failures(monkeypatch) -> None:
     worker.stop(timeout_seconds=2)
 
     assert calls >= 2
+    assert database.disposed is True
+
+
+def test_contact_only_embedded_worker_never_enqueues_role_scans(monkeypatch) -> None:
+    database = _FakeDatabase()
+    worker_called = Event()
+    scheduler_calls = 0
+
+    monkeypatch.setattr(
+        embedded_scan_worker,
+        "database_from_env",
+        lambda *, required: database,
+    )
+    monkeypatch.setattr(
+        embedded_scan_worker,
+        "embedded_worker_job_kinds",
+        lambda: frozenset({CONTACT_SEARCH_JOB_KIND}),
+    )
+
+    def fake_scheduler(_database, *, limit):
+        nonlocal scheduler_calls
+        scheduler_calls += 1
+        return ScheduledScanBatch(items=())
+
+    def fake_worker(**kwargs):
+        assert kwargs["job_kinds"] == {CONTACT_SEARCH_JOB_KIND}
+        worker_called.set()
+        return WorkerResult(claimed=False)
+
+    monkeypatch.setattr(
+        embedded_scan_worker,
+        "_run_scheduled_scan_tick",
+        fake_scheduler,
+    )
+    monkeypatch.setattr(embedded_scan_worker, "run_worker_once", fake_worker)
+
+    worker = embedded_scan_worker.EmbeddedScanWorker(
+        worker_id="embedded-contact-only",
+        idle_sleep_seconds=0.01,
+    )
+    worker.start()
+    assert worker_called.wait(timeout=2)
+    worker.stop(timeout_seconds=2)
+
+    assert scheduler_calls == 0
     assert database.disposed is True
 
 
