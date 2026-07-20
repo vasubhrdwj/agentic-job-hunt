@@ -366,8 +366,9 @@ Configure persistence and CORS via env:
   compatibility sunset metadata. The production link must use HTTPS.
 - `JOB_HUNT_SIGNUP_MODE` — `open` allows new accounts; `closed` permits only
   existing accounts to sign in. It defaults to closed when omitted. The hosted
-  blueprint stays closed until the legacy workspace is claimed and email
-  verification, recovery, and scan/storage abuse controls are available.
+  beta is open, but signup is temporarily hidden while a configured legacy
+  workspace is awaiting its one-time recovery. After recovery, that owner uses
+  normal email/password sign-in and independent new accounts can be created.
 - `JOB_HUNT_PRIVACY_RECEIPT_SECRET` — stable 32+ character server-only HMAC
   secret so deletion idempotency survives owner-login credential rotation.
 - `JOB_HUNT_DATA_KEYS` — comma-separated `key-id:Fernet-key` values. The first

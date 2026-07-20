@@ -49,6 +49,7 @@ def test_render_runs_free_scan_worker_inside_database_ready_web() -> None:
     assert env["DATABASE_URL"]["sync"] is False
     assert env["MIGRATE_ON_START"]["value"] == "1"
     assert env["JOB_HUNT_DATA_KEYS"]["sync"] is False
+    assert env["JOB_HUNT_SIGNUP_MODE"]["value"] == "open"
     assert env["ENABLE_EMBEDDED_SCAN_WORKER"]["value"] == "1"
     assert env["JOB_HUNT_WORKER_KINDS"]["value"] == (
         "scan_saved_search,discover_contacts"

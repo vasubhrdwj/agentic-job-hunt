@@ -16,12 +16,11 @@ services:
       # shared access key is no longer accepted by the application.
       - key: ENABLE_PRACTICAL_MODE
         value: "1"
-      # Keep hosted signup closed while the existing workspace is claimed and
-      # until email verification, recovery, and per-account scan/storage limits
-      # are deployed. The account endpoints still support an explicitly opened
-      # controlled beta, with a separate owner-scoped workspace per account.
+      # Normal email/password signup opens automatically after the one existing
+      # key-based workspace has been recovered. While recovery is pending, the
+      # API suppresses signup and preserves that workspace for its owner.
       - key: JOB_HUNT_SIGNUP_MODE
-        value: closed
+        value: open
       # Free-tier bridge: the web process also runs one durable interactive
       # queue thread while the service is awake. Contact discovery is enabled
       # only when the provider safeguards below are fully configured; legacy
