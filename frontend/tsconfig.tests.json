@@ -9,6 +9,7 @@
     "rootDir": "."
   },
   "include": [
+    "lib/api-contract.ts",
     "lib/application-fit-context.ts",
     "lib/application-dossier-layout.ts",
     "lib/application-materials-auto-generation.ts",
@@ -17,6 +18,7 @@
     "lib/application-pack-review.ts",
     "lib/application-submission-handoff.ts",
     "lib/application-undo-pursuit.ts",
+    "lib/backend-url.ts",
     "lib/career-track-update.ts",
     "lib/contact-source-evidence.ts",
     "lib/grounded-fit-story.ts",
@@ -28,6 +30,7 @@
     "lib/today-recommendation-readiness.ts",
     "lib/today-sort.ts",
     "lib/workspace-types.ts",
+    "tests/account-auth.test.ts",
     "tests/application-dossier-layout.test.ts",
     "tests/application-fit-context.test.ts",
     "tests/application-materials-auto-generation.test.ts",
@@ -36,6 +39,7 @@
     "tests/application-pack-review.test.ts",
     "tests/application-submission-handoff.test.ts",
     "tests/application-undo-pursuit.test.ts",
+    "tests/backend-url.test.ts",
     "tests/career-track-update.test.ts",
     "tests/contact-source-evidence.test.ts",
     "tests/grounded-fit-story.test.ts",

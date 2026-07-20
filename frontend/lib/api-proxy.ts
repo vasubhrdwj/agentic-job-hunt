@@ -1,5 +1,7 @@
 import type { NextRequest } from "next/server";
 
+import { BackendConfigError, backendBaseUrl } from "./backend-url";
+
 const DEFAULT_MAX_REQUEST_BYTES = 512 * 1024;
 const DEFAULT_MAX_RESPONSE_BYTES = 8 * 1024 * 1024;
 const PRIVACY_EXPORT_MAX_RESPONSE_BYTES = 32 * 1024 * 1024;
@@ -80,18 +82,6 @@ function integerSetting(
     throw new Error(`${name} must be an integer from ${minimum} to ${maximum}`);
   }
   return value;
-}
-
-function backendBaseUrl(): URL {
-  const configured = process.env.API_BASE_URL?.trim() || "http://127.0.0.1:8000";
-  const url = new URL(configured);
-  if (url.protocol !== "http:" && url.protocol !== "https:") {
-    throw new Error("API_BASE_URL must use http or https");
-  }
-  url.pathname = url.pathname.replace(/\/+$/, "") + "/";
-  url.search = "";
-  url.hash = "";
-  return url;
 }
 
 function upstreamUrl(request: NextRequest, segments: string[]): URL {
@@ -315,6 +305,13 @@ export async function proxyApiRequest(
       headers: downstreamHeaders(upstream),
     });
   } catch (error) {
+    if (error instanceof BackendConfigError) {
+      return jsonProblem(
+        503,
+        "backend_not_configured",
+        "The website backend connection is not configured correctly.",
+      );
+    }
     if (error instanceof InvalidContentLengthError) {
       return error.source === "request"
         ? jsonProblem(
