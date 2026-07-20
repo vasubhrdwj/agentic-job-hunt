@@ -277,7 +277,10 @@ def _extract_pdf(data: bytes) -> tuple[str, int]:
             "This file does not contain a valid PDF signature.",
         )
     try:
-        reader = PdfReader(io.BytesIO(data), strict=True)
+        # Real resumes are commonly produced by browser-based design tools
+        # with recoverable spec quirks. pypdf's non-strict reader still keeps
+        # the explicit size/page/encryption bounds above while accepting them.
+        reader = PdfReader(io.BytesIO(data), strict=False)
         if reader.is_encrypted:
             raise ResumeIngestionError(
                 "resume_pdf_encrypted",
