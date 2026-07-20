@@ -100,6 +100,37 @@ def claim_owner_mutation(
     return MutationClaim(receipt_id=receipt.id, replay=None)
 
 
+def load_owner_mutation_replay(
+    session: Session,
+    *,
+    owner_id: str,
+    namespace: str,
+    idempotency_key: str,
+    request: BaseModel | dict[str, object],
+) -> MutationReplay | None:
+    """Return an existing completed mutation without creating a pending claim."""
+
+    normalized_namespace = namespace.strip()
+    normalized_key = idempotency_key.strip()
+    if not normalized_namespace or len(normalized_namespace) > 100:
+        raise ValueError("mutation namespace must be 1-100 characters")
+    if not normalized_key or len(normalized_key) > 200:
+        raise ValueError("idempotency key must be 1-200 characters")
+    existing = session.scalar(
+        select(OwnerMutationReceipt)
+        .where(
+            OwnerMutationReceipt.owner_id == owner_id,
+            OwnerMutationReceipt.namespace == normalized_namespace,
+            OwnerMutationReceipt.idempotency_key_hash
+            == hashlib.sha256(normalized_key.encode("utf-8")).hexdigest(),
+        )
+        .with_for_update()
+    )
+    if existing is None:
+        return None
+    return _existing_claim(existing, _request_hash(request)).replay
+
+
 def complete_owner_mutation(
     session: Session,
     *,
@@ -183,4 +214,5 @@ __all__ = [
     "MutationReplay",
     "claim_owner_mutation",
     "complete_owner_mutation",
+    "load_owner_mutation_replay",
 ]

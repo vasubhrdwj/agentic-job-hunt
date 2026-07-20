@@ -9,8 +9,10 @@ from pydantic import ValidationError
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 
 from .contact_repository import ContactRepositoryError, load_application_contact_bench
+from .contact_search_budget import ContactSearchBudgetConfigError
 from .contact_search_repository import (
     CONTACT_SEARCH_JOB_KIND,
+    ContactSearchBudgetExceeded,
     ContactSearchRepositoryError,
     create_contact_search,
 )
@@ -100,8 +102,14 @@ def _contact_errors() -> Iterator[None]:
         raise WorkspaceConflict(str(exc), code="idempotency_conflict") from exc
     except MutationPending as exc:
         raise WorkspaceConflict(str(exc), code="mutation_pending") from exc
+    except ContactSearchBudgetExceeded as exc:
+        raise WorkspaceConflict(str(exc), code=exc.code) from exc
     except ResourceConflict as exc:
         raise WorkspaceConflict(str(exc)) from exc
+    except ContactSearchBudgetConfigError as exc:
+        raise WorkspaceUnavailable(
+            "contact search budget configuration is unavailable"
+        ) from exc
     except ContactSearchRepositoryError as exc:
         raise WorkspaceUnavailable("contact search data is inconsistent") from exc
     except ContactRepositoryError as exc:

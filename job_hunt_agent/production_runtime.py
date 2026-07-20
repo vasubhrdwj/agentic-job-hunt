@@ -5,6 +5,10 @@ from __future__ import annotations
 import os
 
 from .config import env_bool, is_production, practical_mode_enabled
+from .contact_search_budget import (
+    ContactSearchBudgetConfigError,
+    contact_search_budget_from_env,
+)
 from .database import DatabaseConfigError, resolve_database_url
 
 
@@ -36,6 +40,11 @@ def production_core_errors(
         errors.append("USE_MOCKS must be false when ENVIRONMENT=production")
     if env_bool("ENABLE_TRACE_DRAFT_CONTENT", default=False):
         errors.append("ENABLE_TRACE_DRAFT_CONTENT must be false in production")
+
+    try:
+        contact_search_budget_from_env()
+    except ContactSearchBudgetConfigError as exc:
+        errors.append(str(exc))
 
     if practical:
         try:

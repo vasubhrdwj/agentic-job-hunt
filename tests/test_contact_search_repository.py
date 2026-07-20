@@ -9,8 +9,12 @@ import pytest
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 
+import job_hunt_agent.contact_search_repository as contact_search_module
+from job_hunt_agent.contact_discovery import build_contact_queries
 from job_hunt_agent.contact_repository import load_application_contact_bench
+from job_hunt_agent.contact_search_budget import ContactSearchBudget
 from job_hunt_agent.contact_search_repository import (
+    ContactSearchBudgetExceeded,
     ContactSearchRepositoryError,
     create_contact_search,
 )
@@ -29,6 +33,7 @@ from job_hunt_agent.models import (
     OwnerOpportunity,
 )
 from job_hunt_agent.repository_errors import ResourceConflict, VersionConflict
+from job_hunt_agent.schemas import Role
 
 
 NOW = datetime(2026, 7, 13, 10, 0, tzinfo=timezone.utc)
@@ -158,6 +163,15 @@ def contact_search_db(tmp_path: Path) -> Database:
 
 def _count(session, model: type) -> int:
     return int(session.scalar(select(func.count()).select_from(model)) or 0)
+
+
+def _finish_plan(plan: ContactPlan, *, now: datetime) -> None:
+    plan.status = "failed"
+    plan.error_code = "provider_unavailable"
+    plan.retryable = True
+    plan.finalized_at = now
+    plan.updated_at = now
+    plan.version += 1
 
 
 @pytest.mark.parametrize(
@@ -293,6 +307,7 @@ def test_contact_search_is_queued_once_and_all_active_retries_reuse_it(
         job = session.get(BackgroundJob, first.plan.background_job_id)
         assert job is not None
         assert job.kind == "discover_contacts"
+        assert job.max_attempts == 1
         assert job.subject_type == "contact_plan"
         assert job.subject_id == first.plan.id
         assert job.run_after.replace(tzinfo=job.run_after.tzinfo or timezone.utc) == NOW
@@ -301,6 +316,285 @@ def test_contact_search_is_queued_once_and_all_active_retries_reuse_it(
             "candidate_limit": 12,
             "target_count": 5,
         }
+        query_count = len(
+            build_contact_queries(
+                Role(
+                    company="Acme",
+                    title="Staff Backend Engineer",
+                    url="https://boards.greenhouse.io/acme/jobs/123",
+                    location="Remote India",
+                    summary="Build reliable backend systems.",
+                    match_reason="Backend experience matches the role.",
+                )
+            )
+        )
+        assert query_count == 3
+        assert job.max_attempts * query_count == 3
+
+
+def test_budget_lock_precedes_replay_lookup(
+    contact_search_db: Database,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Keep concurrent idempotent requests from being misread as over budget."""
+
+    call_order: list[str] = []
+    original_replay = contact_search_module.load_owner_mutation_replay
+    monkeypatch.setattr(
+        contact_search_module,
+        "_lock_contact_search_budget",
+        lambda _session: call_order.append("lock"),
+    )
+
+    def tracked_replay(*args, **kwargs):
+        call_order.append("replay")
+        return original_replay(*args, **kwargs)
+
+    monkeypatch.setattr(
+        contact_search_module,
+        "load_owner_mutation_replay",
+        tracked_replay,
+    )
+
+    with contact_search_db.session() as session:
+        created = create_contact_search(
+            session,
+            owner_id="owner-a",
+            application_id="application-a",
+            expected_application_version=1,
+            idempotency_key="lock-before-replay",
+            now=NOW,
+        )
+
+    assert created is not None and created.created is True
+    assert call_order[:2] == ["lock", "replay"]
+
+
+def test_owner_daily_budget_blocks_only_a_new_plan_and_preserves_replay(
+    contact_search_db: Database,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("JOB_HUNT_CONTACT_PLAN_OWNER_DAILY_LIMIT", "1")
+    with contact_search_db.session() as session:
+        first = create_contact_search(
+            session,
+            owner_id="owner-a",
+            application_id="application-a",
+            expected_application_version=1,
+            idempotency_key="budget-first",
+            now=NOW,
+        )
+        assert first is not None
+        first_plan_id = first.plan.id
+        _finish_plan(first.plan, now=NOW)
+
+    with contact_search_db.session() as session:
+        replay = create_contact_search(
+            session,
+            owner_id="owner-a",
+            application_id="application-a",
+            expected_application_version=99,
+            idempotency_key="budget-first",
+            now=NOW,
+        )
+        assert replay is not None and replay.created is False
+        assert replay.plan.id == first_plan_id
+
+    with pytest.raises(ContactSearchBudgetExceeded) as caught:
+        with contact_search_db.session() as session:
+            create_contact_search(
+                session,
+                owner_id="owner-a",
+                application_id="application-a",
+                expected_application_version=1,
+                idempotency_key="budget-second",
+                now=NOW,
+            )
+
+    assert caught.value.code == "contact_search_budget_exhausted"
+    assert caught.value.window == "owner_day"
+    assert "allowance" in str(caught.value)
+    with contact_search_db.session() as session:
+        assert _count(session, ContactPlan) == 1
+        assert _count(session, BackgroundJob) == 1
+        assert _count(session, OwnerMutationReceipt) == 1
+
+
+def test_active_plan_reuse_does_not_consume_or_check_another_budget_slot(
+    contact_search_db: Database,
+) -> None:
+    budget = ContactSearchBudget(
+        owner_daily_limit=1,
+        global_daily_limit=1,
+        global_monthly_limit=1,
+    )
+    with contact_search_db.session() as session:
+        first = create_contact_search(
+            session,
+            owner_id="owner-a",
+            application_id="application-a",
+            expected_application_version=1,
+            idempotency_key="active-first",
+            now=NOW,
+            budget=budget,
+        )
+        reused = create_contact_search(
+            session,
+            owner_id="owner-a",
+            application_id="application-a",
+            expected_application_version=99,
+            idempotency_key="active-second-key",
+            now=NOW,
+            budget=budget,
+        )
+
+        assert first is not None and reused is not None
+        assert first.created is True and reused.created is False
+        assert reused.plan.id == first.plan.id
+        assert _count(session, ContactPlan) == 1
+        assert _count(session, BackgroundJob) == 1
+
+
+def test_global_daily_budget_blocks_before_queueing_provider_work(
+    contact_search_db: Database,
+) -> None:
+    budget = ContactSearchBudget(
+        owner_daily_limit=1,
+        global_daily_limit=1,
+        global_monthly_limit=80,
+    )
+    with contact_search_db.session() as session:
+        first = create_contact_search(
+            session,
+            owner_id="owner-a",
+            application_id="application-a",
+            expected_application_version=1,
+            idempotency_key="global-day-first",
+            now=NOW,
+            budget=budget,
+        )
+        assert first is not None
+        _finish_plan(first.plan, now=NOW)
+
+    # Use a higher owner allowance so this request specifically reaches the
+    # global gate while preserving a coherent configuration.
+    global_gate = ContactSearchBudget(
+        owner_daily_limit=2,
+        global_daily_limit=1,
+        global_monthly_limit=80,
+    )
+    with pytest.raises(ContactSearchBudgetExceeded) as caught:
+        with contact_search_db.session() as session:
+            create_contact_search(
+                session,
+                owner_id="owner-a",
+                application_id="application-a",
+                expected_application_version=1,
+                idempotency_key="global-day-second",
+                now=NOW,
+                budget=global_gate,
+            )
+
+    assert caught.value.window == "global_day"
+    assert "beta capacity" in str(caught.value)
+    with contact_search_db.session() as session:
+        assert _count(session, ContactPlan) == 1
+        assert _count(session, BackgroundJob) == 1
+
+
+def test_daily_budget_uses_utc_calendar_boundaries(
+    contact_search_db: Database,
+) -> None:
+    before_midnight = datetime(2026, 7, 31, 23, 59, 59, tzinfo=timezone.utc)
+    after_midnight = datetime(2026, 8, 1, 0, 0, tzinfo=timezone.utc)
+    budget = ContactSearchBudget(
+        owner_daily_limit=1,
+        global_daily_limit=1,
+        global_monthly_limit=80,
+    )
+    with contact_search_db.session() as session:
+        first = create_contact_search(
+            session,
+            owner_id="owner-a",
+            application_id="application-a",
+            expected_application_version=1,
+            idempotency_key="before-midnight",
+            now=before_midnight,
+            budget=budget,
+        )
+        assert first is not None
+        _finish_plan(first.plan, now=before_midnight)
+
+    with contact_search_db.session() as session:
+        second = create_contact_search(
+            session,
+            owner_id="owner-a",
+            application_id="application-a",
+            expected_application_version=1,
+            idempotency_key="after-midnight",
+            now=after_midnight,
+            budget=budget,
+        )
+
+        assert second is not None and second.created is True
+        assert second.plan.plan_number == 2
+
+
+def test_global_monthly_budget_resets_only_at_utc_month_boundary(
+    contact_search_db: Database,
+) -> None:
+    budget = ContactSearchBudget(
+        owner_daily_limit=5,
+        global_daily_limit=5,
+        global_monthly_limit=1,
+    )
+    july_last = datetime(2026, 7, 31, 23, 59, 59, tzinfo=timezone.utc)
+    august_first = datetime(2026, 8, 1, 0, 0, tzinfo=timezone.utc)
+    august_second = datetime(2026, 8, 2, 0, 0, tzinfo=timezone.utc)
+
+    with contact_search_db.session() as session:
+        july = create_contact_search(
+            session,
+            owner_id="owner-a",
+            application_id="application-a",
+            expected_application_version=1,
+            idempotency_key="july-plan",
+            now=july_last,
+            budget=budget,
+        )
+        assert july is not None
+        _finish_plan(july.plan, now=july_last)
+
+    with contact_search_db.session() as session:
+        august = create_contact_search(
+            session,
+            owner_id="owner-a",
+            application_id="application-a",
+            expected_application_version=1,
+            idempotency_key="august-plan",
+            now=august_first,
+            budget=budget,
+        )
+        assert august is not None and august.created is True
+        _finish_plan(august.plan, now=august_first)
+
+    with pytest.raises(ContactSearchBudgetExceeded) as caught:
+        with contact_search_db.session() as session:
+            create_contact_search(
+                session,
+                owner_id="owner-a",
+                application_id="application-a",
+                expected_application_version=1,
+                idempotency_key="august-second-plan",
+                now=august_second,
+                budget=budget,
+            )
+
+    assert caught.value.window == "global_month"
+    assert "this month's beta capacity" in str(caught.value)
+    with contact_search_db.session() as session:
+        assert _count(session, ContactPlan) == 2
+        assert _count(session, BackgroundJob) == 2
 
 
 def test_completed_search_allows_a_new_versioned_attempt(

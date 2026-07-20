@@ -3,13 +3,17 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from .application_schemas import CONTACTABLE_APPLICATION_STAGE_VALUES
+from .contact_search_budget import (
+    ContactSearchBudget,
+    contact_search_budget_from_env,
+)
 from .job_queue import enqueue_job, utcnow
 from .models import (
     Application,
@@ -18,7 +22,12 @@ from .models import (
     ContactPlan,
     JobPosting,
 )
-from .mutation_receipts import claim_owner_mutation, complete_owner_mutation
+from .mutation_receipts import (
+    MutationReplay,
+    claim_owner_mutation,
+    complete_owner_mutation,
+    load_owner_mutation_replay,
+)
 from .repository_errors import ResourceConflict, require_version
 
 
@@ -27,6 +36,19 @@ CONTACT_POLICY_VERSION = "contact-bench-v1"
 CONTACT_SCORING_VERSION = "contact-score-v1"
 CONTACT_TARGET_COUNT = 5
 CONTACT_CANDIDATE_LIMIT = 12
+# One transaction-scoped lock serializes production Postgres budget checks.
+# This needs no new singleton table and is ignored by local SQLite tests.
+CONTACT_SEARCH_BUDGET_ADVISORY_LOCK_KEY = 0x4A4F425F434F4E54
+
+
+class ContactSearchBudgetExceeded(ResourceConflict):
+    """A safe owner/global provider budget stopped new queue work."""
+
+    code = "contact_search_budget_exhausted"
+
+    def __init__(self, message: str, *, window: str) -> None:
+        super().__init__(message)
+        self.window = window
 
 
 class ContactSearchRepositoryError(RuntimeError):
@@ -47,6 +69,7 @@ def create_contact_search(
     expected_application_version: int,
     idempotency_key: str,
     now: datetime | None = None,
+    budget: ContactSearchBudget | None = None,
 ) -> ContactSearchCreateResult | None:
     """Create or replay one queued contact search without invoking a provider."""
 
@@ -62,41 +85,27 @@ def create_contact_search(
     if application is None:
         return None
 
-    claim = claim_owner_mutation(
+    # Serialize the entire replay/reuse/budget decision on PostgreSQL. The lock
+    # must come before the first replay lookup: otherwise a concurrent copy of
+    # the same idempotent request can wait behind the winning transaction, see
+    # its newly consumed budget slot, and be rejected instead of replayed.
+    _lock_contact_search_budget(session)
+
+    mutation_namespace = f"contact_search.create:{application.id}"
+    replay = load_owner_mutation_replay(
         session,
         owner_id=owner_id,
-        namespace=f"contact_search.create:{application.id}",
+        namespace=mutation_namespace,
         idempotency_key=idempotency_key,
         request={},
-        now=current,
     )
-    if claim.replay is not None:
-        replay_version = claim.replay.result_version
-        if (
-            claim.replay.resource_type != "contact_plan"
-            or claim.replay.deleted
-            or isinstance(replay_version, bool)
-            or not isinstance(replay_version, int)
-            or replay_version < 1
-        ):
-            raise ContactSearchRepositoryError(
-                "contact-search receipt has inconsistent result metadata"
-            )
-        plan = _owned_plan(
+    if replay is not None:
+        return _replayed_contact_search(
             session,
             owner_id=owner_id,
             application_id=application.id,
-            plan_id=claim.replay.resource_id,
+            replay=replay,
         )
-        if plan is None:
-            raise ContactSearchRepositoryError(
-                "contact-search receipt has no contact plan"
-            )
-        if replay_version > plan.version:
-            raise ContactSearchRepositoryError(
-                "contact-search receipt result version is ahead of its plan"
-            )
-        return ContactSearchCreateResult(plan=plan, created=False)
 
     active = session.scalar(
         select(ContactPlan)
@@ -122,6 +131,21 @@ def create_contact_search(
             and active_job.status in {"queued", "running"}
         )
         if active_job_is_valid:
+            claim = claim_owner_mutation(
+                session,
+                owner_id=owner_id,
+                namespace=mutation_namespace,
+                idempotency_key=idempotency_key,
+                request={},
+                now=current,
+            )
+            if claim.replay is not None:
+                return _replayed_contact_search(
+                    session,
+                    owner_id=owner_id,
+                    application_id=application.id,
+                    replay=claim.replay,
+                )
             complete_owner_mutation(
                 session,
                 owner_id=owner_id,
@@ -147,6 +171,21 @@ def create_contact_search(
         active.updated_at = current
         active.version += 1
         session.flush()
+        claim = claim_owner_mutation(
+            session,
+            owner_id=owner_id,
+            namespace=mutation_namespace,
+            idempotency_key=idempotency_key,
+            request={},
+            now=current,
+        )
+        if claim.replay is not None:
+            return _replayed_contact_search(
+                session,
+                owner_id=owner_id,
+                application_id=application.id,
+                replay=claim.replay,
+            )
         complete_owner_mutation(
             session,
             owner_id=owner_id,
@@ -189,6 +228,29 @@ def create_contact_search(
     if posting_state != "open":
         raise ResourceConflict("closed postings cannot start a new contact search")
 
+    _enforce_contact_search_budget(
+        session,
+        owner_id=owner_id,
+        now=current,
+        budget=budget or contact_search_budget_from_env(),
+    )
+
+    claim = claim_owner_mutation(
+        session,
+        owner_id=owner_id,
+        namespace=mutation_namespace,
+        idempotency_key=idempotency_key,
+        request={},
+        now=current,
+    )
+    if claim.replay is not None:
+        return _replayed_contact_search(
+            session,
+            owner_id=owner_id,
+            application_id=application.id,
+            replay=claim.replay,
+        )
+
     previous_number = int(
         session.scalar(
             select(func.max(ContactPlan.plan_number)).where(
@@ -212,7 +274,11 @@ def create_contact_search(
             "target_count": CONTACT_TARGET_COUNT,
         },
         priority=75,
-        max_attempts=3,
+        # One discovery attempt runs all three paid search lanes. Until
+        # provider results are checkpointed, an automatic retry could repeat
+        # every charged request after a publication failure. A user-started
+        # replacement is instead counted as a new, budgeted plan.
+        max_attempts=1,
         run_after=current,
         actor=f"owner:{owner_id}",
     )
@@ -271,10 +337,125 @@ def _owned_plan(
     )
 
 
+def _replayed_contact_search(
+    session: Session,
+    *,
+    owner_id: str,
+    application_id: str,
+    replay: MutationReplay,
+) -> ContactSearchCreateResult:
+    replay_version = replay.result_version
+    if (
+        replay.resource_type != "contact_plan"
+        or replay.deleted
+        or isinstance(replay_version, bool)
+        or not isinstance(replay_version, int)
+        or replay_version < 1
+    ):
+        raise ContactSearchRepositoryError(
+            "contact-search receipt has inconsistent result metadata"
+        )
+    plan = _owned_plan(
+        session,
+        owner_id=owner_id,
+        application_id=application_id,
+        plan_id=replay.resource_id,
+    )
+    if plan is None:
+        raise ContactSearchRepositoryError("contact-search receipt has no contact plan")
+    if replay_version > plan.version:
+        raise ContactSearchRepositoryError(
+            "contact-search receipt result version is ahead of its plan"
+        )
+    return ContactSearchCreateResult(plan=plan, created=False)
+
+
 def _as_utc(value: datetime) -> datetime:
     if value.tzinfo is None:
         return value.replace(tzinfo=timezone.utc)
     return value.astimezone(timezone.utc)
+
+
+def _enforce_contact_search_budget(
+    session: Session,
+    *,
+    owner_id: str,
+    now: datetime,
+    budget: ContactSearchBudget,
+) -> None:
+    """Reject new provider work after all replay/reuse exits have run."""
+
+    day_start = datetime(now.year, now.month, now.day, tzinfo=timezone.utc)
+    next_day = day_start + timedelta(days=1)
+    month_start = datetime(now.year, now.month, 1, tzinfo=timezone.utc)
+    next_month = (
+        datetime(now.year + 1, 1, 1, tzinfo=timezone.utc)
+        if now.month == 12
+        else datetime(now.year, now.month + 1, 1, tzinfo=timezone.utc)
+    )
+
+    owner_daily_count = _created_plan_count(
+        session,
+        start=day_start,
+        end=next_day,
+        owner_id=owner_id,
+    )
+    if owner_daily_count >= budget.owner_daily_limit:
+        raise ContactSearchBudgetExceeded(
+            "You have used today's contact-search allowance. "
+            "Try again after 00:00 UTC.",
+            window="owner_day",
+        )
+
+    global_daily_count = _created_plan_count(
+        session,
+        start=day_start,
+        end=next_day,
+    )
+    if global_daily_count >= budget.global_daily_limit:
+        raise ContactSearchBudgetExceeded(
+            "Contact search has reached today's beta capacity. "
+            "Try again after 00:00 UTC.",
+            window="global_day",
+        )
+
+    global_monthly_count = _created_plan_count(
+        session,
+        start=month_start,
+        end=next_month,
+    )
+    if global_monthly_count >= budget.global_monthly_limit:
+        raise ContactSearchBudgetExceeded(
+            "Contact search has reached this month's beta capacity. "
+            "Try again next month.",
+            window="global_month",
+        )
+
+
+def _created_plan_count(
+    session: Session,
+    *,
+    start: datetime,
+    end: datetime,
+    owner_id: str | None = None,
+) -> int:
+    statement = select(func.count()).select_from(ContactPlan).where(
+        ContactPlan.created_at >= start,
+        ContactPlan.created_at < end,
+    )
+    if owner_id is not None:
+        statement = statement.where(ContactPlan.owner_id == owner_id)
+    return int(session.scalar(statement) or 0)
+
+
+def _lock_contact_search_budget(session: Session) -> None:
+    """Serialize plan replay, reuse, and shared-budget checks on PostgreSQL."""
+
+    if session.get_bind().dialect.name != "postgresql":
+        return
+    session.execute(
+        select(func.pg_advisory_xact_lock(CONTACT_SEARCH_BUDGET_ADVISORY_LOCK_KEY))
+    )
 
 
 __all__ = [
@@ -282,7 +463,9 @@ __all__ = [
     "CONTACT_POLICY_VERSION",
     "CONTACT_SCORING_VERSION",
     "CONTACT_SEARCH_JOB_KIND",
+    "CONTACT_SEARCH_BUDGET_ADVISORY_LOCK_KEY",
     "CONTACT_TARGET_COUNT",
+    "ContactSearchBudgetExceeded",
     "ContactSearchCreateResult",
     "ContactSearchRepositoryError",
     "create_contact_search",
