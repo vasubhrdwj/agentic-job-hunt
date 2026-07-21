@@ -15,6 +15,7 @@ from job_hunt_agent.database import MIGRATION_HEAD, Database
 
 
 REVISION = "20260720_0019"
+CURRENT_REVISION = "20260721_0020"
 PREVIOUS_REVISION = "20260715_0018"
 
 
@@ -29,7 +30,8 @@ def test_account_auth_migration_matches_models(
     command.check(config)
     database = Database(url)
     try:
-        assert MIGRATION_HEAD == REVISION
+        assert MIGRATION_HEAD == CURRENT_REVISION
+        assert database.current_migration_revision() == CURRENT_REVISION
         inspector = inspect(database.engine)
         assert {"owner_credentials", "auth_throttle_buckets"}.issubset(
             inspector.get_table_names()

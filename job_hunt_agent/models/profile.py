@@ -142,6 +142,56 @@ class ResumeVersion(Base):
     )
 
 
+class ResumeImport(Base):
+    """Immutable encrypted result of one owner resume-upload mutation."""
+
+    __tablename__ = "resume_imports"
+    __table_args__ = (
+        UniqueConstraint("owner_id", "id", name="uq_resume_imports_owner_id_id"),
+        ForeignKeyConstraint(
+            ["owner_id", "resume_version_id"],
+            ["resume_versions.owner_id", "resume_versions.id"],
+            name="fk_resume_imports_owner_resume",
+            ondelete="CASCADE",
+        ),
+        CheckConstraint(
+            "length(trim(parser_version)) BETWEEN 1 AND 64",
+            name="parser_version",
+        ),
+        CheckConstraint(
+            "length(trim(media_type)) BETWEEN 1 AND 120",
+            name="media_type",
+        ),
+        CheckConstraint(
+            "page_count IS NULL OR (page_count >= 1 AND page_count <= 1000)",
+            name="page_count",
+        ),
+        CheckConstraint(
+            "length(trim(encrypted_payload)) >= 1 "
+            "AND length(trim(encryption_key_id)) BETWEEN 1 AND 32",
+            name="encrypted_payload_envelope",
+        ),
+        CheckConstraint("version = 1", name="immutable_version"),
+        Index("ix_resume_imports_owner_created", "owner_id", "created_at"),
+        Index("ix_resume_imports_owner_resume", "owner_id", "resume_version_id"),
+    )
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid_hex)
+    owner_id: Mapped[str] = mapped_column(
+        ForeignKey("owners.id", ondelete="CASCADE"), nullable=False
+    )
+    resume_version_id: Mapped[str] = mapped_column(String(32), nullable=False)
+    parser_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    media_type: Mapped[str] = mapped_column(String(120), nullable=False)
+    page_count: Mapped[int | None] = mapped_column(Integer)
+    encrypted_payload: Mapped[str] = mapped_column(Text, nullable=False)
+    encryption_key_id: Mapped[str] = mapped_column(String(32), nullable=False)
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
 class AchievementEvidence(Base):
     """Encrypted manual or suggested claim gated by explicit approval."""
 

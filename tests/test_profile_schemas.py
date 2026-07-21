@@ -148,6 +148,7 @@ def test_profile_write_rejects_defaults_only_but_legacy_data_remains_readable() 
         {"years_of_experience": 0},
         {"years_of_experience": 1.5},
         {"career_thesis": "Build reliable developer infrastructure."},
+        {"skills": ["Python", "Kafka"]},
         {"work_modes": ["remote"]},
         {
             "work_authorizations": [
@@ -167,6 +168,11 @@ def test_profile_write_accepts_each_meaningful_detail(
 def test_profile_rejects_invalid_years_of_experience(years: float) -> None:
     with pytest.raises(ValidationError):
         CandidateProfileWrite(years_of_experience=years)
+
+
+def test_profile_rejects_duplicate_skills_case_insensitively() -> None:
+    with pytest.raises(ValidationError, match="skills must not contain duplicates"):
+        CandidateProfileWrite(skills=["Kafka", "kafka"])
 
 
 def test_evidence_is_pending_by_contract_until_explicit_patch() -> None:

@@ -1,8 +1,8 @@
 """Owner-facing contracts for profile, evidence, and saved-search onboarding.
 
-These models are deliberately provider-free. They validate durable owner input
-and produce a lossless projection into the current ``HuntRequestPayload``
-criteria, but they never parse a resume, search the web, or invoke a model.
+These models are deliberately provider-free. They validate durable owner input,
+report bounded results from the separate resume-ingestion boundary, and produce
+a lossless projection into the current ``HuntRequestPayload`` criteria.
 """
 
 from __future__ import annotations
@@ -96,6 +96,30 @@ class ResumeVersionList(ContractModel):
     items: list[ResumeVersionSummary]
 
 
+class ResumeUploadReport(ContractModel):
+    """Durable results plus bounded, user-actionable parsing feedback."""
+
+    resume_version: ResumeVersionSummary
+    imported_profile_fields: list[str] = Field(default_factory=list, max_length=4)
+    achievement_suggestions_created: int = Field(ge=0, le=20)
+    missing_profile_fields: list[str] = Field(default_factory=list, max_length=4)
+    warnings: list[Annotated[str, Field(min_length=1, max_length=300)]] = Field(
+        default_factory=list,
+        max_length=20,
+    )
+    parsed_sections: list[Annotated[str, Field(min_length=1, max_length=80)]] = Field(
+        default_factory=list,
+        max_length=20,
+    )
+
+    @model_validator(mode="after")
+    def reject_duplicate_report_values(self) -> Self:
+        _require_unique(self.imported_profile_fields, "imported_profile_fields")
+        _require_unique(self.missing_profile_fields, "missing_profile_fields")
+        _require_unique_casefolded(self.parsed_sections, "parsed_sections")
+        return self
+
+
 class CandidateProfileData(ContractModel):
     career_thesis: str | None = Field(default=None, min_length=1, max_length=2_000)
     current_title: str | None = Field(default=None, min_length=1, max_length=200)
@@ -106,6 +130,7 @@ class CandidateProfileData(ContractModel):
         le=60,
         allow_inf_nan=False,
     )
+    skills: list[ShortText] = Field(default_factory=list, max_length=80)
     work_authorizations: list[WorkAuthorization] = Field(
         default_factory=list,
         max_length=20,
@@ -123,6 +148,7 @@ class CandidateProfileData(ContractModel):
     def reject_duplicate_preferences(self) -> Self:
         _require_unique(self.work_modes, "work_modes")
         _require_unique(self.employment_types, "employment_types")
+        _require_unique_casefolded(self.skills, "skills")
         countries = [entry.country_code for entry in self.work_authorizations]
         _require_unique(countries, "work_authorizations country_code")
         return self
@@ -152,6 +178,7 @@ def _profile_has_meaningful_details(profile: CandidateProfileData) -> bool:
         or profile.current_title
         or profile.current_location
         or profile.years_of_experience is not None
+        or profile.skills
         or profile.work_authorizations
         or profile.work_modes
         or profile.notice_period_days is not None
@@ -485,6 +512,7 @@ __all__ = [
     "ResumeVersionDetail",
     "ResumeVersionList",
     "ResumeVersionSummary",
+    "ResumeUploadReport",
     "SavedSearchCreate",
     "SavedSearchCriteria",
     "SavedSearchHuntInputResponse",

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 from contextlib import contextmanager
 from typing import Iterator
 
@@ -10,6 +11,7 @@ from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 
 from .database import Database
 from .evidence_repository import (
+    create_approved_resume_evidence,
     create_achievement_evidence,
     list_achievement_evidence,
     update_achievement_evidence,
@@ -61,12 +63,15 @@ from .profile_schemas import (
     ResumeVersionDetail,
     ResumeVersionList,
     ResumeVersionSummary,
+    ResumeUploadReport,
     SavedSearchCreate,
     SavedSearchHuntInputResponse,
     SavedSearchList,
     SavedSearchPatch,
     SavedSearchResponse,
 )
+from .resume_ingestion import ParsedResume
+from .resume_import_repository import create_resume_import, load_resume_import
 from .repository_errors import (
     ResourceConflict,
     ResourceInUse,
@@ -102,6 +107,19 @@ class SqlAlchemyOwnerWorkspaceStore:
         expected_version: int,
     ) -> CandidateProfileResponse:
         with _workspace_errors(), self.database.session() as session:
+            if "skills" not in payload.model_fields_set:
+                current = load_candidate_profile(
+                    session,
+                    owner_id=owner_id,
+                    keyring=self.keyring,
+                )
+                if current is not None:
+                    payload = CandidateProfileWrite.model_validate(
+                        {
+                            **payload.model_dump(mode="python"),
+                            "skills": current.data.skills,
+                        }
+                    )
             record = upsert_candidate_profile(
                 session,
                 owner_id=owner_id,
@@ -161,6 +179,88 @@ class SqlAlchemyOwnerWorkspaceStore:
             detail = self._resume_detail(session, owner_id, created.resume.id)
             assert detail is not None
             return detail
+
+    def upload_resume_version(
+        self,
+        *,
+        owner_id: str,
+        parsed: ParsedResume,
+        label: str,
+        set_as_base: bool,
+        idempotency_key: str,
+    ) -> ResumeUploadReport:
+        """Atomically retain normalized text and conservative resume-backed facts."""
+
+        request = {
+            # Idempotency receipts remain payload-free. The parser version binds
+            # this digest to the deterministic extraction rules used here.
+            "content_digest": hashlib.sha256(
+                f"{owner_id}\0{parsed.content}".encode("utf-8")
+            ).hexdigest(),
+            "label": " ".join(label.split()),
+            "media_type": parsed.media_type,
+            "page_count": parsed.page_count,
+            "parser_version": parsed.parser_version,
+            "set_as_base": set_as_base,
+        }
+        with _workspace_errors(), self.database.session() as session:
+            claim = claim_owner_mutation(
+                session,
+                owner_id=owner_id,
+                namespace="resume_version.upload",
+                idempotency_key=idempotency_key,
+                request=request,
+            )
+            if claim.replay is not None:
+                _require_replay_type(claim.replay.resource_type, "resume_import")
+                imported = load_resume_import(
+                    session,
+                    owner_id=owner_id,
+                    resume_import_id=claim.replay.resource_id,
+                    keyring=self.keyring,
+                )
+                if imported is None:
+                    raise WorkspaceUnavailable("idempotent resume upload is unavailable")
+                if claim.replay.result_version != imported.report.resume_version.version:
+                    raise WorkspaceUnavailable(
+                        "idempotent resume upload version is inconsistent"
+                    )
+                return imported.report
+
+            created = create_or_reuse_resume_version(
+                session,
+                owner_id=owner_id,
+                label=label,
+                content=parsed.content,
+                source="uploaded",
+                keyring=self.keyring,
+                make_base=set_as_base,
+            )
+            report = self._resume_upload_report(
+                session,
+                owner_id=owner_id,
+                metadata=created.resume,
+                parsed=parsed,
+            )
+            imported = create_resume_import(
+                session,
+                owner_id=owner_id,
+                resume_version_id=created.resume.id,
+                parser_version=parsed.parser_version,
+                media_type=parsed.media_type,
+                page_count=parsed.page_count,
+                report=report,
+                keyring=self.keyring,
+            )
+            complete_owner_mutation(
+                session,
+                owner_id=owner_id,
+                receipt_id=claim.receipt_id,
+                resource_type="resume_import",
+                resource_id=imported.id,
+                result_version=report.resume_version.version,
+            )
+            return report
 
     def get_resume_version(
         self, *, owner_id: str, resume_version_id: str
@@ -589,6 +689,194 @@ class SqlAlchemyOwnerWorkspaceStore:
             content=detail.content,
         )
 
+    def _resume_upload_report(
+        self,
+        session,
+        *,
+        owner_id: str,
+        metadata: ResumeVersionMetadata,
+        parsed: ParsedResume,
+    ) -> ResumeUploadReport:
+        imported_fields, missing_fields, profile_warnings = self._merge_resume_profile(
+            session,
+            owner_id=owner_id,
+            parsed=parsed,
+            apply_changes=True,
+        )
+        achievement_count = self._ensure_resume_evidence(
+            session,
+            owner_id=owner_id,
+            resume_version_id=metadata.id,
+            parsed=parsed,
+            apply_changes=True,
+        )
+        return ResumeUploadReport(
+            resume_version=self._resume_summary(session, metadata),
+            imported_profile_fields=imported_fields,
+            achievement_suggestions_created=achievement_count,
+            missing_profile_fields=missing_fields,
+            warnings=_unique_strings([*parsed.warnings, *profile_warnings]),
+            parsed_sections=list(parsed.sections),
+        )
+
+    def _merge_resume_profile(
+        self,
+        session,
+        *,
+        owner_id: str,
+        parsed: ParsedResume,
+        apply_changes: bool,
+    ) -> tuple[list[str], list[str], list[str]]:
+        current = load_candidate_profile(session, owner_id=owner_id, keyring=self.keyring)
+        candidate_values: dict[str, str | float | None] = {
+            "current_title": parsed.current_title,
+            "current_location": parsed.current_location,
+            "years_of_experience": parsed.years_of_experience,
+        }
+        merged = current.data.model_dump(mode="python") if current is not None else {}
+        imported: list[str] = []
+        warnings: list[str] = []
+        changed = False
+        for field, candidate in candidate_values.items():
+            if candidate is None:
+                continue
+            existing = merged.get(field)
+            if existing is None:
+                merged[field] = candidate
+                imported.append(field)
+                changed = True
+            elif existing == candidate:
+                imported.append(field)
+            else:
+                warnings.append(
+                    f"Your existing {_profile_field_label(field)} was kept because it differs from the resume."
+                )
+
+        candidate_skills = list(parsed.skills)
+        if candidate_skills:
+            existing_skills = list(merged.get("skills") or [])
+            if not existing_skills:
+                merged["skills"] = candidate_skills
+                imported.append("skills")
+                changed = True
+            elif _same_skill_list(existing_skills, candidate_skills):
+                imported.append("skills")
+            else:
+                warnings.append(
+                    "Your existing skills were kept because they differ from the resume."
+                )
+
+        if current is None:
+            merged.setdefault("onboarding_step", "career_track")
+        elif current.data.onboarding_step in {"profile", "resume"}:
+            merged["onboarding_step"] = "career_track"
+            changed = True
+
+        if apply_changes and (current is None or changed) and imported:
+            profile_payload = CandidateProfileWrite.model_validate(merged)
+            upsert_candidate_profile(
+                session,
+                owner_id=owner_id,
+                data=profile_payload,
+                keyring=self.keyring,
+                expected_version=current.version if current is not None else 0,
+            )
+            current = load_candidate_profile(
+                session,
+                owner_id=owner_id,
+                keyring=self.keyring,
+            )
+
+        final_values = current.data if current is not None else None
+        if not apply_changes:
+            # A replay reports the fields represented by the completed import
+            # when they are still present, without mutating newer profile edits.
+            imported = [
+                field
+                for field, candidate in candidate_values.items()
+                if candidate is not None
+                and final_values is not None
+                and getattr(final_values, field) == candidate
+            ]
+            if (
+                candidate_skills
+                and final_values is not None
+                and _same_skill_list(final_values.skills, candidate_skills)
+            ):
+                imported.append("skills")
+        missing = [
+            field
+            for field in candidate_values
+            if final_values is None or getattr(final_values, field) is None
+        ]
+        if final_values is None or not final_values.skills:
+            missing.append("skills")
+        return imported, missing, warnings
+
+    def _ensure_resume_evidence(
+        self,
+        session,
+        *,
+        owner_id: str,
+        resume_version_id: str,
+        parsed: ParsedResume,
+        apply_changes: bool,
+    ) -> int:
+        items = list_achievement_evidence(
+            session,
+            owner_id=owner_id,
+            keyring=self.keyring,
+        )
+        by_excerpt = {
+            item.source_excerpt: item
+            for item in items
+            if item.source_resume_version_id == resume_version_id
+            and item.origin == "resume_suggestion"
+            and item.source_excerpt is not None
+        }
+        approved = 0
+        for suggestion in parsed.evidence:
+            existing = by_excerpt.get(suggestion.source_excerpt)
+            if existing is None and apply_changes:
+                existing = create_approved_resume_evidence(
+                    session,
+                    owner_id=owner_id,
+                    payload=AchievementEvidenceCreate(
+                        statement=suggestion.statement,
+                        source_resume_version_id=resume_version_id,
+                        source_excerpt=suggestion.source_excerpt,
+                        skills=list(suggestion.skills),
+                        origin="resume_suggestion",
+                    ),
+                    keyring=self.keyring,
+                )
+                by_excerpt[suggestion.source_excerpt] = existing
+            elif (
+                existing is not None
+                and apply_changes
+                and existing.origin == "resume_suggestion"
+                and existing.statement == suggestion.statement
+                and existing.approval_state == "pending"
+            ):
+                existing = update_achievement_evidence(
+                    session,
+                    owner_id=owner_id,
+                    evidence_id=existing.id,
+                    patch=AchievementEvidencePatch(approval_state="approved"),
+                    expected_version=existing.version,
+                    keyring=self.keyring,
+                )
+                assert existing is not None
+                by_excerpt[suggestion.source_excerpt] = existing
+            if (
+                existing is not None
+                and existing.origin == "resume_suggestion"
+                and existing.statement == suggestion.statement
+                and existing.approval_state == "approved"
+            ):
+                approved += 1
+        return approved
+
 
 def _career_response(record: CareerTrackRecord) -> CareerTrackResponse:
     return CareerTrackResponse(
@@ -598,6 +886,32 @@ def _career_response(record: CareerTrackRecord) -> CareerTrackResponse:
         created_at=record.created_at,
         updated_at=record.updated_at,
     )
+
+
+def _profile_field_label(field: str) -> str:
+    return {
+        "current_title": "current title",
+        "current_location": "home location",
+        "years_of_experience": "experience estimate",
+    }.get(field, field.replace("_", " "))
+
+
+def _same_skill_list(first: list[str], second: list[str]) -> bool:
+    return [value.casefold() for value in first] == [
+        value.casefold() for value in second
+    ]
+
+
+def _unique_strings(values: list[str] | tuple[str, ...]) -> list[str]:
+    unique: list[str] = []
+    seen: set[str] = set()
+    for value in values:
+        normalized = " ".join(value.split())
+        key = normalized.casefold()
+        if normalized and key not in seen:
+            unique.append(normalized)
+            seen.add(key)
+    return unique
 
 
 def _require_replay_type(actual: str, expected: str) -> None:

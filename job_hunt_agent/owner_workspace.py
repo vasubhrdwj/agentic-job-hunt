@@ -25,12 +25,14 @@ from .profile_schemas import (
     ResumeVersionDetail,
     ResumeVersionList,
     ResumeVersionSummary,
+    ResumeUploadReport,
     SavedSearchCreate,
     SavedSearchHuntInputResponse,
     SavedSearchList,
     SavedSearchPatch,
     SavedSearchResponse,
 )
+from .resume_ingestion import ParsedResume
 
 
 class OwnerWorkspaceError(RuntimeError):
@@ -93,6 +95,16 @@ class OwnerWorkspaceStore(Protocol):
         payload: ResumeVersionCreate,
         idempotency_key: str,
     ) -> ResumeVersionDetail: ...
+
+    def upload_resume_version(
+        self,
+        *,
+        owner_id: str,
+        parsed: ParsedResume,
+        label: str,
+        set_as_base: bool,
+        idempotency_key: str,
+    ) -> ResumeUploadReport: ...
 
     def get_resume_version(
         self,

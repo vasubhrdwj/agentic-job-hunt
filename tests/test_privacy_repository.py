@@ -23,6 +23,7 @@ from job_hunt_agent.models import (
     OwnerPrivacySetting,
     OwnerSession,
     PrivacyDeletionReceipt,
+    ResumeImport,
     WorkerHeartbeat,
 )
 from job_hunt_agent.private_payloads import encrypt_private_payload
@@ -35,7 +36,9 @@ from job_hunt_agent.privacy_repository import (
     preview_owner_deletion,
     update_retention_setting,
 )
+from job_hunt_agent.resume_ingestion import ParsedResume
 from job_hunt_agent.security import load_data_keyring
+from job_hunt_agent.sqlalchemy_owner_workspace import SqlAlchemyOwnerWorkspaceStore
 
 
 NOW = datetime(2026, 7, 15, 10, 30, tzinfo=timezone.utc)
@@ -230,6 +233,120 @@ def test_export_redacts_undecryptable_records_without_leaking_ciphertext(
         and omission.reason == "decryption_failed"
         for omission in exported.omissions
     )
+
+
+def test_resume_import_snapshot_is_exported_and_cascade_deleted_per_owner(
+    privacy_db: Database,
+) -> None:
+    _seed_owner(privacy_db, "owner-a")
+    _seed_owner(privacy_db, "owner-b")
+    keyring = load_data_keyring(production=False)
+    store = SqlAlchemyOwnerWorkspaceStore(privacy_db, keyring)
+    parsed_a = ParsedResume(
+        content="OWNER-A-RAW-RESUME\nSoftware Engineer\nBuilt reliable services.",
+        sections=("experience",),
+        current_title="Software Engineer",
+        current_location=None,
+        years_of_experience=2.5,
+        evidence=(),
+        skills=("Python",),
+        warnings=(),
+        media_type="application/pdf",
+        page_count=2,
+        parser_version="privacy-test-parser",
+    )
+    parsed_b = ParsedResume(
+        content="OWNER-B-RAW-RESUME\nBackend Engineer\nBuilt event pipelines.",
+        sections=("experience",),
+        current_title="Backend Engineer",
+        current_location=None,
+        years_of_experience=3.0,
+        evidence=(),
+        skills=("Kafka",),
+        warnings=(),
+        media_type="text/plain",
+        page_count=None,
+        parser_version="privacy-test-parser",
+    )
+    report_a = store.upload_resume_version(
+        owner_id="owner-a",
+        parsed=parsed_a,
+        label="Owner A Resume",
+        set_as_base=True,
+        idempotency_key="owner-a-resume-upload",
+    )
+    store.upload_resume_version(
+        owner_id="owner-b",
+        parsed=parsed_b,
+        label="Owner B Resume",
+        set_as_base=True,
+        idempotency_key="owner-b-resume-upload",
+    )
+
+    with privacy_db.session() as session:
+        owner_a_import = session.scalar(
+            select(ResumeImport).where(ResumeImport.owner_id == "owner-a")
+        )
+        owner_b_import = session.scalar(
+            select(ResumeImport).where(ResumeImport.owner_id == "owner-b")
+        )
+        assert owner_a_import is not None
+        assert owner_b_import is not None
+        owner_a_ciphertext = owner_a_import.encrypted_payload
+        owner_b_import_id = owner_b_import.id
+        exported = export_owner_workspace(
+            session,
+            owner_id="owner-a",
+            keyring=keyring,
+            now=NOW,
+        )
+
+    assert exported.counts["resume_imports"] == 1
+    exported_import = exported.tables["resume_imports"][0]
+    assert exported_import["id"] == owner_a_import.id
+    assert exported_import["resume_version_id"] == report_a.resume_version.id
+    assert exported_import["parser_version"] == "privacy-test-parser"
+    assert exported_import["media_type"] == "application/pdf"
+    assert exported_import["page_count"] == 2
+    private_payload = exported_import["private_payload"]
+    assert private_payload["resume_version_id"] == report_a.resume_version.id
+    assert private_payload["parser_version"] == "privacy-test-parser"
+    assert private_payload["media_type"] == "application/pdf"
+    assert private_payload["page_count"] == 2
+    assert private_payload["report"] == report_a.model_dump(
+        mode="json"
+    )
+    serialized_import = json.dumps(exported_import, sort_keys=True, default=str)
+    assert "OWNER-A-RAW-RESUME" not in serialized_import
+    assert "OWNER-B-RAW-RESUME" not in serialized_import
+    assert owner_a_ciphertext not in serialized_import
+    assert owner_b_import_id not in exported.model_dump_json()
+    assert "encrypted_payload" not in serialized_import
+    assert "encryption_key_id" not in serialized_import
+
+    with privacy_db.session() as session:
+        preview = preview_owner_deletion(session, owner_id="owner-a", now=NOW)
+        assert preview.row_counts["resume_imports"] == 1
+        delete_owner_workspace(
+            session,
+            owner_id="owner-a",
+            confirmation="DELETE WORKSPACE owner-a",
+            idempotency_key="delete-owner-a-resume-import",
+            receipt_secret=RECEIPT_SECRET,
+            now=NOW,
+        )
+
+    with privacy_db.session() as session:
+        assert session.scalar(
+            select(func.count())
+            .select_from(ResumeImport)
+            .where(ResumeImport.owner_id == "owner-a")
+        ) == 0
+        assert session.scalar(
+            select(func.count())
+            .select_from(ResumeImport)
+            .where(ResumeImport.owner_id == "owner-b")
+        ) == 1
 
 
 def test_deletion_preview_counts_indirect_rows_and_delete_is_atomic_and_isolated(

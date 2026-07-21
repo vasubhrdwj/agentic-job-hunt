@@ -2,8 +2,13 @@
 
 from __future__ import annotations
 
+import os
+import re
+import unicodedata
 from collections.abc import Callable
 from dataclasses import dataclass
+from http.cookies import CookieError, SimpleCookie
+from pathlib import PurePath
 from typing import Any, TypeVar
 from uuid import uuid4
 
@@ -11,19 +16,26 @@ from fastapi import (
     APIRouter,
     Depends,
     FastAPI,
+    File,
+    Form,
     Header,
     HTTPException,
     Query,
     Request,
     Response,
     Security,
+    UploadFile,
     status,
 )
+from fastapi.exceptions import RequestValidationError
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.security import APIKeyCookie
-from fastapi.exceptions import RequestValidationError
+from sqlalchemy.exc import SQLAlchemyError
+from starlette.concurrency import run_in_threadpool
+from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
-from ..auth import session_cookie_name
+from ..auth import load_owner_session, session_cookie_name
 from ..database import Database
 from ..owner_workspace import (
     OwnerWorkspaceStore,
@@ -52,6 +64,7 @@ from ..profile_schemas import (
     ResumeVersionDetail,
     ResumeVersionList,
     ResumeVersionSummary,
+    ResumeUploadReport,
     SavedSearchCreate,
     SavedSearchHuntInputResponse,
     SavedSearchList,
@@ -59,10 +72,17 @@ from ..profile_schemas import (
     SavedSearchResponse,
     WorkspaceDeleteResponse,
 )
+from ..resume_ingestion import (
+    MAX_RESUME_FILE_BYTES,
+    ResumeIngestionError,
+    parse_resume_upload,
+)
 from .session import AuthenticatedOwner, require_owner_mutation, require_owner_session
 
 
 MAX_IDEMPOTENCY_KEY_CHARS = 200
+MAX_RESUME_UPLOAD_REQUEST_BYTES = MAX_RESUME_FILE_BYTES + 1024 * 1024
+OWNER_SESSION_TOKEN_PATTERN = re.compile(r"[A-Za-z0-9_-]{43}\Z")
 COMMON_ERROR_RESPONSES: dict[int | str, dict[str, Any]] = {
     400: {"model": ProblemResponse},
     401: {"model": ProblemResponse},
@@ -83,6 +103,145 @@ class WorkspaceApiError(Exception):
     message: str
     retryable: bool = False
     field_errors: list[ProblemFieldError] | None = None
+
+
+class ResumeUploadBodyLimitMiddleware:
+    """Bound multipart bytes before Starlette can spool an upload to disk."""
+
+    def __init__(
+        self,
+        app: ASGIApp,
+        *,
+        max_body_bytes: int = MAX_RESUME_UPLOAD_REQUEST_BYTES,
+        allowed_origins: list[str] | tuple[str, ...] = (),
+        production: bool = False,
+        database: Database | None = None,
+    ) -> None:
+        self.app = app
+        self.max_body_bytes = max_body_bytes
+        self.allowed_origins = frozenset(
+            origin.rstrip("/") for origin in allowed_origins if origin
+        )
+        self.production = production
+        self.session_cookie = session_cookie_name()
+        self.database = database
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if not (
+            scope["type"] == "http"
+            and scope.get("method") == "POST"
+            and scope.get("path") == "/api/me/resume-versions/upload"
+        ):
+            await self.app(scope, receive, send)
+            return
+
+        origin = _request_origin(scope)
+        cors_origin = _allowed_cors_origin(origin, self.allowed_origins)
+        if (origin and cors_origin is None) or (not origin and self.production):
+            await _send_resume_access_problem(
+                scope,
+                receive,
+                send,
+                status_code=403,
+                code="origin_forbidden",
+                message="request origin is not allowed",
+            )
+            return
+
+        session_token = _session_cookie_token(scope, self.session_cookie)
+        if session_token is None:
+            await _send_resume_access_problem(
+                scope,
+                receive,
+                send,
+                status_code=401,
+                code="owner_session_required",
+                message="owner session required",
+                cors_origin=cors_origin,
+            )
+            return
+
+        if self.database is None:
+            await _send_resume_access_problem(
+                scope,
+                receive,
+                send,
+                status_code=503,
+                code="workspace_unavailable",
+                message="owner workspace storage is unavailable",
+                retryable=True,
+                cors_origin=cors_origin,
+            )
+            return
+        try:
+            session_is_valid = await run_in_threadpool(
+                _owner_session_is_valid,
+                self.database,
+                session_token,
+            )
+        except SQLAlchemyError:
+            await _send_resume_access_problem(
+                scope,
+                receive,
+                send,
+                status_code=503,
+                code="workspace_unavailable",
+                message="owner workspace storage is unavailable",
+                retryable=True,
+                cors_origin=cors_origin,
+            )
+            return
+        if not session_is_valid:
+            await _send_resume_access_problem(
+                scope,
+                receive,
+                send,
+                status_code=401,
+                code="owner_session_required",
+                message="owner session required",
+                cors_origin=cors_origin,
+            )
+            return
+
+        declared_length = _content_length(scope)
+        if declared_length is not None and declared_length > self.max_body_bytes:
+            await _send_resume_body_too_large(
+                scope,
+                receive,
+                send,
+                cors_origin=cors_origin,
+            )
+            return
+
+        body = bytearray()
+        while True:
+            message = await receive()
+            if message["type"] == "http.disconnect":
+                return
+            if message["type"] != "http.request":
+                continue
+            body.extend(message.get("body", b""))
+            if len(body) > self.max_body_bytes:
+                await _send_resume_body_too_large(
+                    scope,
+                    receive,
+                    send,
+                    cors_origin=cors_origin,
+                )
+                return
+            if not message.get("more_body", False):
+                break
+
+        delivered = False
+
+        async def replay_receive() -> Message:
+            nonlocal delivered
+            if not delivered:
+                delivered = True
+                return {"type": "http.request", "body": bytes(body), "more_body": False}
+            return {"type": "http.disconnect"}
+
+        await self.app(scope, replay_receive, send)
 
 
 def create_workspace_router(
@@ -197,6 +356,60 @@ def create_workspace_router(
         )
         _set_etag(response, resume.version)
         return resume
+
+    @router.post(
+        "/api/me/resume-versions/upload",
+        response_model=ResumeUploadReport,
+        status_code=status.HTTP_201_CREATED,
+        responses={
+            **COMMON_ERROR_RESPONSES,
+            413: {"model": ProblemResponse},
+        },
+    )
+    async def upload_resume_version(
+        response: Response,
+        file: UploadFile = File(...),
+        label: str | None = Form(default=None),
+        set_as_base: bool = Form(default=True),
+        owner: AuthenticatedOwner = Security(require_mutation_owner),
+        idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+    ) -> ResumeUploadReport:
+        mutation_key = _required_idempotency_key(idempotency_key)
+        filename = file.filename or ""
+        content_type = file.content_type
+        upload_label = _resume_upload_label(filename=filename, label=label)
+        try:
+            content = await file.read(MAX_RESUME_FILE_BYTES + 1)
+        finally:
+            await file.close()
+        if len(content) > MAX_RESUME_FILE_BYTES:
+            _raise_resume_ingestion_problem(
+                ResumeIngestionError(
+                    "resume_too_large",
+                    "Resume files must be 3 MB or smaller.",
+                )
+            )
+        try:
+            parsed = await run_in_threadpool(
+                parse_resume_upload,
+                content,
+                filename=filename,
+                content_type=content_type,
+            )
+        except ResumeIngestionError as exc:
+            _raise_resume_ingestion_problem(exc)
+
+        report = await run_in_threadpool(
+            _invoke,
+            _store(store).upload_resume_version,
+            owner_id=owner.owner_id,
+            parsed=parsed,
+            label=upload_label,
+            set_as_base=set_as_base,
+            idempotency_key=mutation_key,
+        )
+        _set_etag(response, report.resume_version.version)
+        return report
 
     @router.get(
         "/api/me/resume-versions/{resume_version_id}",
@@ -501,9 +714,45 @@ def create_workspace_router(
     return router
 
 
-def install_workspace_error_handler(app: FastAPI) -> None:
+def install_workspace_error_handler(
+    app: FastAPI,
+    *,
+    allowed_origins: list[str] | None = None,
+    production: bool | None = None,
+    database: Database | None = None,
+) -> None:
+    configured_origins = (
+        allowed_origins
+        if allowed_origins is not None
+        else _configured_cors_origins(app)
+    )
+    app.add_middleware(
+        ResumeUploadBodyLimitMiddleware,
+        allowed_origins=configured_origins,
+        production=(
+            os.getenv("ENVIRONMENT", "").strip().lower() == "production"
+            if production is None
+            else production
+        ),
+        database=(
+            database
+            if database is not None
+            else getattr(app.state, "practical_database", None)
+        ),
+    )
     app.add_exception_handler(WorkspaceApiError, workspace_error_handler)
     app.add_exception_handler(RequestValidationError, workspace_validation_error_handler)
+
+
+def _configured_cors_origins(app: FastAPI) -> list[str]:
+    """Reuse the app's CORS allowlist for direct middleware responses."""
+
+    for middleware in app.user_middleware:
+        if middleware.cls is not CORSMiddleware:
+            continue
+        configured = middleware.kwargs.get("allow_origins", ())
+        return [origin for origin in configured if isinstance(origin, str)]
+    return []
 
 
 async def workspace_error_handler(request: Request, exc: Exception) -> JSONResponse:
@@ -694,6 +943,178 @@ def _required_idempotency_key(value: str | None) -> str:
     return normalized
 
 
+def _resume_upload_label(*, filename: str, label: str | None) -> str:
+    supplied = label is not None
+    if supplied:
+        candidate = unicodedata.normalize("NFKC", label or "")
+    else:
+        safe_name = unicodedata.normalize("NFKC", filename).replace("\\", "/")
+        candidate = PurePath(safe_name.rsplit("/", 1)[-1]).stem
+        candidate = re.sub(r"[_-]+", " ", candidate)
+    normalized = " ".join(candidate.split())
+    if not supplied and len(normalized) > 120:
+        normalized = normalized[:120].rstrip()
+    if not normalized or len(normalized) > 120 or "\x00" in normalized:
+        raise WorkspaceApiError(
+            422,
+            "resume_label_invalid",
+            "Resume labels must be between 1 and 120 characters.",
+            field_errors=[
+                ProblemFieldError(
+                    field="label",
+                    message="Use a resume label between 1 and 120 characters.",
+                )
+            ],
+        )
+    return normalized
+
+
+def _raise_resume_ingestion_problem(exc: ResumeIngestionError) -> None:
+    raise WorkspaceApiError(
+        413 if exc.code == "resume_too_large" else 422,
+        exc.code,
+        str(exc),
+        field_errors=[ProblemFieldError(field="file", message=str(exc))],
+    ) from exc
+
+
+def _content_length(scope: Scope) -> int | None:
+    for name, value in scope.get("headers", []):
+        if name.lower() != b"content-length":
+            continue
+        try:
+            parsed = int(value)
+        except (TypeError, ValueError):
+            return None
+        return parsed if parsed >= 0 else None
+    return None
+
+
+def _request_origin(scope: Scope) -> str:
+    values = [
+        value
+        for name, value in scope.get("headers", [])
+        if name.lower() == b"origin"
+    ]
+    if not values:
+        return ""
+    if len(values) != 1:
+        return "\x00invalid-origin"
+    return values[0].decode("latin-1").strip().rstrip("/")
+
+
+def _allowed_cors_origin(
+    origin: str,
+    allowed_origins: frozenset[str],
+) -> str | None:
+    if not origin or "\r" in origin or "\n" in origin or "\x00" in origin:
+        return None
+    if "*" in allowed_origins:
+        return origin
+    return origin if origin in allowed_origins else None
+
+
+def _session_cookie_token(scope: Scope, cookie_name: str) -> str | None:
+    cookie = SimpleCookie()
+    try:
+        for name, value in scope.get("headers", []):
+            if name.lower() == b"cookie":
+                cookie.load(value.decode("latin-1"))
+    except (CookieError, UnicodeDecodeError):
+        return None
+    morsel = cookie.get(cookie_name)
+    if morsel is None or OWNER_SESSION_TOKEN_PATTERN.fullmatch(morsel.value) is None:
+        return None
+    return morsel.value
+
+
+def _owner_session_is_valid(database: Database, token: str) -> bool:
+    with database.session() as session:
+        return load_owner_session(session, token, touch=False) is not None
+
+
+def _resume_direct_response_headers(
+    request_id: str,
+    *,
+    cors_origin: str | None = None,
+) -> dict[str, str]:
+    headers = {
+        "Cache-Control": "no-store, max-age=0",
+        "Pragma": "no-cache",
+        "X-Request-ID": request_id,
+    }
+    if cors_origin is not None:
+        headers.update(
+            {
+                "Access-Control-Allow-Origin": cors_origin,
+                "Access-Control-Allow-Credentials": "true",
+                "Access-Control-Expose-Headers": "X-Request-ID",
+                "Vary": "Origin",
+            }
+        )
+    return headers
+
+
+async def _send_resume_access_problem(
+    scope: Scope,
+    receive: Receive,
+    send: Send,
+    *,
+    status_code: int,
+    code: str,
+    message: str,
+    retryable: bool = False,
+    cors_origin: str | None = None,
+) -> None:
+    request_id = uuid4().hex
+    problem = ProblemResponse(
+        code=code,
+        message=message,
+        retryable=retryable,
+        request_id=request_id,
+    )
+    response = JSONResponse(
+        status_code=status_code,
+        content=problem.model_dump(mode="json", exclude_none=True),
+        headers=_resume_direct_response_headers(
+            request_id,
+            cors_origin=cors_origin,
+        ),
+    )
+    await response(scope, receive, send)
+
+
+async def _send_resume_body_too_large(
+    scope: Scope,
+    receive: Receive,
+    send: Send,
+    *,
+    cors_origin: str | None = None,
+) -> None:
+    request_id = uuid4().hex
+    problem = ProblemResponse(
+        code="resume_too_large",
+        message="Resume files must be 3 MB or smaller.",
+        retryable=False,
+        request_id=request_id,
+        field_errors=[
+            ProblemFieldError(
+                field="file",
+                message="Choose a resume file that is 3 MB or smaller.",
+            )
+        ],
+    )
+    response = JSONResponse(
+        status_code=413,
+        content=problem.model_dump(mode="json"),
+        headers=_resume_direct_response_headers(
+            request_id,
+            cors_origin=cors_origin,
+        ),
+    )
+    await response(scope, receive, send)
+
+
 def _expected_version(value: str | None) -> int:
     if value is None:
         raise WorkspaceApiError(
@@ -729,6 +1150,8 @@ def _validation_field(location: object) -> str:
 
 
 __all__ = [
+    "MAX_RESUME_UPLOAD_REQUEST_BYTES",
+    "ResumeUploadBodyLimitMiddleware",
     "WorkspaceApiError",
     "create_workspace_router",
     "install_workspace_error_handler",

@@ -423,7 +423,7 @@ def test_workspace_openapi_uses_owner_cookie_on_every_operation(
                 continue
             assert operation["security"] == [{"OwnerSessionCookie": []}]
             operations += 1
-    assert operations == 20
+    assert operations == 21
     validation_schema = schema["paths"]["/api/saved-searches"]["post"]["responses"][
         "422"
     ]["content"]["application/json"]["schema"]

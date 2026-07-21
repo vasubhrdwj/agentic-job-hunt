@@ -19,6 +19,7 @@ from job_hunt_agent.models import (
     CareerTrack,
     Owner,
     OwnerMutationReceipt,
+    ResumeImport,
     ResumeVersion,
     SavedSearch,
 )
@@ -40,6 +41,7 @@ from job_hunt_agent.profile_schemas import (
     SavedSearchSchedule,
     WorkAuthorization,
 )
+from job_hunt_agent.resume_ingestion import ParsedEvidence, ParsedResume
 from job_hunt_agent.saved_search_repository import calculate_next_scan_at
 from job_hunt_agent.security import DataKeyring
 from job_hunt_agent.sqlalchemy_owner_workspace import SqlAlchemyOwnerWorkspaceStore
@@ -220,6 +222,41 @@ def test_legacy_blank_profile_remains_readable_after_write_validation_tightens(
     assert loaded.employment_types == ["full_time"]
 
 
+def test_legacy_profile_update_cannot_silently_erase_new_skills_field(
+    workspace: tuple[Database, SqlAlchemyOwnerWorkspaceStore],
+) -> None:
+    _database, store = workspace
+    created = store.put_profile(
+        owner_id="owner-a",
+        payload=CandidateProfileWrite(
+            current_title="Backend Engineer",
+            skills=["Python", "Kafka"],
+        ),
+        expected_version=0,
+    )
+
+    legacy_payload = CandidateProfileWrite.model_validate(
+        {"current_title": "Platform Engineer"}
+    )
+    assert "skills" not in legacy_payload.model_fields_set
+    preserved = store.put_profile(
+        owner_id="owner-a",
+        payload=legacy_payload,
+        expected_version=created.version,
+    )
+    assert preserved.skills == ["Python", "Kafka"]
+
+    cleared = store.put_profile(
+        owner_id="owner-a",
+        payload=CandidateProfileWrite(
+            current_title="Platform Engineer",
+            skills=[],
+        ),
+        expected_version=preserved.version,
+    )
+    assert cleared.skills == []
+
+
 def test_idempotency_replay_conflict_versions_and_restrict_delete(
     workspace: tuple[Database, SqlAlchemyOwnerWorkspaceStore],
 ) -> None:
@@ -335,6 +372,337 @@ def test_evidence_requires_approval_and_material_edit_resets_it(
                 origin="resume_suggestion",
             ),
             idempotency_key="bad-evidence",
+        )
+
+
+def _parsed_resume(
+    *,
+    content: str = (
+        "PROFESSIONAL EXPERIENCE\n"
+        "Software Engineer\n"
+        "Jan 2024 - Present\n"
+        "• Built a reliable event pipeline with retries and dead-letter handling."
+    ),
+) -> ParsedResume:
+    excerpt = "• Built a reliable event pipeline with retries and dead-letter handling."
+    return ParsedResume(
+        content=content,
+        sections=("experience", "skills"),
+        current_title="Software Engineer",
+        current_location=None,
+        years_of_experience=2.5,
+        evidence=(
+            ParsedEvidence(
+                statement=excerpt,
+                source_excerpt=excerpt,
+                skills=("Python",),
+            ),
+        )
+        if excerpt in content
+        else (),
+        skills=("Python",),
+        warnings=("Review the experience estimate.",),
+        media_type="text/plain",
+        page_count=None,
+    )
+
+
+def test_resume_upload_atomically_imports_profile_and_approved_grounding(
+    workspace: tuple[Database, SqlAlchemyOwnerWorkspaceStore],
+) -> None:
+    database, store = workspace
+    parsed = _parsed_resume()
+
+    report = store.upload_resume_version(
+        owner_id="owner-a",
+        parsed=parsed,
+        label="Vasu Backend Resume",
+        set_as_base=True,
+        idempotency_key="upload-resume-1",
+    )
+
+    assert report.resume_version.source == "uploaded"
+    assert report.resume_version.is_base
+    assert report.imported_profile_fields == [
+        "current_title",
+        "years_of_experience",
+        "skills",
+    ]
+    assert report.missing_profile_fields == ["current_location"]
+    assert report.achievement_suggestions_created == 1
+    profile = store.get_profile(owner_id="owner-a")
+    assert profile is not None
+    assert profile.current_title == "Software Engineer"
+    assert profile.years_of_experience == 2.5
+    assert profile.skills == ["Python"]
+    assert profile.onboarding_step == "career_track"
+    evidence = store.list_evidence(owner_id="owner-a", approval_state="approved").items
+    assert len(evidence) == 1
+    assert evidence[0].statement == parsed.evidence[0].source_excerpt
+    assert evidence[0].source_resume_version_id == report.resume_version.id
+
+    replay = store.upload_resume_version(
+        owner_id="owner-a",
+        parsed=parsed,
+        label="Vasu Backend Resume",
+        set_as_base=True,
+        idempotency_key="upload-resume-1",
+    )
+    assert replay.model_dump() == report.model_dump()
+    assert len(store.list_evidence(owner_id="owner-a", approval_state=None).items) == 1
+
+    with pytest.raises(WorkspaceConflict) as conflict:
+        store.upload_resume_version(
+            owner_id="owner-a",
+            parsed=_parsed_resume(content="A different normalized resume body."),
+            label="Vasu Backend Resume",
+            set_as_base=True,
+            idempotency_key="upload-resume-1",
+        )
+    assert conflict.value.code == "idempotency_conflict"
+
+    other = store.upload_resume_version(
+        owner_id="owner-b",
+        parsed=parsed,
+        label="Vasu Backend Resume",
+        set_as_base=True,
+        idempotency_key="upload-resume-1",
+    )
+    assert other.resume_version.id != report.resume_version.id
+
+    with database.session() as session:
+        raw_resume = session.get(ResumeVersion, report.resume_version.id)
+        raw_profile = session.scalar(
+            select(CandidateProfile).where(CandidateProfile.owner_id == "owner-a")
+        )
+        receipt = session.scalar(
+            select(OwnerMutationReceipt).where(
+                OwnerMutationReceipt.owner_id == "owner-a",
+                OwnerMutationReceipt.namespace == "resume_version.upload",
+            )
+        )
+        assert raw_resume is not None and raw_profile is not None and receipt is not None
+        assert parsed.content not in raw_resume.encrypted_content
+        assert "Software Engineer" not in raw_profile.encrypted_payload
+        assert len(receipt.request_hash) == 64
+
+
+def test_resume_upload_preserves_conflicting_profile_and_rolls_back_atomically(
+    workspace: tuple[Database, SqlAlchemyOwnerWorkspaceStore],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    database, store = workspace
+    store.put_profile(
+        owner_id="owner-a",
+        payload=_profile(),
+        expected_version=0,
+    )
+    report = store.upload_resume_version(
+        owner_id="owner-a",
+        parsed=_parsed_resume(),
+        label="Safe merge",
+        set_as_base=True,
+        idempotency_key="safe-profile-merge",
+    )
+    profile = store.get_profile(owner_id="owner-a")
+    assert profile is not None
+    assert profile.current_title == "Backend Engineer"
+    assert profile.current_location == "Hyderabad"
+    assert profile.years_of_experience == 2.5
+    assert report.imported_profile_fields == ["years_of_experience", "skills"]
+    assert any("current title" in warning for warning in report.warnings)
+
+    import job_hunt_agent.sqlalchemy_owner_workspace as workspace_module
+
+    def fail_evidence(*args: object, **kwargs: object) -> object:
+        raise RuntimeError("simulated evidence write failure")
+
+    monkeypatch.setattr(
+        workspace_module,
+        "create_approved_resume_evidence",
+        fail_evidence,
+    )
+    with pytest.raises(RuntimeError, match="simulated evidence"):
+        store.upload_resume_version(
+            owner_id="owner-b",
+            parsed=_parsed_resume(),
+            label="Must roll back",
+            set_as_base=True,
+            idempotency_key="atomic-failure",
+        )
+    with database.session() as session:
+        assert session.scalar(
+            select(func.count(ResumeVersion.id)).where(ResumeVersion.owner_id == "owner-b")
+        ) == 0
+        assert session.scalar(
+            select(func.count(CandidateProfile.id)).where(
+                CandidateProfile.owner_id == "owner-b"
+            )
+        ) == 0
+        assert session.scalar(
+            select(func.count(OwnerMutationReceipt.id)).where(
+                OwnerMutationReceipt.owner_id == "owner-b",
+                OwnerMutationReceipt.namespace == "resume_version.upload",
+            )
+        ) == 0
+
+
+def test_resume_upload_replay_returns_original_encrypted_snapshot_after_later_changes(
+    workspace: tuple[Database, SqlAlchemyOwnerWorkspaceStore],
+) -> None:
+    database, store = workspace
+    parsed = _parsed_resume()
+    original = store.upload_resume_version(
+        owner_id="owner-a",
+        parsed=parsed,
+        label="Replay-stable resume",
+        set_as_base=True,
+        idempotency_key="stable-upload",
+    )
+
+    profile = store.get_profile(owner_id="owner-a")
+    assert profile is not None
+    store.put_profile(
+        owner_id="owner-a",
+        payload=CandidateProfileWrite(
+            current_title="Owner-corrected title",
+            years_of_experience=profile.years_of_experience,
+            employment_types=profile.employment_types,
+            onboarding_step=profile.onboarding_step,
+        ),
+        expected_version=profile.version,
+    )
+    evidence = store.list_evidence(owner_id="owner-a", approval_state="approved").items
+    assert len(evidence) == 1
+    store.patch_evidence(
+        owner_id="owner-a",
+        evidence_id=evidence[0].id,
+        payload=AchievementEvidencePatch(approval_state="retired"),
+        expected_version=evidence[0].version,
+    )
+    store.create_resume_version(
+        owner_id="owner-a",
+        payload=ResumeVersionCreate(
+            label="New base",
+            content="A different base resume with enough useful text to retain.",
+            source="pasted",
+            set_as_base=True,
+        ),
+        idempotency_key="new-base-after-upload",
+    )
+
+    replay = store.upload_resume_version(
+        owner_id="owner-a",
+        parsed=parsed,
+        label="Replay-stable resume",
+        set_as_base=True,
+        idempotency_key="stable-upload",
+    )
+
+    assert replay.model_dump() == original.model_dump()
+    assert replay.resume_version.version == 1
+    assert replay.resume_version.is_base is True
+    assert replay.achievement_suggestions_created == 1
+    with database.session() as session:
+        imports = list(
+            session.scalars(
+                select(ResumeImport).where(ResumeImport.owner_id == "owner-a")
+            )
+        )
+        assert len(imports) == 1
+        stored = imports[0]
+        assert stored.resume_version_id == original.resume_version.id
+        assert stored.parser_version == parsed.parser_version
+        assert stored.media_type == parsed.media_type
+        assert stored.page_count == parsed.page_count
+        assert "Replay-stable resume" not in stored.encrypted_payload
+        assert parsed.content not in stored.encrypted_payload
+        receipt = session.scalar(
+            select(OwnerMutationReceipt).where(
+                OwnerMutationReceipt.owner_id == "owner-a",
+                OwnerMutationReceipt.namespace == "resume_version.upload",
+            )
+        )
+        assert receipt is not None
+        assert receipt.resource_type == "resume_import"
+        assert receipt.resource_id == stored.id
+        assert receipt.result_version == original.resume_version.version
+
+
+def test_resume_import_envelope_cannot_be_replayed_for_another_owner_or_record(
+    workspace: tuple[Database, SqlAlchemyOwnerWorkspaceStore],
+) -> None:
+    database, store = workspace
+    parsed = _parsed_resume()
+    store.upload_resume_version(
+        owner_id="owner-a",
+        parsed=parsed,
+        label="Owner A resume",
+        set_as_base=True,
+        idempotency_key="owner-a-upload",
+    )
+    owner_b_original = store.upload_resume_version(
+        owner_id="owner-b",
+        parsed=parsed,
+        label="Owner B resume",
+        set_as_base=True,
+        idempotency_key="owner-b-upload",
+    )
+    with database.session() as session:
+        owner_a_import = session.scalar(
+            select(ResumeImport).where(ResumeImport.owner_id == "owner-a")
+        )
+        owner_b_import = session.scalar(
+            select(ResumeImport).where(ResumeImport.owner_id == "owner-b")
+        )
+        assert owner_a_import is not None and owner_b_import is not None
+        owner_a_import.encrypted_payload = owner_b_import.encrypted_payload
+        owner_a_import.encryption_key_id = owner_b_import.encryption_key_id
+
+    with pytest.raises(WorkspaceUnavailable, match="could not be decrypted"):
+        store.upload_resume_version(
+            owner_id="owner-a",
+            parsed=parsed,
+            label="Owner A resume",
+            set_as_base=True,
+            idempotency_key="owner-a-upload",
+        )
+    owner_b_replay = store.upload_resume_version(
+        owner_id="owner-b",
+        parsed=parsed,
+        label="Owner B resume",
+        set_as_base=True,
+        idempotency_key="owner-b-upload",
+    )
+    assert owner_b_replay.model_dump() == owner_b_original.model_dump()
+
+
+def test_resume_import_envelope_binds_parser_provenance_metadata(
+    workspace: tuple[Database, SqlAlchemyOwnerWorkspaceStore],
+) -> None:
+    database, store = workspace
+    parsed = _parsed_resume()
+    store.upload_resume_version(
+        owner_id="owner-a",
+        parsed=parsed,
+        label="Bound provenance resume",
+        set_as_base=True,
+        idempotency_key="bound-provenance-upload",
+    )
+    with database.session() as session:
+        imported = session.scalar(
+            select(ResumeImport).where(ResumeImport.owner_id == "owner-a")
+        )
+        assert imported is not None
+        imported.parser_version = "tampered-parser-version"
+
+    with pytest.raises(WorkspaceUnavailable, match="could not be decrypted"):
+        store.upload_resume_version(
+            owner_id="owner-a",
+            parsed=parsed,
+            label="Bound provenance resume",
+            set_as_base=True,
+            idempotency_key="bound-provenance-upload",
         )
 
 

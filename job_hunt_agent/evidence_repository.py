@@ -1,4 +1,4 @@
-"""Encrypted evidence repository with an explicit human approval gate."""
+"""Encrypted evidence with exact resume grounding and review-state gates."""
 
 from __future__ import annotations
 
@@ -34,6 +34,51 @@ def create_achievement_evidence(
     keyring: DataKeyring,
     now: datetime | None = None,
 ) -> AchievementEvidenceResponse:
+    return _create_achievement_evidence(
+        session,
+        owner_id=owner_id,
+        payload=payload,
+        keyring=keyring,
+        auto_approved=False,
+        now=now,
+    )
+
+
+def create_approved_resume_evidence(
+    session: Session,
+    *,
+    owner_id: str,
+    payload: AchievementEvidenceCreate,
+    keyring: DataKeyring,
+    now: datetime | None = None,
+) -> AchievementEvidenceResponse:
+    """Create exact, resume-grounded evidence without another approval chore."""
+
+    if payload.origin != "resume_suggestion":
+        raise ValueError("automatic evidence must originate from an uploaded resume")
+    if payload.source_resume_version_id is None or payload.source_excerpt is None:
+        raise ValueError("automatic evidence requires an exact resume source")
+    if payload.statement != payload.source_excerpt:
+        raise ValueError("automatic evidence must exactly match its resume excerpt")
+    return _create_achievement_evidence(
+        session,
+        owner_id=owner_id,
+        payload=payload,
+        keyring=keyring,
+        auto_approved=True,
+        now=now,
+    )
+
+
+def _create_achievement_evidence(
+    session: Session,
+    *,
+    owner_id: str,
+    payload: AchievementEvidenceCreate,
+    keyring: DataKeyring,
+    auto_approved: bool,
+    now: datetime | None,
+) -> AchievementEvidenceResponse:
     current = now or utcnow()
     _validate_source_evidence(session, owner_id, payload, keyring)
     record_id = uuid4().hex
@@ -55,7 +100,8 @@ def create_achievement_evidence(
         encryption_key_id=envelope.key_id,
         skills=list(payload.skills),
         origin=payload.origin,
-        approval_state="pending",
+        approval_state="approved" if auto_approved else "pending",
+        approved_at=current if auto_approved else None,
         version=1,
         created_at=current,
         updated_at=current,
@@ -286,6 +332,7 @@ def _optional_utc(value: datetime | None) -> datetime | None:
 
 
 __all__ = [
+    "create_approved_resume_evidence",
     "create_achievement_evidence",
     "list_achievement_evidence",
     "list_approved_evidence_for_use",

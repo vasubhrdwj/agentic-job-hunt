@@ -582,7 +582,12 @@ def create_app() -> FastAPI:
                 production=_is_production(),
             )
         )
-        install_workspace_error_handler(app)
+        install_workspace_error_handler(
+            app,
+            allowed_origins=allowed_origins,
+            production=_is_production(),
+            database=practical_database,
+        )
 
     use_mocks = _env_bool("USE_MOCKS", default=False)
 

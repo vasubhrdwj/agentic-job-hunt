@@ -32,6 +32,7 @@ from .profile import (
     CandidateProfile,
     CareerTrack,
     OwnerMutationReceipt,
+    ResumeImport,
     ResumeVersion,
     SavedSearch,
 )
@@ -98,6 +99,7 @@ __all__ = [
     "OutreachMessageVersion",
     "OutreachReply",
     "OutreachSequence",
+    "ResumeImport",
     "ResumeVersion",
     "SavedSearch",
     "SavedSearchMatch",

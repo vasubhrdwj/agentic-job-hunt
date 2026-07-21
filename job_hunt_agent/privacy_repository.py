@@ -78,6 +78,11 @@ _PRIVATE_ENVELOPES: dict[str, tuple[str, str, str]] = {
         "encryption_key_id",
         "resume_version",
     ),
+    "resume_imports": (
+        "encrypted_payload",
+        "encryption_key_id",
+        "resume_import",
+    ),
     "achievement_evidence": (
         "encrypted_payload",
         "encryption_key_id",
