@@ -8,3 +8,4 @@ __pycache__/
 .gstack/*
 !.gstack/qa-reports/
 !.gstack/qa-reports/*.md
+.gstack/

@@ -1,0 +1,5 @@
+build/
+models/
+node_modules/
+elevenlabs/*.mp3
+elevenlabs/*.wav

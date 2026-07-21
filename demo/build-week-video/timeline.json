@@ -1,0 +1,21 @@
+[
+  {"id":"found","start":0.0,"end":4.0,"kind":"card","eyebrow":"11:47 PM","title":"You found a promising role.","accent":"AMAZON · BACKEND"},
+  {"id":"judge","start":4.0,"end":8.0,"kind":"card","eyebrow":"NOW","title":"Judge the fit.","step":"01 / 05"},
+  {"id":"prove","start":8.0,"end":12.0,"kind":"card","eyebrow":"THEN","title":"Prove every claim.","step":"02 / 05"},
+  {"id":"reach","start":12.0,"end":16.0,"kind":"card","eyebrow":"THEN","title":"Find the right people.","step":"03 / 05"},
+  {"id":"write","start":16.0,"end":20.0,"kind":"card","eyebrow":"THEN","title":"Write five real messages.","step":"04 / 05"},
+  {"id":"follow","start":20.0,"end":24.0,"kind":"card","eyebrow":"AND THEN","title":"Remember every follow-up.","step":"05 / 05"},
+  {"id":"problem","start":24.0,"end":28.0,"kind":"collage","title":"One opening became five more jobs.","assets":["today-top.png","profile-achievements.png","amazon-people.png"]},
+  {"id":"reveal","start":28.0,"end":31.0,"kind":"brand","title":"Job Hunt Signal","subtitle":"One resume. Better priorities. Five possible paths."},
+  {"id":"profile","start":31.0,"end":44.0,"kind":"screen","asset":"profile-achievements.png","eyebrow":"ONE PRIVATE PROFILE","title":"Upload once. Reuse the proof.","focus":"right"},
+  {"id":"today","start":44.0,"end":55.0,"kind":"screen","asset":"today-top.png","eyebrow":"TODAY","title":"A ranked action queue—not another feed.","focus":"center"},
+  {"id":"amazon_fit","start":55.0,"end":64.0,"kind":"screen","asset":"today-amazon.png","eyebrow":"REAL AMAZON OPENING","title":"Fit is explained, not guessed.","focus":"center"},
+  {"id":"dossier","start":64.0,"end":73.0,"kind":"screen","asset":"amazon-dossier.png","eyebrow":"ONE DURABLE DOSSIER","title":"Role, resume, and next action stay together.","focus":"center"},
+  {"id":"evidence","start":73.0,"end":83.0,"kind":"screen","asset":"amazon-evidence.png","eyebrow":"EVIDENCE BEFORE CLAIMS","title":"Unsupported stays visible.","focus":"center"},
+  {"id":"materials","start":83.0,"end":91.0,"kind":"screen","asset":"amazon-materials.png","eyebrow":"A SAFETY RAIL","title":"No proof? Materials stay locked.","focus":"center"},
+  {"id":"people","start":91.0,"end":106.0,"kind":"screen","asset":"amazon-people.png","eyebrow":"NOT ONE FRAGILE LEAD","title":"Five source-backed paths.","focus":"center"},
+  {"id":"messages","start":106.0,"end":122.0,"kind":"screen","asset":"amazon-outreach.png","eyebrow":"DISTINCT, GROUNDED OUTREACH","title":"A message for each person—not a blast.","focus":"center"},
+  {"id":"review","start":122.0,"end":140.0,"kind":"screen","asset":"weekly-review.png","eyebrow":"THE LOOP CLOSES","title":"Next actions and follow-ups stay dated.","focus":"center"},
+  {"id":"codex","start":140.0,"end":162.0,"kind":"codex","eyebrow":"BUILT DURING OPENAI BUILD WEEK","title":"Codex + GPT-5.6 accelerated the rebuild.","subtitle":"Postgres · FastAPI · Next.js · deployment · tests","note":"Product decisions by Vasu & Arpita"},
+  {"id":"close","start":162.0,"end":174.0,"kind":"brand","title":"Job Hunt Signal","subtitle":"The system does the repetition. You keep the judgment.","footer":"agentic-job-hunt.vercel.app"}
+]

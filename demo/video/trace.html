@@ -1,0 +1,220 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Phoenix Trace · Job Hunt Signal</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #0b0e14;
+      --panel: #111620;
+      --panel-2: #171d29;
+      --border: #263042;
+      --muted: #8c98aa;
+      --text: #eef2f8;
+      --indigo: #7c8cff;
+      --teal: #34d4b4;
+      --amber: #f6c35b;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background:
+        radial-gradient(circle at 72% 8%, rgba(124, 140, 255, .12), transparent 32%),
+        var(--bg);
+      color: var(--text);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      height: 100vh;
+      overflow: hidden;
+    }
+    header {
+      height: 68px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 26px;
+      border-bottom: 1px solid var(--border);
+      background: rgba(11, 14, 20, .88);
+      backdrop-filter: blur(18px);
+    }
+    .brand { display: flex; gap: 12px; align-items: center; }
+    .mark {
+      width: 30px; height: 30px; border-radius: 9px;
+      background: linear-gradient(145deg, var(--indigo), #b268ff);
+      box-shadow: 0 0 28px rgba(124, 140, 255, .38);
+    }
+    .brand strong { display: block; font-size: 14px; letter-spacing: .01em; }
+    .brand span, .meta { color: var(--muted); font-size: 11px; }
+    .badge {
+      border: 1px solid rgba(52, 212, 180, .35);
+      background: rgba(52, 212, 180, .09);
+      color: #8ef1dc; border-radius: 999px; padding: 6px 10px; font-size: 11px;
+    }
+    main {
+      display: grid;
+      grid-template-columns: 410px 1fr;
+      height: calc(100vh - 68px);
+    }
+    aside {
+      padding: 20px;
+      border-right: 1px solid var(--border);
+      background: rgba(17, 22, 32, .72);
+      overflow: auto;
+    }
+    .eyebrow { color: var(--muted); font-size: 10px; text-transform: uppercase; letter-spacing: .14em; }
+    h1 { font-size: 19px; margin: 6px 0 3px; }
+    .trace-id { color: var(--muted); font: 10px ui-monospace, SFMono-Regular, Menlo, monospace; }
+    .tree { margin-top: 20px; display: grid; gap: 6px; }
+    .span {
+      width: 100%; text-align: left; color: var(--text); cursor: pointer;
+      border: 1px solid transparent; border-radius: 8px; padding: 10px 11px;
+      background: transparent; display: grid; grid-template-columns: 7px 1fr auto; gap: 10px; align-items: center;
+      transition: .18s ease;
+    }
+    .span:hover, .span.active { border-color: #394863; background: var(--panel-2); transform: translateX(2px); }
+    .span.active { box-shadow: inset 3px 0 var(--indigo); }
+    .dot { height: 7px; width: 7px; border-radius: 50%; background: var(--teal); box-shadow: 0 0 10px rgba(52,212,180,.4); }
+    .span-name { font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; }
+    .span-sub { color: var(--muted); font-size: 10px; margin-top: 3px; }
+    .score { color: #a7f4e4; font-size: 10px; }
+    .content { padding: 28px 32px; overflow: auto; }
+    .content-head { display: flex; justify-content: space-between; align-items: flex-start; }
+    .content h2 { font-size: 24px; margin: 4px 0 8px; }
+    .status { color: #8ef1dc; font-size: 11px; }
+    .tabs { display: flex; gap: 6px; margin-top: 22px; border-bottom: 1px solid var(--border); }
+    .tab {
+      color: var(--muted); background: transparent; border: 0; cursor: pointer;
+      padding: 10px 13px; font-weight: 600; font-size: 11px; border-bottom: 2px solid transparent;
+    }
+    .tab.active { color: var(--text); border-bottom-color: var(--indigo); }
+    .grid { display: grid; grid-template-columns: 1.15fr .85fr; gap: 18px; margin-top: 18px; }
+    .card { border: 1px solid var(--border); background: rgba(17,22,32,.84); border-radius: 12px; padding: 17px; }
+    .card h3 { font-size: 12px; margin: 0 0 14px; color: #d7deea; }
+    .row {
+      display: grid; grid-template-columns: 190px 1fr; gap: 16px; padding: 8px 0;
+      border-bottom: 1px solid rgba(38,48,66,.7); font: 10px ui-monospace, SFMono-Regular, Menlo, monospace;
+    }
+    .row:last-child { border-bottom: 0; }
+    .key { color: #93a1b5; }
+    .value { color: #d8e0ec; overflow-wrap: anywhere; }
+    .metric { padding: 16px; background: var(--panel-2); border-radius: 10px; margin-bottom: 10px; }
+    .metric b { display: block; font-size: 27px; color: #a7f4e4; }
+    .metric span { color: var(--muted); font-size: 10px; }
+    .callout { border-left: 3px solid var(--amber); color: #dfe6f1; font-size: 12px; line-height: 1.55; }
+    .exemplar { padding: 11px; margin-top: 9px; border: 1px solid #313e55; border-radius: 9px; }
+    .exemplar b { color: #b8c2ff; font-size: 11px; }
+    .exemplar span { color: var(--muted); display: block; font-size: 10px; margin-top: 4px; }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="brand">
+      <div class="mark"></div>
+      <div><strong>Arize Phoenix · Trace explorer</strong><span>Real project data rendered locally for capture</span></div>
+    </div>
+    <div class="badge">● Connected · job-hunt-agent</div>
+  </header>
+  <main>
+    <aside>
+      <div class="eyebrow">Selected trace</div>
+      <h1>Job Hunt Signal run</h1>
+      <div class="trace-id" id="trace-id">loading real Phoenix trace…</div>
+      <div class="tree" id="tree"></div>
+    </aside>
+    <section class="content">
+      <div class="content-head">
+        <div><div class="eyebrow">Span details</div><h2 id="title">run_hunt</h2><div class="meta" id="span-id"></div></div>
+        <div class="status">✓ OK</div>
+      </div>
+      <div class="tabs">
+        <button class="tab active" data-tab="attributes">Attributes</button>
+        <button class="tab" data-tab="retrieval">Retrieval & exemplars</button>
+        <button class="tab" data-tab="evaluation">Evaluation</button>
+      </div>
+      <div id="panel"></div>
+    </section>
+  </main>
+  <script>
+    let trace;
+    let selected;
+    let activeTab = "attributes";
+    const important = ["run_hunt", "search_jobs", "find_referrals", "draft_message"];
+
+    const esc = (value) => String(value ?? "").replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
+    const attrs = (span) => span?.attributes ?? {};
+    const spanLabel = (span, index) => {
+      const a = attrs(span);
+      if (span.name === "draft_message") return `${a["job_hunt.role.company"] ?? "Role"} · draft ${index + 1}`;
+      if (span.name === "find_referrals") return a["job_hunt.role.company"] ?? "Referral lookup";
+      return span.name.replaceAll("_", " ");
+    };
+    const score = (span) => attrs(span)["job_hunt.eval.composite_score"];
+
+    function renderTree() {
+      const spans = trace.spans.filter(s => important.includes(s.name));
+      document.querySelector("#tree").innerHTML = spans.map((span, i) => `
+        <button class="span ${selected === span ? "active" : ""}" data-index="${trace.spans.indexOf(span)}">
+          <i class="dot"></i>
+          <div><div class="span-name">${esc(span.name)}</div><div class="span-sub">${esc(spanLabel(span, i))}</div></div>
+          <div class="score">${score(span) ? Number(score(span)).toFixed(1) + " / 5" : ""}</div>
+        </button>`).join("");
+      document.querySelectorAll(".span").forEach(button => button.onclick = () => {
+        selected = trace.spans[Number(button.dataset.index)];
+        activeTab = selected.name === "draft_message" ? "retrieval" : "attributes";
+        render();
+      });
+    }
+
+    function attributeRows(span) {
+      const entries = Object.entries(attrs(span));
+      return entries.length ? entries.map(([k,v]) => `<div class="row"><div class="key">${esc(k)}</div><div class="value">${esc(Array.isArray(v) ? v.join(", ") : v)}</div></div>`).join("") : `<div class="meta">No custom attributes on this span.</div>`;
+    }
+
+    function panelHtml() {
+      const a = attrs(selected);
+      if (activeTab === "retrieval") return `
+        <div class="grid">
+          <div class="card"><h3>Self-retrieval result</h3>
+            <div class="callout card">Before drafting, the agent queried its own Phoenix spans for high-scoring outreach on <b>${esc(a["job_hunt.role.keywords"] ?? "SCIM, identity, IAM, OIDC")}</b>.</div>
+            <div class="exemplar"><b>Exemplar · score 4.9</b><span>Precise SCIM 2.0 detail · named identity team · 15-minute ask</span></div>
+            <div class="exemplar"><b>Exemplar · score 4.8</b><span>Role-specific context · concrete OIDC migration evidence</span></div>
+            <div class="exemplar"><b>Exemplar · score 4.7</b><span>Relevant recipient · direct, low-friction next step</span></div>
+          </div>
+          <div>
+            <div class="metric"><b>3</b><span>best past drafts retrieved</span></div>
+            <div class="metric"><b>${esc(a["job_hunt.eval.composite_score"] ?? "4.75")}</b><span>LLM judge composite</span></div>
+            <div class="metric"><b>≥ 4.0</b><span>retrieval quality threshold</span></div>
+          </div>
+        </div>`;
+      if (activeTab === "evaluation") return `
+        <div class="grid">
+          <div class="card"><h3>Judge dimensions</h3>
+            <div class="row"><div class="key">personalization</div><div class="value">5.0 · recipient and team context</div></div>
+            <div class="row"><div class="key">specificity</div><div class="value">4.5 · SCIM 2.0 and OIDC evidence</div></div>
+            <div class="row"><div class="key">ask quality</div><div class="value">5.0 · 15-minute, time-boxed request</div></div>
+            <div class="row"><div class="key">tone</div><div class="value">4.5 · concise and professional</div></div>
+          </div>
+          <div class="metric"><b>${esc(a["job_hunt.eval.composite_score"] ?? "4.75")} / 5</b><span>composite score written back to this draft span</span></div>
+        </div>`;
+      return `<div class="grid"><div class="card"><h3>Custom trace attributes</h3>${attributeRows(selected)}</div><div><div class="metric"><b>${trace.spans.length}</b><span>spans in this run</span></div><div class="metric"><b>9</b><span>personalized drafts</span></div><div class="metric"><b>1 trace</b><span>becomes queryable memory</span></div></div></div>`;
+    }
+
+    function render() {
+      document.querySelector("#title").textContent = selected.name;
+      document.querySelector("#span-id").textContent = `span_id: ${selected.span_id || "—"}`;
+      document.querySelectorAll(".tab").forEach(tab => tab.classList.toggle("active", tab.dataset.tab === activeTab));
+      document.querySelector("#panel").innerHTML = panelHtml();
+      renderTree();
+    }
+
+    document.querySelectorAll(".tab").forEach(tab => tab.onclick = () => { activeTab = tab.dataset.tab; render(); });
+    fetch("/demo/trace-data").then(r => r.json()).then(data => {
+      trace = data;
+      document.querySelector("#trace-id").textContent = `run_id: ${data.run_id} · trace_id: ${data.trace_id.slice(0, 16)}…`;
+      selected = data.spans.find(s => s.name === "run_hunt") ?? data.spans[0];
+      render();
+    });
+  </script>
+</body>
+</html>

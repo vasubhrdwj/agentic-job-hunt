@@ -1,0 +1,37 @@
+Job hunting outreach is a numbers game played badly. People blast the same template to strangers and get silence.
+
+Job Hunt Signal is an agent that finds real roles, real referral targets, and writes outreach that earns a reply. More importantly, it gets measurably better every time it runs by reading its own traces.
+
+
+Paste a resume and target criteria, then run the hunt.
+
+The agent searches live job listings, finds three plausible referral targets per role from public profiles, and drafts a personalized message for each, with a hard rule against inventing profile URLs.
+
+Every draft is scored from one to five by an LLM judge on personalization, specificity, ask quality, and tone. You can edit, copy, and send a message, then log what happened. Those outcomes become the signal for the next iteration.
+
+
+Everything you just saw is traced in Arize Phoenix.
+
+One run becomes a full span tree: job search, referral lookups, nine drafts, and their evaluation scores.
+
+Open a draft span and the self-improvement loop becomes visible. Before writing, the agent queries its own past traces for the highest-scoring messages on the same keywords, retrieves three proven exemplars, and uses their strongest patterns.
+
+The judge score is written back onto that same span, so observability data becomes queryable memory.
+
+
+Does self-retrieval actually help?
+
+We held the resume, criteria, and judge constant. In round one, retrieval is off. In round two, the agent pulls its three best past drafts as exemplars.
+
+Average judge score climbs from four point two five to four point six four.
+
+The agent learns to imitate what already worked: a precise technical detail, the recipient's team by name, and a fifteen-minute, time-boxed ask.
+
+The same loop lifts the older Gemini two point five drafter by more than twice as much. The weaker the writer, the more its own memory helps.
+
+
+Job Hunt Signal.
+
+Gemini for the agent. Phoenix for the memory.
+
+Real roles, better outreach, and a learning loop you can measure.

@@ -1,0 +1,15 @@
+Meet Vasu, a backend engineer who found a promising Amazon role. Now the real work begins: judge the fit, prove every claim, find the right people, write five messages, and remember every follow-up. One opening has quietly become five more jobs. Which role actually deserves tonight?
+
+Job Hunt Signal starts with one resume upload. Vasu's experience becomes a private, reusable profile: AWS event pipelines, OAuth, SCIM, production debugging, and evidence-backed achievements. The original file is discarded after extraction. The app asks only for context a resume cannot know.
+
+Then Vasu opens Today. First-party openings are cleaned, deduplicated, balanced across companies, and ordered by fit. Each card explains eligibility, confidence, matching evidence, and real gaps. No mystery percentage. No single company burying the rest.
+
+Here is the real Amazon opening. It is marked Promising because the saved description overlaps with Vasu's approved evidence. Inside its dossier, the posting, next action, and resume version stay pinned together. Requirements are checked before materials unlock. Here, unsupported text remains visible and materials stay locked. That is a feature: missing proof never becomes a confident claim.
+
+But a strong application can disappear without a human path. Job Hunt Signal researches up to five appropriate people and keeps the public source beside every lead. For Amazon, it found five: peers, a manager, and a recruiter. It drafts a distinct, grounded note for each. Vasu verifies, edits, and sends it himself. The app invents nobody and sends nothing behind his back.
+
+Applications, outreach, follow-ups, interviews, and next dates now live on one durable timeline. Today surfaces the next useful action. Weekly Review shows movement without calling silence a rejection. A spreadsheet remembers rows. This system remembers decisions.
+
+Codex, using GPT-5.6, accelerated the Build Week rebuild across Postgres, FastAPI, Next.js, deployment debugging, and tests. Vasu and Arpita chose fit first, five evidence-backed paths, resume-first onboarding, normal accounts, and no invented claims. GPT-5.6 helped build the product; it does not secretly score users in production.
+
+Job Hunt Signal does the repetition and grounding. Vasu keeps the judgment, relationships, and final click. One resume. Better priorities. Five possible paths.
