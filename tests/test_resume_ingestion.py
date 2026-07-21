@@ -9,10 +9,21 @@ from zipfile import ZIP_DEFLATED, ZipFile
 import pytest
 from docx import Document
 from pypdf import PdfWriter
-from pypdf.generic import DictionaryObject, DecodedStreamObject, NameObject
+from pypdf.errors import LimitReachedError
+from pypdf.generic import (
+    ArrayObject,
+    DecodedStreamObject,
+    DictionaryObject,
+    NameObject,
+)
 
+import job_hunt_agent.resume_ingestion as resume_ingestion
 from job_hunt_agent.resume_ingestion import (
     MAX_DOCX_UNCOMPRESSED_BYTES,
+    MAX_PDF_CONTENT_STREAMS_PER_PAGE,
+    MAX_PDF_DECODED_CONTENT_BYTES,
+    MAX_PDF_ENCODED_CONTENT_BYTES,
+    MAX_PDF_OBJECTS,
     MAX_PDF_PAGES,
     ResumeIngestionError,
     parse_resume_upload,
@@ -194,6 +205,36 @@ def test_docx_zip_bomb_metadata_is_rejected_before_document_parsing() -> None:
     assert exc_info.value.code == "resume_docx_unsafe"
 
 
+def test_malformed_docx_xml_is_a_safe_invalid_upload() -> None:
+    document = Document()
+    document.add_paragraph("Software Engineer")
+    valid = BytesIO()
+    document.save(valid)
+    malformed = BytesIO()
+    with ZipFile(BytesIO(valid.getvalue())) as source, ZipFile(
+        malformed,
+        "w",
+        compression=ZIP_DEFLATED,
+    ) as target:
+        for entry in source.infolist():
+            payload = source.read(entry.filename)
+            if entry.filename == "word/document.xml":
+                payload = b"<w:document xmlns:w='invalid'><w:body><w:p>"
+            target.writestr(entry, payload)
+
+    with pytest.raises(ResumeIngestionError) as exc_info:
+        parse_resume_upload(
+            malformed.getvalue(),
+            filename="malformed.docx",
+            content_type=(
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+            ),
+        )
+
+    assert exc_info.value.code == "resume_docx_invalid"
+    assert "damaged or cannot be read safely" in str(exc_info.value)
+
+
 def test_unicode_is_normalized_without_importing_an_office_as_home() -> None:
     payload = SAMPLE_RESUME.replace("Vasu Example", "Vasu\u200b Example").replace(
         "Kafka", "Ｋａｆｋａ", 1
@@ -208,6 +249,269 @@ def test_unicode_is_normalized_without_importing_an_office_as_home() -> None:
     assert "\u200b" not in parsed.content
     assert "Kafka" in parsed.content
     assert parsed.current_location is None
+
+
+def test_known_skills_do_not_match_inside_other_words_or_technologies() -> None:
+    parsed = parse_resume_upload(
+        (
+            "SKILLS\n"
+            "JavaScript, Data Structures & Algorithms, MongoDB, SQLAlchemy, C++\n"
+        ).encode(),
+        filename="resume.txt",
+        content_type="text/plain",
+    )
+
+    assert "JavaScript" in parsed.skills
+    assert "MongoDB" in parsed.skills
+    assert "SQLAlchemy" in parsed.skills
+    assert "C++" in parsed.skills
+    assert "Java" not in parsed.skills
+    assert "Go" not in parsed.skills
+    assert "SQL" not in parsed.skills
+
+
+def test_ambiguous_technology_names_require_explicit_skill_listing() -> None:
+    prose = parse_resume_upload(
+        (
+            "PROFESSIONAL SUMMARY\n"
+            "Led go-to-market planning for the Spring 2026 product launch.\n"
+            "SKILLS\nPython, Kafka\n"
+        ).encode(),
+        filename="resume.txt",
+        content_type="text/plain",
+    )
+    assert "Go" not in prose.skills
+    assert "Spring" not in prose.skills
+
+    explicit = parse_resume_upload(
+        "SKILLS\nGo, Spring, Python\n".encode(),
+        filename="resume.txt",
+        content_type="text/plain",
+    )
+    assert {"Go", "Spring", "Python"}.issubset(explicit.skills)
+
+
+def test_pdf_layout_columns_remain_skill_boundaries() -> None:
+    parsed = parse_resume_upload(
+        _text_pdf(
+            "PROFESSIONAL SUMMARY\n"
+            "Backend engineer building reliable production services and event-driven systems.\n"
+            "SKILLS\n"
+            "Languages                                      Infrastructure\n"
+            "Python, JavaScript, SQL                         PostgreSQL, Kafka, AWS\n"
+            "Backend & Security:                            Core CS:\n"
+            "FastAPI, OAuth 2.0                              Data Structures & Algorithms\n"
+        ),
+        filename="column-resume.pdf",
+        content_type="application/pdf",
+    )
+
+    assert {"Python", "JavaScript", "SQL", "PostgreSQL", "Kafka", "AWS"}.issubset(
+        parsed.skills
+    )
+    assert "SQL PostgreSQL" not in parsed.skills
+    assert "Core CS" not in parsed.skills
+
+
+@pytest.mark.parametrize(
+    ("experience_header", "expected_title"),
+    [
+        (
+            "Software Engineer\nAcme Corp | Jan 2024 – Present",
+            "Software Engineer",
+        ),
+        (
+            "Software Engineer\nAcme Corp\nJan 2024 – Present",
+            "Software Engineer",
+        ),
+        (
+            "Acme Corp | Software Engineer | Jan 2024 – Present",
+            "Software Engineer",
+        ),
+        (
+            "Software Engineer | Acme Corp | Jan 2024 – Present",
+            "Software Engineer",
+        ),
+        ("Acme Corp | Jan 2024 – Present", None),
+        ("Acme Engineering | Jan 2024 – Present", None),
+        ("Acme Corp | Platform | Jan 2024 – Present", None),
+    ],
+)
+def test_current_title_prefers_clear_roles_and_fails_closed_on_companies(
+    experience_header: str,
+    expected_title: str | None,
+) -> None:
+    parsed = parse_resume_upload(
+        (
+            "PROFESSIONAL EXPERIENCE\n"
+            f"{experience_header}\n"
+            "• Built a reliable backend service for production workloads.\n"
+        ).encode(),
+        filename="resume.txt",
+        content_type="text/plain",
+        as_of=date(2026, 7, 20),
+    )
+
+    assert parsed.current_title == expected_title
+
+
+def test_wrapped_parenthetical_evidence_keeps_anti_gaming_clause_only() -> None:
+    first_claim = (
+        "• Designed a three-task difficulty curriculum (deductive canary regression "
+        "-> third-party attribution -> silent data corruption)\n"
+        "with 6-component programmatic grading and structural anti-gaming guards that "
+        "penalize shortcut strategies by roughly 0.4\n"
+        "score points."
+    )
+    second_claim = (
+        "• Built a separate evaluation service that reports deterministic model scores."
+    )
+    parsed = parse_resume_upload(
+        f"PROJECTS\n{first_claim}\n{second_claim}\n".encode(),
+        filename="resume.txt",
+        content_type="text/plain",
+    )
+
+    assert [item.statement for item in parsed.evidence] == [first_claim, second_claim]
+    assert "6-component programmatic grading" in parsed.evidence[0].statement
+    assert "structural anti-gaming guards" in parsed.evidence[0].statement
+    assert second_claim not in parsed.evidence[0].statement
+
+    heading_after_parenthesis = parse_resume_upload(
+        (
+            "PROJECTS\n"
+            "• Designed a production-ready service architecture (Python)\n"
+            "Incident Commander\n"
+            "• Built a separate incident evaluation service with deterministic scores.\n"
+        ).encode(),
+        filename="resume.txt",
+        content_type="text/plain",
+    )
+    assert [item.statement for item in heading_after_parenthesis.evidence] == [
+        "• Designed a production-ready service architecture (Python)",
+        "• Built a separate incident evaluation service with deterministic scores.",
+    ]
+
+
+def test_pdf_object_and_content_complexity_are_bounded() -> None:
+    expanded = PdfWriter()
+    expanded_page = expanded.add_blank_page(width=612, height=792)
+    content = DecodedStreamObject()
+    content.set_data(b"q\n" * (MAX_PDF_DECODED_CONTENT_BYTES // 2 + 1))
+    expanded_page[NameObject("/Contents")] = expanded._add_object(content.flate_encode())
+    expanded_bytes = BytesIO()
+    expanded.write(expanded_bytes)
+    with pytest.raises(ResumeIngestionError) as expanded_error:
+        parse_resume_upload(
+            expanded_bytes.getvalue(),
+            filename="expanded.pdf",
+            content_type="application/pdf",
+        )
+    assert expanded_error.value.code == "resume_pdf_unsafe"
+    assert "safe page-content limit" in str(expanded_error.value)
+
+    object_heavy = PdfWriter()
+    object_heavy.add_blank_page(width=612, height=792)
+    for _ in range(MAX_PDF_OBJECTS):
+        object_heavy._add_object(DictionaryObject())
+    object_heavy_bytes = BytesIO()
+    object_heavy.write(object_heavy_bytes)
+    with pytest.raises(ResumeIngestionError) as object_error:
+        parse_resume_upload(
+            object_heavy_bytes.getvalue(),
+            filename="object-heavy.pdf",
+            content_type="application/pdf",
+        )
+    assert object_error.value.code == "resume_pdf_unsafe"
+    assert "too many internal objects" in str(object_error.value)
+
+    encoded = PdfWriter()
+    encoded_page = encoded.add_blank_page(width=612, height=792)
+    encoded_content = DecodedStreamObject()
+    encoded_content.set_data(b"q\n" * (MAX_PDF_ENCODED_CONTENT_BYTES // 2 + 1))
+    encoded_page[NameObject("/Contents")] = encoded._add_object(encoded_content)
+    encoded_bytes = BytesIO()
+    encoded.write(encoded_bytes)
+    with pytest.raises(ResumeIngestionError) as encoded_error:
+        parse_resume_upload(
+            encoded_bytes.getvalue(),
+            filename="encoded-heavy.pdf",
+            content_type="application/pdf",
+        )
+    assert encoded_error.value.code == "resume_pdf_unsafe"
+    assert "encoded page content" in str(encoded_error.value)
+
+    fragmented = PdfWriter()
+    fragmented_page = fragmented.add_blank_page(width=612, height=792)
+    streams = ArrayObject()
+    for _ in range(MAX_PDF_CONTENT_STREAMS_PER_PAGE + 1):
+        stream = DecodedStreamObject()
+        stream.set_data(b"q\n")
+        streams.append(fragmented._add_object(stream))
+    fragmented_page[NameObject("/Contents")] = streams
+    fragmented_bytes = BytesIO()
+    fragmented.write(fragmented_bytes)
+    with pytest.raises(ResumeIngestionError) as fragmented_error:
+        parse_resume_upload(
+            fragmented_bytes.getvalue(),
+            filename="fragmented.pdf",
+            content_type="application/pdf",
+        )
+    assert fragmented_error.value.code == "resume_pdf_unsafe"
+    assert "too many content streams" in str(fragmented_error.value)
+
+
+def test_pdf_object_preflight_rejects_before_unbounded_index_materialization() -> None:
+    class UnreadableXref:
+        def values(self) -> object:
+            raise AssertionError("xref must not be traversed after oversized /Size")
+
+    declared_oversize = type(
+        "DeclaredOversizeReader",
+        (),
+        {
+            "trailer": {"/Size": MAX_PDF_OBJECTS + 1},
+            "xref": UnreadableXref(),
+            "xref_objStm": {},
+        },
+    )()
+    with pytest.raises(ResumeIngestionError) as declared_error:
+        resume_ingestion._require_pdf_object_bounds(declared_oversize)
+    assert declared_error.value.code == "resume_pdf_unsafe"
+
+    class TooManyIndexedObjects:
+        def __len__(self) -> int:
+            return MAX_PDF_OBJECTS + 1
+
+    dishonest_size = type(
+        "DishonestSizeReader",
+        (),
+        {
+            "trailer": {"/Size": 1},
+            "xref": {0: TooManyIndexedObjects()},
+            "xref_objStm": {},
+        },
+    )()
+    with pytest.raises(ResumeIngestionError) as indexed_error:
+        resume_ingestion._require_pdf_object_bounds(dishonest_size)
+    assert indexed_error.value.code == "resume_pdf_unsafe"
+
+
+def test_pypdf_limit_errors_are_mapped_to_safe_invalid_pdf() -> None:
+    class LimitedContents:
+        def get_object(self) -> object:
+            raise LimitReachedError("sensitive parser detail")
+
+    class LimitedPage:
+        def raw_get(self, key: str) -> LimitedContents:
+            assert key == "/Contents"
+            return LimitedContents()
+
+    with pytest.raises(ResumeIngestionError) as exc_info:
+        resume_ingestion._pdf_page_content_sizes(LimitedPage())
+
+    assert exc_info.value.code == "resume_pdf_invalid"
+    assert "sensitive parser detail" not in str(exc_info.value)
 
 
 def _text_pdf(text: str) -> bytes:
@@ -249,4 +553,3 @@ def _text_pdf(text: str) -> bytes:
     result = BytesIO()
     writer.write(result)
     return result.getvalue()
-

@@ -17,20 +17,27 @@ from datetime import date
 from pathlib import PurePath
 
 from docx import Document
+from docx.opc.exceptions import PackageNotFoundError
 from docx.table import Table
 from docx.text.paragraph import Paragraph
+from lxml.etree import LxmlError
 from pypdf import PdfReader
-from pypdf.errors import PdfReadError
+from pypdf.errors import PyPdfError
+from pypdf.generic import ArrayObject, NullObject, StreamObject
 
 from .security import MAX_RESUME_CHARS
 
 
 MAX_RESUME_FILE_BYTES = 3 * 1024 * 1024
 MAX_PDF_PAGES = 10
+MAX_PDF_OBJECTS = 5_000
+MAX_PDF_CONTENT_STREAMS_PER_PAGE = 100
+MAX_PDF_ENCODED_CONTENT_BYTES = 2 * 1024 * 1024
+MAX_PDF_DECODED_CONTENT_BYTES = 8 * 1024 * 1024
 MAX_DOCX_ARCHIVE_ENTRIES = 500
 MAX_DOCX_UNCOMPRESSED_BYTES = 20 * 1024 * 1024
 MAX_IMPORTED_EVIDENCE = 20
-RESUME_PARSER_VERSION = "1"
+RESUME_PARSER_VERSION = "2"
 
 _GENERIC_MEDIA_TYPES = {"", "application/octet-stream"}
 _PDF_MEDIA_TYPES = {"application/pdf", *_GENERIC_MEDIA_TYPES}
@@ -45,6 +52,10 @@ _ZERO_WIDTH = dict.fromkeys(map(ord, "\u200b\u200c\u200d\u2060\ufeff"), None)
 _BULLET_RE = re.compile(r"^\s*(?:[•●▪◦‣]|[-*])\s+")
 _STANDALONE_BULLET_RE = re.compile(r"^\s*(?:[•●▪◦‣]|[-*])\s*$")
 _TERMINAL_RE = re.compile(r"[.!?)](?:[\"')\]]+)?$")
+_BARE_CLOSING_PAREN_RE = re.compile(r"(?<![.!?])\)(?:[\"'\]]+)?$")
+_GRAMMATICAL_CONTINUATION_RE = re.compile(
+    r"^(?:[a-z]|with\b|using\b|and\b|by\b|to\b|that\b)"
+)
 _ACTION_RE = re.compile(
     r"\b(?:achieved|architected|automated|built|created|cut|delivered|deployed|"
     r"designed|developed|drove|enabled|established|grew|implemented|improved|"
@@ -52,6 +63,20 @@ _ACTION_RE = re.compile(
     r"owned|processed|published|ran|reduced|resolved|scaled|shipped|trained)\b",
     re.IGNORECASE,
 )
+_TITLE_ROLE_RE = re.compile(
+    r"\b(?:architect|consultant|coordinator|designer|developer|director|engineer|"
+    r"executive|fellow|founder|head|intern|manager|officer|owner|principal|"
+    r"programmer|recruiter|researcher|scientist|specialist|supervisor|technician|"
+    r"trainee|analyst|administrator|associate|lead|sde|swe|ceo|cto|cio|ciso|coo|"
+    r"cfo|vp)\b|\bmember\s+of\s+technical\s+staff\b",
+    re.IGNORECASE,
+)
+_COMPANY_LEGAL_SUFFIX_RE = re.compile(
+    r"(?:^|[\s,.])(?:corp(?:oration)?|inc(?:orporated)?|llc|ltd|limited|pvt|plc|"
+    r"llp|gmbh|company|co\.?)\.?$",
+    re.IGNORECASE,
+)
+_TITLE_SEGMENT_RE = re.compile(r"\s*[|·]\s*")
 _MONTHS = {
     "jan": 1,
     "january": 1,
@@ -191,7 +216,10 @@ def parse_resume_upload(
             "Choose a PDF, DOCX, or TXT resume.",
         )
 
-    content = _normalize_extracted_text(text)
+    content = _normalize_extracted_text(
+        text,
+        preserve_layout_columns=extension == ".pdf",
+    )
     if not content:
         if extension == ".pdf":
             raise ResumeIngestionError(
@@ -280,12 +308,17 @@ def _extract_pdf(data: bytes) -> tuple[str, int]:
         # Real resumes are commonly produced by browser-based design tools
         # with recoverable spec quirks. pypdf's non-strict reader still keeps
         # the explicit size/page/encryption bounds above while accepting them.
-        reader = PdfReader(io.BytesIO(data), strict=False)
+        reader = PdfReader(
+            io.BytesIO(data),
+            strict=False,
+            root_object_recovery_limit=MAX_PDF_OBJECTS,
+        )
         if reader.is_encrypted:
             raise ResumeIngestionError(
                 "resume_pdf_encrypted",
                 "Password-protected PDFs are not supported. Upload an unlocked copy.",
             )
+        _require_pdf_object_bounds(reader)
         page_count = len(reader.pages)
         if page_count == 0:
             raise ResumeIngestionError("resume_pdf_invalid", "This PDF has no pages.")
@@ -295,10 +328,25 @@ def _extract_pdf(data: bytes) -> tuple[str, int]:
                 f"Resume PDFs must have {MAX_PDF_PAGES} pages or fewer.",
             )
         pages: list[str] = []
+        encoded_content_bytes = 0
+        decoded_content_bytes = 0
         for page in reader.pages:
             if "/Contents" not in page:
                 pages.append("")
                 continue
+            encoded_size, decoded_size = _pdf_page_content_sizes(page)
+            encoded_content_bytes += encoded_size
+            decoded_content_bytes += decoded_size
+            if encoded_content_bytes > MAX_PDF_ENCODED_CONTENT_BYTES:
+                raise ResumeIngestionError(
+                    "resume_pdf_unsafe",
+                    "This PDF contains too much encoded page content to process safely.",
+                )
+            if decoded_content_bytes > MAX_PDF_DECODED_CONTENT_BYTES:
+                raise ResumeIngestionError(
+                    "resume_pdf_unsafe",
+                    "This PDF expands beyond the safe page-content limit.",
+                )
             try:
                 pages.append(page.extract_text(extraction_mode="layout") or "")
             except TypeError:
@@ -307,12 +355,113 @@ def _extract_pdf(data: bytes) -> tuple[str, int]:
                 pages.append(page.extract_text() or "")
     except ResumeIngestionError:
         raise
-    except (PdfReadError, OSError, ValueError, TypeError, KeyError) as exc:
+    # PyPdfError includes LimitReachedError in the pinned pypdf release, so
+    # decompression, object-recovery, cycle, and mapping limits fail safely.
+    except (
+        PyPdfError,
+        OSError,
+        ValueError,
+        TypeError,
+        KeyError,
+        AttributeError,
+        IndexError,
+        NotImplementedError,
+        OverflowError,
+        RecursionError,
+    ) as exc:
         raise ResumeIngestionError(
             "resume_pdf_invalid",
             "This PDF is damaged or cannot be read safely.",
         ) from exc
     return "\n\n".join(pages), page_count
+
+
+def _require_pdf_object_bounds(reader: PdfReader) -> None:
+    declared_size = reader.trailer.get("/Size", 0)
+    try:
+        declared_objects = int(declared_size)
+    except (TypeError, ValueError, OverflowError) as exc:
+        raise ResumeIngestionError(
+            "resume_pdf_invalid",
+            "This PDF has an invalid object index.",
+        ) from exc
+    if declared_objects < 0:
+        raise ResumeIngestionError(
+            "resume_pdf_invalid",
+            "This PDF has an invalid object index.",
+        )
+    if declared_objects > MAX_PDF_OBJECTS:
+        raise ResumeIngestionError(
+            "resume_pdf_unsafe",
+            "This PDF contains too many internal objects to process safely.",
+        )
+    indexed_objects = 0
+    for entries in reader.xref.values():
+        indexed_objects += len(entries)
+        if indexed_objects > MAX_PDF_OBJECTS:
+            raise ResumeIngestionError(
+                "resume_pdf_unsafe",
+                "This PDF contains too many internal objects to process safely.",
+            )
+    indexed_objects += len(reader.xref_objStm)
+    if indexed_objects > MAX_PDF_OBJECTS:
+        raise ResumeIngestionError(
+            "resume_pdf_unsafe",
+            "This PDF contains too many internal objects to process safely.",
+        )
+
+
+def _pdf_page_content_sizes(page: object) -> tuple[int, int]:
+    try:
+        raw_contents = page.raw_get("/Contents")  # type: ignore[attr-defined]
+        resolved = raw_contents.get_object()
+        if isinstance(resolved, NullObject):
+            return 0, 0
+        entries = list(resolved) if isinstance(resolved, ArrayObject) else [resolved]
+        if len(entries) > MAX_PDF_CONTENT_STREAMS_PER_PAGE:
+            raise ResumeIngestionError(
+                "resume_pdf_unsafe",
+                "This PDF page contains too many content streams to process safely.",
+            )
+        encoded_size = 0
+        for entry in entries:
+            stream = entry.get_object()
+            if not isinstance(stream, StreamObject):
+                raise ResumeIngestionError(
+                    "resume_pdf_invalid",
+                    "This PDF contains an invalid page-content stream.",
+                )
+            encoded_size += len(stream._data)
+            if encoded_size > MAX_PDF_ENCODED_CONTENT_BYTES:
+                raise ResumeIngestionError(
+                    "resume_pdf_unsafe",
+                    "This PDF contains too much encoded page content to process safely.",
+                )
+        content = page.get_contents()  # type: ignore[attr-defined]
+        decoded_size = len(content.get_data()) if content is not None else 0
+        if decoded_size > MAX_PDF_DECODED_CONTENT_BYTES:
+            raise ResumeIngestionError(
+                "resume_pdf_unsafe",
+                "This PDF expands beyond the safe page-content limit.",
+            )
+        return encoded_size, decoded_size
+    except ResumeIngestionError:
+        raise
+    except (
+        PyPdfError,
+        AttributeError,
+        TypeError,
+        ValueError,
+        KeyError,
+        IndexError,
+        NotImplementedError,
+        OverflowError,
+        RecursionError,
+    ) as exc:
+        raise ResumeIngestionError(
+            "resume_pdf_invalid",
+            "This PDF contains unreadable page content.",
+        ) from exc
 
 
 def _extract_docx(data: bytes) -> str:
@@ -384,7 +533,14 @@ def _extract_docx(data: bytes) -> str:
             lines.extend(
                 paragraph.text for paragraph in section.footer.paragraphs if paragraph.text.strip()
             )
-    except (OSError, ValueError, KeyError) as exc:
+    except (
+        PackageNotFoundError,
+        LxmlError,
+        zipfile.BadZipFile,
+        OSError,
+        ValueError,
+        KeyError,
+    ) as exc:
         raise ResumeIngestionError(
             "resume_docx_invalid",
             "This DOCX is damaged or cannot be read safely.",
@@ -422,7 +578,11 @@ def _extract_text(data: bytes) -> str:
     return value
 
 
-def _normalize_extracted_text(value: str) -> str:
+def _normalize_extracted_text(
+    value: str,
+    *,
+    preserve_layout_columns: bool = False,
+) -> str:
     normalized = unicodedata.normalize("NFKC", value).translate(_ZERO_WIDTH)
     normalized = normalized.replace("\r\n", "\n").replace("\r", "\n")
     normalized = normalized.replace("\u00ad", "").replace("\u00a0", " ")
@@ -430,7 +590,10 @@ def _normalize_extracted_text(value: str) -> str:
     prior_blank = True
     pending_bullet = False
     for raw in normalized.split("\n"):
-        line = " ".join(raw.replace("\t", " ").split()).strip()
+        expanded = raw.replace("\t", " ")
+        if preserve_layout_columns:
+            expanded = re.sub(r" {3,}", " | ", expanded)
+        line = " ".join(expanded.split()).strip()
         line = re.sub(r"^([•●▪◦‣])(?=\S)", r"\1 ", line)
         if _STANDALONE_BULLET_RE.fullmatch(line):
             pending_bullet = True
@@ -481,14 +644,31 @@ def _current_title(lines: list[str]) -> str | None:
         )
         if match is None:
             continue
-        same_line = _clean_title_candidate(f"{line[:match.start()]} {line[match.end():]}")
+        same_line = _select_title_candidate(
+            f"{line[:match.start()]} {line[match.end():]}"
+        )
         if same_line is not None:
             return same_line
-        if position > 0 and nonempty[position - 1][0] == index - 1:
-            previous = _clean_title_candidate(nonempty[position - 1][1])
+        # Common resumes put title, company, and dates on two or three
+        # consecutive lines. Check at most two adjacent predecessors, but only
+        # accept a role-like value; a nearby company name is not a title.
+        for offset in (1, 2):
+            if position < offset or nonempty[position - offset][0] != index - offset:
+                break
+            previous = _select_title_candidate(nonempty[position - offset][1])
             if previous is not None:
                 return previous
     return None
+
+
+def _select_title_candidate(value: str) -> str | None:
+    segments = [
+        candidate
+        for raw in _TITLE_SEGMENT_RE.split(value)
+        if (candidate := _clean_title_candidate(raw)) is not None
+    ]
+    title_like = [candidate for candidate in segments if _is_title_like(candidate)]
+    return title_like[0] if len(title_like) == 1 else None
 
 
 def _clean_title_candidate(value: str) -> str | None:
@@ -503,6 +683,12 @@ def _clean_title_candidate(value: str) -> str | None:
     if not any(character.isalpha() for character in candidate):
         return None
     return candidate
+
+
+def _is_title_like(candidate: str) -> bool:
+    if _COMPANY_LEGAL_SUFFIX_RE.search(candidate):
+        return False
+    return _TITLE_ROLE_RE.search(candidate) is not None
 
 
 def _experience_years(lines: list[str], *, as_of: date) -> float | None:
@@ -544,6 +730,8 @@ def _extract_skills(lines: list[str], content: str) -> list[str]:
     for line in lines:
         value = line.split(":", 1)[1] if ":" in line else line
         for raw in re.split(r"[,|;•]", value):
+            if raw.strip().endswith(":"):
+                continue
             skill = " ".join(raw.strip(" .:-–—").split())
             if not skill or len(skill) > 80 or len(skill.split()) > 7:
                 continue
@@ -560,10 +748,23 @@ def _extract_skills(lines: list[str], content: str) -> list[str]:
     )
     folded_content = content.casefold()
     for skill in known:
-        if skill.casefold() in folded_content and skill.casefold() not in seen:
+        if skill in {"Go", "Spring"}:
+            # These are common English words. Accept them when explicitly
+            # listed in the skills section above, never from unrelated prose.
+            continue
+        if _contains_known_skill(folded_content, skill) and skill.casefold() not in seen:
             seen.add(skill.casefold())
             skills.append(skill)
     return skills[:80]
+
+
+def _contains_known_skill(folded_content: str, skill: str) -> bool:
+    """Match a known skill as a token, not inside another technology or word."""
+
+    folded_skill = skill.casefold()
+    prefix = r"(?<![a-z0-9])" if folded_skill[0].isalnum() else ""
+    suffix = r"(?![a-z0-9])" if folded_skill[-1].isalnum() else ""
+    return re.search(f"{prefix}{re.escape(folded_skill)}{suffix}", folded_content) is not None
 
 
 def _extract_evidence(
@@ -588,7 +789,12 @@ def _extract_evidence(
                 next_line = lines[index]
                 if _BULLET_RE.match(next_line) or _DATE_RANGE_RE.search(next_line):
                     break
-                if _TERMINAL_RE.search(excerpt_lines[-1]):
+                terminal = _TERMINAL_RE.search(excerpt_lines[-1])
+                continues_bare_parenthetical = (
+                    _BARE_CLOSING_PAREN_RE.search(excerpt_lines[-1]) is not None
+                    and _GRAMMATICAL_CONTINUATION_RE.match(next_line) is not None
+                )
+                if terminal and not continues_bare_parenthetical:
                     break
                 excerpt_lines.append(next_line)
                 index += 1
@@ -638,6 +844,10 @@ __all__ = [
     "MAX_DOCX_ARCHIVE_ENTRIES",
     "MAX_DOCX_UNCOMPRESSED_BYTES",
     "MAX_IMPORTED_EVIDENCE",
+    "MAX_PDF_CONTENT_STREAMS_PER_PAGE",
+    "MAX_PDF_DECODED_CONTENT_BYTES",
+    "MAX_PDF_ENCODED_CONTENT_BYTES",
+    "MAX_PDF_OBJECTS",
     "MAX_PDF_PAGES",
     "MAX_RESUME_FILE_BYTES",
     "RESUME_PARSER_VERSION",
