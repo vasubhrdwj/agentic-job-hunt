@@ -3360,6 +3360,36 @@
         "title": "AssessmentConfidence",
         "type": "string"
       },
+      "Body_upload_resume_version_api_me_resume_versions_upload_post": {
+        "properties": {
+          "file": {
+            "contentMediaType": "application/octet-stream",
+            "title": "File",
+            "type": "string"
+          },
+          "label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label"
+          },
+          "set_as_base": {
+            "default": true,
+            "title": "Set As Base",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "file"
+        ],
+        "title": "Body_upload_resume_version_api_me_resume_versions_upload_post",
+        "type": "object"
+      },
       "CandidateProfileResponse": {
         "additionalProperties": false,
         "properties": {
@@ -3461,6 +3491,16 @@
             ],
             "title": "Onboarding Step",
             "type": "string"
+          },
+          "skills": {
+            "items": {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            "maxItems": 80,
+            "title": "Skills",
+            "type": "array"
           },
           "updated_at": {
             "format": "date-time",
@@ -3597,6 +3637,16 @@
             ],
             "title": "Onboarding Step",
             "type": "string"
+          },
+          "skills": {
+            "items": {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            "maxItems": 80,
+            "title": "Skills",
+            "type": "array"
           },
           "work_authorizations": {
             "items": {
@@ -9061,6 +9111,63 @@
           }
         },
         "title": "RequeueRequest",
+        "type": "object"
+      },
+      "ResumeUploadReport": {
+        "additionalProperties": false,
+        "description": "Durable results plus bounded, user-actionable parsing feedback.",
+        "properties": {
+          "achievement_suggestions_created": {
+            "maximum": 20.0,
+            "minimum": 0.0,
+            "title": "Achievement Suggestions Created",
+            "type": "integer"
+          },
+          "imported_profile_fields": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 4,
+            "title": "Imported Profile Fields",
+            "type": "array"
+          },
+          "missing_profile_fields": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 4,
+            "title": "Missing Profile Fields",
+            "type": "array"
+          },
+          "parsed_sections": {
+            "items": {
+              "maxLength": 80,
+              "minLength": 1,
+              "type": "string"
+            },
+            "maxItems": 20,
+            "title": "Parsed Sections",
+            "type": "array"
+          },
+          "resume_version": {
+            "$ref": "#/components/schemas/ResumeVersionSummary"
+          },
+          "warnings": {
+            "items": {
+              "maxLength": 300,
+              "minLength": 1,
+              "type": "string"
+            },
+            "maxItems": 20,
+            "title": "Warnings",
+            "type": "array"
+          }
+        },
+        "required": [
+          "resume_version",
+          "achievement_suggestions_created"
+        ],
+        "title": "ResumeUploadReport",
         "type": "object"
       },
       "ResumeVersionCreate": {
@@ -17882,6 +17989,150 @@
           }
         ],
         "summary": "Create Resume Version",
+        "tags": [
+          "owner-workspace"
+        ]
+      }
+    },
+    "/api/me/resume-versions/upload": {
+      "post": {
+        "operationId": "upload_resume_version_api_me_resume_versions_upload_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_upload_resume_version_api_me_resume_versions_upload_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResumeUploadReport"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Content Too Large"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
+          "428": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Precondition Required"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "security": [
+          {
+            "OwnerSessionCookie": []
+          }
+        ],
+        "summary": "Upload Resume Version",
         "tags": [
           "owner-workspace"
         ]

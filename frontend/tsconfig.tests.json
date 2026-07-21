@@ -50,6 +50,7 @@
     "tests/grounded-outreach-drafts.test.ts",
     "tests/interview-preparation-drafts.test.ts",
     "tests/opportunity-fit.test.ts",
+    "tests/profile-api.test.ts",
     "tests/resume-upload.test.ts",
     "tests/resume-upload-api.test.ts",
     "tests/search-defaults.test.ts",

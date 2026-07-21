@@ -129,7 +129,13 @@ export async function getOwnerHealth(): Promise<OwnerHealth> {
 export async function getCandidateProfile(): Promise<Versioned<CandidateProfile> | null> {
   const response = await fetch("/api/me/profile", { cache: "no-store" });
   if (response.status === 404) return null;
-  const data = await expectJson<CandidateProfile>(response);
+  const raw = await expectJson<
+    Omit<CandidateProfile, "skills"> & { skills?: string[] }
+  >(response);
+  const data: CandidateProfile = {
+    ...raw,
+    skills: Array.isArray(raw.skills) ? raw.skills : [],
+  };
   return { data, etag: responseEtag(response, data.version) };
 }
 

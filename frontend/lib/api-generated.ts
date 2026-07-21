@@ -685,6 +685,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/me/resume-versions/upload": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Upload Resume Version */
+        post: operations["upload_resume_version_api_me_resume_versions_upload_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/me/resume-versions/{resume_version_id}": {
         parameters: {
             query?: never;
@@ -2326,6 +2343,18 @@ export interface components {
          * @enum {string}
          */
         AssessmentConfidence: "high" | "medium" | "low";
+        /** Body_upload_resume_version_api_me_resume_versions_upload_post */
+        Body_upload_resume_version_api_me_resume_versions_upload_post: {
+            /** File */
+            file: string;
+            /** Label */
+            label?: string | null;
+            /**
+             * Set As Base
+             * @default true
+             */
+            set_as_base: boolean;
+        };
         /** CandidateProfileResponse */
         CandidateProfileResponse: {
             base_resume?: components["schemas"]["ResumeVersionSummary"] | null;
@@ -2352,6 +2381,8 @@ export interface components {
              * @enum {string}
              */
             onboarding_step: "profile" | "resume" | "career_track" | "evidence" | "saved_search" | "complete";
+            /** Skills */
+            skills?: string[];
             /**
              * Updated At
              * Format: date-time
@@ -2384,6 +2415,8 @@ export interface components {
              * @enum {string}
              */
             onboarding_step: "profile" | "resume" | "career_track" | "evidence" | "saved_search" | "complete";
+            /** Skills */
+            skills?: string[];
             /** Work Authorizations */
             work_authorizations?: components["schemas"]["WorkAuthorization"][];
             /** Work Modes */
@@ -4545,6 +4578,23 @@ export interface components {
         RequeueRequest: {
             /** Reason */
             reason?: string | null;
+        };
+        /**
+         * ResumeUploadReport
+         * @description Durable results plus bounded, user-actionable parsing feedback.
+         */
+        ResumeUploadReport: {
+            /** Achievement Suggestions Created */
+            achievement_suggestions_created: number;
+            /** Imported Profile Fields */
+            imported_profile_fields?: string[];
+            /** Missing Profile Fields */
+            missing_profile_fields?: string[];
+            /** Parsed Sections */
+            parsed_sections?: string[];
+            resume_version: components["schemas"]["ResumeVersionSummary"];
+            /** Warnings */
+            warnings?: string[];
         };
         /** ResumeVersionCreate */
         ResumeVersionCreate: {
@@ -9676,6 +9726,113 @@ export interface operations {
             };
             /** @description Conflict */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Precondition Required */
+            428: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+        };
+    };
+    upload_resume_version_api_me_resume_versions_upload_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "Idempotency-Key"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["Body_upload_resume_version_api_me_resume_versions_upload_post"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ResumeUploadReport"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Content Too Large */
+            413: {
                 headers: {
                     [name: string]: unknown;
                 };

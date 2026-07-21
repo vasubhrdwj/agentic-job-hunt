@@ -15,6 +15,7 @@ function profile(
     current_title: null,
     current_location: null,
     years_of_experience: null,
+    skills: [],
     work_authorizations: [],
     work_modes: [],
     employment_types: ["full_time"],
@@ -37,6 +38,13 @@ test("experience alone is a meaningful profile detail, including zero", () => {
 
 test("an omitted experience value does not make an otherwise blank profile meaningful", () => {
   assert.equal(hasMeaningfulCandidateProfile(profile()), false);
+});
+
+test("resume-extracted skills are meaningful profile details", () => {
+  assert.equal(
+    hasMeaningfulCandidateProfile(profile({ skills: ["Python", "Kafka"] })),
+    true,
+  );
 });
 
 test("experience input supports decimals and rejects values outside the API range", () => {

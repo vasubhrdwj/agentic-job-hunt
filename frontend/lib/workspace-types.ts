@@ -38,13 +38,18 @@ export interface ResumeVersionDetail extends ResumeVersionSummary {
   content: string;
 }
 
-export interface ResumeImportReport {
+export interface ResumeImportReport
+  extends Omit<
+    ApiSchemas["ResumeUploadReport"],
+    | "resume_version"
+    | "imported_profile_fields"
+    | "missing_profile_fields"
+    | "warnings"
+  > {
   resume_version: ResumeVersionSummary;
   imported_profile_fields: string[];
-  achievement_suggestions_created: number;
   missing_profile_fields: string[];
   warnings: string[];
-  parsed_sections?: string[];
 }
 
 export interface CandidateProfileWrite {
@@ -52,6 +57,7 @@ export interface CandidateProfileWrite {
   current_title: string | null;
   current_location: string | null;
   years_of_experience: number | null;
+  skills: string[];
   work_authorizations: WorkAuthorization[];
   work_modes: WorkMode[];
   employment_types: Exclude<EmploymentType, "unknown">[];
@@ -75,6 +81,7 @@ export function hasMeaningfulCandidateProfile(
       profile.current_title?.trim() ||
       profile.current_location?.trim() ||
       profile.years_of_experience !== null ||
+      profile.skills.length > 0 ||
       profile.work_authorizations.length > 0 ||
       profile.work_modes.length > 0 ||
       profile.notice_period_days !== null,

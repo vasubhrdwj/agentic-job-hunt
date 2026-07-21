@@ -11,6 +11,7 @@ const PROFILE_FIELD_LABELS: Record<string, string> = {
   current_title: "Current title",
   employment_types: "Employment preferences",
   notice_period_days: "Notice period",
+  skills: "Skills",
   work_authorizations: "Work authorization",
   work_modes: "Work-mode preferences",
   years_of_experience: "Years of experience",
@@ -32,6 +33,7 @@ export interface ProfileGapInput {
   currentTitle: string;
   currentLocation: string;
   yearsOfExperience: string;
+  skillCount: number;
   careerThesis: string;
   noticeDays: string;
   workModeCount: number;
@@ -84,6 +86,7 @@ export function profileGapLabels(profile: ProfileGapInput): string[] {
     [profile.currentTitle.trim(), "Current title"],
     [profile.currentLocation.trim(), "Home location"],
     [profile.yearsOfExperience.trim(), "Years of experience"],
+    [profile.skillCount > 0, "Skills"],
     [profile.careerThesis.trim(), "Career direction"],
     [profile.noticeDays.trim(), "Notice period"],
     [profile.workModeCount > 0, "Work-mode preference"],

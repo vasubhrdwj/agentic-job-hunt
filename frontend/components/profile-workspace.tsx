@@ -106,6 +106,7 @@ export function ProfileWorkspace() {
   const [currentTitle, setCurrentTitle] = useState("");
   const [currentLocation, setCurrentLocation] = useState("");
   const [yearsOfExperience, setYearsOfExperience] = useState("");
+  const [skills, setSkills] = useState("");
   const [careerThesis, setCareerThesis] = useState("");
   const [noticeDays, setNoticeDays] = useState("");
   const [workModes, setWorkModes] = useState<WorkMode[]>([]);
@@ -173,6 +174,7 @@ export function ProfileWorkspace() {
     setCurrentTitle(value?.current_title ?? "");
     setCurrentLocation(value?.current_location ?? "");
     setYearsOfExperience(value?.years_of_experience?.toString() ?? "");
+    setSkills((value?.skills ?? []).join(", "));
     setCareerThesis(value?.career_thesis ?? "");
     setNoticeDays(value?.notice_period_days?.toString() ?? "");
     setWorkModes(value?.work_modes ?? []);
@@ -353,6 +355,7 @@ export function ProfileWorkspace() {
       current_title: currentTitle.trim() || null,
       current_location: currentLocation.trim() || null,
       years_of_experience: experienceYears,
+      skills: splitList(skills),
       career_thesis: careerThesis.trim() || null,
       notice_period_days: noticeDays ? Number(noticeDays) : null,
       work_authorizations: authorizations,
@@ -611,11 +614,15 @@ export function ProfileWorkspace() {
     profile?.data.years_of_experience !== null && profile?.data.years_of_experience !== undefined
       ? `${profile.data.years_of_experience} years of experience`
       : "",
+    (profile?.data.skills ?? []).length
+      ? `${(profile?.data.skills ?? []).length} skills captured`
+      : "",
   ].filter(Boolean);
   const profileGaps = profileGapLabels({
     currentTitle: profile?.data.current_title ?? "",
     currentLocation: profile?.data.current_location ?? "",
     yearsOfExperience: profile?.data.years_of_experience?.toString() ?? "",
+    skillCount: (profile?.data.skills ?? []).length,
     careerThesis: profile?.data.career_thesis ?? "",
     noticeDays: profile?.data.notice_period_days?.toString() ?? "",
     workModeCount: profile?.data.work_modes.length ?? 0,
@@ -828,6 +835,20 @@ export function ProfileWorkspace() {
               ? profileHighlights.join(" · ")
               : "No title, location, or experience is saved yet."}
           </p>
+          {(profile?.data.skills ?? []).length ? (
+            <ul className="mt-3 flex flex-wrap gap-1.5" aria-label="Imported skills">
+              {(profile?.data.skills ?? []).slice(0, 12).map((skill) => (
+                <li key={skill} className="rounded-full bg-indigo-50 px-2 py-0.5 text-xs text-indigo-800 dark:bg-indigo-950 dark:text-indigo-200">
+                  {skill}
+                </li>
+              ))}
+              {(profile?.data.skills ?? []).length > 12 ? (
+                <li className="px-1 py-0.5 text-xs text-zinc-500">
+                  +{(profile?.data.skills ?? []).length - 12} more
+                </li>
+              ) : null}
+            </ul>
+          ) : null}
           {profileGaps.length > 0 ? (
             <div className="mt-3 border-t border-zinc-200 pt-3 dark:border-zinc-800">
               <p className="text-xs text-zinc-500">Useful details still missing</p>
@@ -865,6 +886,10 @@ export function ProfileWorkspace() {
 
             <FormField label="Career direction" htmlFor="career-thesis" hint="A short, honest description of what would make your next role better.">
               <textarea id="career-thesis" value={careerThesis} onChange={(event) => setCareerThesis(event.target.value)} className={textareaClasses} placeholder="I want broader platform ownership and strong engineering mentorship…" />
+            </FormField>
+
+            <FormField label="Skills" htmlFor="profile-skills" hint="Imported from your resume. Edit the comma-separated list only if something is wrong or missing.">
+              <textarea id="profile-skills" rows={3} value={skills} onChange={(event) => setSkills(event.target.value)} className={textareaClasses} placeholder="Python, Node.js, Kafka, AWS" />
             </FormField>
 
             <div className="grid gap-5 sm:grid-cols-2">

@@ -78,6 +78,7 @@ test("profile gaps are derived from durable profile state after import feedback 
     currentTitle: "Backend Engineer",
     currentLocation: "",
     yearsOfExperience: "1.5",
+    skillCount: 3,
     careerThesis: " ",
     noticeDays: "0",
     workModeCount: 0,
