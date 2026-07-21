@@ -94,7 +94,7 @@ comparison link.
 
 > Codex accelerated the Build Week rebuild across Postgres migrations, FastAPI
 > repositories, generated contracts, Next.js workflows, deployment debugging,
-> and regression tests. I made the product calls: fit-first ranking, five
+> and regression tests. We made the product calls: fit-first ranking, five
 > evidence-backed contacts, résumé-first onboarding, normal accounts, and no
 > invented claims. In the GPT-5.6 pass, Codex also built the no-key demo seeder
 > from the public API contracts. GPT-5.6 was a development collaborator, not a

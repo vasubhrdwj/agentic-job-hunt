@@ -185,7 +185,7 @@ npm run dev
 ## How Codex and GPT-5.6 contributed
 
 Codex was our development collaborator, not a hidden production dependency.
-Vasu used it as a tight product/engineering loop: describe a real job-search
+Vasu and Arpita used it as a tight product/engineering loop: describe a real job-search
 friction, inspect the running product, turn the feedback into a small change,
 review the diff, and commit it independently. This made it practical to evolve
 one workflow across database migrations, repositories, API contracts, UI, and
@@ -219,7 +219,7 @@ Concrete examples:
   public API contracts and implemented the dependency-free judge seeder in
   `scripts/seed_demo_workspace.py` plus its sample-data guide.
 
-Vasu made the consequential product calls: focus on early-career backend and
+Vasu and Arpita made the consequential product calls: focus on early-career backend and
 software-engineering searches; rank the whole inbox by fit; look for five
 appropriate people instead of one; replace a shared passkey with normal
 multi-user signup; make résumé upload the default onboarding path; minimize

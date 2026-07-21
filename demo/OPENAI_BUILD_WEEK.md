@@ -1,8 +1,7 @@
 # OpenAI Build Week — paste-ready submission
 
-This file contains the final project copy plus the few values that must come
-from Vasu's Devpost, YouTube, and Codex accounts. Replace every `REQUIRED`
-marker before submitting.
+This file contains the final project copy plus the YouTube URL that must be
+added after the current demo is uploaded.
 
 ## Submission fields
 
@@ -12,9 +11,11 @@ marker before submitting.
 
 **Category:** Apps for Your Life
 
-**Submitter type:** `REQUIRED — INDIVIDUAL OR TEAM OF INDIVIDUALS`
+**Team:** Vasu Bhardwaj and Arpita Gupta
 
-**Country of residence:** `REQUIRED — CONFIRM BEFORE SUBMISSION`
+**Submitter type:** Team of Individuals
+
+**Country of residence:** India
 
 **Live project:** https://agentic-job-hunt.vercel.app
 
@@ -24,9 +25,9 @@ marker before submitting.
 
 **License:** MIT
 
-**Public YouTube demo (<3 minutes):** `REQUIRED — ADD PUBLIC YOUTUBE URL`
+**Public YouTube demo (<3 minutes):** `https://www.youtube.com/watch?v=REPLACE_WITH_VIDEO_ID`
 
-**Primary `/feedback` Codex Session ID:** `REQUIRED — RUN /feedback IN THE MAIN BUILD TASK`
+**Primary `/feedback` Codex Session ID:** `019f4a82-6496-7fa2-9a1b-9aa6a567f5a5`
 
 ## Testing instructions
 
@@ -124,7 +125,7 @@ contracts and implemented the dependency-free demo workspace seeder and its
 sample-data guide. GPT-5.6 was used through Codex as a development model; it is
 not a production inference dependency and does not receive users' résumés.
 
-Vasu made the key product decisions: serve real job seekers rather than ship a
+Vasu and Arpita made the key product decisions: serve real job seekers rather than ship a
 one-run demo; rank roles by fit; find five appropriate people rather than one;
 make résumé upload the default; replace a shared passkey with normal accounts;
 prefer free first-party sources; minimize repetitive approvals; never invent
@@ -214,13 +215,13 @@ loop.
 - [x] Vasu's Devpost account is registered for OpenAI Build Week.
 - [x] Editable Devpost project draft created as `job-hunt-signal`.
 - [x] GitHub repository visibility confirmed as public.
-- [ ] Choose Individual or Team of Individuals, confirm country of residence,
-  and ensure every named contributor has agreed to the submission.
+- [x] Submitter type set to Team of Individuals and country set to India.
+- [ ] Arpita must join the Devpost project using the private team link and
+  confirm the invitation before submission.
 - [ ] Record the current product using
   [`demo/OPENAI_BUILD_WEEK_VIDEO.md`](OPENAI_BUILD_WEEK_VIDEO.md).
 - [ ] Upload the video publicly to YouTube and paste its URL above.
-- [ ] Run `/feedback` in the primary Codex build task and paste the Session ID
-  above and into Devpost.
+- [x] Primary `/feedback` Codex Session ID recorded.
 - [ ] Keep the hosted app free and available through the judging period.
-- [ ] Replace every `REQUIRED` marker, preview the entry, then submit before
+- [ ] Replace `REPLACE_WITH_VIDEO_ID`, preview the entry, then submit before
   July 21, 2026 at 5:00 PM Pacific Time.
