@@ -250,14 +250,18 @@ export async function proxyApiRequest(
   request.signal.addEventListener("abort", abortForClient, { once: true });
 
   try {
+    const requiresSessionBeforeBody =
+      isPaidHuntRequest(method, segments) || resumeUpload;
     if (
-      isPaidHuntRequest(method, segments) &&
+      requiresSessionBeforeBody &&
       !(await hasValidOwnerSession(request, abortController.signal))
     ) {
       return jsonProblem(
         401,
         "owner_session_required",
-        "Sign in to the private workspace before starting a paid hunt.",
+        resumeUpload
+          ? "Sign in before uploading a resume."
+          : "Sign in to the private workspace before starting a paid hunt.",
       );
     }
 

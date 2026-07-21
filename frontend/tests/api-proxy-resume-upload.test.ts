@@ -6,11 +6,15 @@ import { NextRequest } from "next/server";
 import { proxyApiRequest } from "../lib/api-proxy";
 
 const RESUME_UPLOAD_SEGMENTS = ["me", "resume-versions", "upload"];
+const SESSION_COOKIE = "job_hunt_session=" + "A".repeat(43);
 
 test("the proxy reserves a larger request envelope only for resume uploads", async () => {
   const originalFetch = globalThis.fetch;
   const forwarded: Array<{ url: string; init?: RequestInit }> = [];
   globalThis.fetch = (async (input, init) => {
+    if (String(input).endsWith("/api/session")) {
+      return Response.json({ authenticated: true });
+    }
     forwarded.push({ url: String(input), init });
     return Response.json({ imported: true }, { status: 201 });
   }) as typeof fetch;
@@ -22,6 +26,7 @@ test("the proxy reserves a larger request envelope only for resume uploads", asy
         method: "POST",
         headers: {
           "content-type": "multipart/form-data; boundary=resume-test",
+          cookie: SESSION_COOKIE,
           "idempotency-key": "resume-upload:test",
         },
         body: mediumBody,
@@ -55,9 +60,12 @@ test("the proxy reserves a larger request envelope only for resume uploads", asy
 
 test("the proxy rejects a resume multipart envelope above 4 MiB before forwarding", async () => {
   const originalFetch = globalThis.fetch;
-  let forwarded = false;
-  globalThis.fetch = (async () => {
-    forwarded = true;
+  let uploadForwarded = false;
+  globalThis.fetch = (async (input) => {
+    if (String(input).endsWith("/api/session")) {
+      return Response.json({ authenticated: true });
+    }
+    uploadForwarded = true;
     return Response.json({ imported: true });
   }) as typeof fetch;
 
@@ -68,6 +76,7 @@ test("the proxy rejects a resume multipart envelope above 4 MiB before forwardin
         headers: {
           "content-length": String(4 * 1024 * 1024 + 1),
           "content-type": "multipart/form-data; boundary=resume-test",
+          cookie: SESSION_COOKIE,
         },
         body: new Uint8Array([1]),
       }),
@@ -75,7 +84,68 @@ test("the proxy rejects a resume multipart envelope above 4 MiB before forwardin
     );
     assert.equal(response.status, 413);
     assert.equal((await response.json()).message, "Resume files must be 3 MB or smaller.");
-    assert.equal(forwarded, false);
+    assert.equal(uploadForwarded, false);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("the proxy rejects a missing session before reading resume bytes", async () => {
+  const originalFetch = globalThis.fetch;
+  let upstreamCalled = false;
+  globalThis.fetch = (async () => {
+    upstreamCalled = true;
+    return Response.json({ authenticated: true });
+  }) as typeof fetch;
+  const request = new NextRequest(
+    "http://localhost/api/me/resume-versions/upload",
+    {
+      method: "POST",
+      headers: { "content-type": "multipart/form-data; boundary=resume-test" },
+      body: new Uint8Array(256 * 1024),
+    },
+  );
+
+  try {
+    const response = await proxyApiRequest(request, RESUME_UPLOAD_SEGMENTS);
+    assert.equal(response.status, 401);
+    assert.equal((await response.json()).code, "owner_session_required");
+    assert.equal(request.bodyUsed, false);
+    assert.equal(upstreamCalled, false);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("the proxy rejects a forged session before reading resume bytes", async () => {
+  const originalFetch = globalThis.fetch;
+  let sessionChecks = 0;
+  globalThis.fetch = (async (input) => {
+    assert.equal(String(input).endsWith("/api/session"), true);
+    sessionChecks += 1;
+    return Response.json(
+      { code: "owner_session_required" },
+      { status: 401 },
+    );
+  }) as typeof fetch;
+  const request = new NextRequest(
+    "http://localhost/api/me/resume-versions/upload",
+    {
+      method: "POST",
+      headers: {
+        "content-type": "multipart/form-data; boundary=resume-test",
+        cookie: SESSION_COOKIE,
+      },
+      body: new Uint8Array(256 * 1024),
+    },
+  );
+
+  try {
+    const response = await proxyApiRequest(request, RESUME_UPLOAD_SEGMENTS);
+    assert.equal(response.status, 401);
+    assert.equal((await response.json()).code, "owner_session_required");
+    assert.equal(request.bodyUsed, false);
+    assert.equal(sessionChecks, 1);
   } finally {
     globalThis.fetch = originalFetch;
   }
