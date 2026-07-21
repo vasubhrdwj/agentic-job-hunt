@@ -26,7 +26,7 @@ before submitting the Devpost entry.
 
 **License:** MIT
 
-**Public YouTube demo (<3 minutes):** `https://youtu.be/sWeNOzENC38`
+**Public YouTube demo (<3 minutes):** `https://youtu.be/r_vSAZHwMb8`
 
 **Primary `/feedback` Codex Session ID:** `019f4a82-6496-7fa2-9a1b-9aa6a567f5a5`
 
