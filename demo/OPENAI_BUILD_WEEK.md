@@ -12,9 +12,15 @@ marker before submitting.
 
 **Category:** Apps for Your Life
 
+**Submitter type:** `REQUIRED — INDIVIDUAL OR TEAM OF INDIVIDUALS`
+
+**Country of residence:** `REQUIRED — CONFIRM BEFORE SUBMISSION`
+
 **Live project:** https://agentic-job-hunt.vercel.app
 
 **Repository:** https://github.com/vasubhrdwj/agentic-job-hunt
+
+**Devpost draft:** https://devpost.com/software/job-hunt-signal
 
 **License:** MIT
 
@@ -205,10 +211,11 @@ loop.
 
 ## Final submission checklist
 
-- [ ] Join OpenAI Build Week on the submitting Devpost account.
+- [x] Vasu's Devpost account is registered for OpenAI Build Week.
+- [x] Editable Devpost project draft created as `job-hunt-signal`.
 - [x] GitHub repository visibility confirmed as public.
-- [ ] Confirm every named contributor has agreed to the submission and add the
-  correct Devpost teammates.
+- [ ] Choose Individual or Team of Individuals, confirm country of residence,
+  and ensure every named contributor has agreed to the submission.
 - [ ] Record the current product using
   [`demo/OPENAI_BUILD_WEEK_VIDEO.md`](OPENAI_BUILD_WEEK_VIDEO.md).
 - [ ] Upload the video publicly to YouTube and paste its URL above.
