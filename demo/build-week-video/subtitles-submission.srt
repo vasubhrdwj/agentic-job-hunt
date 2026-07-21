@@ -1,0 +1,124 @@
+1
+00:00:00,100 --> 00:00:05,060
+It's almost midnight, and Vasu just found a backend role at Amazon worth the effort.
+
+2
+00:00:05,860 --> 00:00:07,520
+Now, the real work begins.
+
+3
+00:00:08,360 --> 00:00:10,380
+Judge the fit. Prove every claim.
+
+4
+00:00:11,140 --> 00:00:16,060
+Find the right people. Write real messages. Remember every follow-up.
+
+5
+00:00:16,860 --> 00:00:19,820
+One opening quietly became five more jobs.
+
+6
+00:00:20,720 --> 00:00:22,840
+So which role actually deserves tonight?
+
+7
+00:00:24,080 --> 00:00:26,480
+Job Hunt Signal starts with a single résumé.
+
+8
+00:00:27,440 --> 00:00:30,820
+Vasu's experience becomes one private, reusable profile.
+
+9
+00:00:31,560 --> 00:00:39,260
+AWS event pipelines, OAuth, SCIM, production debugging, and evidence-backed achievements.
+
+10
+00:00:40,200 --> 00:00:46,860
+The original file is discarded after extraction, and the app only asks for context a résumé cannot know.
+
+11
+00:00:47,580 --> 00:00:52,040
+Then he opens Today: a ranked action queue, not another feed.
+
+12
+00:00:52,760 --> 00:00:57,140
+First-party openings are cleaned, deduplicated, and balanced across companies.
+
+13
+00:00:57,780 --> 00:01:02,940
+Each card explains eligibility, confidence, matching evidence, and real gaps.
+
+14
+00:01:03,760 --> 00:01:10,100
+Here is the actual Amazon opening, marked Promising because the saved description overlaps his approved evidence.
+
+15
+00:01:10,840 --> 00:01:15,120
+Inside the dossier, every requirement is checked before materials unlock.
+
+16
+00:01:15,900 --> 00:01:21,920
+When proof is missing, the claim stays unsupported and the materials stay locked. That is the feature.
+
+17
+00:01:22,660 --> 00:01:29,640
+A strong application still disappears without a human path, so Job Hunt Signal finds up to five appropriate people.
+
+18
+00:01:30,020 --> 00:01:35,020
+Peers, a manager, and a recruiter—with the public source beside every lead.
+
+19
+00:01:35,840 --> 00:01:38,700
+It drafts a distinct, grounded note for each one.
+
+20
+00:01:39,640 --> 00:01:41,880
+Vasu verifies, edits, and sends it himself.
+
+21
+00:01:42,740 --> 00:01:45,980
+The app invents nobody and sends nothing on its own.
+
+22
+00:01:46,620 --> 00:01:51,800
+Applications, outreach, follow-ups, and next dates live on one durable timeline.
+
+23
+00:01:52,420 --> 00:01:56,200
+Weekly Review shows real movement without calling silence a rejection.
+
+24
+00:01:57,160 --> 00:02:00,540
+A spreadsheet remembers rows. This system remembers decisions.
+
+25
+00:02:01,460 --> 00:02:07,260
+Job Hunt Signal was built by Codex using GPT-5.6 across Postgres, FastAPI, and Next.js.
+
+26
+00:02:07,900 --> 00:02:12,660
+Vasu and Arpita made the product calls.
+
+27
+00:02:13,300 --> 00:02:20,540
+Fit first. Five evidence-backed paths. Résumé-first onboarding. Normal accounts. No invented claims.
+
+28
+00:02:21,420 --> 00:02:27,120
+GPT-5.6 helped build the product. It does not secretly score users in production.
+
+29
+00:02:28,260 --> 00:02:30,340
+The system does the repetition and the grounding.
+
+30
+00:02:31,280 --> 00:02:34,320
+Vasu keeps the judgment, the relationships, and the final click.
+
+31
+00:02:34,320 --> 00:02:36,760
+One résumé. Better priorities.
+

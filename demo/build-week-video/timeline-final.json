@@ -1,0 +1,36 @@
+{
+  "video": {
+    "total_seconds": 153.01,
+    "fps": 30,
+    "size": "1920x1080",
+    "footage": "~/Downloads/screenrecdemo.mp4 (90.71s, audio stripped)"
+  },
+  "intro": [
+    {"id": "found", "start": 0.0, "end": 4.0, "kind": "card", "eyebrow": "11:47 PM", "title": "You found a promising role.", "accent": "AMAZON · BACKEND"},
+    {"id": "judge", "start": 4.0, "end": 7.5, "kind": "card", "eyebrow": "NOW", "title": "Judge the fit.", "step": "01 / 05"},
+    {"id": "prove", "start": 7.5, "end": 11.0, "kind": "card", "eyebrow": "THEN", "title": "Prove every claim.", "step": "02 / 05"},
+    {"id": "reach", "start": 11.0, "end": 14.5, "kind": "card", "eyebrow": "THEN", "title": "Find the right people.", "step": "03 / 05"},
+    {"id": "write", "start": 14.5, "end": 18.0, "kind": "card", "eyebrow": "THEN", "title": "Write five real messages.", "step": "04 / 05"},
+    {"id": "follow", "start": 18.0, "end": 21.5, "kind": "card", "eyebrow": "AND THEN", "title": "Remember every follow-up.", "step": "05 / 05"},
+    {"id": "problem", "start": 21.5, "end": 26.5, "kind": "collage", "title": "One opening became five more jobs.", "assets": ["today-top.png", "profile-achievements.png", "amazon-people.png"]},
+    {"id": "reveal", "start": 26.5, "end": 30.0, "kind": "brand", "title": "Job Hunt Signal", "subtitle": "One resume. Better priorities. Five possible paths."}
+  ],
+  "walkthrough_act": {
+    "start": 30.0,
+    "end": 120.71,
+    "source_trim": [0.0, 90.71],
+    "captions": [
+      {"local": [0.0, 22.5], "eyebrow": "ONE PRIVATE PROFILE", "title": "Upload once. Reuse the proof."},
+      {"local": [22.5, 33.0], "eyebrow": "TODAY", "title": "A ranked action queue—not another feed."},
+      {"local": [33.0, 47.5], "eyebrow": "REAL AMAZON OPENING", "title": "Fit is explained, not guessed."},
+      {"local": [47.5, 55.0], "eyebrow": "EVIDENCE BEFORE CLAIMS", "title": "No proof? Materials stay locked."},
+      {"local": [55.0, 63.5], "eyebrow": "NOT ONE FRAGILE LEAD", "title": "Five source-backed paths."},
+      {"local": [63.5, 80.0], "eyebrow": "DISTINCT, GROUNDED OUTREACH", "title": "A message for each person—not a blast."},
+      {"local": [80.0, 90.71], "eyebrow": "THE LOOP CLOSES", "title": "Follow-ups stay dated. Movement stays visible."}
+    ]
+  },
+  "outro": [
+    {"id": "codex", "start": 120.71, "end": 141.01, "kind": "codex", "eyebrow": "BUILT DURING OPENAI BUILD WEEK", "title": "Built by Codex, with GPT-5.6.", "subtitle": "Postgres · FastAPI · Next.js · deployment · tests", "note": "Product decisions by Vasu & Arpita"},
+    {"id": "close", "start": 141.01, "end": 153.01, "kind": "brand", "title": "Job Hunt Signal", "subtitle": "The system does the repetition. You keep the judgment.", "footer": "agentic-job-hunt.vercel.app"}
+  ]
+}

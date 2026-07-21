@@ -1,18 +1,18 @@
-# OpenAI Build Week demo script (target: 2:40)
+# OpenAI Build Week demo script (pre-production guide)
 
-Use a local `USE_MOCKS=1` workspace seeded with
-`python3 scripts/seed_demo_workspace.py`. Record at 1080p with readable browser
-zoom. Use the synthetic account and résumé only; hide generated credentials,
-browser autofill, DevTools, and environment variables. Use voiceover and no
-music.
+The submitted walkthrough uses Vasu's consented profile and a real Amazon role
+inside the deployed product. Public lead identities and exact outreach wording
+are masked in the public cut. No product state is fabricated. The timing below
+is the original recording guide; the upload-ready 2:38 cut and its subtitles
+are documented in `demo/build-week-video/README.md`.
 
 ## Pre-flight
 
 - Warm every page and complete one mock scan before recording.
 - Keep a second unpursued role ready so the pursuit flow is fresh.
-- Confirm the résumé shown is `fixtures/sample_resume.txt`, not personal data.
-- Confirm no real profile URL, email, API key, database URL, or session cookie
-  is visible.
+- Confirm the résumé owner has consented to every personal profile detail shown.
+- Confirm no public lead identity, profile URL, email, API key, database URL,
+  session cookie, or exact private outreach text is visible.
 - Export at 1080p and keep the public YouTube upload below three minutes.
 
 ## 0:00–0:15 — problem and promise

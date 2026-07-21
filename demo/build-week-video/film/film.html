@@ -1,0 +1,380 @@
+<meta charset="utf-8" />
+<title>Job Hunt Signal — film</title>
+<style>
+  :root {
+    --ink: #07090f;
+    --white: #f6f7fc;
+    --muted: #a6acbf;
+    --accent: #7077ff;
+    --accent-2: #8a90ff;
+    --mint: #59e2c2;
+    --panel: rgba(255, 255, 255, 0.045);
+    --panel-line: rgba(255, 255, 255, 0.10);
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 1920px; height: 1080px; overflow: hidden; background: var(--ink); }
+  body {
+    position: relative;
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Helvetica Neue", Arial, sans-serif;
+    color: var(--white);
+    -webkit-font-smoothing: antialiased;
+    text-rendering: geometricPrecision;
+  }
+
+  /* ---------- background ---------- */
+  #bg { position: absolute; inset: 0; overflow: hidden; background: var(--ink); }
+  .blob { position: absolute; border-radius: 50%; filter: blur(90px); opacity: 0.9; will-change: transform; }
+  #b1 { width: 1200px; height: 1200px; left: 780px; top: -420px;
+        background: radial-gradient(circle at 50% 50%, rgba(112,119,255,0.55), rgba(112,119,255,0) 62%); }
+  #b2 { width: 1150px; height: 1150px; left: -320px; top: 470px;
+        background: radial-gradient(circle at 50% 50%, rgba(89,226,194,0.34), rgba(89,226,194,0) 60%); }
+  #b3 { width: 900px; height: 900px; left: 620px; top: 560px;
+        background: radial-gradient(circle at 50% 50%, rgba(138,120,255,0.30), rgba(138,120,255,0) 60%); }
+  #grid { position: absolute; inset: -20%;
+          background-image: linear-gradient(rgba(255,255,255,0.045) 1px, transparent 1px),
+                            linear-gradient(90deg, rgba(255,255,255,0.045) 1px, transparent 1px);
+          background-size: 132px 132px; will-change: transform; opacity: 0.5; }
+  #vignette { position: absolute; inset: 0;
+              background: radial-gradient(120% 90% at 50% 42%, rgba(0,0,0,0) 46%, rgba(0,0,0,0.55) 100%); }
+  #grain { position: absolute; inset: 0; opacity: 0.05; mix-blend-mode: overlay;
+           background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='180' height='180'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/></filter><rect width='100%25' height='100%25' filter='url(%23n)'/></svg>"); }
+
+  /* ---------- stage / scenes ---------- */
+  #stage { position: absolute; inset: 0; }
+  .scene { position: absolute; inset: 0; opacity: 0; }
+  .pad { position: absolute; left: 128px; right: 128px; }
+
+  .brandbar { position: absolute; left: 128px; top: 62px; display: flex; align-items: center; gap: 15px; }
+  .brandbar .dot { width: 22px; height: 22px; border-radius: 50%;
+    background: radial-gradient(circle at 34% 30%, #b9f7e6, var(--mint)); box-shadow: 0 0 22px rgba(89,226,194,0.55); }
+  .brandbar .wm { font-weight: 700; letter-spacing: 0.22em; font-size: 21px; color: rgba(246,247,252,0.92); }
+  .tagbar { position: absolute; right: 128px; top: 66px; font-weight: 700; letter-spacing: 0.2em;
+    font-size: 16px; color: var(--muted); }
+
+  .eyebrow { font-weight: 700; letter-spacing: 0.34em; font-size: 22px; color: var(--mint);
+    text-transform: uppercase; }
+  .title { font-weight: 700; letter-spacing: -0.02em; line-height: 1.02; color: var(--white); }
+  .sub { color: var(--muted); font-weight: 500; letter-spacing: -0.01em; }
+
+  .anim { will-change: transform, opacity; }
+
+  /* found scene */
+  .clock { font-weight: 600; font-size: 26px; letter-spacing: 0.06em; color: rgba(246,247,252,0.72);
+    display: flex; align-items: center; gap: 14px; }
+  .clock .live { width: 11px; height: 11px; border-radius: 50%; background: #ff6b6b; box-shadow: 0 0 16px rgba(255,107,107,0.8); }
+  .chip { display: inline-flex; align-items: center; gap: 12px; padding: 15px 26px; border-radius: 999px;
+    background: rgba(112,119,255,0.14); border: 1.5px solid rgba(112,119,255,0.5); font-weight: 700;
+    letter-spacing: 0.14em; font-size: 21px; color: #eef0ff; }
+  .chip .pill { width: 9px; height: 9px; border-radius: 50%; background: var(--accent-2); }
+
+  /* checklist scene */
+  .rowlist { position: absolute; left: 128px; right: 128px; }
+  .row { display: flex; align-items: center; gap: 30px; padding: 22px 30px; border-radius: 22px;
+    background: var(--panel); border: 1.5px solid var(--panel-line); margin-bottom: 20px; will-change: transform, opacity; }
+  .row .idx { flex: 0 0 66px; height: 66px; border-radius: 18px; display: flex; align-items: center; justify-content: center;
+    font-weight: 700; font-size: 27px; color: #eef0ff; background: rgba(112,119,255,0.18); border: 1.5px solid rgba(112,119,255,0.45); }
+  .row .rtxt { font-weight: 650; font-size: 34px; letter-spacing: -0.01em; color: #eef1f8; }
+  .row .rtxt small { display: block; font-size: 19px; font-weight: 500; letter-spacing: 0.01em; color: var(--muted); margin-top: 4px; }
+  .row .check { margin-left: auto; width: 40px; height: 40px; }
+
+  /* problem scene — one node splits to five */
+  .netwrap { position: absolute; left: 0; right: 0; top: 300px; height: 470px; }
+  .node { position: absolute; border-radius: 50%; will-change: transform, opacity; }
+  .node.core { width: 128px; height: 128px; left: 896px; top: 40px;
+    background: radial-gradient(circle at 38% 32%, #cfd2ff, var(--accent)); box-shadow: 0 0 60px rgba(112,119,255,0.6); }
+  .node.leaf { width: 92px; height: 92px;
+    background: radial-gradient(circle at 38% 32%, #b9f7e6, var(--mint)); box-shadow: 0 0 40px rgba(89,226,194,0.5); }
+  .edge { position: absolute; height: 2.5px; transform-origin: left center; border-radius: 2px;
+    background: linear-gradient(90deg, rgba(112,119,255,0.85), rgba(89,226,194,0.35)); will-change: transform, opacity; }
+  .nodelabel { position: absolute; transform: translateX(-50%); text-align: center; font-weight: 600;
+    font-size: 23px; letter-spacing: -0.01em; color: #e3e7f2; white-space: nowrap; will-change: transform, opacity;
+    text-shadow: 0 2px 14px rgba(0,0,0,0.7); }
+  .node.core .corelabel { position: absolute; left: 50%; top: 50%; transform: translate(-50%,-50%);
+    font-weight: 700; font-size: 21px; color: #0a0c16; letter-spacing: 0.01em; }
+
+  /* reveal / close brand scene */
+  .logoBig { display: flex; align-items: center; gap: 34px; }
+  .logoBig .lgdot { width: 118px; height: 118px; border-radius: 50%;
+    background: radial-gradient(circle at 34% 30%, #ccfff2, var(--mint)); box-shadow: 0 0 70px rgba(89,226,194,0.55); }
+  .wordmark { font-weight: 700; font-size: 118px; letter-spacing: -0.03em; }
+  .footerchip { display: inline-flex; align-items: center; gap: 14px; padding: 18px 34px; border-radius: 16px;
+    background: rgba(255,255,255,0.06); border: 1.5px solid rgba(255,255,255,0.14); font-weight: 700; font-size: 27px; color: #eef1f8; }
+  .footerchip .arrow { color: var(--mint); }
+
+  /* codex scene */
+  .chiprow { display: flex; flex-wrap: wrap; gap: 16px; }
+  .tchip { padding: 15px 28px; border-radius: 14px; background: rgba(112,119,255,0.13);
+    border: 1.5px solid rgba(112,119,255,0.42); font-weight: 700; font-size: 25px; color: #eef0ff; will-change: transform, opacity; }
+  .note { display: inline-flex; align-items: center; gap: 16px; padding: 20px 30px; border-radius: 16px;
+    background: rgba(255,255,255,0.05); border: 1.5px solid rgba(255,255,255,0.12); font-weight: 600; font-size: 29px; color: #d7dbe8; }
+  .cursor { display: inline-block; width: 15px; height: 30px; background: var(--mint); border-radius: 2px; margin-left: 2px; vertical-align: -4px; }
+  .foot { position: absolute; left: 128px; bottom: 70px; font-weight: 700; letter-spacing: 0.14em; font-size: 18px; color: var(--muted); }
+  .hairline { position: absolute; left: 128px; right: 128px; height: 1px; background: rgba(255,255,255,0.10); }
+</style>
+
+<div id="bg">
+  <div class="blob" id="b1"></div>
+  <div class="blob" id="b2"></div>
+  <div class="blob" id="b3"></div>
+  <div id="grid"></div>
+  <div id="vignette"></div>
+  <div id="grain"></div>
+</div>
+<div id="stage"></div>
+
+<script>
+// ---------------------------------------------------------------------------
+// Deterministic film engine. Every visual is a pure function of time t
+// (seconds). Playwright sets window.render(t) per frame and screenshots — no
+// CSS transitions, so each captured frame is exact and reproducible.
+// ---------------------------------------------------------------------------
+const phase = new URLSearchParams(location.search).get("phase") || "intro";
+const stage = document.getElementById("stage");
+
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const easeOutCubic = (x) => 1 - Math.pow(1 - x, 3);
+const easeOutQuint = (x) => 1 - Math.pow(1 - x, 5);
+const easeInOutCubic = (x) => (x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2);
+const easeOutBack = (x) => { const c = 1.70158, c3 = c + 1; return 1 + c3 * Math.pow(x - 1, 3) + c * Math.pow(x - 1, 2); };
+
+// Local progress of a [start, start+dur] window at time t.
+const seg = (t, start, dur) => clamp((t - start) / dur, 0, 1);
+
+// Reveal helper: fades + slides an element in, then optionally out.
+function reveal(el, t, o) {
+  const { inAt, inDur = 0.62, dy = 22, ease = easeOutCubic, outAt = null, outDur = 0.4, scale = 1 } = o;
+  const pin = ease(seg(t, inAt, inDur));
+  let a = pin, ty = (1 - pin) * dy;
+  if (outAt !== null) {
+    const pout = easeInOutCubic(seg(t, outAt, outDur));
+    a *= 1 - pout;
+    ty += pout * -14;
+  }
+  el.style.opacity = a.toFixed(4);
+  const s = scale !== 1 ? ` scale(${(1 - (1 - scale) * (1 - pin)).toFixed(4)})` : "";
+  el.style.transform = `translateY(${ty.toFixed(2)}px)${s}`;
+}
+
+function h(tag, cls, html) {
+  const el = document.createElement(tag);
+  if (cls) el.className = cls;
+  if (html != null) el.innerHTML = html;
+  return el;
+}
+function brand(scene) {
+  const bar = h("div", "brandbar", '<span class="dot"></span><span class="wm">JOB HUNT SIGNAL</span>');
+  const tag = h("div", "tagbar", phase === "outro" ? "OPENAI BUILD WEEK" : "BUILD WEEK DEMO");
+  scene.appendChild(bar); scene.appendChild(tag);
+  return { bar, tag };
+}
+const CHECK = '<svg viewBox="0 0 24 24" width="40" height="40" fill="none"><circle cx="12" cy="12" r="11" stroke="rgba(89,226,194,0.5)" stroke-width="1.5"/><path d="M7 12.5l3.2 3.2L17 8.5" stroke="#59e2c2" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+
+// ---------------------------------------------------------------------------
+// Scene construction
+// ---------------------------------------------------------------------------
+const R = [];          // render callbacks: fn(t)
+const sceneEl = {};
+
+function makeScene(id) {
+  const el = h("div", "scene"); el.id = "sc-" + id; stage.appendChild(el); sceneEl[id] = el; return el;
+}
+// Master crossfade for a scene window [a,b]. Fade-out begins exactly at b, and the
+// next scene's a === this b, so consecutive scenes dissolve into each other with no
+// blank frame between them.
+function sceneAlpha(t, a, b) {
+  const fin = easeInOutCubic(seg(t, a, 0.5));
+  const fout = 1 - easeInOutCubic(seg(t, b, 0.5));
+  return Math.min(fin, fout);
+}
+
+if (phase === "intro") {
+  // ----- Scene 1: found (0.0 – 4.6) -----
+  (() => {
+    const s = makeScene("found"); brand(s);
+    const clock = h("div", "clock anim", '<span class="live"></span> 11:47 PM · still awake');
+    clock.style.cssText += "position:absolute;left:128px;top:352px;";
+    const t1 = h("div", "title anim"); t1.style.cssText = "position:absolute;left:128px;top:404px;font-size:104px;max-width:1500px;";
+    t1.innerHTML = "You found a role<br>worth the effort.";
+    s.append(clock, t1);
+    R.push((t) => {
+      s.style.opacity = sceneAlpha(t, 0.0, 5.9);   // held through "…worth the effort."
+      reveal(clock, t, { inAt: 0.35, dy: 14 });
+      reveal(t1, t, { inAt: 0.8, inDur: 0.9, dy: 40, ease: easeOutQuint });
+    });
+  })();
+
+  // ----- Scene 2: the real work — kinetic checklist (4.6 – 21.6) -----
+  (() => {
+    const s = makeScene("work"); brand(s);
+    const eye = h("div", "eyebrow anim", "NOW THE REAL WORK BEGINS");
+    eye.style.cssText += "position:absolute;left:128px;top:150px;";
+    const t1 = h("div", "title anim"); t1.style.cssText = "position:absolute;left:128px;top:196px;font-size:66px;max-width:1500px;";
+    t1.innerHTML = "The work behind one application.";
+    const list = h("div", "rowlist"); list.style.top = "320px";
+    const ITEMS = [
+      ["01", "Judge the fit", "Is this genuinely worth tonight?"],
+      ["02", "Prove every claim", "Back each requirement with evidence"],
+      ["03", "Find the right people", "Peers, a manager, a recruiter"],
+      ["04", "Ask for referrals", "One grounded note per person"],
+      ["05", "Remember every follow-up", "Dates, replies, next steps"],
+    ];
+    const rows = ITEMS.map(([i, a, b]) => {
+      const r = h("div", "row anim");
+      r.append(h("div", "idx", i), h("div", "rtxt", `${a}<small>${b}</small>`), h("div", "check", CHECK));
+      list.appendChild(r); return r;
+    });
+    s.append(eye, t1, list);
+    // Each row lands as the narrator says its verb (word-level timings from the VO).
+    const AT = [8.25, 9.35, 11.0, 12.5, 14.35];
+    R.push((t) => {
+      s.style.opacity = sceneAlpha(t, 5.9, 16.6);
+      reveal(eye, t, { inAt: 5.95, dy: 12 });
+      reveal(t1, t, { inAt: 6.15, inDur: 0.6, dy: 24, ease: easeOutQuint });
+      rows.forEach((r, k) => {
+        const at = AT[k];
+        reveal(r, t, { inAt: at, inDur: 0.5, dy: 30, ease: easeOutQuint });
+        const chk = r.querySelector(".check");
+        chk.style.opacity = easeOutCubic(seg(t, at + 0.42, 0.4)).toFixed(3);
+      });
+    });
+  })();
+
+  // ----- Scene 3: one role fans out into five labelled jobs (13.0 – 18.8) -----
+  (() => {
+    const s = makeScene("problem"); brand(s);
+    const t1 = h("div", "title anim"); t1.style.cssText = "position:absolute;left:128px;top:132px;font-size:62px;max-width:1550px;";
+    t1.innerHTML = '<span style="color:#c4cade">One opening quietly became</span> five more jobs.';
+    // Constellation geometry (all in body coordinates; netwrap is a full-width layer).
+    const NET_TOP = 250, CORE_LEFT = 900, CORE_TOP = 236, CORE_R = 60, LEAF_R = 44, RAD = 236;
+    const cx = CORE_LEFT + CORE_R, cy = NET_TOP + CORE_TOP + CORE_R; // core center, body coords
+    const net = h("div", "netwrap"); net.style.top = NET_TOP + "px";
+    const core = h("div", "node core anim");
+    core.appendChild(h("div", "corelabel", "1 role"));
+    net.appendChild(core);
+    const LABELS = ["Judge fit", "Prove claims", "Find people", "Ask referrals", "Track follow-ups"];
+    const leaves = [], edges = [];
+    for (let k = 0; k < 5; k++) {
+      const ang = (-90 + k * 72) * Math.PI / 180;
+      const lx = cx + Math.cos(ang) * RAD, ly = cy + Math.sin(ang) * RAD;
+      const leaf = h("div", "node leaf anim");
+      const label = h("div", "nodelabel", LABELS[k]);
+      label.style.left = lx + "px";
+      label.style.top = (ly - NET_TOP + LEAF_R + 16) + "px";
+      leaves.push({ x: lx, y: ly, el: leaf, label });
+      net.append(leaf, label);
+      const edge = h("div", "edge");   // origin at the core centre (net-local coords)
+      edge.style.cssText += `left:${cx}px;top:${cy - NET_TOP}px;width:${RAD}px;transform:rotate(${ang}rad) scaleX(0);`;
+      net.appendChild(edge); edges.push(edge);
+    }
+    s.append(t1, net);
+    R.push((t) => {
+      s.style.opacity = sceneAlpha(t, 16.6, 20.6);
+      reveal(t1, t, { inAt: 16.75, inDur: 0.6, dy: 22, ease: easeOutQuint });
+      // core pops, then breathes
+      const cp = easeOutBack(seg(t, 16.95, 0.55));
+      const pulse = 1 + 0.035 * Math.sin((t - 16.95) * 4.2);
+      core.style.opacity = clamp(cp, 0, 1).toFixed(3);
+      core.style.left = CORE_LEFT + "px"; core.style.top = CORE_TOP + "px";
+      core.style.transform = `scale(${(clamp(cp, 0, 1) * pulse).toFixed(4)})`;
+      const sx = cx - LEAF_R, sy = (cy - NET_TOP) - LEAF_R;       // start at core centre
+      leaves.forEach((leaf, k) => {
+        const at = 17.35 + k * 0.24;
+        // One shared progress drives both the circle's travel and its line length,
+        // so the circle always sits exactly on the tip of its line.
+        const p = easeOutCubic(seg(t, at, 0.58));
+        const ex = leaf.x - LEAF_R, ey = (leaf.y - NET_TOP) - LEAF_R;
+        leaf.el.style.opacity = easeOutCubic(seg(t, at, 0.28)).toFixed(3);
+        leaf.el.style.left = (sx + (ex - sx) * p) + "px";
+        leaf.el.style.top = (sy + (ey - sy) * p) + "px";
+        edges[k].style.opacity = (Math.min(p * 1.6, 1) * 0.7).toFixed(3);
+        edges[k].style.transform = `rotate(${(-90 + k * 72) * Math.PI / 180}rad) scaleX(${p.toFixed(3)})`;
+        reveal(leaf.label, t, { inAt: at + 0.45, inDur: 0.5, dy: 12 });
+      });
+    });
+  })();
+
+  // ----- Scene 4: brand reveal (26.6 – 30.0) -----
+  (() => {
+    const s = makeScene("reveal");
+    const wrap = h("div"); wrap.style.cssText = "position:absolute;left:128px;top:392px;";
+    const logo = h("div", "logoBig anim");
+    logo.innerHTML = '<span class="lgdot"></span><span class="wordmark">Job Hunt Signal</span>';
+    const sub = h("div", "sub anim"); sub.style.cssText = "font-size:40px;margin-top:34px;";
+    sub.textContent = "One resume. Better priorities. Five possible paths.";
+    wrap.append(logo, sub); s.appendChild(wrap);
+    R.push((t) => {
+      s.style.opacity = sceneAlpha(t, 20.6, 24.7);   // holds through the crossfade into footage
+      reveal(logo, t, { inAt: 20.75, inDur: 1.0, dy: 30, ease: easeOutQuint });
+      reveal(sub, t, { inAt: 21.35, inDur: 0.9, dy: 22 });
+    });
+  })();
+}
+
+if (phase === "outro") {
+  // ----- Scene 5: built by Codex (0.0 – 20.3) -----
+  (() => {
+    const s = makeScene("codex"); brand(s);
+    const eye = h("div", "eyebrow anim", "BUILT DURING OPENAI BUILD WEEK");
+    eye.style.cssText += "position:absolute;left:128px;top:224px;";
+    const t1 = h("div", "title anim"); t1.style.cssText = "position:absolute;left:128px;top:274px;font-size:82px;max-width:1550px;";
+    t1.innerHTML = 'Built by <span style="color:#8a90ff">Codex</span>, with GPT-5.6.<span class="cursor" id="cur"></span>';
+    const chiprow = h("div", "chiprow"); chiprow.style.cssText = "position:absolute;left:128px;top:452px;max-width:1600px;";
+    const chips = ["Postgres", "FastAPI", "Next.js"].map((c) => {
+      const el = h("div", "tchip anim", c); chiprow.appendChild(el); return el;
+    });
+    const note = h("div", "note anim"); note.style.cssText = "position:absolute;left:128px;top:600px;";
+    note.innerHTML = 'Product decisions by <b style="color:#f6f7fc">&nbsp;Vasu &amp; Arpita</b>';
+    const hair = h("div", "hairline"); hair.style.top = "836px";
+    const foot = h("div", "foot", "GPT-5.6 HELPED BUILD IT · PRODUCTION FIT STAYS TRANSPARENT · NO HIDDEN SCORING");
+    s.append(eye, t1, chiprow, note, hair, foot);
+    R.push((t) => {
+      s.style.opacity = sceneAlpha(t, 0.0, 26.05);
+      reveal(eye, t, { inAt: 0.3, dy: 12 });
+      reveal(t1, t, { inAt: 0.6, inDur: 0.9, dy: 30, ease: easeOutQuint });
+      document.getElementById("cur").style.opacity = (Math.floor(t * 1.6) % 2 === 0 ? 1 : 0);
+      chips.forEach((c, k) => reveal(c, t, { inAt: 1.7 + k * 0.28, inDur: 0.6, dy: 22, ease: easeOutQuint }));
+      reveal(note, t, { inAt: 3.4, dy: 20 });
+      hair.style.opacity = easeOutCubic(seg(t, 3.8, 0.6));
+      foot.style.opacity = easeOutCubic(seg(t, 4.1, 0.6));
+    });
+  })();
+
+  // ----- Scene 6: close (20.3 – 32.3) -----
+  (() => {
+    const s = makeScene("close");
+    const wrap = h("div"); wrap.style.cssText = "position:absolute;left:128px;top:352px;";
+    const logo = h("div", "logoBig anim");
+    logo.innerHTML = '<span class="lgdot"></span><span class="wordmark">Job Hunt Signal</span>';
+    const sub = h("div", "sub anim"); sub.style.cssText = "font-size:42px;margin-top:32px;max-width:1500px;";
+    sub.textContent = "The system does the repetition. You keep the judgment.";
+    const fc = h("div", "footerchip anim"); fc.style.cssText = "position:absolute;left:128px;top:742px;";
+    fc.innerHTML = 'agentic-job-hunt.vercel.app <span class="arrow">↗</span>';
+    wrap.append(logo, sub); s.append(wrap, fc);
+    R.push((t) => {
+      s.style.opacity = sceneAlpha(t, 26.05, 36.6);
+      reveal(logo, t, { inAt: 26.3, inDur: 1.0, dy: 30, ease: easeOutQuint });
+      reveal(sub, t, { inAt: 26.9, inDur: 0.9, dy: 22 });
+      reveal(fc, t, { inAt: 27.45, dy: 18 });
+    });
+  })();
+}
+
+// ---------------------------------------------------------------------------
+// Background motion (deterministic, driven by t)
+// ---------------------------------------------------------------------------
+const b1 = document.getElementById("b1"), b2 = document.getElementById("b2"),
+      b3 = document.getElementById("b3"), grid = document.getElementById("grid");
+function bg(t) {
+  b1.style.transform = `translate(${Math.sin(t * 0.18) * 60}px, ${Math.cos(t * 0.15) * 44}px)`;
+  b2.style.transform = `translate(${Math.cos(t * 0.13) * 70}px, ${Math.sin(t * 0.17) * 50}px)`;
+  b3.style.transform = `translate(${Math.sin(t * 0.11 + 1.5) * 55}px, ${Math.cos(t * 0.12 + 1) * 40}px)`;
+  grid.style.transform = `translate(${(-t * 5) % 132}px, ${(-t * 3) % 132}px)`;
+}
+
+window.render = function (t) {
+  bg(t);
+  for (const fn of R) fn(t);
+};
+window.render(0);
+window.__ready = true;
+</script>

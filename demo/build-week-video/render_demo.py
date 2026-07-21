@@ -63,6 +63,19 @@ def round_mask(size: tuple[int, int], radius: int) -> Image.Image:
     return mask
 
 
+def glass(canvas: Image.Image, box: tuple[int, int, int, int], radius: int,
+          fill: tuple[int, int, int, int], outline: tuple[int, int, int, int] | None = None,
+          width: int = 1) -> None:
+    """Translucent rounded rectangle that actually blends on RGBA canvases.
+
+    ImageDraw only alpha-blends when the target image is RGB; on RGBA it writes the
+    alpha value into the pixel, which later collapses to a solid color on convert("RGB").
+    """
+    layer = Image.new("RGBA", canvas.size, (0, 0, 0, 0))
+    ImageDraw.Draw(layer).rounded_rectangle(box, radius=radius, fill=fill, outline=outline, width=width)
+    canvas.alpha_composite(layer)
+
+
 def paste_rounded(canvas: Image.Image, image: Image.Image, box: tuple[int, int, int, int], radius: int = 26) -> None:
     x0, y0, x1, y1 = box
     fitted = ImageOps.fit(image.convert("RGB"), (x1 - x0, y1 - y0), method=Image.Resampling.LANCZOS)
@@ -71,7 +84,7 @@ def paste_rounded(canvas: Image.Image, image: Image.Image, box: tuple[int, int, 
     sd.rounded_rectangle((x0 + 4, y0 + 16, x1 + 4, y1 + 16), radius=radius, fill=(0, 0, 0, 135))
     canvas.alpha_composite(shadow.filter(ImageFilter.GaussianBlur(16)))
     canvas.paste(fitted, (x0, y0), round_mask(fitted.size, radius))
-    ImageDraw.Draw(canvas, "RGBA").rounded_rectangle(box, radius=radius, outline=(255, 255, 255, 34), width=2)
+    glass(canvas, box, radius, (0, 0, 0, 0), outline=(255, 255, 255, 34), width=2)
 
 
 def wrap(draw: ImageDraw.ImageDraw, text: str, selected_font: ImageFont.FreeTypeFont, width: int) -> list[str]:
@@ -109,12 +122,12 @@ def card_scene(scene: dict) -> Image.Image:
         draw.text((120, y), line, font=title_font, fill=(*WHITE, 255), stroke_width=1)
         y += 106
     if scene.get("step"):
-        draw.rounded_rectangle((120, 765, 340, 827), radius=31, fill=(*ACCENT, 42), outline=(*ACCENT, 130), width=2)
+        glass(canvas, (120, 765, 340, 827), 31, (*ACCENT, 42), outline=(*ACCENT, 130), width=2)
         draw.text((160, 779), scene["step"], font=font(25, True), fill=(*WHITE, 245))
     if scene.get("accent"):
-        draw.rounded_rectangle((120, 766, 462, 833), radius=33, fill=(*ACCENT, 48), outline=(*ACCENT, 140), width=2)
+        glass(canvas, (120, 766, 462, 833), 33, (*ACCENT, 48), outline=(*ACCENT, 140), width=2)
         draw.text((158, 784), scene["accent"], font=font(22, True), fill=(*WHITE, 245))
-    draw.line((120, 932, 1800, 932), fill=(*WHITE, 24), width=1)
+    glass(canvas, (120, 931, 1800, 933), 1, (255, 255, 255, 24))
     draw.text((120, 961), "THE JOB SEARCH BREAKS BEFORE APPLY", font=font(19, True), fill=(*MUTED, 190))
     return canvas
 
@@ -129,7 +142,7 @@ def brand_scene(scene: dict) -> Image.Image:
     subtitle = scene.get("subtitle", "")
     draw.text((164, 584), subtitle, font=font(35), fill=(*MUTED, 255))
     if scene.get("footer"):
-        draw.rounded_rectangle((158, 747, 766, 819), radius=36, fill=(255, 255, 255, 12), outline=(255, 255, 255, 35), width=1)
+        glass(canvas, (158, 747, 766, 819), 36, (255, 255, 255, 12), outline=(255, 255, 255, 35), width=1)
         draw.text((195, 766), scene["footer"], font=font(26, True), fill=(*WHITE, 235))
     return canvas
 
@@ -170,7 +183,7 @@ def collage_scene(scene: dict) -> Image.Image:
     paste_rounded(canvas, assets[0], (82, 190, 1010, 712), 22)
     paste_rounded(canvas, assets[1], (906, 118, 1825, 635), 22)
     paste_rounded(canvas, assets[2], (644, 560, 1572, 1026), 22)
-    draw.rounded_rectangle((115, 742, 730, 946), radius=24, fill=(5, 7, 13, 224), outline=(*ACCENT, 70), width=2)
+    glass(canvas, (115, 742, 730, 946), 24, (5, 7, 13, 224), outline=(*ACCENT, 70), width=2)
     title_font = font(51, True)
     y = 776
     for line in wrap(draw, scene["title"], title_font, 548):
@@ -192,10 +205,10 @@ def codex_scene(scene: dict) -> Image.Image:
     x = 115
     for chip in chips:
         width = ImageDraw.Draw(canvas).textbbox((0, 0), chip, font=font(24, True))[2] + 58
-        draw.rounded_rectangle((x, 574, x + width, 636), radius=31, fill=(*ACCENT, 38), outline=(*ACCENT, 105), width=2)
+        glass(canvas, (x, 574, x + width, 636), 31, (*ACCENT, 38), outline=(*ACCENT, 105), width=2)
         draw.text((x + 29, 591), chip, font=font(24, True), fill=(*WHITE, 245))
         x += width + 18
-    draw.rounded_rectangle((115, 755, 927, 838), radius=22, fill=(255, 255, 255, 12), outline=(255, 255, 255, 28), width=1)
+    glass(canvas, (115, 755, 927, 838), 22, (255, 255, 255, 12), outline=(255, 255, 255, 28), width=1)
     draw.text((151, 781), scene["note"], font=font(29, True), fill=(*MUTED, 245))
     draw.text((115, 931), "GPT-5.6 HELPED BUILD IT · PRODUCTION FIT REMAINS TRANSPARENT", font=font(18, True), fill=(*MUTED, 190))
     return canvas

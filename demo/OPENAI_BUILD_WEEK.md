@@ -1,13 +1,14 @@
 # OpenAI Build Week — paste-ready submission
 
-This file contains the final project copy plus the YouTube URL that must be
-added after the current demo is uploaded.
+This file contains the final project copy and the current public YouTube URL.
+If the refined submission cut is uploaded as a new video, replace that URL
+before submitting the Devpost entry.
 
 ## Submission fields
 
 **Project name:** Job Hunt Signal
 
-**Tagline:** Turn one résumé into a ranked, evidence-backed job pipeline and a five-person referral plan.
+**Tagline:** Turn one résumé into a ranked, evidence-backed job pipeline and a five-person outreach plan.
 
 **Category:** Apps for Your Life
 
@@ -218,10 +219,11 @@ loop.
 - [x] Submitter type set to Team of Individuals and country set to India.
 - [ ] Arpita must join the Devpost project using the private team link and
   confirm the invitation before submission.
-- [ ] Record the current product using
+- [x] Record the current product using
   [`demo/OPENAI_BUILD_WEEK_VIDEO.md`](OPENAI_BUILD_WEEK_VIDEO.md).
-- [ ] Upload the video publicly to YouTube and paste its URL above.
+- [ ] Upload the refined submission cut publicly to YouTube and update the URL
+  above if the video ID changes.
 - [x] Primary `/feedback` Codex Session ID recorded.
 - [ ] Keep the hosted app free and available through the judging period.
-- [ ] Replace `REPLACE_WITH_VIDEO_ID`, preview the entry, then submit before
-  July 21, 2026 at 5:00 PM Pacific Time.
+- [ ] Preview the complete entry and submit it before July 21, 2026 at 5:00 PM
+  Pacific Time.

@@ -1,0 +1,23 @@
+[S1 @ 0.4-26.0]
+It's almost midnight, and Vasu just found a backend role at Amazon worth the effort. Now the real work begins. Judge the fit. Prove every claim. Find the right people. Write five real messages. Remember every follow-up. One opening quietly became five more jobs—so which role actually deserves tonight?
+
+[S2 @ 30.2-52.2]
+Job Hunt Signal starts with a single resume. Vasu's experience becomes one private, reusable profile: AWS event pipelines, OAuth, SCIM, production debugging, evidence-backed achievements. The original file is discarded after extraction, and the app only asks for context a resume cannot know.
+
+[S3 @ 52.7-77.3]
+Then he opens Today—a ranked action queue, not another feed. First-party openings are cleaned, deduplicated, and balanced across companies, each card explaining eligibility, confidence, matching evidence, and real gaps. Here is the actual Amazon opening, marked Promising because the saved description overlaps his approved evidence.
+
+[S4 @ 77.7-85.0]
+Inside the dossier, every requirement is checked before materials unlock. When proof is missing, the claim stays unsupported and the materials stay locked. That is the feature.
+
+[S5 @ 85.3-110.0]
+A strong application still disappears without a human path. So Job Hunt Signal finds up to five appropriate people—peers, a manager, a recruiter—and keeps the public source beside every lead. It drafts a distinct, grounded note for each one. Vasu verifies, edits, and sends it himself. The app invents nobody and sends nothing on its own.
+
+[S6 @ 110.3-120.7]
+Applications, outreach, follow-ups, and next dates live on one durable timeline. Weekly Review shows real movement without calling silence a rejection. A spreadsheet remembers rows; this system remembers decisions.
+
+[S7 @ 121.0-141.0]
+Job Hunt Signal was built by Codex, using GPT-5.6—across Postgres, FastAPI, and Next.js. Vasu and Arpita made the product calls: fit first, five evidence-backed paths, resume-first onboarding, normal accounts, no invented claims. GPT-5.6 helped build the product; it does not secretly score users in production.
+
+[S8 @ 141.3-152.6]
+The system does the repetition and the grounding. Vasu keeps the judgment, the relationships, and the final click. One resume. Better priorities.

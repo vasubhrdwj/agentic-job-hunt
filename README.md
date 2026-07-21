@@ -1,7 +1,7 @@
 # Job Hunt Signal
 
 Turn one résumé into a ranked, evidence-backed job pipeline and a five-person
-referral plan.
+outreach plan.
 
 [Live app](https://agentic-job-hunt.vercel.app) ·
 [OpenAI Build Week submission copy](demo/OPENAI_BUILD_WEEK.md) ·
@@ -57,7 +57,7 @@ worker, and UI without calling Google, SerpAPI, or Phoenix.
 3. Sign in at <http://localhost:3000> with the generated credentials.
 4. Open **Profile** to inspect the parsed synthetic résumé, extracted skills,
    and ready-to-use evidence.
-5. Open **Search**, select the seeded backend search, and choose **Scan roles**.
+5. Open **Saved searches**, select the seeded backend search, and choose **Scan roles**.
 6. Open **Today** to see fit-ranked roles; pursue one to create its dossier.
 7. In **People**, start contact research. Mock mode produces a deterministic
    source-backed bench of up to five people and a distinct draft for each.
@@ -67,6 +67,11 @@ The seed utility is dependency-free and calls only public application APIs.
 See [the demo seed notes](fixtures/DEMO_WORKSPACE.md). Résumé identities,
 people, and outcome claims in the demo data are synthetic; mock results are not
 live hiring leads.
+
+Provider-free role scanning and fit assessment also work in the hosted app. A
+fresh hosted account needs the optional SerpAPI integration for live public
+profile discovery; use `USE_MOCKS=1` locally for the complete deterministic
+five-person People workflow without a paid key.
 
 ## Clean-clone setup with Docker (recommended)
 
