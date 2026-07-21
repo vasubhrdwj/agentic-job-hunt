@@ -1,605 +1,308 @@
 # Job Hunt Signal
 
-A private job-search copilot that turns a saved profile into a ranked, actionable
-pipeline. It scans a curated set of first-party company boards, removes stale or
-location-ineligible roles, ranks the complete result set by transparent fit,
-prepares grounded application and interview material, and finds up to five
-source-backed outreach leads for each pursued role. Weak evidence is shown as a
-gap instead of being invented. The owner still reviews claims and personally
-submits applications or sends messages; the app does the research, ordering,
-grounding, drafting, and follow-up organization around those decisions.
+Turn one résumé into a ranked, evidence-backed job pipeline and a five-person
+referral plan.
 
-> Submission for the Arize × Google hackathon (Gemini 3 + Agent Builder + Phoenix).
-> **Live app:** https://agentic-job-hunt.vercel.app · **Demo video:** _[add link after upload]_ · **Writeup:** [demo/DEVPOST.md](demo/DEVPOST.md)
+[Live app](https://agentic-job-hunt.vercel.app) ·
+[OpenAI Build Week submission copy](demo/OPENAI_BUILD_WEEK.md) ·
+[MIT License](LICENSE)
 
-![Round comparison: judge scores climb when self-RAG is on](demo/round_comparison.png)
+Job Hunt Signal is a multi-user job-search workspace for people who want better
+roles without rebuilding the same spreadsheet, fit analysis, résumé edits, and
+outreach plan for every application. Upload a PDF, DOCX, or TXT résumé once;
+the app extracts the useful facts, searches curated first-party job boards,
+ranks the complete result set by explainable fit, and prepares grounded next
+steps for each role.
 
-*Same resume, same criteria, judge held constant — round 2 retrieves the agent's best past drafts from Phoenix as exemplars. Drafter: Gemini 3.5 Flash (production config), gap +0.39. The same loop lifts the weaker Gemini 2.5 Flash drafter by [+0.81](demo/round_comparison_gemini25.md) — the agent's own memory helps weaker writers most. Regenerate with `python scripts/compare_rounds.py`.*
+The product does the repetitive research and drafting. The job seeker remains
+the person who applies and sends messages.
 
-## Install
+## What it does
 
-```bash
-python -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-cp .env.example .env  # fill in GOOGLE_API_KEY, SERPAPI_API_KEY, PHOENIX_*
-```
+- Parses an uploaded résumé into a reusable profile, skills, experience, and
+  grounded achievement evidence. The original binary file is not retained.
+- Scans first-party ATS and company career sources, normalizes postings,
+  removes stale or ineligible roles, deduplicates them, and avoids repeatedly
+  flooding the inbox with one company.
+- Sorts **Recommended** roles by actionable state, eligibility, fit band, and
+  confidence before pagination. Every assessment exposes supporting evidence,
+  uncertainty, and missing inputs instead of a mysterious score.
+- Creates an application dossier with a grounded why-fit story, requirement
+  coverage, tailored résumé changes, application answers, and interview story
+  starters. Unsupported claims stay blocked rather than being invented.
+- Finds **up to five** appropriate referral leads from public source evidence,
+  diversifies the bench, and prepares a separate grounded message for each.
+  Honest shortfalls such as `3/5 source-backed` remain visible.
+- Tracks manual sends, follow-ups, applications, interviews, corrections,
+  outcomes, overdue actions, and weekly funnel learning.
+- Gives every account a separate owner-scoped workspace, encrypted private
+  fields, immutable history, data export, and permanent deletion controls.
 
-## Practical product
+It does **not** auto-submit employer forms, auto-send messages, scrape private
+profiles, or fabricate a person, résumé claim, or job requirement.
 
-The repository has been rebuilt from a one-run hackathon demo into a private
-job-search workspace. The implementable product plan is in
-[`PRACTICAL_JOB_SEARCH_PLAN.md`](PRACTICAL_JOB_SEARCH_PLAN.md); the delivered
-foundation and first reusable job-search workflow are documented in
-[`docs/PHASE_0_FOUNDATION.md`](docs/PHASE_0_FOUNDATION.md) and
-[`docs/PHASE_1_PROFILE_SEARCH.md`](docs/PHASE_1_PROFILE_SEARCH.md). The manual,
-durable opportunity radar is documented in
-[`docs/PHASE_2_OPPORTUNITY_RADAR.md`](docs/PHASE_2_OPPORTUNITY_RADAR.md). The
-first practical application checkpoint is documented in
-[`docs/PHASE_3_APPLICATION_PIPELINE.md`](docs/PHASE_3_APPLICATION_PIPELINE.md).
-The source-backed contact bench and manual outreach workflow are documented in
-[`docs/PHASE_4_CONTACT_BENCH.md`](docs/PHASE_4_CONTACT_BENCH.md). The delivered
-provider-free grounding, application-material, and exact manual-submission
-checkpoints are documented in
-[`docs/PHASE_5_APPLICATION_PACK.md`](docs/PHASE_5_APPLICATION_PACK.md).
-Hiring progress, terminal outcomes, and the owner-local Today action center are
-documented in
-[`docs/PHASE_6_OUTCOME_LEARNING.md`](docs/PHASE_6_OUTCOME_LEARNING.md).
+## Five-minute judge walkthrough — no paid keys
 
-The delivered foundation includes migrated Postgres models, private owner
-sessions, owner-scoped generic jobs, lease/cancellation safety, capability-aware
-readiness, a bounded same-origin proxy, generated API contracts, and mandatory
-Postgres CI gates. Practical hunt requests, results, outcomes, and generic
-worker dispatch now use encrypted, owner-scoped Postgres state. SQLite remains
-only behind the explicit `ENABLE_PRACTICAL_MODE=0` development compatibility
-path.
+The hosted app has open email/password signup. For a fully deterministic local
+walkthrough, use the mock mode below; it exercises the real database, API,
+worker, and UI without calling Google, SerpAPI, or Phoenix.
 
-Phase 1 adds a persistent candidate profile, immutable encrypted resume
-versions, career targets, approval-gated achievement evidence, and saved
-searches. Phase 2 adds a search-only **Scan roles** action, stable native job
-identity, immutable posting versions, source-health warnings, deduplication
-across saved searches, and a database-only **Today** inbox. Today exposes
-unknown facts and supports durable Watch, Dismiss, and restore decisions; it
-never searches live sources, reads a resume, discovers contacts, drafts text,
-or calls a model merely because the page was opened.
+1. Start the stack with the Docker instructions below.
+2. Seed a synthetic account and workspace:
 
-Today defaults to **Recommended** ordering across the complete filtered,
-persisted result set before pagination. The order uses only visible categorical
-facts: actionable posting/decision state, eligibility, fit band, and confidence;
-companies rotate only inside an equal recommendation tier. There is no hidden
-fit percentage. **Newest** remains available as an explicit alternative. The
-cursor pins the result snapshot, filter scope, order, and assessment inputs; if
-the profile, approved evidence, posting, or decision changes between pages, the
-API returns safe refresh guidance instead of mixing two rankings. With all saved
-searches selected, each role uses the search that matched it most recently;
-selecting one search ranks only against that target.
+   ```bash
+   python3 scripts/seed_demo_workspace.py
+   ```
 
-Phase 3A adds an atomic **Pursue** decision. It creates exactly one application,
-one open dated next action, and one immutable creation activity, then exposes a
-database-only Applications list and dossier. Phase 5 extends that narrow state
-machine to `pursuing -> ready_to_apply -> applied`; every transition completes
-the prior task, creates exactly one new dated task, and appends an immutable
-activity event.
+3. Sign in at <http://localhost:3000> with the generated credentials.
+4. Open **Profile** to inspect the parsed synthetic résumé, extracted skills,
+   and ready-to-use evidence.
+5. Open **Search**, select the seeded backend search, and choose **Scan roles**.
+6. Open **Today** to see fit-ranked roles; pursue one to create its dossier.
+7. In **People**, start contact research. Mock mode produces a deterministic
+   source-backed bench of up to five people and a distinct draft for each.
+8. Continue through fit, materials, application, and follow-up checkpoints.
 
-Phase 4A–4D2 add the durable source-backed contact bench, its provider-backed worker,
-the practical dossier experience, and a safe manual-outreach workspace. Each
-pursued application can explicitly and idempotently queue a public-profile
-search, retain a 12-person
-evidence-backed discovery pool, and atomically publish a deterministic, diverse
-bench of up to five. The dossier polls real progress, preserves the last good
-bench during refresh failures, shows public evidence and checked dates, and
-reports honest shortfalls such as `3/5 source-backed`. A source snippet is not
-presented as independent employment verification. Restricted contacts and closed
-postings fail visibly closed. The outreach API pins one completed bench, unlocks
-up to five eligible distinct leads together, encrypts every exact message
-revision, and records copy and manual send assertions separately. It persists
-the five-business-day follow-up date, enforces one follow-up, 30-day person
-cooldowns, company volume limits, idempotency, and reply-driven pause/stop
-rules. Reads remain database-only and nothing sends automatically. The dossier
-adds a separate grounded draft for each person, an exact-message composer,
-clipboard-first copy tracking, separate send confirmation, follow-up timing,
-outcome logging, and pause/resume/stop controls while preserving unsaved text
-through refresh and ambiguous network failures.
+The seed utility is dependency-free and calls only public application APIs.
+See [the demo seed notes](fixtures/DEMO_WORKSPACE.md). Résumé identities,
+people, and outcome claims in the demo data are synthetic; mock results are not
+live hiring leads.
 
-Phase 5 adds a provider-free application workflow before the People workspace.
-When the pursued posting already has a usable description and the base resume
-is the only saved resume, the **Fit and evidence review** prepares
-itself without an extra start click. It
-pins that immutable resume and posting version, extracts exact `required` and
-`preferred` JD spans, maps only approved achievement evidence, and records
-explicit immutable review events. Owner-pasted descriptions and alternate
-resumes remain explicit choices, and no fit decision is auto-approved.
-**Application materials** then creates an exact tailored-resume diff, company
-note, and answers to owner-entered questions with claim-level evidence or
-pinned-JD provenance. Unanswerable questions stay visibly blocked; approving
-one exact revision creates an immutable non-base resume version. Finally, the
-manual-application checklist records `ready_to_apply` and `applied` only against
-those exact reviewed materials, a persisted verified first-party destination,
-the owner-local applied date, and the next follow-up. Nothing fills or submits
-an employer form, and reads never generate or call a model/provider.
+## Clean-clone setup with Docker (recommended)
 
-Phase 6A records confirmed recruiter screens, interviews, offers, and explicit
-terminal outcomes without rewriting the exact submission. Every active role
-retains one dated task, while a closed role has a durable outcome and no phantom
-next action. Today now loads a separate owner-local action center before the
-opportunity inbox, grouping overdue, due-today, and next-seven-day application
-work with direct dossier links and complete bucket counts. Interview
-appointments now have stable round IDs and immutable reschedule/completion/
-cancellation history; the current appointment owns the Today preparation task,
-and only a completed first round advances the hiring funnel. If a coarse
-screening, manually recorded interview, or offer date was entered incorrectly,
-Activity can now append a dated correction while keeping the original and every
-prior correction visible. The current stage, task, submission, and outcome are
-not rewritten, and later milestones validate against the corrected date. Manual
-outreach replies are also stored as their own immutable history. Each one is
-linked to the exact initial or follow-up send and exact saved message version,
-with an owner-local received date and encrypted optional note. Late and multiple
-replies remain recordable after a no-reply result, closed posting, completed
-sequence, or later hiring progress without re-enabling outbound messages.
-
-Phase 6B adds a practical **Weekly review**. It surfaces every overdue
-application without treating silence as rejection, then records an explicit
-Continue or Waiting decision against the exact current action and next date.
-Its fixed 14-day application funnel keeps sample sizes, recent censored work,
-missing attribution, and late conversions visible. Source, career-track, and
-assessment segments use immutable pursuit-time snapshots only. Outreach is
-reported by source-evidence contact type and bench position, while contacts two
-through five are shown as observed rescue rates—not causal uplift—from exact
-initial and follow-up replies.
-
-Phase 6C adds deterministic **Interview preparation** inside each submitted
-application dossier. It pins prompts to the exact submission, posting version,
-reviewed requirements, approved evidence snapshots, and scheduled interview
-round/version. STAR fields remain blank until the owner writes them, private
-notes are encrypted and revisioned, and missing evidence is shown as a blocker
-instead of being replaced with invented prose. A changed round or evidence
-snapshot leaves the prior draft readable but stale and read-only.
-
-Phase 6C also turns `/privacy` into an authenticated data-control workspace.
-It downloads deterministic, machine-readable owner data without stored
-ciphertext or security metadata; applies a versioned 1–30 day policy to legacy
-hunt runs; previews the exact local deletion graph; and permanently deletes the
-owner workspace only after an exact typed confirmation and retry-safe request.
-Deletion revokes every owner session while leaving other owners and system
-state untouched. See [the privacy-control contract](docs/PHASE_6_PRIVACY_CONTROLS.md)
-for export omissions, provider-side limits, and downgrade safety.
-
-The separate **Legacy hunt archive** is read-only for retained historical runs;
-it cannot start new provider work. New job-search work uses saved searches,
-Today, applications, source-backed People results, and grounded drafts. Saved
-search cadences are timezone-correct and enqueue durable role scans while the
-background service is awake. On free hosting, sleep can defer a scheduled slot
-until the next app visit; **Scan roles** remains the exact on-demand path.
-
-For the local multi-user workspace:
+Supported: Docker Desktop/Compose on macOS, Linux, or Windows. The commands
+below use a macOS/Linux shell. Prerequisites are Git, Docker, and optional
+Python 3 for the seed command.
 
 ```bash
+git clone https://github.com/vasubhrdwj/agentic-job-hunt.git
+cd agentic-job-hunt
 cp .env.example .env
-# Replace POSTGRES_PASSWORD= with the output of: openssl rand -hex 24
-# Generate JOB_HUNT_DATA_KEYS as described in .env.example.
-docker compose build migrate web worker
+
+POSTGRES_PASSWORD="$(openssl rand -hex 24)"
+DATA_KEY="$(openssl rand -base64 32 | tr '+/' '-_' | tr -d '\n')"
+PRIVACY_SECRET="$(openssl rand -hex 32)"
+
+sed -i.bak "s/^POSTGRES_PASSWORD=.*/POSTGRES_PASSWORD=${POSTGRES_PASSWORD}/" .env
+sed -i.bak "s|^JOB_HUNT_DATA_KEYS=.*|JOB_HUNT_DATA_KEYS=v1:${DATA_KEY}|" .env
+sed -i.bak "s/^JOB_HUNT_PRIVACY_RECEIPT_SECRET=.*/JOB_HUNT_PRIVACY_RECEIPT_SECRET=${PRIVACY_SECRET}/" .env
+sed -i.bak "s/^USE_MOCKS=.*/USE_MOCKS=1/" .env
+rm -f .env.bak
+
+docker compose up --build -d
+docker compose ps
+```
+
+Open <http://localhost:3000>. Compose starts Postgres 16, applies every Alembic
+migration, then starts FastAPI, the durable worker, and the Node 20/Next.js
+frontend. New account passwords must contain at least 12 characters.
+
+Stop the stack with `docker compose down`. Add `-v` only if you intentionally
+want to delete the local database volume.
+
+### Environment variables
+
+For the local Docker demo, only a URL-safe `POSTGRES_PASSWORD` is strictly
+required. The setup above also creates stable local encryption and privacy
+secrets so restarts remain reproducible.
+
+| Variable | When needed | Purpose |
+| --- | --- | --- |
+| `POSTGRES_PASSWORD` | Local Docker, required | Password used by the Compose Postgres service. |
+| `DATABASE_URL` | Host-run or hosted backend, required | SQLAlchemy Postgres URL shared by web and worker. |
+| `JOB_HUNT_DATA_KEYS` | Hosted, required; local recommended | `key-id:Fernet-key` entries used to encrypt private fields. |
+| `JOB_HUNT_PRIVACY_RECEIPT_SECRET` | Hosted, required; local recommended | Stable 32+ character secret for deletion receipts and auth throttling. |
+| `ALLOWED_ORIGINS` | Required | Exact frontend origins allowed to make browser mutations. |
+| `JOB_HUNT_SIGNUP_MODE` | Required for new users | Set to `open` for judge/local signup. |
+| `USE_MOCKS` | Free deterministic demo | Set to `1`; no provider account or API key is needed. |
+| `SERPAPI_API_KEY` | Optional | Enables live public-profile contact discovery. Role scanning does not need it. |
+| `GOOGLE_API_KEY` | Optional legacy pipeline only | Enables the older Google ADK/Gemini hunt and evaluation path. |
+| `PHOENIX_API_KEY`, `PHOENIX_COLLECTOR_ENDPOINT` | Optional | Enables legacy tracing and self-RAG experiments. |
+
+The practical résumé parser, first-party role scanner, fit assessment,
+application grounding, and default message preparation do not require a paid
+model API. Never commit a populated `.env` file.
+
+## Manual development setup
+
+Prerequisites: Python 3.13, Node.js 20, npm, and Postgres 16. The shortest
+manual path still uses the Compose database:
+
+```bash
+git clone https://github.com/vasubhrdwj/agentic-job-hunt.git
+cd agentic-job-hunt
+cp .env.example .env
+# Set POSTGRES_PASSWORD, JOB_HUNT_DATA_KEYS, JOB_HUNT_PRIVACY_RECEIPT_SECRET,
+# and USE_MOCKS=1 as shown in the Docker setup above.
+
 docker compose up -d postgres
-docker compose run --rm migrate
-docker compose up web worker frontend
+
+python3.13 -m venv .venv
+source .venv/bin/activate
+python -m pip install --upgrade pip
+pip install -r requirements.txt
+
+cd frontend
+npm ci
+cp .env.example .env.local
+cd ..
+
+set -a
+source .env
+set +a
+python -m alembic upgrade head
 ```
 
-Open <http://localhost:3000> and create an email/password account. Each account
-gets a separate owner-scoped profile, resume history, searches, applications,
-contacts, and outreach history. Keep `ENABLE_PRACTICAL_MODE=1` whenever real
-provider calls are possible.
-
-If `postgres_data` already exists from the old fixed-password setup, PostgreSQL
-does not change that stored role password merely because `.env` changed. Start
-only `postgres`, open `psql`, and set the `job_hunt` role to the same generated
-value saved in `.env` before starting web or worker:
+Then run these in three terminals from the repository root, with the virtual
+environment and `.env` loaded in the two backend terminals:
 
 ```bash
-docker compose up -d postgres
-docker compose exec postgres psql -U job_hunt -d job_hunt
-# In psql: \password job_hunt
-# Enter the POSTGRES_PASSWORD value twice, then run: \q
+uvicorn job_hunt_agent.api:app --reload --port 8000
 ```
-
-## Run
 
 ```bash
-python -m job_hunt_agent.run \
-  --resume fixtures/sample_resume.txt \
-  --keywords "backend engineer,software engineer,backend developer" \
-  --location "India,Remote-India,Bengaluru,Hyderabad" \
-  --seniority junior \
-  --employment-types full_time \
-  --max-age-days 45 \
-  --pack backend_india \
-  --trace
+python -m job_hunt_agent.worker
 ```
-
-Output is structured JSON: `{ run_id, roles: [...], outreach: [{ role, person, message }, ...] }`. Roles include source, employment type, posting date, source confidence, resume-fit score, and a match reason quoting real job-description evidence.
-
-Add `--trace` to emit OpenTelemetry spans to your Phoenix project, or `--use-mocks` for the no-network smoke loop. The CLI also prints the generated `run_id` so you can correlate the output with a Phoenix trace.
-
-## V2 evidence rules
-
-- `backend_india` contains 22 curated companies with live-verified ATS or first-party career sources.
-- Curated hunts do not fall back to paid aggregators. A failed company board degrades to an empty result and a warning.
-- Known employment-type mismatches are filtered. A posting with no explicit
-  employment evidence remains visible as `unknown` so missing source metadata
-  cannot silently hide an otherwise relevant role.
-- Referral candidates require a saved current-employer source signal and confidence
-  of at least 0.5. No source-backed candidate means no draft, plus honest guidance
-  in the UI; this threshold is not independent employment verification.
-- Past drafts are retrieved by logged outcome first (`introduced`/`replied` before neutral or `no_reply`), with judge score used only as a tiebreaker.
-
-## The self-improvement loop
-
-Three pieces close the loop; each has a verification command:
-
-1. **Seeded corpus** — 18 synthetic past drafts with a documented quality
-   rubric ([fixtures/SEED_NOTES.md](fixtures/SEED_NOTES.md)). Upload:
-   `python scripts/seed_phoenix.py --project job-hunt-agent --allow-duplicates --verify`
-2. **LLM-as-judge eval** — every draft gets four 1–5 sub-scores
-   (personalization, specificity, ask, tone); the composite is written onto
-   the draft's Phoenix span. Calibrate the judge against handwritten
-   good/bad references before trusting it:
-   `python scripts/validate_judge.py`
-3. **Self-RAG drafting** — `draft_message` queries Phoenix for the
-   top-scoring past drafts on the run's keywords (score ≥ 4) and threads
-   them into the prompt as exemplars. A/B it:
-   `PHOENIX_QUERY_LOOKBACK_HOURS=720 python scripts/compare_rounds.py --trace`
-   writes `demo/round_comparison.md` + `.png` and fails if the self-RAG
-   round doesn't beat baseline by +0.3 (gate calibrated for the Gemini 3.5
-   Flash drafter; both model's charts live in `demo/`).
-
-Dev extras (matplotlib, pytest): `pip install -r requirements-dev.txt`.
-
-## Verify the company registry
-
-The REG Definition of Done is deliberately live and strict: every active company
-must return at least one posting with a matching company identity, where the ATS
-provides one, and an apply URL on a configured careers domain.
-
-```bash
-.venv/bin/python scripts/verify_registry.py --pack backend_india --live --strict-live
-```
-
-This command performs network requests and fails on dead or unverified sources.
-`pytest tests/test_registry.py` remains hermetic and never performs live checks.
-
-## Run the API and worker
-
-FastAPI now enqueues encrypted hunt requests for a separate worker process. The
-HTTP submit path returns immediately; the worker claims the job, runs
-`run_hunt`, and atomically saves the final result.
-
-```bash
-uvicorn job_hunt_agent.api:app --reload
-python -m job_hunt_agent.worker          # second terminal, long-running loop
-python -m job_hunt_agent.worker --once   # process one queued run and exit
-```
-
-Endpoints:
-
-```
-POST   /api/accounts                { email, password, display_name, timezone }
-                                    → separate owner workspace + HttpOnly session
-POST   /api/session                 { email, password } → HttpOnly owner session
-POST   /api/accounts/claim          authenticated legacy workspace → account
-POST   /api/hunt                    { resume_text, criteria, pack, provider_consent: true }
-                                    → 202 { run_id, status: queued, access_token }
-GET    /api/runs/{run_id}           owner session cookie
-                                    → queue state, plus result/outcomes after success
-POST   /api/runs/{run_id}/cancel    owner session + allowed Origin
-POST   /api/runs/{run_id}/outcomes  owner session + allowed Origin (succeeded only)
-DELETE /api/runs/{run_id}           owner session + allowed Origin
-POST   /api/runs/{run_id}/requeue   owner session + allowed Origin (dead-letter only)
-GET/PUT /api/me/profile             owner profile + current base-resume metadata
-GET/POST /api/me/resume-versions    immutable encrypted resume versions
-GET/POST /api/me/evidence           approval-gated achievement evidence
-PATCH  /api/me/evidence/{id}        edit/review evidence with If-Match
-GET/POST /api/career-tracks         reusable career targets
-GET/PATCH/DELETE /api/career-tracks/{id}
-GET/POST /api/saved-searches        pinned criteria, resume, target, and cadence
-GET/PATCH/DELETE /api/saved-searches/{id}
-GET    /api/saved-searches/{id}/hunt-input
-                                    → provider-free exact hunt prefill
-POST   /api/saved-searches/{id}/scans
-                                    → 202 durable search-only scan (If-Match + idempotency)
-GET    /api/scans/{id}              → persisted progress, counts, and safe source warnings
-GET    /api/today                   → database-only deduplicated opportunity inbox
-GET    /api/today/application-actions
-                                    → owner-local overdue, today, and next-7-day application work
-GET    /api/opportunities/{id}      → posting facts, versions, provenance, decision history
-POST   /api/opportunities/{id}/decision
-                                    → pursue, watch, dismiss, or restore (If-Match + idempotency)
-GET    /api/applications            → database-only pursuing applications + next actions
-GET    /api/applications/{id}       → application dossier + immutable activity
-GET    /api/applications/{id}/activity
-                                    → database-only immutable activity stream
-POST   /api/applications/{id}/activity/{event_id}/corrections
-                                    → append a confirmed coarse milestone date correction
-GET    /api/applications/{id}/interview-rounds
-                                    → saved round timeline + application ETag for scheduling
-POST   /api/applications/{id}/interview-rounds
-                                    → schedule one round (application If-Match; returns round ETag)
-POST   /api/applications/{id}/interview-rounds/{round_id}/events
-                                    → reschedule, complete, or cancel (round If-Match + idempotency)
-GET    /api/applications/{id}/interview-preparation
-                                    → exact evidence-backed prompts + owner-authored STAR drafts
-POST   /api/applications/{id}/interview-preparation/revisions
-                                    → append an encrypted, versioned, retry-safe owner draft
-GET    /api/applications/{id}/application-pack
-                                    → database-only current + latest-reviewed grounding projection
-POST   /api/applications/{id}/application-packs
-                                    → pin pursued JD/resume and extract exact requirement spans
-POST   /api/applications/{id}/application-packs/{pack_id}/revisions
-                                    → save one immutable coverage/evidence review revision
-POST   /api/applications/{id}/application-packs/{pack_id}/events
-                                    → mark the exact current revision reviewed
-GET    /api/applications/{id}/contacts
-                                    → database-only contact plan, progress, bench, and evidence
-POST   /api/applications/{id}/contact-searches
-                                    → 202 durable provider search (If-Match + idempotency)
-GET    /api/applications/{id}/outreach
-                                    → database-only manual sequence, recipients, and timeline
-POST   /api/applications/{id}/outreach-sequences
-                                    → pin the completed bench and start wave 1
-POST   /api/applications/{id}/outreach-sequences/{sequence_id}/messages
-                                    → save one exact immutable message version
-POST   /api/applications/{id}/outreach-sequences/{sequence_id}/events
-                                    → record copy, manual send, outcome, pause/resume, or stop
-GET    /health                      → { ok: true }
-GET    /web-ready                   → DB + migration readiness for web traffic
-GET    /ready                       → DB migration + compatible worker readiness
-```
-
-The practical frontend does not store or require the returned access token.
-Owner-scoped run links work in a new tab or after a reload through the opaque
-HttpOnly session cookie. The response field remains temporarily for the
-development-only legacy API compatibility path.
-
-Configure persistence and CORS via env:
-
-- `DATABASE_URL` — Postgres shared by the practical web and worker processes.
-- `LEGACY_HUNT_API_MODE` — `enabled`, `read_only`, or `disabled`. Production
-  defaults to read-only; use the practical workspace for new work.
-- `LEGACY_HUNT_API_SUNSET` / `LEGACY_HUNT_DEPRECATION_URL` — validated
-  compatibility sunset metadata. The production link must use HTTPS.
-- `JOB_HUNT_SIGNUP_MODE` — `open` allows new accounts; `closed` permits only
-  existing accounts to sign in. It defaults to closed when omitted. The hosted
-  beta is open, but signup is temporarily hidden while a configured legacy
-  workspace is awaiting its one-time recovery. After recovery, that owner uses
-  normal email/password sign-in and independent new accounts can be created.
-- `JOB_HUNT_LEGACY_RECOVERY_REQUIRED` — set to `1` only during the hosted
-  one-time migration. Signup fails closed if its owner or key hash is missing.
-- `JOB_HUNT_OWNER_ID` / `JOB_HUNT_OWNER_TOKEN_HASH` — migration-only owner id
-  and SHA-256 hex digest of the old raw sign-in key. They never enable normal
-  key-based login and cannot replace an account password.
-- `JOB_HUNT_PRIVACY_RECEIPT_SECRET` — stable 32+ character server-only HMAC
-  secret so deletion idempotency survives owner-login credential rotation.
-- `JOB_HUNT_DATA_KEYS` — comma-separated `key-id:Fernet-key` values. The first
-  key encrypts new requests, results, and outcome notes; retain older keys
-  during rotation.
-- `ALLOWED_ORIGINS` — comma-separated CORS allowlist (default dev origins for localhost 3000/5173).
-- `ENABLE_TRACING` — set to `1` so API-triggered hunts emit Phoenix spans.
-- `ENABLE_TRACE_DRAFT_CONTENT` — keep `0` for user traffic. Prompts, model
-  outputs, and draft text are private by default.
-- `GEMINI_PAID_SERVICE_ACK` — production must set `1` manually after
-  confirming the Google API key uses paid Gemini quota.
-- `RETENTION_CLEANUP_INTERVAL_SECONDS` — API-triggered expired-data cleanup
-  interval. Set `3600` in production. `/health` remains a lightweight liveness
-  check during a database outage.
-- `JOB_HUNT_DB_PATH` — legacy-only SQLite path when practical mode is explicitly
-  disabled; practical production does not require or read it.
-
-`criteria` accepts `employment_types` and `max_age_days`; `pack` defaults to
-`backend_india`.
-
-Resume-bearing requests are encrypted before Postgres writes, stay available
-only while queued/running/retryable, and are erased when the worker succeeds,
-the user cancels, the request expires, or the run is deleted. Results and
-outcome notes are encrypted too, and the entire run expires after 30 days via
-API-triggered cleanup or `python -m job_hunt_agent.cleanup`. Users can cancel
-active runs or delete a run immediately from the review page. See the frontend
-`/privacy` page for provider disclosure and retention limits.
-
-Privacy mode intentionally prevents new user draft text from entering the
-shared Phoenix corpus. Self-RAG continues to use the curated seed corpus; an
-owner-scoped learning store is required before production can learn from
-individual users' drafts safely.
-
-## Operations
-
-Production and recovery procedures live in the
-[operational runbooks](docs/runbooks/README.md): backup/restore,
-deploy/rollback, source outages, incident recovery, legacy history import, and
-the truthful manual Chromium/Firefox/WebKit QA matrix. The provider-free
-deployment smoke is:
-
-```bash
-.venv/bin/python -m scripts.deployment_smoke \
-  --base-url https://jobs.example.com \
-  --expect-legacy-mode read_only
-```
-
-Pass database credentials through `DATABASE_URL` in the environment so they do
-not appear in process arguments. Backup and downgrade tools refuse unsafe
-in-place operations and require a migration-current, identity-matched archive.
-
-## Hosted deployment status
-
-`render.yaml` keeps the deployment on Render's free web tier and enables one
-embedded durable worker in that process. A user request wakes the web and
-worker together; due scheduled searches are durably enqueued on that wake, and
-interrupted leases recover after a restart. The bridge always
-supports provider-free role scans and also supports explicit contact searches
-when `SERPAPI_API_KEY` is configured. Missing contact configuration never
-disables role scans, and the bridge never claims legacy provider jobs.
-`/web-ready` gates web traffic on a reachable, migrated database; authenticated
-`/api/health` exposes the exact live capabilities.
-
-Before routing production traffic:
-
-1. Provision managed Postgres and require TLS in `DATABASE_URL` with
-   `sslmode=require`, `verify-ca`, or `verify-full`.
-2. Keep `MIGRATE_ON_START=1` for the single hosted web instance. Its startup
-   wrapper runs `python -m alembic upgrade head` and exits instead of serving if
-   migration fails. Multi-instance deployments should use one dedicated
-   migration release step instead.
-3. For the free private deployment, keep
-   `ENABLE_EMBEDDED_SCAN_WORKER=1` and
-   `JOB_HUNT_WORKER_KINDS=scan_saved_search,discover_contacts`. Contact search
-   is advertised only when its SerpAPI configuration passes runtime checks.
-   When an always-on standalone
-   worker is introduced, disable the embedded worker and give the new service
-   the same database and encryption keys.
-4. Configure the required Render environment variables, including an exact
-   HTTPS `ALLOWED_ORIGINS` entry with no trailing slash.
-5. Require the GitHub quality checks. Render is configured with
-   `autoDeployTrigger: checksPass`, so a failing commit is not auto-deployed.
-6. Monitor `https://<service>.onrender.com/web-ready` for web availability and
-   authenticated `/api/health` for scan capability. `/ready` remains the
-   strict signal for the currently active durable queue workload.
-
-Render's free web service can sleep after inactivity, so the first request may
-have a cold-start delay and unattended schedules need a separate wake
-mechanism. A paid always-on background worker remains the strong-beta topology,
-not a requirement for interactive private scans. Follow
-[the deployment runbook](docs/runbooks/deploy-rollback.md) when changing worker
-topology. Production startup rejects missing secrets, non-Postgres databases,
-localhost or wildcard CORS origins, mocks, and private draft-content tracing.
-Operators must additionally use TLS-only database and HTTPS origin settings.
-
-One-time Vercel setup:
 
 ```bash
 cd frontend
-cp .env.example .env.local
-vercel link
-vercel env add API_BASE_URL production
-vercel --prod
+npm run dev
 ```
 
-Set the server-only `API_BASE_URL` to `https://<service>.onrender.com` (shown at
-the top of the Render service page). After Vercel prints the production URL,
-update Render's `ALLOWED_ORIGINS` env var to that exact HTTPS origin without a
-trailing slash. Production rejects a missing or non-HTTPS `API_BASE_URL`
-instead of silently falling back to localhost.
+## Sample data
 
-Queued smoke test:
+- [`fixtures/sample_resume.txt`](fixtures/sample_resume.txt) — synthetic
+  backend/identity engineer résumé used by the workspace seeder.
+- [`fixtures/sample_criteria_backend.json`](fixtures/sample_criteria_backend.json)
+  — backend search criteria.
+- [`scripts/seed_demo_workspace.py`](scripts/seed_demo_workspace.py) — creates
+  a unique account, imports the résumé, and creates a career track and saved
+  search through the same APIs as the UI.
+- [`fixtures/seed_outreach.jsonl`](fixtures/seed_outreach.jsonl) — explicitly
+  synthetic legacy outreach/evaluation corpus with its rubric documented in
+  [`fixtures/SEED_NOTES.md`](fixtures/SEED_NOTES.md).
+
+## How Codex and GPT-5.6 contributed
+
+Codex was our development collaborator, not a hidden production dependency.
+Vasu used it as a tight product/engineering loop: describe a real job-search
+friction, inspect the running product, turn the feedback into a small change,
+review the diff, and commit it independently. This made it practical to evolve
+one workflow across database migrations, repositories, API contracts, UI, and
+regression coverage without losing the user problem between layers.
+
+Concrete examples:
+
+- Codex scaffolded and evolved the durable owner-scoped workflow across
+  `job_hunt_agent/models/`, Alembic migrations, repositories, routers, and the
+  generated OpenAPI/TypeScript contract.
+- It accelerated the explainable ranking path in
+  `job_hunt_agent/opportunity_assessment.py` and the persisted ordering in
+  `job_hunt_agent/opportunity_repository.py`, then connected it to Today.
+- It paired on the five-person referral workflow in
+  `job_hunt_agent/contact_search_worker.py`,
+  `job_hunt_agent/contact_search_repository.py`, and
+  `frontend/lib/grounded-outreach-drafts.ts`, including explicit evidence
+  shortfalls rather than invented contacts.
+- It helped build grounded application support in
+  `job_hunt_agent/application_pack_repository.py`,
+  `job_hunt_agent/application_artifact_repository.py`,
+  `frontend/lib/grounded-fit-story.ts`, and
+  `frontend/lib/application-materials-auto-generation.ts`.
+- It turned deployment failures across Vercel, Render, Neon Postgres,
+  migrations, CORS, and session boundaries into narrow fixes and regression
+  cases rather than one-off production workarounds.
+- It removed onboarding friction with normal email/password accounts and the
+  bounded PDF/DOCX/TXT pipeline in `job_hunt_agent/resume_ingestion.py`, atomic
+  encrypted imports, and `frontend/components/profile-workspace.tsx`.
+- During the GPT-5.6 submission pass, a GPT-5.6 Codex agent inspected the
+  public API contracts and implemented the dependency-free judge seeder in
+  `scripts/seed_demo_workspace.py` plus its sample-data guide.
+
+Vasu made the consequential product calls: focus on early-career backend and
+software-engineering searches; rank the whole inbox by fit; look for five
+appropriate people instead of one; replace a shared passkey with normal
+multi-user signup; make résumé upload the default onboarding path; minimize
+approval work; prefer free first-party sources; never invent claims or people;
+and keep the user as the final applicant and sender. Codex proposed and
+implemented alternatives under those constraints; it did not choose the
+product direction autonomously.
+
+GPT-5.6 was used through Codex for development and submission tooling. It is
+**not** the inference model serving the deployed application and does not
+process a judge's résumé. The optional legacy agent/drafting path uses Google
+ADK with Gemini 3.5 Flash and a fixed Gemini 2.5 Flash judge. The practical
+product's matching, grounding, and default drafting paths are intentionally
+deterministic and provider-free. This boundary is explicit so reviewers can
+distinguish AI-assisted engineering from runtime model usage.
+
+## What changed during OpenAI Build Week
+
+This repository existed before the event as a narrower agent demo. The last
+pre-submission-period baseline is commit
+[`31043a9`](https://github.com/vasubhrdwj/agentic-job-hunt/commit/31043a9).
+The Build Week extension starts at
+[`d1b64b1`](https://github.com/vasubhrdwj/agentic-job-hunt/commit/d1b64b1);
+the dated history and full diff are visible in the
+[Build Week comparison](https://github.com/vasubhrdwj/agentic-job-hunt/compare/31043a9...main).
+
+During that window, the project gained the durable opportunity radar,
+fit-ranked Today inbox, application dossiers, five-contact bench and outreach
+waves, application materials, interview preparation, outcome learning,
+multi-user accounts, privacy controls, free-tier scan worker, and secure
+upload-first résumé onboarding. The commit history deliberately keeps these as
+small, reviewable product slices.
+
+## Architecture
+
+```text
+Next.js 16 / React 19
+        │ same-origin bounded proxy + HttpOnly session
+        ▼
+FastAPI ─── PostgreSQL 16 (owner-scoped, encrypted private fields)
+        │
+        ├── durable scan/contact job queue ── worker
+        ├── first-party ATS/company adapters
+        ├── deterministic fit + evidence grounding
+        └── optional SerpAPI / legacy Gemini + Phoenix integrations
+```
+
+Important implementation areas:
+
+```text
+job_hunt_agent/        FastAPI, models, repositories, workers, source adapters
+frontend/              Next.js workspace and generated API client contract
+migrations/            Alembic history for the multi-user Postgres product
+fixtures/              synthetic résumé, criteria, and evaluation data
+scripts/               migrations, operations, OpenAPI, and demo seeding
+docs/                  delivered phase contracts and production runbooks
+tests/                  hermetic backend and frontend regression coverage
+```
+
+## Verification commands
+
+These are provided for judges and contributors; the hosted demo is available
+without rebuilding.
 
 ```bash
-API=http://localhost:8000  # web and worker must share DATABASE_URL
-ORIGIN=http://localhost:3000
-EMAIL=<your account email>
-PASSWORD=<your account password>
-curl $API/health
-curl -c /tmp/job-hunt-owner.cookies -X POST $API/api/session \
-  -H "Origin: $ORIGIN" \
-  -H "Content-Type: application/json" \
-  -d "{\"email\":\"$EMAIL\",\"password\":\"$PASSWORD\"}"
-curl -b /tmp/job-hunt-owner.cookies -X POST $API/api/hunt \
-  -H "Origin: $ORIGIN" \
-  -H "Content-Type: application/json" \
-  -H "Idempotency-Key: smoke-$(date +%s)" \
-  -d @fixtures/sample_hunt_request.json
+source .venv/bin/activate
+pip install -r requirements-dev.txt
+pytest -q
 
-RUN_ID=<run_id from the hunt response>
-
-python -m job_hunt_agent.worker --once
-
-curl -b /tmp/job-hunt-owner.cookies $API/api/runs/$RUN_ID
-DRAFT_ID=<draft_id from the successful GET response>
-curl -X POST $API/api/runs/$RUN_ID/outcomes \
-  -b /tmp/job-hunt-owner.cookies \
-  -H "Origin: $ORIGIN" \
-  -H "Content-Type: application/json" \
-  -d "{\"outcomes\":[{\"draft_id\":\"$DRAFT_ID\",\"outcome\":\"replied\",\"notes\":\"deploy smoke\"}]}"
+cd frontend
+npm ci
+npm test
+npm run typecheck
+npm run lint -- --max-warnings=0
+npm run api:check
+npm run build -- --webpack
 ```
 
-`/api/hunt` should return queued state promptly. The final `GET` should move
-from `queued`/`running` to `succeeded` after a provider-capable worker processes
-the run, and the outcome POST should work only after success. The free hosted
-blueprint processes saved-search scans only; contact discovery and legacy
-provider hunts still require a separately configured provider-capable worker.
-
-## Abridged response shape
-
-`POST /api/hunt` returns queue state, not the completed hunt:
-
-```json
-{
-  "run_id": "<trace-correlated id>",
-  "status": "queued",
-  "stage": "queued",
-  "attempt_count": 0,
-  "max_attempts": 3,
-  "access_token": "<returned once; send only as a bearer token>",
-  "reused": false
-}
-```
-
-After the worker succeeds, `GET /api/runs/{run_id}` returns:
-
-```json
-{
-  "run_id": "<trace-correlated id>",
-  "status": "succeeded",
-  "hunt_result": {
-    "run_id": "<trace-correlated id>",
-    "roles": [
-      {
-        "company": "<company from first-party posting>",
-        "title": "<title from posting>",
-        "url": "<first-party apply URL>",
-        "location": "<location from posting>",
-        "summary": "<posting-derived summary>",
-        "match_reason": "<resume overlap plus quoted JD evidence>",
-        "source": "greenhouse",
-        "apply_urls": ["<first-party apply URL>"],
-        "posted_at": "<source-provided date>",
-        "source_updated_at": "<source-provided last update>",
-        "employment_type": "full_time",
-        "fit_score": 0.42,
-        "confidence": 1.0
-      }
-    ],
-    "outreach": []
-  },
-  "outcomes": []
-}
-```
-
-An empty `outreach` array means no public-profile result met the source-evidence bar;
-the UI explains how to continue the search manually.
-
-## Layout
-
-```
-job_hunt_agent/        ADK agent, schemas, pipeline runner, tracing
-  api.py               FastAPI surface (enqueue, status, cancel, outcomes)
-  database.py          SQLAlchemy engine/session lifecycle and migration head
-  hunt_repository.py   Encrypted owner-scoped Postgres hunt aggregate
-  profile_repository.py Profile, resume-version, and career-target persistence
-  evidence_repository.py Encrypted approval-gated achievement evidence
-  application_pack_repository.py Provider-free JD/evidence grounding revisions
-  saved_search_repository.py Saved criteria and timezone projections
-  sqlalchemy_owner_workspace.py Transaction-owning profile/search API adapter
-  job_queue.py         Generic Postgres jobs, leases, events, and heartbeats
-  models/              Owner, profile, radar, application/outcome, contact, outreach, and pack tables
-  evals.py             LLM-as-judge draft scoring (V9)
-  mcp_client.py        Phoenix past-draft retrieval (self-RAG)
-  persistence.py       Explicit practical-mode-off SQLite compatibility path
-  worker.py            Postgres practical worker + isolated legacy dispatcher
-  tools/               search_jobs, find_referrals, draft_message (+ mocks)
-frontend/              Next.js private job-search workspace and legacy hunt UI
-fixtures/              sample resume, criteria, seed corpus, judge references
-scripts/               seed_phoenix.py, validate_judge.py, compare_rounds.py
-demo/                  round comparison chart, demo script, Devpost writeup,
-                       canonical_run.json (offline backup of one real run)
-tests/                 pytest suite (offline; live tests skip without keys)
-PLAN.md                Full plan and task history
-```
+Production and recovery procedures are in
+[`docs/runbooks/README.md`](docs/runbooks/README.md). The privacy contract is
+documented in
+[`docs/PHASE_6_PRIVACY_CONTROLS.md`](docs/PHASE_6_PRIVACY_CONTROLS.md).
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+MIT — see [LICENSE](LICENSE). Copyright 2026 Vasu Bhardwaj and Arpita Gupta.
