@@ -13,6 +13,12 @@ from sqlalchemy.dialects import postgresql
 
 import job_hunt_agent.opportunity_repository as opportunity_repository_module
 from job_hunt_agent.database import Database
+from job_hunt_agent.fit_evaluation import FitVerdict
+from job_hunt_agent.fit_evaluation_repository import (
+    FitEvaluatorIdentity,
+    prepare_fit_evaluation,
+    store_fit_verdict,
+)
 from job_hunt_agent.models import (
     AchievementEvidence,
     Base,
@@ -1700,6 +1706,87 @@ def test_today_recommended_ranks_full_result_set_before_pagination(
         )
         assert newest.items[0].id == expected["low-epsilon"]
         assert newest.items[0].match.fit_band.value == "low"
+
+
+def test_today_uses_exact_cached_model_verdict_without_calling_a_provider(
+    radar: tuple[Database, DataKeyring],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    database, keyring = radar
+    monkeypatch.setenv("ENABLE_LLM_FIT_EVALUATION", "1")
+    monkeypatch.setenv("GEMINI_FIT_MODEL", "gemini-test")
+    with database.session() as session:
+        _seed_candidate_profile(
+            session,
+            owner_id="owner-a",
+            profile_id="profile-a",
+            keyring=keyring,
+        )
+        _seed_approved_evidence(
+            session,
+            owner_id="owner-a",
+            evidence_id="evidence-a",
+            keyring=keyring,
+        )
+        persisted = persist_scan_source_role(
+            session,
+            owner_id="owner-a",
+            scan_source_id="source-a1",
+            role=_role(
+                title="Software Engineer",
+                raw_description=(
+                    "Build reliable Python backend services, REST APIs, AWS event "
+                    "pipelines, and Kafka integrations. Own production retries and "
+                    "DLQ handling while working with distributed systems."
+                ),
+            ),
+            first_party_url_verified=True,
+            now=NOW,
+        )
+        prepared = prepare_fit_evaluation(
+            session,
+            owner_id="owner-a",
+            posting_version_id=persisted.posting_version_id,
+            saved_search_id="search-a",
+            identity=FitEvaluatorIdentity(
+                provider="google_gemini",
+                model="gemini-test",
+                prompt_version="opportunity-fit-v1",
+            ),
+            keyring=keyring,
+        )
+        store_fit_verdict(
+            session,
+            prepared=prepared,
+            verdict=FitVerdict(
+                band="stretch",
+                reasons=("The core backend scope is relevant but not a direct match.",),
+                gaps=("One important requirement lacks approved evidence.",),
+                evidence_ids=("evidence-a",),
+            ),
+            keyring=keyring,
+            now=NOW,
+        )
+
+        page = list_today_opportunities(
+            session,
+            owner_id="owner-a",
+            query=TodayQuery(limit=10),
+            keyring=keyring,
+            now=NOW + timedelta(minutes=1),
+        )
+
+    item = next(item for item in page.items if item.id == persisted.opportunity_id)
+    assert item.match.algorithm_version.startswith("hybrid-fit-v1-")
+    assert item.match.fit_band.value == "stretch"
+    assert item.match.strengths == [
+        "The core backend scope is relevant but not a direct match."
+    ]
+    assert item.match.gaps == [
+        "One important requirement lacks approved evidence."
+    ]
+    assert item.match.eligibility.value == prepared.deterministic.eligibility
+    assert item.match.confidence.value == prepared.deterministic.confidence
 
 
 @pytest.mark.parametrize("changed_input", ["profile", "evidence", "posting"])

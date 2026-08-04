@@ -97,8 +97,8 @@ class FitVerdict(_StrictModel):
     def explanation_is_bounded_and_unique(self) -> "FitVerdict":
         for field_name in ("reasons", "gaps"):
             values = getattr(self, field_name)
-            if any(not value.strip() or len(value) > 300 for value in values):
-                raise ValueError(f"{field_name} must contain 1-300 character strings")
+            if any(not value.strip() or len(value) > 200 for value in values):
+                raise ValueError(f"{field_name} must contain 1-200 character strings")
             if len(values) != len({value.strip().casefold() for value in values}):
                 raise ValueError(f"{field_name} must not contain duplicates")
         if len(self.evidence_ids) != len(set(self.evidence_ids)):

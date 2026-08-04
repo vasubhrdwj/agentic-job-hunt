@@ -32,7 +32,7 @@ services:
       - key: ENABLE_EMBEDDED_SCAN_WORKER
         value: "1"
       - key: JOB_HUNT_WORKER_KINDS
-        value: scan_saved_search,discover_contacts
+        value: scan_saved_search,discover_contacts,evaluate_opportunity_fit
       - key: JOB_HUNT_EMBEDDED_WORKER_ID
         value: render-embedded-scan
       - key: USE_MOCKS
@@ -87,6 +87,14 @@ services:
       # DEVPOST as a finding.
       - key: GEMINI_DRAFT_MODEL
         value: "gemini-3.5-flash"
+      # Optional evidence-grounded fit interpretation. Leave disabled for the
+      # provider-free product; deterministic eligibility and fallback remain.
+      - key: ENABLE_LLM_FIT_EVALUATION
+        sync: false
+      - key: GEMINI_FIT_MODEL
+        value: "gemini-3.5-flash"
+      - key: GEMINI_FIT_TIMEOUT_MS
+        value: "12000"
       - key: GOOGLE_API_KEY
         sync: false
       - key: SERPAPI_API_KEY

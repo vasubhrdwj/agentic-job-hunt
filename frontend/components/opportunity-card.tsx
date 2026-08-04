@@ -185,6 +185,7 @@ export function MatchEvidence({ opportunity }: { opportunity: TodayOpportunityIt
     );
   }
   const presentation = opportunityFitPresentation(match.fit_band);
+  const modelAssisted = match.algorithm_version?.startsWith("hybrid-fit-v1-") ?? false;
   return (
     <section className={`mt-5 rounded-xl border p-4 ${presentation.panelClasses}`}>
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -246,7 +247,10 @@ export function MatchEvidence({ opportunity }: { opportunity: TodayOpportunityIt
         </p>
       ) : null}
       <p className="mt-2 text-[11px] text-zinc-500">
-        Local rule-based method: {match.algorithm_version}. Approved evidence links: {match.approved_evidence_ids.length}. No paid model or invented percentage.
+        {modelAssisted
+          ? "Gemini-assisted interpretation with deterministic eligibility gates"
+          : "Local deterministic assessment"}
+        : {match.algorithm_version}. Approved evidence links: {match.approved_evidence_ids.length}. No invented percentage.
       </p>
     </section>
   );

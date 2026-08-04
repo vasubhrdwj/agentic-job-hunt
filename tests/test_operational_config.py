@@ -55,8 +55,10 @@ def test_render_runs_free_scan_worker_inside_database_ready_web() -> None:
     assert "JOB_HUNT_OWNER_TOKEN_HASH" not in env
     assert env["ENABLE_EMBEDDED_SCAN_WORKER"]["value"] == "1"
     assert env["JOB_HUNT_WORKER_KINDS"]["value"] == (
-        "scan_saved_search,discover_contacts"
+        "scan_saved_search,discover_contacts,evaluate_opportunity_fit"
     )
+    assert env["ENABLE_LLM_FIT_EVALUATION"]["sync"] is False
+    assert env["GEMINI_FIT_TIMEOUT_MS"]["value"] == "12000"
     assert env["USE_MOCKS"]["value"] == "0"
     assert len(render["services"]) == 1
 

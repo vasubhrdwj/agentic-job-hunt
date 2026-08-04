@@ -12,6 +12,7 @@ import base64
 import hashlib
 import hmac
 import json
+import os
 from dataclasses import dataclass, field
 from datetime import date, datetime, timezone
 from typing import Any
@@ -22,7 +23,29 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from .config import env_bool
 from .job_queue import utcnow
+from .fit_evaluation import (
+    FitEvaluationAuthorization,
+    FitEvaluationEvidence,
+    FitEvaluationInput,
+    FitEvaluationPosting,
+    FitEvaluationProfile,
+    FitEvaluationTarget,
+    FitVerdict,
+    merge_fit_verdict,
+)
+from .fit_evaluation_repository import (
+    FitEvaluatorIdentity,
+    fit_evaluator_version,
+    fit_input_fingerprint,
+    fit_profile_input_fingerprint,
+)
+from .gemini_fit_provider import (
+    DEFAULT_FIT_MODEL,
+    FIT_PROMPT_VERSION,
+    FIT_PROVIDER_NAME,
+)
 from .models import (
     AchievementEvidence,
     CandidateProfile,
@@ -32,6 +55,7 @@ from .models import (
     JobPostingAlias,
     JobPostingVersion,
     OpportunityDecisionEvent as OpportunityDecisionEventRow,
+    OpportunityFitEvaluation,
     OpportunityScan,
     OpportunityScanSource,
     OwnerOpportunity,
@@ -190,7 +214,10 @@ class _RecommendedTodayCandidate:
 @dataclass(frozen=True)
 class _AssessmentPrivateInputs:
     profile: AssessmentProfile
+    model_profile: FitEvaluationProfile
     evidence: tuple[AssessmentEvidence, ...]
+    model_evidence: tuple[FitEvaluationEvidence, ...]
+    profile_id: str | None
     profile_version: int | None
     evidence_versions: tuple[tuple[str, int], ...]
     available: bool
@@ -199,6 +226,7 @@ class _AssessmentPrivateInputs:
 @dataclass(frozen=True)
 class _PinnedResumeInput:
     content: str | None
+    content_hash: str | None
     version: int | None
     unavailable_reason: NotAssessedReason | None
 
@@ -212,9 +240,12 @@ class _OpportunityAssessmentContext:
     keyring: DataKeyring
     selected_saved_search_id: str | None
     private_inputs: _AssessmentPrivateInputs
+    fit_identity: FitEvaluatorIdentity | None
     searches: dict[str, SavedSearch | None] = field(default_factory=dict)
     tracks: dict[str, CareerTrack | None] = field(default_factory=dict)
     resumes: dict[str, _PinnedResumeInput] = field(default_factory=dict)
+    fit_rows: dict[str, list[OpportunityFitEvaluation]] = field(default_factory=dict)
+    fit_rows_loaded: set[str] = field(default_factory=set)
 
     def assess(
         self,
@@ -249,47 +280,188 @@ class _OpportunityAssessmentContext:
         except (TypeError, ValueError):
             return _not_assessed(NotAssessedReason.assessment_unavailable)
 
-        result = assess_opportunity(
-            posting=AssessmentPosting(
-                title=version.title,
-                description=description,
-                location=(
-                    version.location
-                    if version.location.strip().casefold() != "location not specified"
-                    else None
-                ),
-                employment_type=(
-                    version.employment_type
-                    if version.employment_type != "unknown"
-                    else None
-                ),
+        assessment_posting = AssessmentPosting(
+            title=version.title,
+            description=description,
+            location=(
+                version.location
+                if version.location.strip().casefold() != "location not specified"
+                else None
             ),
+            employment_type=(
+                version.employment_type
+                if version.employment_type != "unknown"
+                else None
+            ),
+        )
+        result = assess_opportunity(
+            posting=assessment_posting,
             target=target,
             profile=self.private_inputs.profile,
             resume_text=resume.content,
             evidence=self.private_inputs.evidence,
         )
+        algorithm_version = result.algorithm_version
+        input_fingerprint = self._input_fingerprint(
+            algorithm_version=result.algorithm_version,
+            posting_version=version,
+            search=search,
+            track=track,
+            resume=resume,
+        )
+        fit_band = result.fit_band
+        strengths = result.strengths
+        gaps = result.gaps
+        evidence_ids = result.approved_evidence_ids
+        cached = self._cached_model_fit(
+            version=version,
+            search=search,
+            track=track,
+            resume=resume,
+            posting=assessment_posting,
+            target=target,
+            deterministic=result,
+        )
+        if cached is not None:
+            algorithm_version, input_fingerprint, resolved = cached
+            fit_band = resolved.band
+            strengths = resolved.reasons
+            gaps = resolved.gaps
+            evidence_ids = resolved.evidence_ids
         return TransparentMatchSummary(
             state=MatchAssessmentState.assessed,
-            algorithm_version=result.algorithm_version,
+            algorithm_version=algorithm_version,
             resume_version_id=search.resume_version_id,
             assessment_saved_search_id=search.id,
-            assessment_input_fingerprint=self._input_fingerprint(
-                algorithm_version=result.algorithm_version,
-                posting_version=version,
-                search=search,
-                track=track,
-                resume=resume,
-            ),
-            fit_band=result.fit_band,
+            assessment_input_fingerprint=input_fingerprint,
+            fit_band=fit_band,
             confidence=result.confidence,
             eligibility=result.eligibility,
             matched_terms=list(result.matched_terms),
             representative_requirement=result.representative_requirement,
-            approved_evidence_ids=list(result.approved_evidence_ids),
-            strengths=list(result.strengths),
-            gaps=list(result.gaps),
+            approved_evidence_ids=list(evidence_ids),
+            strengths=list(strengths),
+            gaps=list(gaps),
         )
+
+    def preload_fit_rows(self, posting_version_ids: list[str]) -> None:
+        """Bulk-load derived model verdict rows once for a Today result set."""
+
+        if self.fit_identity is None:
+            return
+        pending = sorted(set(posting_version_ids) - self.fit_rows_loaded)
+        if not pending:
+            return
+        for row in self.session.scalars(
+            select(OpportunityFitEvaluation).where(
+                OpportunityFitEvaluation.owner_id == self.owner_id,
+                OpportunityFitEvaluation.posting_version_id.in_(pending),
+            )
+        ):
+            self.fit_rows.setdefault(row.posting_version_id, []).append(row)
+        self.fit_rows_loaded.update(pending)
+
+    def _cached_model_fit(
+        self,
+        *,
+        version: JobPostingVersion,
+        search: SavedSearch,
+        track: CareerTrack,
+        resume: _PinnedResumeInput,
+        posting: AssessmentPosting,
+        target: AssessmentTarget,
+        deterministic,
+    ):
+        identity = self.fit_identity
+        if identity is None:
+            return None
+        if (
+            self.private_inputs.profile_id is None
+            or self.private_inputs.profile_version is None
+            or resume.version is None
+            or resume.content_hash is None
+        ):
+            return None
+        inputs = FitEvaluationInput(
+            posting=FitEvaluationPosting(
+                title=posting.title,
+                description=posting.description,
+                location=posting.location,
+                employment_type=posting.employment_type,
+            ),
+            target=FitEvaluationTarget(
+                role_families=target.role_families,
+                seniority_levels=target.seniority_levels,
+                target_locations=target.target_locations,
+            ),
+            profile=self.private_inputs.model_profile,
+            evidence=self.private_inputs.model_evidence,
+        )
+        profile_fingerprint = fit_profile_input_fingerprint(
+            saved_search_id=search.id,
+            saved_search_version=search.version,
+            career_track_id=track.id,
+            career_track_version=track.version,
+            resume_id=search.resume_version_id,
+            resume_version=resume.version,
+            resume_content_hash=resume.content_hash,
+            candidate_profile_id=self.private_inputs.profile_id,
+            candidate_profile_version=self.private_inputs.profile_version,
+            evidence_versions=self.private_inputs.evidence_versions,
+            inputs=inputs,
+        )
+        input_fingerprint = fit_input_fingerprint(
+            owner_id=self.owner_id,
+            job_posting_id=version.job_posting_id,
+            posting_version_id=version.id,
+            posting_version_number=version.version_number,
+            posting_hash=version.content_hash,
+            profile_input_fingerprint=profile_fingerprint,
+            identity=identity,
+        )
+        evaluator_version = fit_evaluator_version(identity)
+        self.preload_fit_rows([version.id])
+        row = next(
+            (
+                candidate
+                for candidate in self.fit_rows.get(version.id, [])
+                if candidate.input_fingerprint == input_fingerprint
+            ),
+            None,
+        )
+        if row is None:
+            return None
+        if (
+            row.job_posting_id != version.job_posting_id
+            or row.posting_hash != version.content_hash
+            or row.profile_input_fingerprint != profile_fingerprint
+            or row.evaluator_version != evaluator_version
+            or row.provider != identity.provider
+            or row.model != identity.model
+            or row.result_schema_version != 1
+            or row.version != 1
+        ):
+            return None
+        try:
+            private = decrypt_private_payload(
+                self.keyring,
+                record_kind="opportunity_fit_evaluation",
+                owner_id=self.owner_id,
+                record_id=row.id,
+                encryption_key_id=row.encryption_key_id,
+                ciphertext=row.encrypted_payload,
+            )
+            verdict = FitVerdict.model_validate(private.get("verdict"))
+            resolved = merge_fit_verdict(
+                deterministic=deterministic,
+                inputs=inputs,
+                verdict=verdict,
+            )
+        except (TypeError, ValueError):
+            # A corrupt/stale derived cache must never break Today. The local
+            # deterministic assessment remains the truthful fallback.
+            return None
+        return evaluator_version, input_fingerprint, resolved
 
     def _input_fingerprint(
         self,
@@ -364,6 +536,7 @@ class _OpportunityAssessmentContext:
         if row is None:
             result = _PinnedResumeInput(
                 content=None,
+                content_hash=None,
                 version=None,
                 unavailable_reason=NotAssessedReason.resume_unavailable,
             )
@@ -382,12 +555,14 @@ class _OpportunityAssessmentContext:
                     raise ValueError("resume private payload is invalid")
                 result = _PinnedResumeInput(
                     content=content,
+                    content_hash=row.content_hash,
                     version=row.version,
                     unavailable_reason=None,
                 )
             except (TypeError, ValueError):
                 result = _PinnedResumeInput(
                     content=None,
+                    content_hash=None,
                     version=None,
                     unavailable_reason=NotAssessedReason.assessment_unavailable,
                 )
@@ -417,6 +592,8 @@ def _build_assessment_context(
     )
     try:
         profile = AssessmentProfile()
+        model_profile = FitEvaluationProfile()
+        profile_id = None
         if profile_row is not None:
             payload = decrypt_private_payload(
                 keyring,
@@ -442,8 +619,26 @@ def _build_assessment_context(
                     for authorization in data.work_authorizations
                 ),
             )
+            model_profile = FitEvaluationProfile(
+                career_thesis=data.career_thesis,
+                current_title=data.current_title,
+                current_location=data.current_location,
+                years_of_experience=data.years_of_experience,
+                skills=tuple(data.skills),
+                work_authorizations=tuple(
+                    FitEvaluationAuthorization(
+                        country_code=authorization.country_code,
+                        status=authorization.status,
+                    )
+                    for authorization in data.work_authorizations
+                ),
+                work_modes=tuple(data.work_modes),
+                employment_types=tuple(data.employment_types),
+            )
+            profile_id = profile_row.id
 
         evidence: list[AssessmentEvidence] = []
+        model_evidence: list[FitEvaluationEvidence] = []
         for row in evidence_rows:
             payload = decrypt_private_payload(
                 keyring,
@@ -463,9 +658,19 @@ def _build_assessment_context(
                     skills=_private_input_strings(row.skills),
                 )
             )
+            model_evidence.append(
+                FitEvaluationEvidence(
+                    id=row.id,
+                    statement=statement,
+                    skills=_private_input_strings(row.skills),
+                )
+            )
         private_inputs = _AssessmentPrivateInputs(
             profile=profile,
+            model_profile=model_profile,
             evidence=tuple(evidence),
+            model_evidence=tuple(model_evidence),
+            profile_id=profile_id,
             profile_version=profile_row.version if profile_row is not None else None,
             evidence_versions=tuple((row.id, row.version) for row in evidence_rows),
             available=True,
@@ -473,7 +678,10 @@ def _build_assessment_context(
     except (TypeError, ValueError):
         private_inputs = _AssessmentPrivateInputs(
             profile=AssessmentProfile(),
+            model_profile=FitEvaluationProfile(),
             evidence=(),
+            model_evidence=(),
+            profile_id=None,
             profile_version=None,
             evidence_versions=(),
             available=False,
@@ -484,6 +692,17 @@ def _build_assessment_context(
         keyring=keyring,
         selected_saved_search_id=selected_saved_search_id,
         private_inputs=private_inputs,
+        fit_identity=_configured_fit_identity(),
+    )
+
+
+def _configured_fit_identity() -> FitEvaluatorIdentity | None:
+    if not env_bool("ENABLE_LLM_FIT_EVALUATION", default=False):
+        return None
+    return FitEvaluatorIdentity(
+        provider=FIT_PROVIDER_NAME,
+        model=os.getenv("GEMINI_FIT_MODEL", "").strip() or DEFAULT_FIT_MODEL,
+        prompt_version=FIT_PROMPT_VERSION,
     )
 
 
@@ -1904,6 +2123,9 @@ def _recommended_today_candidates(
         )
     ):
         latest_versions.setdefault(version.job_posting_id, version)
+    assessment_context.preload_fit_rows(
+        [version.id for version in latest_versions.values()]
+    )
 
     matches_by_posting: dict[
         str,

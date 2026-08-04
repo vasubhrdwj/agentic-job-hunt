@@ -92,8 +92,8 @@ def test_verdict_contract_is_strict_bounded_and_deduplicated() -> None:
             band="promising",
             reasons=("Same reason", "same reason"),
         )
-    with pytest.raises(ValidationError, match="1-300"):
-        FitVerdict(band="promising", reasons=("x" * 301,))
+    with pytest.raises(ValidationError, match="1-200"):
+        FitVerdict(band="promising", reasons=("x" * 201,))
     with pytest.raises(ValidationError, match="at most 3"):
         FitVerdict(
             band="promising",
