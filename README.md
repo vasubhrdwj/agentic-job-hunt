@@ -300,6 +300,25 @@ docs/                  delivered phase contracts and production runbooks
 tests/                  hermetic backend and frontend regression coverage
 ```
 
+## Company source packs
+
+Saved searches can choose one of four curated, first-party source packs. Together
+they contain 148 pack entries covering 114 distinct companies. A company can
+appear in more than one pack when it genuinely fits multiple search strategies.
+
+| Pack | Entries | Intended use |
+| --- | ---: | --- |
+| `backend_india` | 35 | Backend roles in India plus location-compatible remote companies |
+| `ai_ml` | 35 | AI/ML products, model infrastructure, and data systems |
+| `global_remote` | 35 | Remote-friendly engineering companies |
+| `fintech` | 43 | Payments, banking, investing, risk, and financial infrastructure |
+
+Every active entry uses a supported public Greenhouse, Lever, Ashby, Workday,
+SmartRecruiters, Workable, or bespoke source. The packs do not contain synthetic
+job openings: scans fetch current postings and then enforce the saved search's
+location, seniority, role, and recency filters. Pack inclusion is therefore not
+a promise that a company currently has an eligible opening in every country.
+
 ## Verification commands
 
 These are provided for judges and contributors; the hosted demo is available
@@ -325,6 +344,10 @@ registry gate from the repository root:
 ```bash
 .venv/bin/python scripts/verify_registry.py --pack backend_india --live --strict-live
 ```
+
+Repeat that command with `ai_ml`, `global_remote`, or `fintech` after editing the
+corresponding pack. The catalog and curation rules are documented in
+[`config/company_packs/README.md`](config/company_packs/README.md).
 
 Production and recovery procedures are in
 [`docs/runbooks/README.md`](docs/runbooks/README.md). The privacy contract is

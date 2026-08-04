@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { postHunt, ApiError } from "@/lib/api";
+import { COMPANY_PACK_OPTIONS } from "@/lib/company-packs";
 import {
   consumeHuntIdempotencyKey,
   huntIdempotencyKey,
@@ -367,9 +368,11 @@ export function InputForm() {
             onChange={(e) => setPack(e.target.value)}
             className={inputClasses}
           >
-            <option value="backend_india">
-              Backend · India + remote
-            </option>
+            {COMPANY_PACK_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
           </select>
         </Field>
 

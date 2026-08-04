@@ -1,0 +1,282 @@
+name: global_remote
+description: Remote-friendly engineering companies with verified public boards; remote availability and country eligibility are evaluated per posting.
+companies:
+  - name: GitLab
+    slug: gitlab
+    source: greenhouse
+    source_token: gitlab
+    careers_domains: [job-boards.greenhouse.io]
+    hire_locations: [Remote]
+    tags: [backend, developer-tools, remote]
+
+  - name: Grafana Labs
+    slug: grafana-labs
+    source: greenhouse
+    source_token: grafanalabs
+    careers_domains: [job-boards.greenhouse.io]
+    hire_locations: [Remote]
+    tags: [backend, observability, remote]
+
+  - name: Canonical
+    slug: canonical
+    source: greenhouse
+    source_token: canonical
+    careers_domains: [job-boards.greenhouse.io]
+    hire_locations: [Remote]
+    tags: [backend, linux, remote]
+
+  - name: Remote
+    slug: remote
+    source: greenhouse
+    source_token: remotecom
+    careers_domains: [job-boards.greenhouse.io]
+    hire_locations: [Remote]
+    tags: [backend, hr-tech, remote]
+
+  - name: Mattermost
+    slug: mattermost
+    source: greenhouse
+    source_token: mattermost
+    careers_domains: [job-boards.greenhouse.io]
+    hire_locations: [Remote]
+    tags: [backend, collaboration, remote]
+
+  - name: Wikimedia Foundation
+    slug: wikimedia-foundation
+    source: greenhouse
+    source_token: wikimedia
+    careers_domains: [job-boards.greenhouse.io]
+    hire_locations: [Remote]
+    tags: [backend, nonprofit, remote]
+
+  - name: Mozilla
+    slug: mozilla
+    source: greenhouse
+    source_token: mozilla
+    careers_domains: [job-boards.greenhouse.io]
+    hire_locations: [Remote]
+    tags: [backend, browser, remote]
+
+  - name: Tailscale
+    slug: tailscale
+    source: greenhouse
+    source_token: tailscale
+    careers_domains: [job-boards.greenhouse.io]
+    hire_locations: [Remote]
+    tags: [backend, networking, remote]
+
+  - name: Netlify
+    slug: netlify
+    source: greenhouse
+    source_token: netlify
+    careers_domains: [job-boards.greenhouse.io]
+    hire_locations: [Remote]
+    tags: [backend, cloud, remote]
+
+  - name: Reddit
+    slug: reddit
+    source: greenhouse
+    source_token: reddit
+    careers_domains: [job-boards.greenhouse.io]
+    hire_locations: [Remote]
+    tags: [backend, consumer, remote]
+
+  - name: Vercel
+    slug: vercel
+    source: greenhouse
+    source_token: vercel
+    careers_domains: [job-boards.greenhouse.io]
+    hire_locations: [Remote]
+    tags: [backend, cloud, remote]
+
+  - name: Webflow
+    slug: webflow
+    source: greenhouse
+    source_token: webflow
+    careers_domains: [job-boards.greenhouse.io]
+    hire_locations: [Remote]
+    tags: [backend, web, remote]
+
+  - name: LaunchDarkly
+    slug: launchdarkly
+    source: greenhouse
+    source_token: launchdarkly
+    careers_domains: [job-boards.greenhouse.io]
+    hire_locations: [Remote]
+    tags: [backend, developer-tools, remote]
+
+  - name: Cloudflare
+    slug: cloudflare
+    source: greenhouse
+    source_token: cloudflare
+    careers_domains: [boards.greenhouse.io]
+    hire_locations: [Remote]
+    tags: [backend, networking, remote]
+
+  - name: Elastic
+    slug: elastic
+    source: greenhouse
+    source_token: elastic
+    careers_domains: [elastic.co]
+    hire_locations: [Remote]
+    tags: [backend, search, remote]
+
+  - name: Cockroach Labs
+    slug: cockroach-labs
+    source: greenhouse
+    source_token: cockroachlabs
+    careers_domains: [cockroachlabs.com]
+    hire_locations: [Remote]
+    tags: [backend, database, remote]
+
+  - name: Docker
+    slug: docker
+    source: ashby
+    source_token: docker
+    careers_domains: [jobs.ashbyhq.com]
+    hire_locations: [Remote]
+    tags: [backend, developer-tools, remote]
+
+  - name: Temporal
+    slug: temporal
+    source: ashby
+    source_token: temporal
+    careers_domains: [jobs.ashbyhq.com]
+    hire_locations: [Remote]
+    tags: [backend, distributed-systems, remote]
+
+  - name: Render
+    slug: render
+    source: ashby
+    source_token: render
+    careers_domains: [jobs.ashbyhq.com]
+    hire_locations: [Remote]
+    tags: [backend, cloud, remote]
+
+  - name: PostHog
+    slug: posthog
+    source: ashby
+    source_token: posthog
+    careers_domains: [jobs.ashbyhq.com]
+    hire_locations: [Remote]
+    tags: [backend, analytics, remote]
+
+  - name: Railway
+    slug: railway
+    source: ashby
+    source_token: railway
+    careers_domains: [jobs.ashbyhq.com]
+    hire_locations: [Remote]
+    tags: [backend, cloud, remote]
+
+  - name: GitBook
+    slug: gitbook
+    source: ashby
+    source_token: gitbook
+    careers_domains: [jobs.ashbyhq.com]
+    hire_locations: [Remote]
+    tags: [backend, developer-tools, remote]
+
+  - name: 1Password
+    slug: one-password
+    source: ashby
+    source_token: 1password
+    careers_domains: [jobs.ashbyhq.com]
+    hire_locations: [Remote]
+    tags: [backend, security, remote]
+
+  - name: Sentry
+    slug: sentry
+    source: ashby
+    source_token: sentry
+    careers_domains: [jobs.ashbyhq.com]
+    hire_locations: [Remote]
+    tags: [backend, observability, remote]
+
+  - name: Supabase
+    slug: supabase
+    source: ashby
+    source_token: supabase
+    careers_domains: [jobs.ashbyhq.com]
+    hire_locations: [Remote]
+    tags: [backend, database, remote]
+
+  - name: Neon
+    slug: neon
+    source: ashby
+    source_token: neon
+    careers_domains: [jobs.ashbyhq.com]
+    hire_locations: [Remote]
+    tags: [backend, database, remote]
+
+  - name: ClickHouse
+    slug: clickhouse
+    source: ashby
+    source_token: clickhouse
+    careers_domains: [jobs.ashbyhq.com]
+    hire_locations: [Remote]
+    tags: [backend, database, remote]
+
+  - name: Confluent
+    slug: confluent
+    source: ashby
+    source_token: confluent
+    careers_domains: [jobs.ashbyhq.com]
+    hire_locations: [Remote]
+    tags: [backend, streaming, remote]
+
+  - name: Kong
+    slug: kong
+    source: ashby
+    source_token: kong
+    careers_domains: [jobs.ashbyhq.com]
+    hire_locations: [Remote]
+    tags: [backend, api, remote]
+
+  - name: Linear
+    slug: linear
+    source: ashby
+    source_token: linear
+    careers_domains: [jobs.ashbyhq.com]
+    hire_locations: [Remote]
+    tags: [backend, productivity, remote]
+
+  - name: Notion
+    slug: notion
+    source: ashby
+    source_token: notion
+    careers_domains: [jobs.ashbyhq.com]
+    hire_locations: [Remote]
+    tags: [backend, productivity, remote]
+
+  - name: Quora
+    slug: quora
+    source: ashby
+    source_token: quora
+    careers_domains: [jobs.ashbyhq.com]
+    hire_locations: [Remote]
+    tags: [backend, consumer, remote]
+
+  - name: MongoDB
+    slug: mongodb
+    source: greenhouse
+    source_token: mongodb
+    careers_domains: [mongodb.com]
+    hire_locations: [Remote]
+    tags: [backend, database, remote]
+
+  - name: Datadog
+    slug: datadog
+    source: greenhouse
+    source_token: datadog
+    careers_domains: [datadoghq.com]
+    hire_locations: [Remote]
+    tags: [backend, observability, remote]
+
+  - name: YugabyteDB
+    slug: yugabyte
+    source: greenhouse
+    source_token: yugabyte
+    careers_domains: [job-boards.greenhouse.io]
+    hire_locations: [Remote]
+    tags: [backend, database, remote]

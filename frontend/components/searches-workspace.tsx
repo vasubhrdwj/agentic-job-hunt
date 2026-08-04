@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 
 import { createOpportunityScan } from "@/lib/opportunity-api";
+import { COMPANY_PACK_OPTIONS } from "@/lib/company-packs";
 import {
   createIdempotencyKey,
   createSavedSearch,
@@ -525,7 +526,7 @@ export function SearchesWorkspace() {
             </div>
 
             <div className="grid gap-5 sm:grid-cols-2">
-              <FormField label="Company pack" htmlFor="search-pack"><select id="search-pack" value={pack} onChange={(event) => setPack(event.target.value)} className={inputClasses}><option value="backend_india">Backend · India + remote</option></select></FormField>
+              <FormField label="Company pack" htmlFor="search-pack"><select id="search-pack" value={pack} onChange={(event) => setPack(event.target.value)} className={inputClasses}>{COMPANY_PACK_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></FormField>
               <FormField label="Scan cadence" htmlFor="search-cadence" hint="Scheduled scans run at this local time whenever the background service is awake.">
                 <select id="search-cadence" value={cadence} onChange={(event) => setCadence(event.target.value as ScheduleCadence)} className={inputClasses}>
                   <option value="manual">Manual · Run when I choose</option>

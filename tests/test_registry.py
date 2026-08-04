@@ -7,6 +7,14 @@ from job_hunt_agent.sources.registry import RegistryError, load_company_pack
 from scripts import verify_registry
 
 
+CURATED_PACK_COUNTS = {
+    "backend_india": 35,
+    "ai_ml": 35,
+    "global_remote": 35,
+    "fintech": 43,
+}
+
+
 def _write_pack(tmp_path: Path, text: str) -> Path:
     path = tmp_path / "pack.yaml"
     path.write_text(text, encoding="utf-8")
@@ -17,15 +25,41 @@ def test_backend_india_pack_loads_curated_active_companies():
     registry = load_company_pack("backend_india")
 
     assert registry.name == "backend_india"
-    assert len(registry) == 22
-    assert len(registry.active_companies) == 22
-    assert len({company.slug for company in registry}) == 22
+    assert len(registry) == 35
+    assert len(registry.active_companies) == 35
+    assert len({company.slug for company in registry}) == 35
     assert all(company.source is not CompanySource.google_jobs for company in registry)
     assert registry.get("rubrik").source_token == "rubrik"
     assert registry.get("amazon").source_token == "amazon"
     assert registry.get("stable-money").source_token == "stable-money1"
     assert registry.get("redwood-software").source_token == "redwoodsoftware"
+    assert registry.get("datadog").source_token == "datadog"
     assert "job-boards.eu.greenhouse.io" in registry.get("groww").careers_domains
+
+
+def test_curated_pack_catalog_has_over_one_hundred_consistent_companies():
+    identities: dict[str, tuple[CompanySource, str | None]] = {}
+    entry_count = 0
+
+    for pack, expected_count in CURATED_PACK_COUNTS.items():
+        registry = load_company_pack(pack)
+
+        assert registry.name == pack
+        assert len(registry) == expected_count
+        assert len(registry.active_companies) == expected_count
+        assert all(
+            company.source
+            not in {CompanySource.google_jobs, CompanySource.scrape}
+            for company in registry
+        )
+        entry_count += len(registry)
+        for company in registry:
+            identity = (company.source, company.source_token)
+            previous = identities.setdefault(company.slug, identity)
+            assert previous == identity
+
+    assert entry_count == 148
+    assert len(identities) == 114
 
 
 def test_registry_get_and_select():
@@ -210,7 +244,7 @@ def test_verifier_default_mode_is_hermetic(monkeypatch, capsys):
 
     assert verify_registry.main(["--pack", "backend_india"]) == 0
     output = capsys.readouterr().out
-    assert "configured=22 active=22 inactive=0" in output
+    assert "configured=35 active=35 inactive=0" in output
     assert "invalid=0 live_checks=not_requested" in output
 
 

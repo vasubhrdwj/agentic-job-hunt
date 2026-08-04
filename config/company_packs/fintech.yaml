@@ -1,0 +1,346 @@
+name: fintech
+description: Payments, banking, investing, risk, and financial infrastructure companies with verified public first-party boards.
+companies:
+  - name: Razorpay
+    slug: razorpay
+    source: greenhouse
+    source_token: razorpaysoftwareprivatelimited
+    careers_domains: [job-boards.greenhouse.io]
+    hire_locations: [India]
+    tags: [fintech, payments, backend]
+
+  - name: CRED
+    slug: cred
+    source: lever
+    source_token: cred
+    careers_domains: [jobs.lever.co]
+    hire_locations: [India]
+    tags: [fintech, payments, backend]
+
+  - name: Groww
+    slug: groww
+    source: greenhouse
+    source_token: groww
+    careers_domains: [job-boards.eu.greenhouse.io]
+    hire_locations: [India]
+    tags: [fintech, investing, backend]
+
+  - name: PhonePe
+    slug: phonepe
+    source: greenhouse
+    source_token: phonepe
+    careers_domains: [job-boards.greenhouse.io]
+    hire_locations: [India]
+    tags: [fintech, payments, backend]
+
+  - name: Stripe
+    slug: stripe
+    source: greenhouse
+    source_token: stripe
+    careers_domains: [stripe.com]
+    hire_locations: [Global, India]
+    tags: [fintech, payments, backend]
+
+  - name: Zeta
+    slug: zeta
+    source: lever
+    source_token: zeta
+    careers_domains: [jobs.lever.co]
+    hire_locations: [India]
+    tags: [fintech, banking, backend]
+
+  - name: Stable Money
+    slug: stable-money
+    source: lever
+    source_token: stable-money1
+    careers_domains: [jobs.lever.co]
+    hire_locations: [India]
+    tags: [fintech, investing, backend]
+
+  - name: Paytm
+    slug: paytm
+    source: lever
+    source_token: paytm
+    careers_domains: [jobs.lever.co]
+    hire_locations: [India]
+    tags: [fintech, payments, backend]
+
+  - name: Slice
+    slug: slice
+    source: greenhouse
+    source_token: slice
+    careers_domains: [slice.careers]
+    hire_locations: [India]
+    tags: [fintech, payments, backend]
+
+  - name: Airwallex
+    slug: airwallex
+    source: ashby
+    source_token: airwallex
+    careers_domains: [jobs.ashbyhq.com]
+    hire_locations: [Global, India]
+    tags: [fintech, payments, backend]
+
+  - name: Adyen
+    slug: adyen
+    source: greenhouse
+    source_token: adyen
+    careers_domains: [job-boards.greenhouse.io]
+    hire_locations: [Global, India]
+    tags: [fintech, payments, backend]
+
+  - name: Coinbase
+    slug: coinbase
+    source: greenhouse
+    source_token: coinbase
+    careers_domains: [coinbase.com]
+    hire_locations: [Global, India, Remote]
+    tags: [fintech, crypto, backend]
+
+  - name: SumUp
+    slug: sumup
+    source: greenhouse
+    source_token: sumup
+    careers_domains: [sumup.com]
+    hire_locations: [Global]
+    tags: [fintech, payments, backend]
+
+  - name: Affirm
+    slug: affirm
+    source: greenhouse
+    source_token: affirm
+    careers_domains: [job-boards.greenhouse.io]
+    hire_locations: [Global, Remote]
+    tags: [fintech, lending, backend]
+
+  - name: Brex
+    slug: brex
+    source: greenhouse
+    source_token: brex
+    careers_domains: [brex.com]
+    hire_locations: [Global]
+    tags: [fintech, banking, backend]
+
+  - name: Mercury
+    slug: mercury
+    source: greenhouse
+    source_token: mercury
+    careers_domains: [job-boards.greenhouse.io]
+    hire_locations: [Global, Remote]
+    tags: [fintech, banking, backend]
+
+  - name: Robinhood
+    slug: robinhood
+    source: greenhouse
+    source_token: robinhood
+    careers_domains: [boards.greenhouse.io]
+    hire_locations: [Global]
+    tags: [fintech, investing, backend]
+
+  - name: Chime
+    slug: chime
+    source: greenhouse
+    source_token: chime
+    careers_domains: [boards.greenhouse.io]
+    hire_locations: [Global]
+    tags: [fintech, banking, backend]
+
+  - name: Marqeta
+    slug: marqeta
+    source: greenhouse
+    source_token: marqeta
+    careers_domains: [job-boards.greenhouse.io]
+    hire_locations: [Global]
+    tags: [fintech, payments, backend]
+
+  - name: Plaid
+    slug: plaid
+    source: ashby
+    source_token: plaid
+    careers_domains: [jobs.ashbyhq.com]
+    hire_locations: [Global]
+    tags: [fintech, api, backend]
+
+  - name: Ramp
+    slug: ramp
+    source: ashby
+    source_token: ramp
+    careers_domains: [jobs.ashbyhq.com]
+    hire_locations: [Global]
+    tags: [fintech, payments, backend]
+
+  - name: Nubank
+    slug: nubank
+    source: ashby
+    source_token: nubank
+    careers_domains: [jobs.ashbyhq.com]
+    hire_locations: [Global]
+    tags: [fintech, banking, backend]
+
+  - name: Monzo
+    slug: monzo
+    source: greenhouse
+    source_token: monzo
+    careers_domains: [job-boards.greenhouse.io]
+    hire_locations: [United Kingdom]
+    tags: [fintech, banking, backend]
+
+  - name: N26
+    slug: n26
+    source: greenhouse
+    source_token: n26
+    careers_domains: [n26.com]
+    hire_locations: [Europe]
+    tags: [fintech, banking, backend]
+
+  - name: GoCardless
+    slug: gocardless
+    source: greenhouse
+    source_token: gocardless
+    careers_domains: [job-boards.greenhouse.io]
+    hire_locations: [Global]
+    tags: [fintech, payments, backend]
+
+  - name: Mollie
+    slug: mollie
+    source: ashby
+    source_token: mollie
+    careers_domains: [jobs.ashbyhq.com]
+    hire_locations: [Europe]
+    tags: [fintech, payments, backend]
+
+  - name: dLocal
+    slug: dlocal
+    source: lever
+    source_token: dlocal
+    careers_domains: [jobs.lever.co]
+    hire_locations: [Global, Remote]
+    tags: [fintech, payments, backend]
+
+  - name: MoonPay
+    slug: moonpay
+    source: lever
+    source_token: moonpay
+    careers_domains: [jobs.lever.co]
+    hire_locations: [Global, Remote]
+    tags: [fintech, crypto, backend]
+
+  - name: Anchorage Digital
+    slug: anchorage-digital
+    source: lever
+    source_token: anchorage
+    careers_domains: [jobs.lever.co]
+    hire_locations: [Global, Remote]
+    tags: [fintech, crypto, security]
+
+  - name: Fireblocks
+    slug: fireblocks
+    source: greenhouse
+    source_token: fireblocks
+    careers_domains: [fireblocks.com]
+    hire_locations: [Global]
+    tags: [fintech, crypto, security]
+
+  - name: BitGo
+    slug: bitgo
+    source: greenhouse
+    source_token: bitgo
+    careers_domains: [job-boards.greenhouse.io]
+    hire_locations: [Global]
+    tags: [fintech, crypto, security]
+
+  - name: Ripple
+    slug: ripple
+    source: greenhouse
+    source_token: ripple
+    careers_domains: [ripple.com]
+    hire_locations: [Global]
+    tags: [fintech, crypto, backend]
+
+  - name: FalconX
+    slug: falconx
+    source: greenhouse
+    source_token: falconx
+    careers_domains: [job-boards.greenhouse.io]
+    hire_locations: [Global]
+    tags: [fintech, crypto, trading]
+
+  - name: TaxBit
+    slug: taxbit
+    source: greenhouse
+    source_token: taxbit
+    careers_domains: [job-boards.greenhouse.io]
+    hire_locations: [Global]
+    tags: [fintech, tax, backend]
+
+  - name: Carta
+    slug: carta
+    source: greenhouse
+    source_token: carta
+    careers_domains: [job-boards.greenhouse.io]
+    hire_locations: [Global]
+    tags: [fintech, equity, backend]
+
+  - name: Highnote
+    slug: highnote
+    source: greenhouse
+    source_token: highnote
+    careers_domains: [job-boards.greenhouse.io]
+    hire_locations: [Global]
+    tags: [fintech, payments, backend]
+
+  - name: Lithic
+    slug: lithic
+    source: greenhouse
+    source_token: lithic
+    careers_domains: [job-boards.greenhouse.io]
+    hire_locations: [Global]
+    tags: [fintech, payments, backend]
+
+  - name: Unit
+    slug: unit
+    source: ashby
+    source_token: unit
+    careers_domains: [jobs.ashbyhq.com]
+    hire_locations: [Global]
+    tags: [fintech, banking, api]
+
+  - name: Column
+    slug: column
+    source: ashby
+    source_token: column
+    careers_domains: [jobs.ashbyhq.com]
+    hire_locations: [Global]
+    tags: [fintech, banking, api]
+
+  - name: Alloy
+    slug: alloy
+    source: greenhouse
+    source_token: alloy
+    careers_domains: [alloy.com]
+    hire_locations: [Global]
+    tags: [fintech, identity, risk]
+
+  - name: Sardine
+    slug: sardine
+    source: ashby
+    source_token: sardine
+    careers_domains: [jobs.ashbyhq.com]
+    hire_locations: [Global]
+    tags: [fintech, fraud, risk]
+
+  - name: Sift
+    slug: sift
+    source: ashby
+    source_token: sift
+    careers_domains: [jobs.ashbyhq.com]
+    hire_locations: [Global]
+    tags: [fintech, fraud, risk]
+
+  - name: Treasury Prime
+    slug: treasury-prime
+    source: greenhouse
+    source_token: treasuryprime
+    careers_domains: [job-boards.greenhouse.io]
+    hire_locations: [Global]
+    tags: [fintech, banking, api]

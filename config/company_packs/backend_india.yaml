@@ -176,3 +176,107 @@ companies:
     careers_domains: [amazon.jobs, account.amazon.jobs]
     hire_locations: [India, Bengaluru, Hyderabad, Chennai, Gurugram]
     tags: [backend, ecommerce, cloud]
+
+  - name: Paytm
+    slug: paytm
+    source: lever
+    source_token: paytm
+    careers_domains: [jobs.lever.co]
+    hire_locations: [India, Bengaluru, Chennai, Gurugram, Hyderabad, Mumbai, Noida]
+    tags: [backend, fintech, payments]
+
+  - name: HighRadius
+    slug: highradius
+    source: greenhouse
+    source_token: highradius
+    careers_domains: [highradius.com]
+    hire_locations: [India, Hyderabad]
+    tags: [backend, fintech, saas]
+
+  - name: YugabyteDB
+    slug: yugabyte
+    source: greenhouse
+    source_token: yugabyte
+    careers_domains: [job-boards.greenhouse.io]
+    hire_locations: [India]
+    tags: [backend, database, distributed-systems]
+
+  - name: Coinbase
+    slug: coinbase
+    source: greenhouse
+    source_token: coinbase
+    careers_domains: [coinbase.com]
+    hire_locations: [India, Bengaluru, Remote]
+    tags: [backend, fintech, crypto]
+
+  - name: Confluent
+    slug: confluent
+    source: ashby
+    source_token: confluent
+    careers_domains: [jobs.ashbyhq.com]
+    hire_locations: [India, Bengaluru, Remote]
+    tags: [backend, kafka, data]
+
+  - name: SingleStore
+    slug: singlestore
+    source: greenhouse
+    source_token: singlestore
+    careers_domains: [job-boards.greenhouse.io]
+    hire_locations: [India, Bengaluru]
+    tags: [backend, database, data]
+
+  - name: Notion
+    slug: notion
+    source: ashby
+    source_token: notion
+    careers_domains: [jobs.ashbyhq.com]
+    hire_locations: [India, Hyderabad]
+    tags: [backend, productivity, saas]
+
+  - name: Scale AI
+    slug: scale-ai
+    source: greenhouse
+    source_token: scaleai
+    careers_domains: [job-boards.greenhouse.io]
+    hire_locations: [India]
+    tags: [backend, ai, data]
+
+  - name: Figma
+    slug: figma
+    source: greenhouse
+    source_token: figma
+    careers_domains: [boards.greenhouse.io]
+    hire_locations: [India, Bengaluru]
+    tags: [backend, collaboration, saas]
+
+  - name: Docker
+    slug: docker
+    source: ashby
+    source_token: docker
+    careers_domains: [jobs.ashbyhq.com]
+    hire_locations: [Remote]
+    tags: [backend, developer-tools, remote]
+
+  - name: Slice
+    slug: slice
+    source: greenhouse
+    source_token: slice
+    careers_domains: [slice.careers]
+    hire_locations: [India, Bengaluru]
+    tags: [backend, fintech, payments]
+
+  - name: Mattermost
+    slug: mattermost
+    source: greenhouse
+    source_token: mattermost
+    careers_domains: [job-boards.greenhouse.io]
+    hire_locations: [Remote]
+    tags: [backend, collaboration, remote]
+
+  - name: Remote
+    slug: remote
+    source: greenhouse
+    source_token: remotecom
+    careers_domains: [job-boards.greenhouse.io]
+    hire_locations: [Remote]
+    tags: [backend, hr-tech, remote]

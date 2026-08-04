@@ -1,0 +1,282 @@
+name: ai_ml
+description: AI/ML product, model, data, and infrastructure companies with public first-party boards; job-level location filters still apply.
+companies:
+  - name: OpenAI
+    slug: openai
+    source: ashby
+    source_token: openai
+    careers_domains: [jobs.ashbyhq.com]
+    hire_locations: [Global]
+    tags: [ai, ml, backend]
+
+  - name: Anthropic
+    slug: anthropic
+    source: greenhouse
+    source_token: anthropic
+    careers_domains: [job-boards.greenhouse.io]
+    hire_locations: [Global]
+    tags: [ai, ml, safety]
+
+  - name: Cohere
+    slug: cohere
+    source: ashby
+    source_token: cohere
+    careers_domains: [jobs.ashbyhq.com]
+    hire_locations: [Global, Remote]
+    tags: [ai, ml, enterprise]
+
+  - name: Perplexity
+    slug: perplexity
+    source: ashby
+    source_token: perplexity
+    careers_domains: [jobs.ashbyhq.com]
+    hire_locations: [Global]
+    tags: [ai, search, backend]
+
+  - name: Scale AI
+    slug: scale-ai
+    source: greenhouse
+    source_token: scaleai
+    careers_domains: [job-boards.greenhouse.io]
+    hire_locations: [Global, India]
+    tags: [ai, data, backend]
+
+  - name: Runway
+    slug: runway
+    source: ashby
+    source_token: runway
+    careers_domains: [jobs.ashbyhq.com]
+    hire_locations: [Global]
+    tags: [ai, generative-ai, media]
+
+  - name: Together AI
+    slug: together-ai
+    source: greenhouse
+    source_token: togetherai
+    careers_domains: [job-boards.greenhouse.io]
+    hire_locations: [Global]
+    tags: [ai, inference, infrastructure]
+
+  - name: Fireworks AI
+    slug: fireworks-ai
+    source: ashby
+    source_token: fireworks
+    careers_domains: [jobs.ashbyhq.com]
+    hire_locations: [Global]
+    tags: [ai, inference, infrastructure]
+
+  - name: Cerebras Systems
+    slug: cerebras-systems
+    source: ashby
+    source_token: cerebras
+    careers_domains: [jobs.ashbyhq.com]
+    hire_locations: [Global]
+    tags: [ai, hardware, infrastructure]
+
+  - name: Snorkel AI
+    slug: snorkel-ai
+    source: greenhouse
+    source_token: snorkelai
+    careers_domains: [job-boards.greenhouse.io]
+    hire_locations: [Global]
+    tags: [ai, data, ml]
+
+  - name: Labelbox
+    slug: labelbox
+    source: greenhouse
+    source_token: labelbox
+    careers_domains: [job-boards.greenhouse.io]
+    hire_locations: [Global]
+    tags: [ai, data, ml]
+
+  - name: AssemblyAI
+    slug: assemblyai
+    source: greenhouse
+    source_token: assemblyai
+    careers_domains: [job-boards.greenhouse.io]
+    hire_locations: [Remote]
+    tags: [ai, speech, api]
+
+  - name: Deepgram
+    slug: deepgram
+    source: ashby
+    source_token: deepgram
+    careers_domains: [jobs.ashbyhq.com]
+    hire_locations: [Remote]
+    tags: [ai, speech, api]
+
+  - name: ElevenLabs
+    slug: elevenlabs
+    source: ashby
+    source_token: elevenlabs
+    careers_domains: [jobs.ashbyhq.com]
+    hire_locations: [Global, Remote]
+    tags: [ai, speech, generative-ai]
+
+  - name: Cursor
+    slug: cursor
+    source: ashby
+    source_token: cursor
+    careers_domains: [jobs.ashbyhq.com]
+    hire_locations: [Global]
+    tags: [ai, developer-tools, coding]
+
+  - name: Harvey
+    slug: harvey
+    source: ashby
+    source_token: harvey
+    careers_domains: [jobs.ashbyhq.com]
+    hire_locations: [Global]
+    tags: [ai, legal-tech, enterprise]
+
+  - name: LangChain
+    slug: langchain
+    source: ashby
+    source_token: langchain
+    careers_domains: [jobs.ashbyhq.com]
+    hire_locations: [Global, Remote]
+    tags: [ai, developer-tools, agents]
+
+  - name: LlamaIndex
+    slug: llamaindex
+    source: ashby
+    source_token: llamaindex
+    careers_domains: [jobs.ashbyhq.com]
+    hire_locations: [Global, Remote]
+    tags: [ai, developer-tools, data]
+
+  - name: Pinecone
+    slug: pinecone
+    source: ashby
+    source_token: pinecone
+    careers_domains: [jobs.ashbyhq.com]
+    hire_locations: [Global]
+    tags: [ai, database, infrastructure]
+
+  - name: Weaviate
+    slug: weaviate
+    source: ashby
+    source_token: weaviate
+    careers_domains: [jobs.ashbyhq.com]
+    hire_locations: [Global, Remote]
+    tags: [ai, database, infrastructure]
+
+  - name: Modal
+    slug: modal
+    source: ashby
+    source_token: modal
+    careers_domains: [jobs.ashbyhq.com]
+    hire_locations: [Global]
+    tags: [ai, cloud, infrastructure]
+
+  - name: Baseten
+    slug: baseten
+    source: ashby
+    source_token: baseten
+    careers_domains: [jobs.ashbyhq.com]
+    hire_locations: [Global]
+    tags: [ai, inference, infrastructure]
+
+  - name: Anyscale
+    slug: anyscale
+    source: ashby
+    source_token: anyscale
+    careers_domains: [jobs.ashbyhq.com]
+    hire_locations: [Global]
+    tags: [ai, distributed-systems, infrastructure]
+
+  - name: Replit
+    slug: replit
+    source: ashby
+    source_token: replit
+    careers_domains: [jobs.ashbyhq.com]
+    hire_locations: [Global]
+    tags: [ai, developer-tools, cloud]
+
+  - name: Databricks
+    slug: databricks
+    source: greenhouse
+    source_token: databricks
+    careers_domains: [databricks.com]
+    hire_locations: [Global, India, Remote]
+    tags: [ai, data, cloud]
+
+  - name: MongoDB
+    slug: mongodb
+    source: greenhouse
+    source_token: mongodb
+    careers_domains: [mongodb.com]
+    hire_locations: [Global, India, Remote]
+    tags: [database, data, backend]
+
+  - name: ClickHouse
+    slug: clickhouse
+    source: ashby
+    source_token: clickhouse
+    careers_domains: [jobs.ashbyhq.com]
+    hire_locations: [Global, India, Remote]
+    tags: [database, data, backend]
+
+  - name: Confluent
+    slug: confluent
+    source: ashby
+    source_token: confluent
+    careers_domains: [jobs.ashbyhq.com]
+    hire_locations: [Global, India, Remote]
+    tags: [data, streaming, backend]
+
+  - name: Supabase
+    slug: supabase
+    source: ashby
+    source_token: supabase
+    careers_domains: [jobs.ashbyhq.com]
+    hire_locations: [Global, Remote]
+    tags: [database, developer-tools, backend]
+
+  - name: Neon
+    slug: neon
+    source: ashby
+    source_token: neon
+    careers_domains: [jobs.ashbyhq.com]
+    hire_locations: [Global, Remote]
+    tags: [database, cloud, backend]
+
+  - name: SingleStore
+    slug: singlestore
+    source: greenhouse
+    source_token: singlestore
+    careers_domains: [job-boards.greenhouse.io]
+    hire_locations: [Global]
+    tags: [database, data, backend]
+
+  - name: YugabyteDB
+    slug: yugabyte
+    source: greenhouse
+    source_token: yugabyte
+    careers_domains: [job-boards.greenhouse.io]
+    hire_locations: [Global, Remote]
+    tags: [database, distributed-systems, backend]
+
+  - name: Docker
+    slug: docker
+    source: ashby
+    source_token: docker
+    careers_domains: [jobs.ashbyhq.com]
+    hire_locations: [Global, Remote]
+    tags: [cloud, developer-tools, infrastructure]
+
+  - name: Sentry
+    slug: sentry
+    source: ashby
+    source_token: sentry
+    careers_domains: [jobs.ashbyhq.com]
+    hire_locations: [Global]
+    tags: [observability, developer-tools, backend]
+
+  - name: Temporal
+    slug: temporal
+    source: ashby
+    source_token: temporal
+    careers_domains: [jobs.ashbyhq.com]
+    hire_locations: [Global, Remote]
+    tags: [distributed-systems, developer-tools, backend]
