@@ -354,6 +354,14 @@ def test_application_pack_openapi_uses_stable_paths_cookie_auth_and_problem_cont
             "/api/applications/{application_id}/application-packs/{pack_id}/events",
             "post",
         ),
+        (
+            "/api/applications/{application_id}/application-packs/{pack_id}/dossier-preview",
+            "post",
+        ),
+        (
+            "/api/applications/{application_id}/application-packs/{pack_id}/dossier-approval",
+            "post",
+        ),
     }
     for path, method in operations:
         operation = schema["paths"][path][method]

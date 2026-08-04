@@ -20,6 +20,12 @@ from ..application_artifact_schemas import (
     ApplicationArtifactRevisionCreate,
     ApplicationArtifactsResponse,
 )
+from ..application_dossier_schemas import (
+    ApplicationDossierApprovalResponse,
+    ApplicationDossierApproveCreate,
+    ApplicationDossierPreviewCreate,
+    ApplicationDossierPreviewResponse,
+)
 from ..application_pack_schemas import (
     ApplicationPackCreate,
     ApplicationPackEventCreate,
@@ -665,6 +671,71 @@ def create_application_router(
         if artifacts.pack is not None:
             _set_etag(response, artifacts.pack.version)
         return artifacts
+
+    @router.post(
+        "/api/applications/{application_id}/application-packs/{pack_id}/dossier-preview",
+        response_model=ApplicationDossierPreviewResponse,
+        description=(
+            "Build a non-persisted deterministic preview from the exact prepared "
+            "coverage and approved evidence. No review, approval, send, or submit "
+            "event is recorded."
+        ),
+        responses=COMMON_ERROR_RESPONSES,
+    )
+    def preview_owner_application_dossier(
+        application_id: OpaqueId,
+        pack_id: OpaqueId,
+        payload: ApplicationDossierPreviewCreate,
+        response: Response,
+        owner: AuthenticatedOwner = Security(require_mutation_owner),
+        if_match: str | None = Header(default=None, alias="If-Match"),
+    ) -> ApplicationDossierPreviewResponse:
+        preview = _invoke(
+            _store(store).preview_application_dossier,
+            owner_id=owner.owner_id,
+            application_id=application_id,
+            pack_id=pack_id,
+            payload=payload,
+            expected_pack_version=_expected_version(if_match),
+        )
+        if preview is None:
+            _not_found("application pack")
+        _set_etag(response, preview.pack_version)
+        return preview
+
+    @router.post(
+        "/api/applications/{application_id}/application-packs/{pack_id}/dossier-approval",
+        response_model=ApplicationDossierApprovalResponse,
+        description=(
+            "With one explicit confirmation and one idempotency root, atomically "
+            "review the exact prepared coverage, generate its deterministic "
+            "materials, and approve that exact package. Nothing is submitted or sent."
+        ),
+        responses=COMMON_ERROR_RESPONSES,
+    )
+    def approve_owner_application_dossier(
+        application_id: OpaqueId,
+        pack_id: OpaqueId,
+        payload: ApplicationDossierApproveCreate,
+        response: Response,
+        owner: AuthenticatedOwner = Security(require_mutation_owner),
+        if_match: str | None = Header(default=None, alias="If-Match"),
+        idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+    ) -> ApplicationDossierApprovalResponse:
+        approved = _invoke(
+            _store(store).approve_application_dossier,
+            owner_id=owner.owner_id,
+            application_id=application_id,
+            pack_id=pack_id,
+            payload=payload,
+            expected_pack_version=_expected_version(if_match),
+            idempotency_key=_required_idempotency_key(idempotency_key),
+        )
+        if approved is None:
+            _not_found("application pack")
+        if approved.artifacts.pack is not None:
+            _set_etag(response, approved.artifacts.pack.version)
+        return approved
 
     @router.get(
         "/api/applications/{application_id}/application-artifacts/approved-resume.docx",

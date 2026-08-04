@@ -20,6 +20,16 @@ from .application_artifact_schemas import (
     ApplicationArtifactRevisionCreate,
     ApplicationArtifactsResponse,
 )
+from .application_dossier_repository import (
+    approve_application_dossier,
+    preview_application_dossier,
+)
+from .application_dossier_schemas import (
+    ApplicationDossierApprovalResponse,
+    ApplicationDossierApproveCreate,
+    ApplicationDossierPreviewCreate,
+    ApplicationDossierPreviewResponse,
+)
 from .application_correction_repository import (
     ApplicationCorrectionRepositoryError,
     record_application_milestone_correction,
@@ -393,6 +403,56 @@ class SqlAlchemyApplicationWorkspaceStore(SqlAlchemyContactWorkspaceStore):
                 session,
                 owner_id=owner_id,
                 application_id=application_id,
+                keyring=self.keyring,
+            )
+
+    def preview_application_dossier(
+        self,
+        *,
+        owner_id: str,
+        application_id: str,
+        pack_id: str,
+        payload: ApplicationDossierPreviewCreate,
+        expected_pack_version: int,
+    ) -> ApplicationDossierPreviewResponse | None:
+        with (
+            _application_pack_errors(),
+            _application_artifact_errors(),
+            self.database.session() as session,
+        ):
+            return preview_application_dossier(
+                session,
+                owner_id=owner_id,
+                application_id=application_id,
+                pack_id=pack_id,
+                payload=payload,
+                expected_pack_version=expected_pack_version,
+                keyring=self.keyring,
+            )
+
+    def approve_application_dossier(
+        self,
+        *,
+        owner_id: str,
+        application_id: str,
+        pack_id: str,
+        payload: ApplicationDossierApproveCreate,
+        expected_pack_version: int,
+        idempotency_key: str,
+    ) -> ApplicationDossierApprovalResponse | None:
+        with (
+            _application_pack_errors(),
+            _application_artifact_errors(),
+            self.database.session() as session,
+        ):
+            return approve_application_dossier(
+                session,
+                owner_id=owner_id,
+                application_id=application_id,
+                pack_id=pack_id,
+                payload=payload,
+                expected_pack_version=expected_pack_version,
+                idempotency_key=idempotency_key,
                 keyring=self.keyring,
             )
 

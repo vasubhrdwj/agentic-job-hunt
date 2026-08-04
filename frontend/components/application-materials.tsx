@@ -1007,7 +1007,7 @@ function QuestionEditor({
   );
 }
 
-function ArtifactReview({
+export function ArtifactReview({
   applicationId,
   revision,
   unsupportedRequirements,
@@ -1016,6 +1016,7 @@ function ArtifactReview({
   tailoredResumeLabel,
   copied,
   copyText,
+  onEditInputs,
 }: {
   applicationId: string;
   revision: ApplicationArtifactRevisionResponse;
@@ -1025,6 +1026,7 @@ function ArtifactReview({
   tailoredResumeLabel: string | null;
   copied: string | null;
   copyText: (key: string, text: string) => Promise<void>;
+  onEditInputs?: () => void;
 }) {
   const questions = new Map(revision.questions.map((question) => [question.id, question]));
   const allAnswers = revision.answers
@@ -1044,6 +1046,17 @@ function ArtifactReview({
 
   return (
     <div className="space-y-6">
+      {onEditInputs ? (
+        <div className="flex flex-col gap-3 rounded-xl border border-zinc-200 p-4 sm:flex-row sm:items-center sm:justify-between dark:border-zinc-800">
+          <p className="max-w-3xl text-sm leading-6 text-zinc-600 dark:text-zinc-400">
+            Why-fit, résumé changes, and answers share one grounded input set.
+            Edit those sources to regenerate every affected block without losing provenance.
+          </p>
+          <button type="button" onClick={onEditInputs} className={secondaryButtonClasses}>
+            Edit dossier inputs
+          </button>
+        </div>
+      ) : null}
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <SummaryFact label="Current version" value={`Revision ${revision.revision_number}`} />
         <SummaryFact label="Generator" value={revision.generator_version} />

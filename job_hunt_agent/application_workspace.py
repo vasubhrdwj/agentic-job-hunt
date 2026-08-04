@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Protocol
 
 from .application_artifact_workspace import ApplicationArtifactWorkspaceStore
+from .application_dossier_workspace import ApplicationDossierWorkspaceStore
 from .application_pack_workspace import ApplicationPackWorkspaceStore
 from .application_schemas import (
     ApplicationActivityListResponse,
@@ -30,6 +31,7 @@ from .weekly_review_workspace import WeeklyReviewWorkspaceStore
 
 class ApplicationWorkspaceStore(
     ApplicationArtifactWorkspaceStore,
+    ApplicationDossierWorkspaceStore,
     ApplicationPackWorkspaceStore,
     ContactWorkspaceStore,
     InterviewRoundWorkspaceStore,

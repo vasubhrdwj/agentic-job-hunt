@@ -29,6 +29,12 @@ import type {
   ApplicationArtifactsResponse,
 } from "./application-artifact-types";
 import type {
+  ApplicationDossierApprovalResponse,
+  ApplicationDossierApproveCreate,
+  ApplicationDossierPreviewCreate,
+  ApplicationDossierPreviewResponse,
+} from "./application-dossier-types";
+import type {
   ApplicationOutreachResponse,
   OutreachEventCreate,
   OutreachMessageCreate,
@@ -410,6 +416,52 @@ export async function recordApplicationPackEvent(
   return json<ApplicationPackResponse>(
     await fetch(
       `/api/applications/${encodeURIComponent(applicationId)}/application-packs/${encodeURIComponent(packId)}/events`,
+      {
+        method: "POST",
+        credentials: "same-origin",
+        headers: {
+          "Content-Type": "application/json",
+          "If-Match": `"${packVersion}"`,
+          "Idempotency-Key": idempotencyKey,
+        },
+        body: JSON.stringify(payload),
+      },
+    ),
+  );
+}
+
+export async function previewApplicationDossier(
+  applicationId: string,
+  packId: string,
+  packVersion: number,
+  payload: ApplicationDossierPreviewCreate,
+): Promise<ApplicationDossierPreviewResponse> {
+  return json<ApplicationDossierPreviewResponse>(
+    await fetch(
+      `/api/applications/${encodeURIComponent(applicationId)}/application-packs/${encodeURIComponent(packId)}/dossier-preview`,
+      {
+        method: "POST",
+        credentials: "same-origin",
+        headers: {
+          "Content-Type": "application/json",
+          "If-Match": `"${packVersion}"`,
+        },
+        body: JSON.stringify(payload),
+      },
+    ),
+  );
+}
+
+export async function approveApplicationDossier(
+  applicationId: string,
+  packId: string,
+  packVersion: number,
+  idempotencyKey: string,
+  payload: ApplicationDossierApproveCreate,
+): Promise<ApplicationDossierApprovalResponse> {
+  return json<ApplicationDossierApprovalResponse>(
+    await fetch(
+      `/api/applications/${encodeURIComponent(applicationId)}/application-packs/${encodeURIComponent(packId)}/dossier-approval`,
       {
         method: "POST",
         credentials: "same-origin",

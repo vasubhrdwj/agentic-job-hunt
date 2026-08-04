@@ -6,11 +6,16 @@ import { Fragment, useCallback, useEffect, useState } from "react";
 import { getApplication, getApplicationArtifacts } from "@/lib/application-api";
 import type { ApplicationArtifactsResponse } from "@/lib/application-artifact-types";
 import {
+  applicationDossierFlow,
+  type DossierReadinessState,
+} from "@/lib/application-dossier-flow";
+import {
   applicationDossierLayout,
   applicationDossierNeedsArtifactBootstrap,
   interviewHistoryIsKnownEmpty,
   type ApplicationDossierSection,
 } from "@/lib/application-dossier-layout";
+import type { ApplicationPackResponse } from "@/lib/application-pack-types";
 import type { InterviewHistoryState } from "@/lib/application-interview-types";
 import type {
   ApplicationDetailResponse,
@@ -46,6 +51,7 @@ export function ApplicationDossier({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [currentArtifacts, setCurrentArtifacts] = useState<ApplicationArtifactsResponse | null>(null);
+  const [currentPack, setCurrentPack] = useState<ApplicationPackResponse | null>(null);
   const [materialsRefreshNonce, setMaterialsRefreshNonce] = useState(0);
   const [interviewHistoryState, setInterviewHistoryState] =
     useState<InterviewHistoryState>("checking");
@@ -68,7 +74,8 @@ export function ApplicationDossier({
     await load();
   }, [load]);
 
-  const refreshMaterialsAfterReview = useCallback(() => {
+  const refreshMaterialsAfterReview = useCallback((pack: ApplicationPackResponse) => {
+    setCurrentPack(pack);
     setMaterialsRefreshNonce((current) => current + 1);
   }, []);
 
@@ -128,6 +135,11 @@ export function ApplicationDossier({
   const application = detail.application;
   const posting = application.posting;
   const layout = applicationDossierLayout(application.stage);
+  const flow = applicationDossierFlow({
+    stage: application.stage,
+    pack: currentPack,
+    artifacts: currentArtifacts,
+  });
   const effectiveInterviewHistoryState = interviewHistoryIsKnownEmpty(application.stage)
     ? "none"
     : interviewHistoryState;
@@ -141,11 +153,15 @@ export function ApplicationDossier({
           applicationVersion={application.version}
           applicationStage={application.stage}
           onApplicationChanged={refreshApplication}
+          onProjectionChanged={setCurrentPack}
           onReviewed={refreshMaterialsAfterReview}
         />
       );
     }
     if (section === "application_materials") {
+      if (application.stage === "pursuing" && currentPack?.status !== "reviewed") {
+        return null;
+      }
       return (
         <ApplicationMaterials
           key={`materials:${application.id}:${materialsRefreshNonce}`}
@@ -271,7 +287,12 @@ export function ApplicationDossier({
         ) : null}
       </article>
 
-      {application.current_action ? (
+      {application.stage === "pursuing" ? (
+        <PreparationCommandCenter
+          flow={flow}
+          currentActionTitle={application.current_action?.title ?? null}
+        />
+      ) : application.current_action ? (
         <section
           aria-labelledby="next-action-title"
           className="rounded-2xl border border-indigo-200 bg-indigo-50 p-5 sm:p-7 dark:border-indigo-900 dark:bg-indigo-950/25"
@@ -374,6 +395,105 @@ export function ApplicationDossier({
       </details>
 
     </div>
+  );
+}
+
+function PreparationCommandCenter({
+  flow,
+  currentActionTitle,
+}: {
+  flow: ReturnType<typeof applicationDossierFlow>;
+  currentActionTitle: string | null;
+}) {
+  return (
+    <section
+      aria-labelledby="application-preparation-title"
+      className="rounded-2xl border border-indigo-200 bg-indigo-50 p-5 sm:p-7 dark:border-indigo-900 dark:bg-indigo-950/25"
+    >
+      <p className="text-xs font-semibold uppercase tracking-[0.14em] text-indigo-700 dark:text-indigo-300">
+        One application workspace
+      </p>
+      <div className="mt-2 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+        <div className="min-w-0">
+          <h2 id="application-preparation-title" className="text-xl font-semibold text-indigo-950 dark:text-indigo-100">
+            Let the app prepare the dossier; you make one final approval
+          </h2>
+          <p className="mt-2 max-w-3xl text-sm leading-6 text-indigo-900 dark:text-indigo-200">
+            {flow.guidance} Nothing is submitted or sent automatically.
+          </p>
+          {currentActionTitle ? (
+            <p className="mt-3 text-xs font-medium text-indigo-800 dark:text-indigo-300">
+              Saved next action: {currentActionTitle}
+            </p>
+          ) : null}
+        </div>
+        <a
+          href={flow.primaryHref}
+          className="inline-flex min-h-11 shrink-0 items-center justify-center rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700"
+        >
+          {flow.primaryLabel}
+        </a>
+      </div>
+      <ol className="mt-6 grid gap-3 sm:grid-cols-3">
+        <PreparationStep
+          number="1"
+          title="Fit and coverage"
+          state={flow.coverage}
+          href="#application-pack"
+          detail="Requirement matches, evidence, and honest gaps"
+        />
+        <PreparationStep
+          number="2"
+          title="Application package"
+          state={flow.materials}
+          href="#application-materials"
+          detail="Why-fit, résumé changes, and exact answers"
+        />
+        <PreparationStep
+          number="3"
+          title="People and messages"
+          state={flow.materials === "approved" ? "prepared" : "waiting"}
+          href="#application-people"
+          detail="Up to five leads with editable manual-send drafts"
+        />
+      </ol>
+    </section>
+  );
+}
+
+function PreparationStep({
+  number,
+  title,
+  state,
+  href,
+  detail,
+}: {
+  number: string;
+  title: string;
+  state: DossierReadinessState;
+  href: string;
+  detail: string;
+}) {
+  const stateLabel: Record<DossierReadinessState, string> = {
+    waiting: "Waiting",
+    prepared: "Ready next",
+    needs_review: "Ready to review",
+    approved: "Confirmed",
+  };
+  return (
+    <li className="rounded-xl border border-indigo-200 bg-white/70 p-4 dark:border-indigo-900 dark:bg-zinc-950/30">
+      <a href={href} className="block min-h-16">
+        <div className="flex items-center justify-between gap-3">
+          <span className="text-xs font-semibold uppercase tracking-wide text-indigo-700 dark:text-indigo-300">
+            {number}. {title}
+          </span>
+          <span className="rounded-full bg-indigo-100 px-2 py-1 text-[11px] font-semibold text-indigo-800 dark:bg-indigo-950 dark:text-indigo-200">
+            {stateLabel[state]}
+          </span>
+        </div>
+        <p className="mt-2 text-xs leading-5 text-zinc-600 dark:text-zinc-400">{detail}</p>
+      </a>
+    </li>
   );
 }
 

@@ -11,11 +11,22 @@ import {
 } from "react";
 
 import {
+  approveApplicationDossier,
   createApplicationPack,
   createApplicationPackRevision,
   getApplicationPack,
+  previewApplicationDossier,
   recordApplicationPackEvent,
 } from "@/lib/application-api";
+import type { ApplicationArtifactBlocker } from "@/lib/application-artifact-types";
+import {
+  buildDossierPreparedInputs,
+  type DossierQuestionDraft,
+  type DossierRequirementDraft,
+} from "@/lib/application-dossier-preparation";
+import type {
+  ApplicationDossierPreviewResponse,
+} from "@/lib/application-dossier-types";
 import type {
   ApplicationPackBlocker,
   ApplicationPackCreate,
@@ -47,6 +58,7 @@ import type {
 import type { ApplicationStage } from "@/lib/application-types";
 import { buildAutomaticApplicationPackStartPlan } from "@/lib/application-pack-auto-start";
 import { preferredApplicationPackResumeId } from "@/lib/application-fit-context";
+import { ArtifactReview } from "./application-materials";
 import {
   errorText,
   FormField,
@@ -58,12 +70,7 @@ import {
   textareaClasses,
 } from "./workspace-ui";
 
-interface RequirementDraft {
-  included: boolean;
-  importance: ApplicationPackRequirementImportance;
-  coverage: ApplicationPackRequirementCoverage;
-  evidenceIds: string[];
-}
+type RequirementDraft = DossierRequirementDraft;
 
 interface PendingMutation {
   intent: "start" | "save" | "approve" | "review";
@@ -133,17 +140,32 @@ const BLOCKER_COPY: Record<ApplicationPackBlocker, string> = {
     "This posting is closed. Saved pack history remains readable, but no new review changes are allowed.",
 };
 
+const DOSSIER_BLOCKER_COPY: Partial<Record<ApplicationArtifactBlocker, string>> = {
+  questions_need_owner_input:
+    "At least one answer has no safe grounded draft. Select exact evidence for that question, then review the refreshed preview.",
+  tailored_resume_unchanged:
+    "The selected evidence produced no safe résumé improvement. Adjust fit evidence before approval.",
+  grounded_evidence_missing:
+    "No exact approved evidence is available for the generated package.",
+  grounding_evidence_changed:
+    "Approved evidence changed while this preview was open. Refresh the grounded inputs.",
+  posting_closed:
+    "This posting is closed, so the dossier cannot be approved.",
+};
+
 export function ApplicationPack({
   applicationId,
   applicationVersion,
   applicationStage,
   onApplicationChanged,
+  onProjectionChanged,
   onReviewed,
 }: {
   applicationId: string;
   applicationVersion: number;
   applicationStage: ApplicationStage;
   onApplicationChanged?: () => Promise<void>;
+  onProjectionChanged?: (projection: ApplicationPackResponse) => void;
   onReviewed?: (projection: ApplicationPackResponse) => void;
 }) {
   const [projection, setProjection] = useState<ApplicationPackResponse | null>(null);
@@ -160,6 +182,13 @@ export function ApplicationPack({
   const [actionError, setActionError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [copiedRequirementId, setCopiedRequirementId] = useState<string | null>(null);
+  const [dossierQuestions, setDossierQuestions] = useState<DossierQuestionDraft[]>([]);
+  const [dossierPreview, setDossierPreview] = useState<ApplicationDossierPreviewResponse | null>(null);
+  const [dossierPreviewPlanKey, setDossierPreviewPlanKey] = useState<string | null>(null);
+  const [dossierPreviewLoading, setDossierPreviewLoading] = useState(false);
+  const [dossierBusy, setDossierBusy] = useState(false);
+  const [dossierError, setDossierError] = useState<string | null>(null);
+  const [dossierCopied, setDossierCopied] = useState<string | null>(null);
 
   const projectionRef = useRef<ApplicationPackResponse | null>(null);
   const draftsRef = useRef<Record<string, RequirementDraft>>({});
@@ -169,6 +198,8 @@ export function ApplicationPack({
   const requestGeneration = useRef(0);
   const descriptionDirtyRef = useRef(false);
   const autoStartAttemptedKeyRef = useRef<string | null>(null);
+  const dossierPreviewGenerationRef = useRef(0);
+  const dossierApprovalRef = useRef<{ fingerprint: string; key: string } | null>(null);
 
   const setDirtyState = useCallback((value: boolean) => {
     dirtyRef.current = value;
@@ -239,6 +270,7 @@ export function ApplicationPack({
 
     projectionRef.current = next;
     setProjection(next);
+    onProjectionChanged?.(next);
     setLoadError(null);
     hydrateDrafts(next, forceDrafts);
     const pending = pendingMutation.current;
@@ -254,7 +286,7 @@ export function ApplicationPack({
       setNotice(`${pending.successMessage} Confirmed from saved state.`);
     }
     return true;
-  }, [hydrateDrafts, setUnresolvedState]);
+  }, [hydrateDrafts, onProjectionChanged, setUnresolvedState]);
 
   const refresh = useCallback(async (showLoading = false) => {
     const requestedApplicationId = applicationId;
@@ -542,6 +574,68 @@ export function ApplicationPack({
     unresolvedIntent,
   ]);
 
+  const dossierPlan = useMemo(() => {
+    if (
+      applicationStage !== "pursuing" ||
+      projection?.status !== "draft" ||
+      projection.blockers.includes("posting_closed")
+    ) return null;
+    return buildDossierPreparedInputs(projection, drafts, dossierQuestions);
+  }, [applicationStage, dossierQuestions, drafts, projection]);
+  const dossierPlanKey = dossierPlan ? JSON.stringify(dossierPlan) : null;
+
+  useEffect(() => {
+    const pack = projection?.pack;
+    if (!dossierPlan || !dossierPlanKey || !pack || busy || unresolvedIntent) {
+      return;
+    }
+    const generation = ++dossierPreviewGenerationRef.current;
+    const timer = setTimeout(() => {
+      setDossierPreviewLoading(true);
+      setDossierError(null);
+      void previewApplicationDossier(
+        applicationId,
+        pack.id,
+        pack.version,
+        dossierPlan,
+      )
+        .then((next) => {
+          if (
+            dossierPreviewGenerationRef.current !== generation ||
+            next.application_id !== applicationId ||
+            next.pack_id !== pack.id ||
+            next.pack_version !== pack.version
+          ) return;
+          setDossierPreview(next);
+          setDossierPreviewPlanKey(dossierPlanKey);
+          dossierApprovalRef.current = null;
+        })
+        .catch((reason) => {
+          if (dossierPreviewGenerationRef.current !== generation) return;
+          setDossierPreview(null);
+          setDossierError(errorText(reason, "Unable to prepare the complete dossier preview."));
+        })
+        .finally(() => {
+          if (dossierPreviewGenerationRef.current === generation) {
+            setDossierPreviewLoading(false);
+          }
+        });
+    }, 250);
+    return () => {
+      clearTimeout(timer);
+      if (dossierPreviewGenerationRef.current === generation) {
+        dossierPreviewGenerationRef.current += 1;
+      }
+    };
+  }, [
+    applicationId,
+    busy,
+    dossierPlan,
+    dossierPlanKey,
+    projection?.pack,
+    unresolvedIntent,
+  ]);
+
   function changeCoverage(
     requirementId: string,
     coverage: ApplicationPackRequirementCoverage,
@@ -669,6 +763,7 @@ export function ApplicationPack({
       onConfirmed: (next) => {
         setEditingReviewed(false);
         hydrateDrafts(next, true);
+        onReviewed?.(next);
       },
     });
   }
@@ -718,6 +813,130 @@ export function ApplicationPack({
       setActionError(
         "Clipboard access was blocked. Select the exact source excerpt in the card and copy it manually.",
       );
+    }
+  }
+
+  function addDossierQuestion() {
+    setDossierQuestions((current) => [
+      ...current,
+      {
+        id: `question_${crypto.randomUUID().replaceAll("-", "").slice(0, 20)}`,
+        text: "",
+        characterLimit: "",
+        evidenceIds: [],
+      },
+    ]);
+  }
+
+  function updateDossierQuestion(
+    id: string,
+    patch: Partial<DossierQuestionDraft>,
+  ) {
+    setDossierQuestions((current) => current.map((question) => (
+      question.id === id ? { ...question, ...patch } : question
+    )));
+  }
+
+  function removeDossierQuestion(id: string) {
+    setDossierQuestions((current) => current.filter((question) => question.id !== id));
+  }
+
+  function toggleDossierQuestionEvidence(id: string, evidenceId: string) {
+    setDossierQuestions((current) => current.map((question) => {
+      if (question.id !== id) return question;
+      const selected = question.evidenceIds.includes(evidenceId);
+      if (!selected && question.evidenceIds.length >= 3) return question;
+      return {
+        ...question,
+        evidenceIds: selected
+          ? question.evidenceIds.filter((item) => item !== evidenceId)
+          : [...question.evidenceIds, evidenceId],
+      };
+    }));
+  }
+
+  async function copyDossierText(key: string, value: string) {
+    try {
+      await navigator.clipboard.writeText(value);
+      setDossierCopied(key);
+      window.setTimeout(() => {
+        setDossierCopied((current) => current === key ? null : current);
+      }, 1_800);
+    } catch {
+      setDossierError(
+        "Clipboard access was blocked. Select the visible text and copy it manually.",
+      );
+    }
+  }
+
+  async function approveCompleteDossier() {
+    const pack = projection?.pack;
+    if (
+      !pack || !dossierPlan || !dossierPlanKey || !dossierPreview ||
+      dossierPreviewPlanKey !== dossierPlanKey
+    ) return;
+    if (dossierPreview.blockers.length > 0) {
+      setDossierError("Resolve every visible dossier blocker before approval.");
+      return;
+    }
+    const fingerprint = JSON.stringify({
+      packVersion: pack.version,
+      plan: dossierPlan,
+      preview: dossierPreview.preview_fingerprint,
+    });
+    const pending = dossierApprovalRef.current;
+    if (pending && pending.fingerprint !== fingerprint) {
+      setDossierError(
+        "The prepared dossier changed after an unconfirmed approval attempt. Retry or refresh the saved state before editing it.",
+      );
+      return;
+    }
+    const receipt = pending ?? {
+      fingerprint,
+      key: createIdempotencyKey(`application-dossier:${applicationId}:approve`),
+    };
+    dossierApprovalRef.current = receipt;
+    setDossierBusy(true);
+    setDossierError(null);
+    setNotice(null);
+    try {
+      const next = await approveApplicationDossier(
+        applicationId,
+        pack.id,
+        pack.version,
+        receipt.key,
+        {
+          ...dossierPlan,
+          preview_fingerprint: dossierPreview.preview_fingerprint,
+          confirm_dossier_reviewed: true,
+        },
+      );
+      dossierApprovalRef.current = null;
+      projectionRef.current = next.pack;
+      setProjection(next.pack);
+      onProjectionChanged?.(next.pack);
+      setDossierPreview(null);
+      setDossierPreviewPlanKey(null);
+      setNotice(
+        "Complete dossier approved. The grounding receipt, generated package, and tailored résumé were saved atomically; nothing was submitted or sent.",
+      );
+      onReviewed?.(next.pack);
+    } catch (reason) {
+      const apiError = reason instanceof WorkspaceApiError ? reason : null;
+      if (apiError && !apiError.retryable && [409, 412, 428].includes(apiError.status)) {
+        dossierApprovalRef.current = null;
+        await onApplicationChanged?.();
+        await refresh(false);
+        setDossierError(
+          "The saved dossier changed in another tab. The latest grounded inputs are shown; review the refreshed preview before approving.",
+        );
+      } else {
+        setDossierError(
+          "The approval result could not be confirmed. Retry the same unchanged approval; its one receipt cannot duplicate any revision or event.",
+        );
+      }
+    } finally {
+      setDossierBusy(false);
     }
   }
 
@@ -820,6 +1039,26 @@ export function ApplicationPack({
     !stageLocked &&
     !postingClosed
   );
+  const oneApprovalMode = Boolean(
+    hasPreparedAssessment &&
+    projection.status === "draft" &&
+    !stageLocked &&
+    !postingClosed,
+  );
+  const dossierEvidence = dossierEvidenceFor(
+    projection.current_approved_evidence,
+    draftRevisionPayload,
+  );
+  const dossierUnsupportedRequirements = revision
+    ? revision.requirements.flatMap((requirement) => {
+        const reviewed = draftRevisionPayload?.requirements.find(
+          (item) => item.id === requirement.id,
+        );
+        return reviewed?.coverage === "unsupported"
+          ? [{ ...requirement, coverage: "unsupported" as const, evidence: [] }]
+          : [];
+      })
+    : [];
 
   return (
     <section
@@ -987,7 +1226,7 @@ export function ApplicationPack({
                     </h3>
                     <p className="mt-1 text-sm text-zinc-500">
                       {hasPreparedAssessment
-                        ? "A conservative first pass is ready. Approve it as-is in one action, or open Adjust assessment if something is wrong."
+                        ? "A conservative first pass is ready. The complete generated dossier appears below; adjust this assessment only when something is wrong."
                         : "Required and preferred statements are exact source spans. A genuine gap is a valid review outcome."}
                     </p>
                   </div>
@@ -1050,6 +1289,31 @@ export function ApplicationPack({
               </div>
             )}
 
+            {oneApprovalMode ? (
+              <CompleteDossierPreview
+                applicationId={applicationId}
+                questions={dossierQuestions}
+                evidence={dossierEvidence}
+                planReady={dossierPlan !== null}
+                preview={
+                  dossierPlan && dossierPreviewPlanKey === dossierPlanKey
+                    ? dossierPreview
+                    : null
+                }
+                loading={dossierPreviewLoading}
+                busy={dossierBusy}
+                error={dossierError}
+                copied={dossierCopied}
+                unsupportedRequirements={dossierUnsupportedRequirements}
+                onAddQuestion={addDossierQuestion}
+                onUpdateQuestion={updateDossierQuestion}
+                onRemoveQuestion={removeDossierQuestion}
+                onToggleEvidence={toggleDossierQuestionEvidence}
+                onCopy={copyDossierText}
+                onApprove={approveCompleteDossier}
+              />
+            ) : null}
+
             <details className="min-w-0 rounded-xl border border-zinc-200 p-4 dark:border-zinc-800">
               <summary className="cursor-pointer text-sm font-medium">Review the exact job-description source</summary>
               <p className="mt-2 text-xs text-zinc-500">
@@ -1060,7 +1324,7 @@ export function ApplicationPack({
               </div>
             </details>
 
-            {!readOnlyReviewed ? (
+            {!readOnlyReviewed && !oneApprovalMode ? (
               <div className="space-y-4 border-t border-zinc-200 pt-5 dark:border-zinc-800">
                 {dirty ? (
                   <StatusMessage kind="info">
@@ -1183,7 +1447,7 @@ function PreparedAssessmentSummary({
         Conservative approved skill-concept matches are prepared as Partial, never Supported. There is no fuzzy or synonym matching; requirements without a bounded match are proposed as Unsupported and remain unsaved until you approve.
       </p>
       <p className="mt-4 text-xs font-semibold uppercase tracking-wide text-zinc-500">
-        What your approval will record
+        Prepared coverage included in the final dossier approval
       </p>
       <ol className="mt-2 divide-y divide-indigo-200 rounded-lg border border-indigo-200 bg-white/70 px-3 dark:divide-indigo-900 dark:border-indigo-900 dark:bg-zinc-950/30">
         {rows.map((row) => (
@@ -1208,6 +1472,246 @@ function PreparedAssessmentSummary({
         ))}
       </ol>
     </div>
+  );
+}
+
+function CompleteDossierPreview({
+  applicationId,
+  questions,
+  evidence,
+  planReady,
+  preview,
+  loading,
+  busy,
+  error,
+  copied,
+  unsupportedRequirements,
+  onAddQuestion,
+  onUpdateQuestion,
+  onRemoveQuestion,
+  onToggleEvidence,
+  onCopy,
+  onApprove,
+}: {
+  applicationId: string;
+  questions: DossierQuestionDraft[];
+  evidence: AchievementEvidence[];
+  planReady: boolean;
+  preview: ApplicationDossierPreviewResponse | null;
+  loading: boolean;
+  busy: boolean;
+  error: string | null;
+  copied: string | null;
+  unsupportedRequirements: ApplicationPackRequirementResponse[];
+  onAddQuestion: () => void;
+  onUpdateQuestion: (id: string, patch: Partial<DossierQuestionDraft>) => void;
+  onRemoveQuestion: (id: string) => void;
+  onToggleEvidence: (id: string, evidenceId: string) => void;
+  onCopy: (key: string, value: string) => Promise<void>;
+  onApprove: () => Promise<void>;
+}) {
+  const [editingInputs, setEditingInputs] = useState(false);
+  const openInputs = () => {
+    setEditingInputs(true);
+    window.setTimeout(() => {
+      document.getElementById("application-dossier-inputs")?.scrollIntoView({
+        behavior: "smooth",
+        block: "start",
+      });
+    }, 0);
+  };
+  return (
+    <section
+      id="application-materials"
+      aria-labelledby="complete-dossier-title"
+      aria-busy={loading || busy}
+      className="rounded-2xl border border-indigo-300 bg-indigo-50/40 p-4 sm:p-6 dark:border-indigo-800 dark:bg-indigo-950/15"
+    >
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-indigo-700 dark:text-indigo-300">
+            Complete package · one approval
+          </p>
+          <h3 id="complete-dossier-title" className="mt-2 text-lg font-semibold">
+            Review the whole application dossier
+          </h3>
+          <p className="mt-2 max-w-3xl text-sm leading-6 text-zinc-600 dark:text-zinc-400">
+            The app prepares requirement coverage, a why-fit draft, résumé changes,
+            and answers together. Your single approval records the exact coverage
+            and exact generated package atomically. It never submits or sends anything.
+          </p>
+        </div>
+        <button type="button" onClick={openInputs} className={secondaryButtonClasses}>
+          Edit grounded inputs
+        </button>
+      </div>
+
+      <details
+        id="application-dossier-inputs"
+        open={editingInputs || !preview}
+        onToggle={(event) => setEditingInputs(event.currentTarget.open)}
+        className="mt-5 scroll-mt-6 rounded-xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900/60"
+      >
+        <summary className="cursor-pointer text-sm font-semibold">
+          Edit coverage sources or exact application questions
+        </summary>
+        <p className="mt-2 text-xs leading-5 text-zinc-500">
+          Every generated block uses these same grounded inputs. To change why-fit
+          text or résumé changes safely, adjust requirement evidence above. Add an
+          employer question here and the app prepares an evidence-backed answer.
+          Generated claims are not free-edited because that would break provenance.
+        </p>
+        <a href="#application-pack" className={`${secondaryButtonClasses} mt-4`}>
+          Adjust fit and evidence
+        </a>
+
+        <div className="mt-5 border-t border-zinc-200 pt-5 dark:border-zinc-800">
+          <div className="flex flex-wrap items-end justify-between gap-3">
+            <div>
+              <h4 className="text-sm font-semibold">Exact application questions</h4>
+              <p className="mt-1 text-xs leading-5 text-zinc-500">
+                Optional. Paste only questions shown by the employer; the app will
+                not invent form questions that are not in the posting.
+              </p>
+            </div>
+            <button
+              type="button"
+              disabled={questions.length >= 20 || busy}
+              onClick={onAddQuestion}
+              className={secondaryButtonClasses}
+            >
+              Add question
+            </button>
+          </div>
+          {questions.length === 0 ? (
+            <p className="mt-3 rounded-lg bg-zinc-50 p-3 text-sm text-zinc-500 dark:bg-zinc-950/60">
+              No employer questions added. The dossier still includes why-fit and résumé preparation.
+            </p>
+          ) : (
+            <ol className="mt-4 space-y-4">
+              {questions.map((question, index) => (
+                <li key={question.id} className="rounded-lg bg-zinc-50 p-4 dark:bg-zinc-950/60">
+                  <div className="flex items-center justify-between gap-3">
+                    <h5 className="text-sm font-semibold">Question {index + 1}</h5>
+                    <button
+                      type="button"
+                      disabled={busy}
+                      onClick={() => onRemoveQuestion(question.id)}
+                      className="text-sm font-medium text-red-700 underline underline-offset-4 dark:text-red-300"
+                    >
+                      Remove
+                    </button>
+                  </div>
+                  <div className="mt-3 grid gap-3 sm:grid-cols-[minmax(0,1fr)_10rem]">
+                    <FormField label="Exact question" htmlFor={`dossier-question-${question.id}`}>
+                      <textarea
+                        id={`dossier-question-${question.id}`}
+                        rows={3}
+                        value={question.text}
+                        disabled={busy}
+                        onChange={(event) => onUpdateQuestion(question.id, { text: event.target.value })}
+                        className={textareaClasses}
+                      />
+                    </FormField>
+                    <FormField label="Character limit" htmlFor={`dossier-limit-${question.id}`} hint="Optional">
+                      <input
+                        id={`dossier-limit-${question.id}`}
+                        type="number"
+                        min={1}
+                        max={10_000}
+                        value={question.characterLimit}
+                        disabled={busy}
+                        onChange={(event) => onUpdateQuestion(question.id, { characterLimit: event.target.value })}
+                        className={inputClasses}
+                      />
+                    </FormField>
+                  </div>
+                  <details className="mt-3 rounded-lg border border-zinc-200 p-3 dark:border-zinc-800">
+                    <summary className="cursor-pointer text-xs font-semibold">
+                      Answer evidence · {question.evidenceIds.length || "automatic"}
+                    </summary>
+                    <p className="mt-2 text-xs leading-5 text-zinc-500">
+                      Leave empty for conservative skill matching, or choose up to three exact achievements.
+                    </p>
+                    <div className="mt-3 space-y-2">
+                      {evidence.map((item) => (
+                        <label key={item.id} className="flex items-start gap-2 text-sm">
+                          <input
+                            type="checkbox"
+                            className="mt-1"
+                            checked={question.evidenceIds.includes(item.id)}
+                            disabled={
+                              busy ||
+                              (!question.evidenceIds.includes(item.id) && question.evidenceIds.length >= 3)
+                            }
+                            onChange={() => onToggleEvidence(question.id, item.id)}
+                          />
+                          <span className="leading-6">{item.statement}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </details>
+                </li>
+              ))}
+            </ol>
+          )}
+        </div>
+      </details>
+
+      {error ? <div className="mt-4"><StatusMessage kind="error">{error}</StatusMessage></div> : null}
+      {!planReady ? (
+        <div className="mt-4"><StatusMessage kind="error">
+          Review every included requirement, keep evidence on Partial matches, and use valid question limits before a preview can be prepared.
+        </StatusMessage></div>
+      ) : loading ? (
+        <p role="status" className="mt-5 text-sm text-zinc-500">Preparing the exact dossier preview…</p>
+      ) : null}
+
+      {preview ? (
+        <div className="mt-6 space-y-5">
+          <StatusMessage kind="info">
+            This is a read-only preview. All generated blocks change together from
+            the grounded input editor above, so one edit cannot silently detach a claim from its source.
+          </StatusMessage>
+          <ArtifactReview
+            applicationId={applicationId}
+            revision={preview.materials}
+            unsupportedRequirements={unsupportedRequirements}
+            approvedRevisionId={null}
+            currentRejected={false}
+            tailoredResumeLabel={null}
+            copied={copied}
+            copyText={onCopy}
+            onEditInputs={openInputs}
+          />
+          {preview.blockers.length > 0 ? (
+            <div className="space-y-2">
+              {preview.blockers.map((blocker) => (
+                <StatusMessage key={blocker} kind="error">
+                  {DOSSIER_BLOCKER_COPY[blocker] ?? "This generated package is not safe to approve yet."}
+                </StatusMessage>
+              ))}
+            </div>
+          ) : null}
+          <div className="rounded-xl border border-indigo-300 bg-white p-4 sm:p-5 dark:border-indigo-800 dark:bg-zinc-900/70">
+            <h4 className="font-semibold">One final approval</h4>
+            <p className="mt-2 text-sm leading-6 text-zinc-600 dark:text-zinc-400">
+              This one action saves the exact coverage receipt, exact generated
+              materials, and tailored résumé together. You still open the employer
+              site and submit manually, and every referral message remains manual-send.
+            </p>
+            <button
+              type="button"
+              disabled={busy || preview.blockers.length > 0}
+              onClick={() => void onApprove()}
+              className={`${primaryButtonClasses} mt-4 w-full sm:w-auto`}
+            >
+              {busy ? "Approving complete dossier…" : "Approve complete dossier"}
+            </button>
+          </div>
+        </div>
+      ) : null}
+    </section>
   );
 }
 
@@ -1590,6 +2094,17 @@ function buildRevisionPayload(
   return requirements.length > 0
     ? { parent_revision_id: revision.id, requirements }
     : null;
+}
+
+function dossierEvidenceFor(
+  evidence: AchievementEvidence[],
+  grounding: ApplicationPackRevisionCreate | null,
+): AchievementEvidence[] {
+  if (!grounding) return [];
+  const ids = new Set(
+    grounding.requirements.flatMap((item) => item.evidence_refs.map((ref) => ref.id)),
+  );
+  return evidence.filter((item) => ids.has(item.id)).slice(0, 5);
 }
 
 function packErrorText(reason: unknown): string {

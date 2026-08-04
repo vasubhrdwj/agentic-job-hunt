@@ -383,6 +383,7 @@ export function ApplicationPeople({
   return (
     <>
     <section
+      id="application-people"
       aria-labelledby="application-people-title"
       aria-busy={loading || starting}
       className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm sm:p-7 dark:border-zinc-800 dark:bg-zinc-900/70"
