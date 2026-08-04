@@ -128,6 +128,22 @@ The practical résumé parser, first-party role scanner, fit assessment,
 application grounding, and default message preparation do not require a paid
 model API. Never commit a populated `.env` file.
 
+## Hosted deployment status
+
+The production topology uses Vercel for the Next.js frontend, managed Postgres
+for durable owner-scoped data, and one free Render web service for FastAPI. On
+the free topology, `ENABLE_EMBEDDED_SCAN_WORKER=1` runs the durable role and
+contact queue inside the web process while it is awake; interrupted leases are
+recovered after a restart.
+
+Render checks `<service>.onrender.com/web-ready`, which verifies database
+reachability and the current migration revision before routing web traffic.
+The authenticated `/api/health` endpoint separately reports fresh worker
+heartbeats, supported job kinds, owner queue counts, and whether role or contact
+work can currently be accepted. Production operators should check both before
+and after a deployment because web readiness alone does not prove that the
+embedded worker is alive.
+
 ## Manual development setup
 
 Prerequisites: Python 3.13, Node.js 20, npm, and Postgres 16. The shortest
@@ -301,6 +317,13 @@ npm run typecheck
 npm run lint -- --max-warnings=0
 npm run api:check
 npm run build -- --webpack
+```
+
+Before activating or changing a production company source, run the strict live
+registry gate from the repository root:
+
+```bash
+.venv/bin/python scripts/verify_registry.py --pack backend_india --live --strict-live
 ```
 
 Production and recovery procedures are in
