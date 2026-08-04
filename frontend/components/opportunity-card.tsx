@@ -8,6 +8,7 @@ import type {
   TransparentMatchSummary,
 } from "@/lib/opportunity-types";
 import { opportunityFitPresentation } from "@/lib/opportunity-fit";
+import { recommendationSignalLabels } from "@/lib/today-recommendation";
 import { OpportunityActions } from "./opportunity-actions";
 
 export function OpportunityCard({
@@ -27,6 +28,7 @@ export function OpportunityCard({
   const assessmentSearchId = opportunity.match.state === "assessed"
     ? opportunity.match.assessment_saved_search_id
     : null;
+  const recommendationLabels = recommendationSignalLabels(opportunity.recommendation);
   const reviewHref = `/jobs/${encodeURIComponent(opportunity.id)}${
     assessmentSearchId
       ? `?saved_search_id=${encodeURIComponent(assessmentSearchId)}`
@@ -47,6 +49,20 @@ export function OpportunityCard({
             ) : null}
             <StateBadge>{titleCase(opportunity.lane)}</StateBadge>
             <StateBadge>{titleCase(posting.change_kind)}</StateBadge>
+            {recommendationLabels.map((signal) => (
+              <span
+                key={`${signal.kind}:${signal.label}`}
+                className={`rounded-full px-2 py-1 font-medium ${
+                  signal.kind === "preferred"
+                    ? "bg-emerald-50 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-200"
+                    : signal.kind === "deprioritized"
+                      ? "bg-amber-50 text-amber-800 dark:bg-amber-950 dark:text-amber-200"
+                      : "bg-blue-50 text-blue-800 dark:bg-blue-950 dark:text-blue-200"
+                }`}
+              >
+                {signal.label}
+              </span>
+            ))}
             <span className="text-zinc-500">First seen {relativeDate(posting.first_seen_at)}</span>
           </div>
           <h2

@@ -13,6 +13,7 @@ import hashlib
 import hmac
 import json
 import os
+import re
 from dataclasses import dataclass, field
 from datetime import date, datetime, timezone
 from typing import Any
@@ -106,6 +107,7 @@ from .opportunity_schemas import (
     TodayListResponse,
     TodayOpportunityItem,
     TodayQuery,
+    TodayRecommendationSignals,
     TodayScanHealth,
     TodaySort,
     TodaySummary,
@@ -132,6 +134,55 @@ _TRACKING_QUERY_KEYS = frozenset(
     }
 )
 _DECISION_NOTE_KIND = "opportunity_decision_note"
+
+# Preference learning stays intentionally small and legible. A title can map to
+# more than one category, but free-form descriptions and private resume text are
+# never mined for implicit preferences.
+_TITLE_ROLE_TAG_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
+    (
+        "backend",
+        re.compile(
+            r"\bback[ -]?end\b|\bserver[ -]?side\b|\bapi (?:engineer|developer)\b",
+            re.I,
+        ),
+    ),
+    ("platform", re.compile(r"\bplatform\b", re.I)),
+    ("infrastructure", re.compile(r"\binfrastructure\b|\binfra\b", re.I)),
+    (
+        "site reliability",
+        re.compile(r"\bsite reliability\b|\bSRE\b", re.I),
+    ),
+    ("devops", re.compile(r"\bdevops\b", re.I)),
+    ("security", re.compile(r"\bsecurity\b|\bapplication security\b", re.I)),
+    (
+        "machine learning",
+        re.compile(r"\bmachine learning\b|\bML (?:engineer|scientist)\b", re.I),
+    ),
+    (
+        "artificial intelligence",
+        re.compile(r"\bartificial intelligence\b|\bAI (?:engineer|researcher)\b", re.I),
+    ),
+    ("data engineering", re.compile(r"\bdata engineer(?:ing)?\b", re.I)),
+    ("data science", re.compile(r"\bdata scientist\b|\bdata science\b", re.I)),
+    ("full stack", re.compile(r"\bfull[ -]?stack\b", re.I)),
+    ("frontend", re.compile(r"\bfront[ -]?end\b|\bweb UI\b", re.I)),
+    (
+        "mobile",
+        re.compile(r"\bmobile\b|\biOS\b|\bAndroid\b|\bReact Native\b", re.I),
+    ),
+    (
+        "quality engineering",
+        re.compile(
+            r"\bquality (?:assurance|engineer(?:ing)?)\b|"
+            r"\bQA engineer\b|\btest automation\b",
+            re.I,
+        ),
+    ),
+)
+_PREFERENCE_MIN_POSITIVE_DECISIONS = 2
+_PREFERENCE_MIN_NEGATIVE_DECISIONS = 2
+_PREFERENCE_MIN_TAG_MARGIN = 2
+_PREFERENCE_NEGATIVE_REASONS = frozenset({"not_relevant", "not_a_better_move"})
 
 
 class OpportunityRepositoryError(RuntimeError):
@@ -209,6 +260,35 @@ class _RecommendedTodayCandidate:
     version: JobPostingVersion
     match_rows: tuple[tuple[SavedSearchMatch, SavedSearch], ...]
     match: TransparentMatchSummary
+    recency: _PostingRecency
+    preference: _RevealedPreferenceSignal
+
+
+@dataclass(frozen=True)
+class _PostingRecency:
+    """Stable, categorical age signal calculated from the page snapshot."""
+
+    age_days: int
+    source: str
+    stale_priority: int
+    freshness_priority: int
+
+
+@dataclass(frozen=True)
+class _RevealedPreferenceProfile:
+    """Title categories with enough opposing owner decisions to learn from."""
+
+    preferred_tags: frozenset[str] = frozenset()
+    deprioritized_tags: frozenset[str] = frozenset()
+
+
+@dataclass(frozen=True)
+class _RevealedPreferenceSignal:
+    """One explainable title-category tie-breaker; neutral is the default."""
+
+    priority: int = 1
+    preferred_tags: tuple[str, ...] = ()
+    deprioritized_tags: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -1690,6 +1770,7 @@ def _today_item_from_graph(
     latest_event: OpportunityDecisionEventRow | None,
     match: TransparentMatchSummary,
     keyring: DataKeyring,
+    recommendation: TodayRecommendationSignals | None = None,
 ) -> TodayOpportunityItem:
     facts, unknowns = _facts_and_unknowns(latest)
     if posting.lifecycle_state == "closed":
@@ -1737,6 +1818,7 @@ def _today_item_from_graph(
             for match, search in match_rows
         ],
         match=match,
+        recommendation=recommendation,
         latest_decision=(
             _decision_event_response(latest_event, keyring)
             if latest_event is not None
@@ -2092,7 +2174,7 @@ def _recommended_today_candidates(
     snapshot_at: datetime,
     assessment_context: _OpportunityAssessmentContext,
 ) -> list[_RecommendedTodayCandidate]:
-    """Load every candidate's ranking inputs in three bounded bulk queries."""
+    """Load every candidate's ranking inputs in bounded bulk queries."""
 
     opportunity_rows = list(
         session.execute(
@@ -2150,6 +2232,11 @@ def _recommended_today_candidates(
     ):
         matches_by_posting.setdefault(match.job_posting_id, []).append((match, search))
 
+    preference_profile = _revealed_preference_profile(
+        session,
+        owner_id=assessment_context.owner_id,
+        snapshot_at=snapshot_at,
+    )
     candidates: list[_RecommendedTodayCandidate] = []
     for opportunity, posting in opportunity_rows:
         version = latest_versions.get(opportunity.job_posting_id)
@@ -2166,9 +2253,184 @@ def _recommended_today_candidates(
                     version=version,
                     match_rows=list(match_rows),
                 ),
+                recency=_posting_recency(
+                    posting=posting,
+                    version=version,
+                    snapshot_at=snapshot_at,
+                ),
+                preference=_revealed_preference_signal(
+                    title=version.title,
+                    profile=preference_profile,
+                ),
             )
         )
     return candidates
+
+
+def _posting_recency(
+    *,
+    posting: JobPosting,
+    version: JobPostingVersion,
+    snapshot_at: datetime,
+) -> _PostingRecency:
+    """Categorize listing age without letting time drift between cursor pages."""
+
+    snapshot_date = _as_utc(snapshot_at).date()
+    source_date = _parse_posted_date(version.posted_at_text)
+    if source_date is not None and source_date <= snapshot_date:
+        effective_date = source_date
+        source = "source_posted_date"
+    else:
+        # An unknown or impossible future source date is not treated as stale
+        # or boosted as newly posted. The conservative fallback only ages from
+        # when this owner first saw it.
+        effective_date = _as_utc(posting.first_confirmed_at).date()
+        source = "first_confirmed_at"
+    age_days = max(0, (snapshot_date - effective_date).days)
+    if age_days <= 7:
+        freshness_priority = 0
+    elif age_days <= 21:
+        freshness_priority = 1
+    elif age_days <= 45:
+        freshness_priority = 2
+    else:
+        freshness_priority = 3
+    return _PostingRecency(
+        age_days=age_days,
+        source=source,
+        stale_priority=int(age_days > 45),
+        freshness_priority=freshness_priority,
+    )
+
+
+def _title_role_tags(title: str) -> tuple[str, ...]:
+    """Return explicit, human-readable role categories found in a public title."""
+
+    return tuple(
+        tag for tag, pattern in _TITLE_ROLE_TAG_PATTERNS if pattern.search(title)
+    )
+
+
+def _revealed_preference_profile(
+    session: Session,
+    *,
+    owner_id: str,
+    snapshot_at: datetime,
+) -> _RevealedPreferenceProfile:
+    """Learn only from the latest decisive event per opportunity at the snapshot.
+
+    Watching and pursuing are positive examples. Only preference-shaped dismiss
+    reasons are negative examples; location, compensation, duplicate, invalid,
+    and already-applied dismissals must not teach a false dislike of a role type.
+    """
+
+    ranked_events = (
+        select(
+            OpportunityDecisionEventRow.owner_id.label("owner_id"),
+            OpportunityDecisionEventRow.owner_opportunity_id.label(
+                "owner_opportunity_id"
+            ),
+            OpportunityDecisionEventRow.job_posting_id.label("job_posting_id"),
+            OpportunityDecisionEventRow.posting_version_id.label(
+                "posting_version_id"
+            ),
+            OpportunityDecisionEventRow.new_decision.label("new_decision"),
+            OpportunityDecisionEventRow.reason_code.label("reason_code"),
+            func.row_number()
+            .over(
+                partition_by=OpportunityDecisionEventRow.owner_opportunity_id,
+                order_by=(
+                    OpportunityDecisionEventRow.occurred_at.desc(),
+                    OpportunityDecisionEventRow.created_at.desc(),
+                    OpportunityDecisionEventRow.id.desc(),
+                ),
+            )
+            .label("event_rank"),
+        )
+        .where(
+            OpportunityDecisionEventRow.owner_id == owner_id,
+            OpportunityDecisionEventRow.occurred_at <= snapshot_at,
+        )
+        .subquery()
+    )
+    examples: list[tuple[str, tuple[str, ...]]] = []
+    positive_count = 0
+    negative_count = 0
+    for decision, reason_code, title in session.execute(
+        select(
+            ranked_events.c.new_decision,
+            ranked_events.c.reason_code,
+            JobPostingVersion.title,
+        )
+        .join(
+            JobPostingVersion,
+            (JobPostingVersion.owner_id == ranked_events.c.owner_id)
+            & (JobPostingVersion.job_posting_id == ranked_events.c.job_posting_id)
+            & (JobPostingVersion.id == ranked_events.c.posting_version_id),
+        )
+        .where(ranked_events.c.event_rank == 1)
+    ):
+        tags = _title_role_tags(title)
+        if not tags:
+            continue
+        if decision in {"watch", "pursued"}:
+            examples.append(("positive", tags))
+            positive_count += 1
+        elif decision == "dismiss" and reason_code in _PREFERENCE_NEGATIVE_REASONS:
+            examples.append(("negative", tags))
+            negative_count += 1
+
+    if (
+        positive_count < _PREFERENCE_MIN_POSITIVE_DECISIONS
+        or negative_count < _PREFERENCE_MIN_NEGATIVE_DECISIONS
+    ):
+        return _RevealedPreferenceProfile()
+
+    counts: dict[str, list[int]] = {}
+    for outcome, tags in examples:
+        outcome_index = 0 if outcome == "positive" else 1
+        for tag in tags:
+            counts.setdefault(tag, [0, 0])[outcome_index] += 1
+
+    preferred: set[str] = set()
+    deprioritized: set[str] = set()
+    for tag, (positive, negative) in counts.items():
+        if (
+            positive >= _PREFERENCE_MIN_POSITIVE_DECISIONS
+            and positive - negative >= _PREFERENCE_MIN_TAG_MARGIN
+        ):
+            preferred.add(tag)
+        elif (
+            negative >= _PREFERENCE_MIN_NEGATIVE_DECISIONS
+            and negative - positive >= _PREFERENCE_MIN_TAG_MARGIN
+        ):
+            deprioritized.add(tag)
+    return _RevealedPreferenceProfile(
+        preferred_tags=frozenset(preferred),
+        deprioritized_tags=frozenset(deprioritized),
+    )
+
+
+def _revealed_preference_signal(
+    *,
+    title: str,
+    profile: _RevealedPreferenceProfile,
+) -> _RevealedPreferenceSignal:
+    tags = frozenset(_title_role_tags(title))
+    preferred = tuple(sorted(tags & profile.preferred_tags))
+    deprioritized = tuple(sorted(tags & profile.deprioritized_tags))
+    if preferred and not deprioritized:
+        priority = 0
+    elif deprioritized and not preferred:
+        priority = 2
+    else:
+        # Sparse, unseen, generic, and conflicting title evidence is neutral.
+        priority = 1
+    return _RevealedPreferenceSignal(
+        priority=priority,
+        preferred_tags=preferred,
+        deprioritized_tags=deprioritized,
+    )
 
 
 def _recommended_today_items(
@@ -2230,18 +2492,50 @@ def _recommended_today_items(
                 latest_event=events.get(candidate.opportunity.id),
                 match=candidate.match,
                 keyring=keyring,
+                recommendation=_today_recommendation_signals(candidate),
             )
         )
     return items
+
+
+def _today_recommendation_signals(
+    candidate: _RecommendedTodayCandidate,
+) -> TodayRecommendationSignals:
+    if candidate.recency.freshness_priority == 0:
+        recency = "recent"
+    elif candidate.recency.freshness_priority == 1:
+        recency = "current"
+    elif candidate.recency.freshness_priority == 2:
+        recency = "aging"
+    else:
+        recency = "older_than_45_days"
+
+    if candidate.preference.priority == 0:
+        preference = "preferred"
+        tags = list(candidate.preference.preferred_tags)
+    elif candidate.preference.priority == 2:
+        preference = "deprioritized"
+        tags = list(candidate.preference.deprioritized_tags)
+    else:
+        preference = "neutral"
+        tags = []
+    return TodayRecommendationSignals(
+        recency=recency,
+        age_days=candidate.recency.age_days,
+        age_basis=candidate.recency.source,
+        preference=preference,
+        preference_role_tags=tags,
+    )
 
 
 def _recommended_priority(candidate: _RecommendedTodayCandidate) -> tuple[int, ...]:
     """Return an inspectable, categorical recommendation order.
 
     No score is invented here: each component is already visible on the role
-    card. Actionability and eligibility are hard gates, followed by fit band and
-    confidence. Missing assessment data is deliberately placed in the
-    insufficient-data tier instead of being guessed as a match.
+    card. Actionability, eligibility, fit band, and confidence remain hard gates.
+    Within an equal assessment tier, listing recency and a conservative learned
+    title preference are tie-breakers. Missing assessment or preference data is
+    deliberately neutral instead of being guessed as a match.
     """
 
     posting_state = {"open": 0, "unknown": 1, "closed": 2}[
@@ -2252,7 +2546,17 @@ def _recommended_priority(candidate: _RecommendedTodayCandidate) -> tuple[int, .
     ]
     match = candidate.match
     if match.state is MatchAssessmentState.not_assessed:
-        return posting_state, decision_state, 1, 3, 2, 1
+        return (
+            posting_state,
+            decision_state,
+            1,
+            3,
+            2,
+            candidate.recency.stale_priority,
+            candidate.recency.freshness_priority,
+            candidate.preference.priority,
+            1,
+        )
     assert match.eligibility is not None
     assert match.fit_band is not None
     assert match.confidence is not None
@@ -2273,7 +2577,17 @@ def _recommended_priority(candidate: _RecommendedTodayCandidate) -> tuple[int, .
         AssessmentConfidence.medium: 1,
         AssessmentConfidence.low: 2,
     }[match.confidence]
-    return posting_state, decision_state, eligibility, fit, confidence, 0
+    return (
+        posting_state,
+        decision_state,
+        eligibility,
+        fit,
+        confidence,
+        candidate.recency.stale_priority,
+        candidate.recency.freshness_priority,
+        candidate.preference.priority,
+        0,
+    )
 
 
 def _rank_recommended_today(
@@ -2345,6 +2659,14 @@ def _recommended_ordering_fingerprint(
                 candidate.opportunity.id,
                 _as_utc(candidate.opportunity.last_surfaced_at).isoformat(),
                 list(_recommended_priority(candidate)),
+                [
+                    candidate.recency.age_days,
+                    candidate.recency.source,
+                ],
+                [
+                    list(candidate.preference.preferred_tags),
+                    list(candidate.preference.deprioritized_tags),
+                ],
                 candidate.match.algorithm_version,
                 candidate.match.assessment_input_fingerprint,
                 candidate.match.not_assessed_reason.value

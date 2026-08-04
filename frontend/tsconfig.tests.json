@@ -29,6 +29,7 @@
     "lib/resume-upload.ts",
     "lib/search-defaults.ts",
     "lib/today-company-balance.ts",
+    "lib/today-recommendation.ts",
     "lib/today-recommendation-readiness.ts",
     "lib/today-sort.ts",
     "lib/workspace-types.ts",
@@ -55,6 +56,7 @@
     "tests/resume-upload-api.test.ts",
     "tests/search-defaults.test.ts",
     "tests/today-company-balance.test.ts",
+    "tests/today-recommendation.test.ts",
     "tests/today-recommendation-readiness.test.ts",
     "tests/today-sort.test.ts",
     "tests/workspace-types.test.ts"

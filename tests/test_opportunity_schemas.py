@@ -36,6 +36,7 @@ from job_hunt_agent.opportunity_schemas import (
     TodayListResponse,
     TodayOpportunityItem,
     TodayQuery,
+    TodayRecommendationSignals,
     TodayScanHealth,
     TodaySummary,
     TransparentMatchSummary,
@@ -339,6 +340,26 @@ def test_every_unknown_fact_requires_one_explicit_reason() -> None:
                     message="Not reported.",
                 ),
             ]
+        )
+
+
+def test_recommendation_signals_expose_categories_without_inventing_preferences() -> None:
+    signal = TodayRecommendationSignals(
+        recency="older_than_45_days",
+        age_days=52,
+        age_basis="source_posted_date",
+        preference="preferred",
+        preference_role_tags=["backend"],
+    )
+    assert signal.preference.value == "preferred"
+
+    with pytest.raises(ValidationError, match="only directional preferences"):
+        TodayRecommendationSignals(
+            recency="recent",
+            age_days=2,
+            age_basis="first_confirmed_at",
+            preference="neutral",
+            preference_role_tags=["backend"],
         )
 
 

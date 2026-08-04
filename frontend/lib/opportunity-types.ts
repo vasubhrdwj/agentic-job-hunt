@@ -146,6 +146,14 @@ export interface TransparentMatchSummary {
     | null;
 }
 
+export interface TodayRecommendationSignals {
+  recency: "recent" | "current" | "aging" | "older_than_45_days";
+  age_days: number;
+  age_basis: "source_posted_date" | "first_confirmed_at";
+  preference: "preferred" | "neutral" | "deprioritized";
+  preference_role_tags: string[];
+}
+
 export interface OpportunityDecisionEvent {
   id: string;
   opportunity_id: string;
@@ -185,6 +193,7 @@ export interface TodayOpportunityItem {
   unknowns: OpportunityUnknown[];
   discovered_by: SavedSearchProvenance[];
   match: TransparentMatchSummary;
+  recommendation: TodayRecommendationSignals | null;
   latest_decision: OpportunityDecisionEvent | null;
   created_at: string;
   updated_at: string;

@@ -23,5 +23,8 @@ test("Recommended explains its categorical server-side order without a score", (
   const explanation = todaySortExplanation("recommended");
   assert.match(explanation, /before pagination/i);
   assert.match(explanation, /eligibility/i);
+  assert.match(explanation, /older than 45 days/i);
+  assert.match(explanation, /watch, pursue, and relevant dismiss decisions/i);
+  assert.match(explanation, /title categories/i);
   assert.doesNotMatch(explanation, /percent|score/i);
 });

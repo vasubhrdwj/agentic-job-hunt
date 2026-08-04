@@ -212,6 +212,19 @@ class OpportunityEligibility(str, Enum):
     likely_ineligible = "likely_ineligible"
 
 
+class PostingRecencyBand(str, Enum):
+    recent = "recent"
+    current = "current"
+    aging = "aging"
+    older_than_45_days = "older_than_45_days"
+
+
+class RevealedPreferenceDirection(str, Enum):
+    preferred = "preferred"
+    neutral = "neutral"
+    deprioritized = "deprioritized"
+
+
 class NotAssessedReason(str, Enum):
     assessment_pending = "assessment_pending"
     resume_unavailable = "resume_unavailable"
@@ -601,6 +614,28 @@ class TransparentMatchSummary(ContractModel):
         return self
 
 
+class TodayRecommendationSignals(ContractModel):
+    """Inspectable categorical tie-breakers used only by Recommended order."""
+
+    recency: PostingRecencyBand
+    age_days: int = Field(ge=0, le=100_000)
+    age_basis: Literal["source_posted_date", "first_confirmed_at"]
+    preference: RevealedPreferenceDirection = RevealedPreferenceDirection.neutral
+    preference_role_tags: list[ShortText] = Field(default_factory=list, max_length=10)
+
+    @model_validator(mode="after")
+    def preference_evidence_is_consistent(self) -> Self:
+        if len(self.preference_role_tags) != len(
+            {tag.casefold() for tag in self.preference_role_tags}
+        ):
+            raise ValueError("preference_role_tags must not contain duplicates")
+        if (self.preference is RevealedPreferenceDirection.neutral) != (
+            not self.preference_role_tags
+        ):
+            raise ValueError("only directional preferences may expose role tags")
+        return self
+
+
 class OpportunityDecisionRequest(ContractModel):
     action: OpportunityDecisionAction
     dismiss_reason: DismissReason | None = None
@@ -836,6 +871,7 @@ class TodayOpportunityItem(ContractModel):
     unknowns: list[OpportunityUnknown] = Field(default_factory=list, max_length=4)
     discovered_by: list[SavedSearchProvenance] = Field(min_length=1, max_length=100)
     match: TransparentMatchSummary
+    recommendation: TodayRecommendationSignals | None = None
     latest_decision: OpportunityDecisionEvent | None = None
     created_at: UTCDateTime
     updated_at: UTCDateTime
@@ -1026,6 +1062,7 @@ __all__ = [
     "OpportunityUnknown",
     "PostingChangeKind",
     "PostingChangedField",
+    "PostingRecencyBand",
     "PostingState",
     "PostingVersionSummary",
     "PursueOpportunityRequest",
@@ -1045,11 +1082,13 @@ __all__ = [
     "TodayListResponse",
     "TodayOpportunityItem",
     "TodayQuery",
+    "TodayRecommendationSignals",
     "TodayScanHealth",
     "TodaySummary",
     "TodaySort",
     "TodayView",
     "TransparentMatchSummary",
+    "RevealedPreferenceDirection",
     "UTCDateTime",
     "UnknownReasonCode",
 ]

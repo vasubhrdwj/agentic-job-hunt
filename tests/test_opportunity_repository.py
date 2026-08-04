@@ -39,6 +39,7 @@ from job_hunt_agent.models import (
 )
 from job_hunt_agent.opportunity_repository import (
     OpportunityNotFound,
+    PersistedRole,
     canonicalize_posting_url,
     decide_owner_opportunity,
     list_today_opportunities,
@@ -1706,6 +1707,248 @@ def test_today_recommended_ranks_full_result_set_before_pagination(
         )
         assert newest.items[0].id == expected["low-epsilon"]
         assert newest.items[0].match.fit_band.value == "low"
+
+
+def test_today_recommended_demotes_old_postings_within_equal_fit_and_freezes_age(
+    radar: tuple[Database, DataKeyring],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    database, keyring = radar
+    with database.session() as session:
+        _seed_candidate_profile(
+            session,
+            owner_id="owner-a",
+            profile_id="profile-a",
+            keyring=keyring,
+        )
+        _seed_approved_evidence(
+            session,
+            owner_id="owner-a",
+            evidence_id="evidence-a",
+            keyring=keyring,
+        )
+        source = session.get(OpportunityScanSource, "source-a1")
+        assert source is not None
+        source.observed_count = 2
+        source.returned_count = 2
+        fresh = persist_scan_source_role(
+            session,
+            owner_id="owner-a",
+            scan_source_id="source-a1",
+            role=_role(
+                title="Strong Backend Fresh",
+                source_job_id="fresh-role",
+                url="https://jobs.acme.example/fresh-role",
+                posted_at="2026-07-10",
+            ),
+            first_party_url_verified=True,
+            now=NOW,
+        )
+        stale = persist_scan_source_role(
+            session,
+            owner_id="owner-a",
+            scan_source_id="source-a1",
+            role=_role(
+                title="Strong Backend Stale",
+                source_job_id="stale-role",
+                url="https://jobs.acme.example/stale-role",
+                posted_at="2026-05-01",
+            ),
+            first_party_url_verified=True,
+            now=NOW + timedelta(minutes=1),
+        )
+        _finish_scan_source(
+            session,
+            scan_id="scan-a1",
+            source_id="source-a1",
+            completed_at=NOW + timedelta(minutes=2),
+        )
+        monkeypatch.setattr(
+            opportunity_repository_module,
+            "assess_opportunity",
+            _categorical_rank_assessment,
+        )
+
+        first = list_today_opportunities(
+            session,
+            owner_id="owner-a",
+            query=TodayQuery(limit=1),
+            keyring=keyring,
+            now=NOW + timedelta(days=1),
+        )
+
+        assert [item.id for item in first.items] == [fresh.opportunity_id]
+        assert first.items[0].recommendation is not None
+        assert first.items[0].recommendation.recency.value == "recent"
+        assert first.next_cursor is not None
+
+        # Advancing wall-clock time must not age the second page or invalidate
+        # its order; the cursor's original snapshot remains authoritative.
+        second = list_today_opportunities(
+            session,
+            owner_id="owner-a",
+            query=TodayQuery(limit=1, cursor=first.next_cursor),
+            keyring=keyring,
+            now=NOW + timedelta(days=30),
+        )
+
+        assert [item.id for item in second.items] == [stale.opportunity_id]
+        assert second.items[0].recommendation is not None
+        assert second.items[0].recommendation.recency.value == "older_than_45_days"
+        assert second.items[0].recommendation.age_days > 45
+
+
+def test_today_recommended_learns_only_supported_title_preferences(
+    radar: tuple[Database, DataKeyring],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    database, keyring = radar
+    with database.session() as session:
+        _seed_candidate_profile(
+            session,
+            owner_id="owner-a",
+            profile_id="profile-a",
+            keyring=keyring,
+        )
+        _seed_approved_evidence(
+            session,
+            owner_id="owner-a",
+            evidence_id="evidence-a",
+            keyring=keyring,
+        )
+        source = session.get(OpportunityScanSource, "source-a1")
+        assert source is not None
+        source.observed_count = 6
+        source.returned_count = 6
+        seeded: dict[str, PersistedRole] = {}
+        for index, (key, title) in enumerate(
+            (
+                ("backend-history-1", "Strong Backend History One"),
+                ("backend-history-2", "Strong Backend History Two"),
+                ("frontend-history-1", "Strong Frontend History One"),
+                ("frontend-history-2", "Strong Frontend History Two"),
+                ("backend-candidate", "Strong Backend Candidate"),
+                ("frontend-candidate", "Strong Frontend Candidate"),
+            )
+        ):
+            seeded[key] = persist_scan_source_role(
+                session,
+                owner_id="owner-a",
+                scan_source_id="source-a1",
+                role=_role(
+                    title=title,
+                    source_job_id=key,
+                    url=f"https://jobs.acme.example/{key}",
+                    posted_at="2026-07-12",
+                ),
+                first_party_url_verified=True,
+                now=NOW + timedelta(minutes=index),
+            )
+        _finish_scan_source(
+            session,
+            scan_id="scan-a1",
+            source_id="source-a1",
+            completed_at=NOW + timedelta(minutes=7),
+        )
+
+        first_backend = session.get(
+            OwnerOpportunity,
+            seeded["backend-history-1"].opportunity_id,
+        )
+        first_frontend = session.get(
+            OwnerOpportunity,
+            seeded["frontend-history-1"].opportunity_id,
+        )
+        assert first_backend is not None and first_frontend is not None
+        decide_owner_opportunity(
+            session,
+            owner_id="owner-a",
+            opportunity_id=first_backend.id,
+            request=OpportunityDecisionRequest(action="watch"),
+            expected_version=first_backend.version,
+            idempotency_key="preference-watch-1",
+            keyring=keyring,
+            now=NOW + timedelta(minutes=8),
+        )
+        decide_owner_opportunity(
+            session,
+            owner_id="owner-a",
+            opportunity_id=first_frontend.id,
+            request=OpportunityDecisionRequest(
+                action="dismiss",
+                dismiss_reason="not_relevant",
+            ),
+            expected_version=first_frontend.version,
+            idempotency_key="preference-dismiss-1",
+            keyring=keyring,
+            now=NOW + timedelta(minutes=9),
+        )
+
+        sparse_profile = opportunity_repository_module._revealed_preference_profile(
+            session,
+            owner_id="owner-a",
+            snapshot_at=NOW + timedelta(minutes=10),
+        )
+        assert sparse_profile.preferred_tags == frozenset()
+        assert sparse_profile.deprioritized_tags == frozenset()
+
+        second_backend = session.get(
+            OwnerOpportunity,
+            seeded["backend-history-2"].opportunity_id,
+        )
+        second_frontend = session.get(
+            OwnerOpportunity,
+            seeded["frontend-history-2"].opportunity_id,
+        )
+        assert second_backend is not None and second_frontend is not None
+        decide_owner_opportunity(
+            session,
+            owner_id="owner-a",
+            opportunity_id=second_backend.id,
+            request=OpportunityDecisionRequest(action="watch"),
+            expected_version=second_backend.version,
+            idempotency_key="preference-watch-2",
+            keyring=keyring,
+            now=NOW + timedelta(minutes=11),
+        )
+        decide_owner_opportunity(
+            session,
+            owner_id="owner-a",
+            opportunity_id=second_frontend.id,
+            request=OpportunityDecisionRequest(
+                action="dismiss",
+                dismiss_reason="not_a_better_move",
+            ),
+            expected_version=second_frontend.version,
+            idempotency_key="preference-dismiss-2",
+            keyring=keyring,
+            now=NOW + timedelta(minutes=12),
+        )
+        monkeypatch.setattr(
+            opportunity_repository_module,
+            "assess_opportunity",
+            _categorical_rank_assessment,
+        )
+
+        page = list_today_opportunities(
+            session,
+            owner_id="owner-a",
+            query=TodayQuery(limit=10),
+            keyring=keyring,
+            now=NOW + timedelta(hours=1),
+        )
+
+        assert [item.id for item in page.items] == [
+            seeded["backend-candidate"].opportunity_id,
+            seeded["frontend-candidate"].opportunity_id,
+        ]
+        backend_signal = page.items[0].recommendation
+        frontend_signal = page.items[1].recommendation
+        assert backend_signal is not None and frontend_signal is not None
+        assert backend_signal.preference.value == "preferred"
+        assert backend_signal.preference_role_tags == ["backend"]
+        assert frontend_signal.preference.value == "deprioritized"
+        assert frontend_signal.preference_role_tags == ["frontend"]
 
 
 def test_today_uses_exact_cached_model_verdict_without_calling_a_provider(
