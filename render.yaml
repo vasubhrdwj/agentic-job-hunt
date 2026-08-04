@@ -35,6 +35,11 @@ services:
         value: scan_saved_search,discover_contacts,evaluate_opportunity_fit
       - key: JOB_HUNT_EMBEDDED_WORKER_ID
         value: render-embedded-scan
+      # Vercel's free daily cron sends this bearer secret to wake the sleeping
+      # Render service and enqueue due scan slots. Configure the same 32+
+      # character value as CRON_SECRET in Vercel; it is not a user credential.
+      - key: CRON_SECRET
+        sync: false
       - key: USE_MOCKS
         value: "0"
       # Compatibility history remains readable/deletable during migration,

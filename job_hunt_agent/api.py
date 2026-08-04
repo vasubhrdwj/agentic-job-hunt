@@ -32,6 +32,8 @@ from .embedded_scan_worker import EmbeddedScanWorker, embedded_scan_worker_enabl
 from .requests import HuntRequestPayload, canonical_request_json
 from .production_runtime import production_core_errors
 from .routers.health import create_health_router
+from .routers.cadence import create_cadence_router
+from .routers.digests import create_daily_digest_router
 from .routers.privacy import PRIVACY_RECEIPT_SECRET_ENV, create_privacy_router
 from .routers.applications import create_application_router
 from .routers.opportunities import create_opportunity_router
@@ -65,6 +67,7 @@ from .sources.registry import RegistryError, load_company_pack
 from .sqlalchemy_owner_workspace import SqlAlchemyOwnerWorkspaceStore
 from .sqlalchemy_application_workspace import SqlAlchemyApplicationWorkspaceStore
 from .sqlalchemy_opportunity_workspace import SqlAlchemyOpportunityWorkspaceStore
+from .daily_digest_workspace import SqlAlchemyDailyDigestWorkspaceStore
 from .legacy_policy import (
     is_legacy_hunt_path,
     legacy_deprecation_headers,
@@ -544,11 +547,18 @@ def create_app() -> FastAPI:
         if practical_mode and practical_database is not None
         else None
     )
+    daily_digest_store = (
+        SqlAlchemyDailyDigestWorkspaceStore(practical_database, data_keyring)
+        if practical_mode and practical_database is not None
+        else None
+    )
     app.state.owner_workspace_store = workspace_store
     app.state.opportunity_workspace_store = opportunity_store
     app.state.application_workspace_store = application_store
+    app.state.daily_digest_workspace_store = daily_digest_store
     app.state.contact_workspace_store = application_store
     if practical_mode:
+        app.include_router(create_cadence_router(practical_database))
         app.include_router(
             create_privacy_router(
                 practical_database,
@@ -573,6 +583,9 @@ def create_app() -> FastAPI:
                 allowed_origins=allowed_origins,
                 production=_is_production(),
             )
+        )
+        app.include_router(
+            create_daily_digest_router(practical_database, daily_digest_store)
         )
         app.include_router(
             create_application_router(

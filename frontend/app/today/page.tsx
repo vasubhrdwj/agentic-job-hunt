@@ -2,6 +2,7 @@ import { Suspense } from "react";
 import { redirect } from "next/navigation";
 
 import { TodayApplicationActions } from "@/components/today-application-actions";
+import { TodayDailyDigest } from "@/components/today-daily-digest";
 import { TodayRecommendationReadiness } from "@/components/today-recommendation-readiness";
 import { TodayWorkspace } from "@/components/today-workspace";
 import { WorkspaceHeader } from "@/components/workspace-header";
@@ -21,6 +22,7 @@ export default async function TodayPage() {
         description="Handle due application work first, then review persisted, deduplicated roles from your saved searches. This page reads saved data only; unknown facts and degraded sources stay visible."
       />
       <div className="space-y-8">
+        <TodayDailyDigest />
         <TodayApplicationActions />
         <TodayRecommendationReadiness />
         <section aria-label="Opportunity review inbox">

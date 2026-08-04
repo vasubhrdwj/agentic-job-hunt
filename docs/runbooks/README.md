@@ -10,6 +10,7 @@ readiness over in-place repair.
 - [Incident recovery](incident-recovery.md)
 - [Legacy hunt deprecation and import](legacy-hunt-deprecation.md)
 - [Manual browser matrix](manual-browser-matrix.md)
+- [Scheduled cadence and daily digest](scheduled-cadence.md)
 
 Before any production action, record the deployed commit, database identity,
 UTC start time, and operator. Keep `DATABASE_URL` and encryption keys in the

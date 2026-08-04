@@ -125,6 +125,7 @@ secrets so restarts remain reproducible.
 | `ENABLE_LLM_FIT_EVALUATION` | Optional, defaults off | Set to `1` to evaluate current posting/profile snapshots in durable background jobs. Existing matches are backfilled in bounded batches; profile changes create new fingerprints. Outages retain the deterministic result. |
 | `GEMINI_FIT_MODEL`, `GEMINI_FIT_TIMEOUT_MS` | Optional | Selects the structured fit model and bounds its single provider call (default 12 seconds). |
 | `PHOENIX_API_KEY`, `PHOENIX_COLLECTOR_ENDPOINT` | Optional | Enables legacy tracing and self-RAG experiments. |
+| `CRON_SECRET` | Hosted free-tier cadence | One random 32+ character server-only value configured identically in Vercel and Render. It authenticates the daily wake; it is not a user login credential. |
 
 The practical résumé parser, first-party role scanner, fit assessment,
 application grounding, and default message preparation do not require a paid
@@ -145,6 +146,37 @@ heartbeats, supported job kinds, owner queue counts, and whether role or contact
 work can currently be accepted. Production operators should check both before
 and after a deployment because web readiness alone does not prove that the
 embedded worker is alive.
+
+### Free scheduled scans and the daily digest
+
+Render's free web service can sleep, so the scheduler loop inside it is not the
+only clock. [`frontend/vercel.json`](frontend/vercel.json) registers one Vercel
+Hobby-compatible daily wake at 04:00 UTC. Vercel calls
+`/api/internal/cadence` with its automatic `Authorization: Bearer <CRON_SECRET>`
+header; that server-only route verifies the value and forwards one authenticated
+tick to Render. The backend atomically locks due saved searches, pins each
+search/source snapshot, and enqueues its durable scan job. A repeated wake or a
+concurrent embedded tick replays the same slot instead of creating a second
+scan. The embedded worker then drains the queue while Render is awake, and an
+interruption is recovered on the next wake or normal visit.
+
+Generate one value (for example `openssl rand -hex 32`) and set it as
+`CRON_SECRET` in both Vercel and Render before deploying this cadence. Vercel's
+free cron is a best-effort once-daily wake with up to ±59 minutes of timing
+precision rather than a per-minute clock, so a saved local time may run later.
+Vercel does not retry a failed cron invocation. The next normal app visit also
+wakes Render and runs the same scheduler, so overdue slots are caught up without
+duplication; the next daily cron is the second fallback. Operators that already
+have a continuously awake worker can run the same scheduler directly with
+`python -m scripts.run_cadence`.
+
+Today shows an owner-scoped, database-only digest: “N new roles, M worth your
+time,” plus up to three grounded reasons. “New” means the owner opportunity was
+first created during the current day in that owner's timezone. “Worth your
+time” includes only open, non-dismissed, eligible roles with a strong or
+promising fit band. There is intentionally no email claim: this repository has
+no outbound email transport, so the digest is in-app until a real delivery
+channel is added.
 
 ## Manual development setup
 

@@ -58,9 +58,25 @@ def test_render_runs_free_scan_worker_inside_database_ready_web() -> None:
         "scan_saved_search,discover_contacts,evaluate_opportunity_fit"
     )
     assert env["ENABLE_LLM_FIT_EVALUATION"]["sync"] is False
+    assert env["CRON_SECRET"]["sync"] is False
     assert env["GEMINI_FIT_TIMEOUT_MS"]["value"] == "12000"
     assert env["USE_MOCKS"]["value"] == "0"
     assert len(render["services"]) == 1
+
+
+def test_vercel_registers_one_hobby_compatible_authenticated_daily_wake() -> None:
+    config = _yaml("frontend/vercel.json")
+    assert config["$schema"] == "https://openapi.vercel.sh/vercel.json"
+    assert config["crons"] == [
+        {"path": "/api/internal/cadence", "schedule": "0 4 * * *"}
+    ]
+    route = (ROOT / "frontend/app/api/internal/cadence/route.ts").read_text(
+        encoding="utf-8"
+    )
+    wake = (ROOT / "frontend/lib/cadence-wake.ts").read_text(encoding="utf-8")
+    assert "wakeSleepingBackend" in route
+    assert "CRON_SECRET" in wake
+    assert "internal/cadence/tick" in wake
 
 
 def test_quality_workflow_runs_operational_gates_with_bounded_jobs() -> None:
@@ -103,6 +119,7 @@ def test_operational_runbook_set_and_manual_browser_matrix_are_present() -> None
         "legacy-hunt-deprecation.md",
         "manual-browser-matrix.md",
         "source-outage.md",
+        "scheduled-cadence.md",
     }
     assert required.issubset({path.name for path in runbooks.glob("*.md")})
     browser = (runbooks / "manual-browser-matrix.md").read_text(encoding="utf-8")

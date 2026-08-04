@@ -11,6 +11,7 @@ from sqlalchemy.dialects import postgresql
 
 import job_hunt_agent.scheduled_scan_repository as scheduled_repository
 from job_hunt_agent.database import Database
+from job_hunt_agent.cadence_service import run_cadence_tick
 from job_hunt_agent.models import (
     BackgroundJob,
     BackgroundJobEvent,
@@ -273,6 +274,37 @@ def test_slot_dedupe_survives_a_restart_style_stale_due_pointer(
     with scheduled_db.session() as session:
         assert session.scalar(select(func.count(OpportunityScan.id))) == 1
         assert session.scalar(select(func.count(OpportunityScanSource.id))) == 2
+        assert session.scalar(select(func.count(BackgroundJob.id))) == 1
+
+
+def test_external_cadence_tick_replay_keeps_one_scan_and_job(
+    scheduled_db: Database,
+) -> None:
+    first = run_cadence_tick(
+        scheduled_db,
+        now=NOW,
+        registry_loader=_registry,
+    )
+    assert first.created_scans == 1
+    assert first.replayed_scans == 0
+
+    # Simulate an overlapping wake that read an old operational pointer. The
+    # slot identity, scan constraint, and queue dedupe must still converge.
+    with scheduled_db.session() as session:
+        search = session.get(SavedSearch, "due-a")
+        assert search is not None
+        search.next_scan_at = DUE
+
+    replay = run_cadence_tick(
+        scheduled_db,
+        now=NOW,
+        registry_loader=_registry,
+    )
+    assert replay.created_scans == 0
+    assert replay.replayed_scans == 1
+
+    with scheduled_db.session() as session:
+        assert session.scalar(select(func.count(OpportunityScan.id))) == 1
         assert session.scalar(select(func.count(BackgroundJob.id))) == 1
 
 

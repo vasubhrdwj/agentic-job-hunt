@@ -43,6 +43,12 @@ JavaScript. The proxy caps request/response sizes and aborts slow upstreams.
 Production requires an explicit HTTPS `API_BASE_URL`; it does not fall back to
 localhost or forward the session cookie over plain HTTP.
 
+The production project also registers one free daily wake from `vercel.json`.
+Set the same random 32+ character `CRON_SECRET` in Vercel and Render. Vercel
+authenticates `/api/internal/cadence`; the server-only handler then wakes Render
+and asks it to enqueue due durable scans. The value is never exposed through a
+`NEXT_PUBLIC_*` variable.
+
 ## Pages
 
 - `/login` — sign in or create a separate account with email and password.
