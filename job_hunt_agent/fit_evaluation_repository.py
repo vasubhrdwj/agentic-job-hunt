@@ -239,50 +239,28 @@ def prepare_fit_evaluation(
             for item in approved
         ),
     )
-    profile_fingerprint = _sha256_json(
-        {
-            "saved_search": [search.id, search.version],
-            "career_track": [track.id, track.version],
-            "resume": [
-                resume.metadata.id,
-                resume.metadata.version,
-                resume.metadata.content_hash,
-            ],
-            "candidate_profile": [profile.id, profile.version],
-            "evidence_versions": [
-                [item.id, item.version]
-                for item in approved
-            ],
-            # Hash the validated values as a defense against any future writer
-            # that accidentally forgets to advance a row version.
-            "private_inputs": {
-                "target": inputs.target.model_dump(mode="json"),
-                "profile": inputs.profile.model_dump(mode="json"),
-                "evidence": [
-                    item.model_dump(mode="json")
-                    for item in inputs.evidence
-                ],
-            },
-        }
+    profile_fingerprint = fit_profile_input_fingerprint(
+        saved_search_id=search.id,
+        saved_search_version=search.version,
+        career_track_id=track.id,
+        career_track_version=track.version,
+        resume_id=resume.metadata.id,
+        resume_version=resume.metadata.version,
+        resume_content_hash=resume.metadata.content_hash,
+        candidate_profile_id=profile.id,
+        candidate_profile_version=profile.version,
+        evidence_versions=tuple((item.id, item.version) for item in approved),
+        inputs=inputs,
     )
-    evaluator_version = _evaluator_version(normalized_identity)
-    input_fingerprint = _sha256_json(
-        {
-            "owner_scope": owner_id,
-            "posting": [
-                posting.job_posting_id,
-                posting.id,
-                posting.version_number,
-                posting.content_hash,
-            ],
-            "profile_input_fingerprint": profile_fingerprint,
-            "deterministic_algorithm": ASSESSMENT_ALGORITHM_VERSION,
-            "fit_policy": FIT_EVALUATION_POLICY_VERSION,
-            "provider": normalized_identity.provider,
-            "model": normalized_identity.model,
-            "prompt_version": normalized_identity.prompt_version,
-            "result_schema_version": FIT_RESULT_SCHEMA_VERSION,
-        }
+    evaluator_version = fit_evaluator_version(normalized_identity)
+    input_fingerprint = fit_input_fingerprint(
+        owner_id=owner_id,
+        job_posting_id=posting.job_posting_id,
+        posting_version_id=posting.id,
+        posting_version_number=posting.version_number,
+        posting_hash=posting.content_hash,
+        profile_input_fingerprint=profile_fingerprint,
+        identity=normalized_identity,
     )
     return PreparedFitEvaluation(
         owner_id=owner_id,
@@ -430,7 +408,80 @@ def _normalized_identity(identity: FitEvaluatorIdentity) -> FitEvaluatorIdentity
     return FitEvaluatorIdentity(*values)
 
 
-def _evaluator_version(identity: FitEvaluatorIdentity) -> str:
+def fit_profile_input_fingerprint(
+    *,
+    saved_search_id: str,
+    saved_search_version: int,
+    career_track_id: str,
+    career_track_version: int,
+    resume_id: str,
+    resume_version: int,
+    resume_content_hash: str,
+    candidate_profile_id: str,
+    candidate_profile_version: int,
+    evidence_versions: tuple[tuple[str, int], ...],
+    inputs: FitEvaluationInput,
+) -> str:
+    """Hash every target/profile/evidence dependency without storing its text."""
+
+    return _sha256_json(
+        {
+            "saved_search": [saved_search_id, saved_search_version],
+            "career_track": [career_track_id, career_track_version],
+            "resume": [resume_id, resume_version, resume_content_hash],
+            "candidate_profile": [
+                candidate_profile_id,
+                candidate_profile_version,
+            ],
+            "evidence_versions": [list(item) for item in evidence_versions],
+            # Hash the validated values as a defense against any future writer
+            # that accidentally forgets to advance a row version.
+            "private_inputs": {
+                "target": inputs.target.model_dump(mode="json"),
+                "profile": inputs.profile.model_dump(mode="json"),
+                "evidence": [
+                    item.model_dump(mode="json")
+                    for item in inputs.evidence
+                ],
+            },
+        }
+    )
+
+
+def fit_input_fingerprint(
+    *,
+    owner_id: str,
+    job_posting_id: str,
+    posting_version_id: str,
+    posting_version_number: int,
+    posting_hash: str,
+    profile_input_fingerprint: str,
+    identity: FitEvaluatorIdentity,
+) -> str:
+    """Hash one posting/profile/evaluator tuple into the owner cache key."""
+
+    normalized_identity = _normalized_identity(identity)
+    return _sha256_json(
+        {
+            "owner_scope": owner_id,
+            "posting": [
+                job_posting_id,
+                posting_version_id,
+                posting_version_number,
+                posting_hash,
+            ],
+            "profile_input_fingerprint": profile_input_fingerprint,
+            "deterministic_algorithm": ASSESSMENT_ALGORITHM_VERSION,
+            "fit_policy": FIT_EVALUATION_POLICY_VERSION,
+            "provider": normalized_identity.provider,
+            "model": normalized_identity.model,
+            "prompt_version": normalized_identity.prompt_version,
+            "result_schema_version": FIT_RESULT_SCHEMA_VERSION,
+        }
+    )
+
+
+def fit_evaluator_version(identity: FitEvaluatorIdentity) -> str:
     digest = _sha256_json(
         {
             "deterministic": ASSESSMENT_ALGORITHM_VERSION,
@@ -509,6 +560,9 @@ __all__ = [
     "FitEvaluationUnavailable",
     "FitEvaluatorIdentity",
     "PreparedFitEvaluation",
+    "fit_evaluator_version",
+    "fit_input_fingerprint",
+    "fit_profile_input_fingerprint",
     "load_cached_fit_verdict",
     "prepare_fit_evaluation",
     "resolve_cached_fit",
