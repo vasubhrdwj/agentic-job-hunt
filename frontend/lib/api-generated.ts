@@ -248,6 +248,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/applications/{application_id}/application-packs/{pack_id}/dossier-approval": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Approve Owner Application Dossier
+         * @description With one explicit confirmation and one idempotency root, atomically review the exact prepared coverage, generate its deterministic materials, and approve that exact package. Nothing is submitted or sent.
+         */
+        post: operations["approve_owner_application_dossier_api_applications__application_id__application_packs__pack_id__dossier_approval_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/applications/{application_id}/application-packs/{pack_id}/dossier-preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Preview Owner Application Dossier
+         * @description Build a non-persisted deterministic preview from the exact prepared coverage and approved evidence. No review, approval, send, or submit event is recorded.
+         */
+        post: operations["preview_owner_application_dossier_api_applications__application_id__application_packs__pack_id__dossier_preview_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/applications/{application_id}/application-packs/{pack_id}/events": {
         parameters: {
             query?: never;
@@ -1103,6 +1143,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/today/digest": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Daily Digest */
+        get: operations["get_daily_digest_api_today_digest_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/health": {
         parameters: {
             query?: never;
@@ -1715,6 +1772,68 @@ export interface components {
              * @constant
              */
             data_source: "database";
+        };
+        /** ApplicationDossierApprovalResponse */
+        ApplicationDossierApprovalResponse: {
+            /** Application Id */
+            application_id: string;
+            artifacts: components["schemas"]["ApplicationArtifactsResponse"];
+            /**
+             * Data Source
+             * @default database
+             * @constant
+             */
+            data_source: "database";
+            pack: components["schemas"]["ApplicationPackResponse"];
+        };
+        /** ApplicationDossierApproveCreate */
+        ApplicationDossierApproveCreate: {
+            /**
+             * Confirm Dossier Reviewed
+             * @constant
+             */
+            confirm_dossier_reviewed: true;
+            /** Grounding Parent Revision Id */
+            grounding_parent_revision_id: string;
+            /** Preview Fingerprint */
+            preview_fingerprint: string;
+            /** Questions */
+            questions?: components["schemas"]["ApplicationArtifactQuestion"][];
+            /** Requirements */
+            requirements: components["schemas"]["ApplicationPackRequirementReview"][];
+            /** Selected Evidence Refs */
+            selected_evidence_refs: components["schemas"]["ApplicationPackEvidenceReference"][];
+        };
+        /** ApplicationDossierPreviewCreate */
+        ApplicationDossierPreviewCreate: {
+            /** Grounding Parent Revision Id */
+            grounding_parent_revision_id: string;
+            /** Questions */
+            questions?: components["schemas"]["ApplicationArtifactQuestion"][];
+            /** Requirements */
+            requirements: components["schemas"]["ApplicationPackRequirementReview"][];
+            /** Selected Evidence Refs */
+            selected_evidence_refs: components["schemas"]["ApplicationPackEvidenceReference"][];
+        };
+        /** ApplicationDossierPreviewResponse */
+        ApplicationDossierPreviewResponse: {
+            /** Application Id */
+            application_id: string;
+            /** Blockers */
+            blockers?: components["schemas"]["ApplicationArtifactBlocker"][];
+            /**
+             * Data Source
+             * @default database_preview
+             * @constant
+             */
+            data_source: "database_preview";
+            materials: components["schemas"]["ApplicationArtifactRevisionResponse"];
+            /** Pack Id */
+            pack_id: string;
+            /** Pack Version */
+            pack_version: number;
+            /** Preview Fingerprint */
+            preview_fingerprint: string;
         };
         /** ApplicationInterviewPreparationResponse */
         ApplicationInterviewPreparationResponse: {
@@ -2784,6 +2903,93 @@ export interface components {
             /** Detail */
             detail: string;
         };
+        /**
+         * DailyDigestHighlight
+         * @description One newly discovered role that cleared the product's fit gates.
+         */
+        DailyDigestHighlight: {
+            /** Company */
+            company: string;
+            confidence: components["schemas"]["AssessmentConfidence"];
+            /**
+             * Discovered At
+             * Format: date-time
+             */
+            discovered_at: string;
+            /**
+             * Fit Band
+             * @enum {string}
+             */
+            fit_band: "strong" | "promising";
+            /** Opportunity Id */
+            opportunity_id: string;
+            /** Reasons */
+            reasons: string[];
+            /** Title */
+            title: string;
+        };
+        /**
+         * DailyDigestResponse
+         * @description A live projection over durable scans, opportunities, and fit evidence.
+         */
+        DailyDigestResponse: {
+            /** Active Scheduled Searches */
+            active_scheduled_searches: number;
+            /** Assessment Complete */
+            assessment_complete: boolean;
+            /**
+             * Data Source
+             * @default database
+             * @constant
+             */
+            data_source: "database";
+            /** Evaluated Opportunities */
+            evaluated_opportunities: number;
+            /**
+             * Generated At
+             * Format: date-time
+             */
+            generated_at: string;
+            /** Headline */
+            headline: string;
+            /** Highlights */
+            highlights?: components["schemas"]["DailyDigestHighlight"][];
+            /**
+             * Local Date
+             * Format: date
+             */
+            local_date: string;
+            /** New Opportunities */
+            new_opportunities: number;
+            /** Next Scan At */
+            next_scan_at?: string | null;
+            /**
+             * Period Started At
+             * Format: date-time
+             */
+            period_started_at: string;
+            scans: components["schemas"]["DailyDigestScanSummary"];
+            /** Timezone */
+            timezone: string;
+            /** Worth Your Time */
+            worth_your_time: number;
+        };
+        /**
+         * DailyDigestScanSummary
+         * @description Automatic scan outcomes for the owner's current local day.
+         */
+        DailyDigestScanSummary: {
+            /** Failed */
+            failed: number;
+            /** Partial */
+            partial: number;
+            /** Running */
+            running: number;
+            /** Scheduled */
+            scheduled: number;
+            /** Succeeded */
+            succeeded: number;
+        };
         /** DateEvidenceFact */
         DateEvidenceFact: {
             /** Observed At */
@@ -3707,6 +3913,7 @@ export interface components {
             posting: components["schemas"]["OpportunityPosting"];
             /** Posting Versions */
             posting_versions: components["schemas"]["PostingVersionSummary"][];
+            recommendation?: components["schemas"]["TodayRecommendationSignals"] | null;
             /** @default inbox */
             state: components["schemas"]["OpportunityDecisionState"];
             /** Unknowns */
@@ -4475,6 +4682,11 @@ export interface components {
          */
         PostingChangedField: "title" | "description" | "location" | "employment_type" | "posted_date" | "compensation" | "canonical_url" | "state";
         /**
+         * PostingRecencyBand
+         * @enum {string}
+         */
+        PostingRecencyBand: "recent" | "current" | "aging" | "older_than_45_days";
+        /**
          * PostingState
          * @enum {string}
          */
@@ -4718,6 +4930,11 @@ export interface components {
             /** Hunt Run Retention Days */
             hunt_run_retention_days: number;
         };
+        /**
+         * RevealedPreferenceDirection
+         * @enum {string}
+         */
+        RevealedPreferenceDirection: "preferred" | "neutral" | "deprioritized";
         /**
          * Role
          * @description A single open job posting that matched the user's criteria.
@@ -5403,6 +5620,7 @@ export interface components {
             latest_decision?: components["schemas"]["OpportunityDecisionEvent"] | null;
             match: components["schemas"]["TransparentMatchSummary"];
             posting: components["schemas"]["OpportunityPosting"];
+            recommendation?: components["schemas"]["TodayRecommendationSignals"] | null;
             /** @default inbox */
             state: components["schemas"]["OpportunityDecisionState"];
             /** Unknowns */
@@ -5414,6 +5632,24 @@ export interface components {
             updated_at: string;
             /** Version */
             version: number;
+        };
+        /**
+         * TodayRecommendationSignals
+         * @description Inspectable categorical tie-breakers used only by Recommended order.
+         */
+        TodayRecommendationSignals: {
+            /**
+             * Age Basis
+             * @enum {string}
+             */
+            age_basis: "source_posted_date" | "first_confirmed_at";
+            /** Age Days */
+            age_days: number;
+            /** @default neutral */
+            preference: components["schemas"]["RevealedPreferenceDirection"];
+            /** Preference Role Tags */
+            preference_role_tags?: string[];
+            recency: components["schemas"]["PostingRecencyBand"];
         };
         /** TodayScanHealth */
         TodayScanHealth: {
@@ -6796,6 +7032,209 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ApplicationArtifactsResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Precondition Required */
+            428: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+        };
+    };
+    approve_owner_application_dossier_api_applications__application_id__application_packs__pack_id__dossier_approval_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "If-Match"?: string | null;
+                "Idempotency-Key"?: string | null;
+            };
+            path: {
+                application_id: string;
+                pack_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ApplicationDossierApproveCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApplicationDossierApprovalResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Precondition Required */
+            428: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+        };
+    };
+    preview_owner_application_dossier_api_applications__application_id__application_packs__pack_id__dossier_preview_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "If-Match"?: string | null;
+            };
+            path: {
+                application_id: string;
+                pack_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ApplicationDossierPreviewCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApplicationDossierPreviewResponse"];
                 };
             };
             /** @description Bad Request */
@@ -12009,6 +12448,98 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TodayApplicationActionsResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Precondition Required */
+            428: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemResponse"];
+                };
+            };
+        };
+    };
+    get_daily_digest_api_today_digest_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DailyDigestResponse"];
                 };
             };
             /** @description Bad Request */

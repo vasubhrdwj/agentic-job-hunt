@@ -1728,6 +1728,184 @@
         "title": "ApplicationDetailResponse",
         "type": "object"
       },
+      "ApplicationDossierApprovalResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "application_id": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
+            "title": "Application Id",
+            "type": "string"
+          },
+          "artifacts": {
+            "$ref": "#/components/schemas/ApplicationArtifactsResponse"
+          },
+          "data_source": {
+            "const": "database",
+            "default": "database",
+            "title": "Data Source",
+            "type": "string"
+          },
+          "pack": {
+            "$ref": "#/components/schemas/ApplicationPackResponse"
+          }
+        },
+        "required": [
+          "application_id",
+          "pack",
+          "artifacts"
+        ],
+        "title": "ApplicationDossierApprovalResponse",
+        "type": "object"
+      },
+      "ApplicationDossierApproveCreate": {
+        "additionalProperties": false,
+        "properties": {
+          "confirm_dossier_reviewed": {
+            "const": true,
+            "title": "Confirm Dossier Reviewed",
+            "type": "boolean"
+          },
+          "grounding_parent_revision_id": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
+            "title": "Grounding Parent Revision Id",
+            "type": "string"
+          },
+          "preview_fingerprint": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Preview Fingerprint",
+            "type": "string"
+          },
+          "questions": {
+            "items": {
+              "$ref": "#/components/schemas/ApplicationArtifactQuestion"
+            },
+            "maxItems": 20,
+            "title": "Questions",
+            "type": "array"
+          },
+          "requirements": {
+            "items": {
+              "$ref": "#/components/schemas/ApplicationPackRequirementReview"
+            },
+            "maxItems": 40,
+            "minItems": 1,
+            "title": "Requirements",
+            "type": "array"
+          },
+          "selected_evidence_refs": {
+            "items": {
+              "$ref": "#/components/schemas/ApplicationPackEvidenceReference"
+            },
+            "maxItems": 5,
+            "minItems": 1,
+            "title": "Selected Evidence Refs",
+            "type": "array"
+          }
+        },
+        "required": [
+          "grounding_parent_revision_id",
+          "requirements",
+          "selected_evidence_refs",
+          "preview_fingerprint",
+          "confirm_dossier_reviewed"
+        ],
+        "title": "ApplicationDossierApproveCreate",
+        "type": "object"
+      },
+      "ApplicationDossierPreviewCreate": {
+        "additionalProperties": false,
+        "properties": {
+          "grounding_parent_revision_id": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
+            "title": "Grounding Parent Revision Id",
+            "type": "string"
+          },
+          "questions": {
+            "items": {
+              "$ref": "#/components/schemas/ApplicationArtifactQuestion"
+            },
+            "maxItems": 20,
+            "title": "Questions",
+            "type": "array"
+          },
+          "requirements": {
+            "items": {
+              "$ref": "#/components/schemas/ApplicationPackRequirementReview"
+            },
+            "maxItems": 40,
+            "minItems": 1,
+            "title": "Requirements",
+            "type": "array"
+          },
+          "selected_evidence_refs": {
+            "items": {
+              "$ref": "#/components/schemas/ApplicationPackEvidenceReference"
+            },
+            "maxItems": 5,
+            "minItems": 1,
+            "title": "Selected Evidence Refs",
+            "type": "array"
+          }
+        },
+        "required": [
+          "grounding_parent_revision_id",
+          "requirements",
+          "selected_evidence_refs"
+        ],
+        "title": "ApplicationDossierPreviewCreate",
+        "type": "object"
+      },
+      "ApplicationDossierPreviewResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "application_id": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
+            "title": "Application Id",
+            "type": "string"
+          },
+          "blockers": {
+            "items": {
+              "$ref": "#/components/schemas/ApplicationArtifactBlocker"
+            },
+            "maxItems": 10,
+            "title": "Blockers",
+            "type": "array"
+          },
+          "data_source": {
+            "const": "database_preview",
+            "default": "database_preview",
+            "title": "Data Source",
+            "type": "string"
+          },
+          "materials": {
+            "$ref": "#/components/schemas/ApplicationArtifactRevisionResponse"
+          },
+          "pack_id": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
+            "title": "Pack Id",
+            "type": "string"
+          },
+          "pack_version": {
+            "minimum": 1.0,
+            "title": "Pack Version",
+            "type": "integer"
+          },
+          "preview_fingerprint": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Preview Fingerprint",
+            "type": "string"
+          }
+        },
+        "required": [
+          "application_id",
+          "pack_id",
+          "pack_version",
+          "preview_fingerprint",
+          "materials"
+        ],
+        "title": "ApplicationDossierPreviewResponse",
+        "type": "object"
+      },
       "ApplicationInterviewPreparationResponse": {
         "additionalProperties": false,
         "properties": {
@@ -4680,6 +4858,208 @@
         "title": "ContactShortfallReason",
         "type": "object"
       },
+      "DailyDigestHighlight": {
+        "additionalProperties": false,
+        "description": "One newly discovered role that cleared the product's fit gates.",
+        "properties": {
+          "company": {
+            "maxLength": 240,
+            "minLength": 1,
+            "title": "Company",
+            "type": "string"
+          },
+          "confidence": {
+            "$ref": "#/components/schemas/AssessmentConfidence"
+          },
+          "discovered_at": {
+            "format": "date-time",
+            "title": "Discovered At",
+            "type": "string"
+          },
+          "fit_band": {
+            "enum": [
+              "strong",
+              "promising"
+            ],
+            "title": "Fit Band",
+            "type": "string"
+          },
+          "opportunity_id": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
+            "title": "Opportunity Id",
+            "type": "string"
+          },
+          "reasons": {
+            "items": {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            "maxItems": 3,
+            "minItems": 1,
+            "title": "Reasons",
+            "type": "array"
+          },
+          "title": {
+            "maxLength": 300,
+            "minLength": 1,
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "opportunity_id",
+          "company",
+          "title",
+          "fit_band",
+          "confidence",
+          "reasons",
+          "discovered_at"
+        ],
+        "title": "DailyDigestHighlight",
+        "type": "object"
+      },
+      "DailyDigestResponse": {
+        "additionalProperties": false,
+        "description": "A live projection over durable scans, opportunities, and fit evidence.",
+        "properties": {
+          "active_scheduled_searches": {
+            "minimum": 0.0,
+            "title": "Active Scheduled Searches",
+            "type": "integer"
+          },
+          "assessment_complete": {
+            "title": "Assessment Complete",
+            "type": "boolean"
+          },
+          "data_source": {
+            "const": "database",
+            "default": "database",
+            "title": "Data Source",
+            "type": "string"
+          },
+          "evaluated_opportunities": {
+            "minimum": 0.0,
+            "title": "Evaluated Opportunities",
+            "type": "integer"
+          },
+          "generated_at": {
+            "format": "date-time",
+            "title": "Generated At",
+            "type": "string"
+          },
+          "headline": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Headline",
+            "type": "string"
+          },
+          "highlights": {
+            "items": {
+              "$ref": "#/components/schemas/DailyDigestHighlight"
+            },
+            "maxItems": 3,
+            "title": "Highlights",
+            "type": "array"
+          },
+          "local_date": {
+            "format": "date",
+            "title": "Local Date",
+            "type": "string"
+          },
+          "new_opportunities": {
+            "minimum": 0.0,
+            "title": "New Opportunities",
+            "type": "integer"
+          },
+          "next_scan_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Scan At"
+          },
+          "period_started_at": {
+            "format": "date-time",
+            "title": "Period Started At",
+            "type": "string"
+          },
+          "scans": {
+            "$ref": "#/components/schemas/DailyDigestScanSummary"
+          },
+          "timezone": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Timezone",
+            "type": "string"
+          },
+          "worth_your_time": {
+            "minimum": 0.0,
+            "title": "Worth Your Time",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "local_date",
+          "timezone",
+          "period_started_at",
+          "generated_at",
+          "headline",
+          "new_opportunities",
+          "evaluated_opportunities",
+          "worth_your_time",
+          "assessment_complete",
+          "scans",
+          "active_scheduled_searches"
+        ],
+        "title": "DailyDigestResponse",
+        "type": "object"
+      },
+      "DailyDigestScanSummary": {
+        "additionalProperties": false,
+        "description": "Automatic scan outcomes for the owner's current local day.",
+        "properties": {
+          "failed": {
+            "minimum": 0.0,
+            "title": "Failed",
+            "type": "integer"
+          },
+          "partial": {
+            "minimum": 0.0,
+            "title": "Partial",
+            "type": "integer"
+          },
+          "running": {
+            "minimum": 0.0,
+            "title": "Running",
+            "type": "integer"
+          },
+          "scheduled": {
+            "minimum": 0.0,
+            "title": "Scheduled",
+            "type": "integer"
+          },
+          "succeeded": {
+            "minimum": 0.0,
+            "title": "Succeeded",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "scheduled",
+          "running",
+          "succeeded",
+          "partial",
+          "failed"
+        ],
+        "title": "DailyDigestScanSummary",
+        "type": "object"
+      },
       "DateEvidenceFact": {
         "additionalProperties": false,
         "properties": {
@@ -6983,6 +7363,16 @@
             "title": "Posting Versions",
             "type": "array"
           },
+          "recommendation": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TodayRecommendationSignals"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "state": {
             "$ref": "#/components/schemas/OpportunityDecisionState",
             "default": "inbox"
@@ -8825,6 +9215,16 @@
         "title": "PostingChangedField",
         "type": "string"
       },
+      "PostingRecencyBand": {
+        "enum": [
+          "recent",
+          "current",
+          "aging",
+          "older_than_45_days"
+        ],
+        "title": "PostingRecencyBand",
+        "type": "string"
+      },
       "PostingState": {
         "enum": [
           "open",
@@ -9487,6 +9887,15 @@
         ],
         "title": "RetentionSettingsPatch",
         "type": "object"
+      },
+      "RevealedPreferenceDirection": {
+        "enum": [
+          "preferred",
+          "neutral",
+          "deprioritized"
+        ],
+        "title": "RevealedPreferenceDirection",
+        "type": "string"
       },
       "Role": {
         "description": "A single open job posting that matched the user's criteria.",
@@ -11278,6 +11687,16 @@
           "posting": {
             "$ref": "#/components/schemas/OpportunityPosting"
           },
+          "recommendation": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TodayRecommendationSignals"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "state": {
             "$ref": "#/components/schemas/OpportunityDecisionState",
             "default": "inbox"
@@ -11312,6 +11731,50 @@
           "updated_at"
         ],
         "title": "TodayOpportunityItem",
+        "type": "object"
+      },
+      "TodayRecommendationSignals": {
+        "additionalProperties": false,
+        "description": "Inspectable categorical tie-breakers used only by Recommended order.",
+        "properties": {
+          "age_basis": {
+            "enum": [
+              "source_posted_date",
+              "first_confirmed_at"
+            ],
+            "title": "Age Basis",
+            "type": "string"
+          },
+          "age_days": {
+            "maximum": 100000.0,
+            "minimum": 0.0,
+            "title": "Age Days",
+            "type": "integer"
+          },
+          "preference": {
+            "$ref": "#/components/schemas/RevealedPreferenceDirection",
+            "default": "neutral"
+          },
+          "preference_role_tags": {
+            "items": {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            "maxItems": 10,
+            "title": "Preference Role Tags",
+            "type": "array"
+          },
+          "recency": {
+            "$ref": "#/components/schemas/PostingRecencyBand"
+          }
+        },
+        "required": [
+          "recency",
+          "age_days",
+          "age_basis"
+        ],
+        "title": "TodayRecommendationSignals",
         "type": "object"
       },
       "TodayScanHealth": {
@@ -13737,6 +14200,332 @@
           }
         ],
         "summary": "Create Owner Application Artifact Revision",
+        "tags": [
+          "applications"
+        ]
+      }
+    },
+    "/api/applications/{application_id}/application-packs/{pack_id}/dossier-approval": {
+      "post": {
+        "description": "With one explicit confirmation and one idempotency root, atomically review the exact prepared coverage, generate its deterministic materials, and approve that exact package. Nothing is submitted or sent.",
+        "operationId": "approve_owner_application_dossier_api_applications__application_id__application_packs__pack_id__dossier_approval_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "application_id",
+            "required": true,
+            "schema": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
+              "title": "Application Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "pack_id",
+            "required": true,
+            "schema": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
+              "title": "Pack Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "If-Match",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ApplicationDossierApproveCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApplicationDossierApprovalResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
+          "428": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Precondition Required"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "security": [
+          {
+            "OwnerSessionCookie": []
+          }
+        ],
+        "summary": "Approve Owner Application Dossier",
+        "tags": [
+          "applications"
+        ]
+      }
+    },
+    "/api/applications/{application_id}/application-packs/{pack_id}/dossier-preview": {
+      "post": {
+        "description": "Build a non-persisted deterministic preview from the exact prepared coverage and approved evidence. No review, approval, send, or submit event is recorded.",
+        "operationId": "preview_owner_application_dossier_api_applications__application_id__application_packs__pack_id__dossier_preview_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "application_id",
+            "required": true,
+            "schema": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
+              "title": "Application Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "pack_id",
+            "required": true,
+            "schema": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
+              "title": "Pack Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "If-Match",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ApplicationDossierPreviewCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApplicationDossierPreviewResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
+          "428": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Precondition Required"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "security": [
+          {
+            "OwnerSessionCookie": []
+          }
+        ],
+        "summary": "Preview Owner Application Dossier",
         "tags": [
           "applications"
         ]
@@ -21149,6 +21938,112 @@
         "summary": "List Today Application Action Items",
         "tags": [
           "applications"
+        ]
+      }
+    },
+    "/api/today/digest": {
+      "get": {
+        "operationId": "get_daily_digest_api_today_digest_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DailyDigestResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
+          "428": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Precondition Required"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "security": [
+          {
+            "OwnerSessionCookie": []
+          }
+        ],
+        "summary": "Get Daily Digest",
+        "tags": [
+          "daily-digest"
         ]
       }
     },
