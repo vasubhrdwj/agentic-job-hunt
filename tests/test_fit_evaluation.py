@@ -94,6 +94,25 @@ def test_verdict_contract_is_strict_bounded_and_deduplicated() -> None:
         )
     with pytest.raises(ValidationError, match="1-300"):
         FitVerdict(band="promising", reasons=("x" * 301,))
+    with pytest.raises(ValidationError, match="at most 3"):
+        FitVerdict(
+            band="promising",
+            reasons=("one", "two", "three", "four"),
+        )
+
+
+def test_fit_contract_normalizes_whitespace_and_uses_public_id_limit() -> None:
+    verdict = FitVerdict(
+        band="promising",
+        reasons=("  Grounded reason  ",),
+    )
+
+    assert verdict.reasons == ("Grounded reason",)
+    with pytest.raises(ValidationError):
+        FitEvaluationEvidence(
+            id="e" * 33,
+            statement="Approved evidence",
+        )
 
 
 def test_model_verdict_must_cite_only_approved_evidence() -> None:

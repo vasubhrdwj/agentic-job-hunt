@@ -11,6 +11,7 @@ from job_hunt_agent.fit_evaluation import (
     FitEvaluationPosting,
     FitEvaluationProfile,
     FitEvaluationTarget,
+    FitVerdict,
 )
 from job_hunt_agent.gemini_fit_provider import (
     FIT_PROMPT_VERSION,
@@ -64,6 +65,14 @@ class _Client:
         self.models = _Models(text)
 
 
+class _ParsedModels:
+    def __init__(self, verdict: FitVerdict) -> None:
+        self.verdict = verdict
+
+    def generate_content(self, **_kwargs):
+        return SimpleNamespace(parsed=self.verdict, text="")
+
+
 def test_provider_makes_one_schema_constrained_call() -> None:
     client = _Client(
         json.dumps(
@@ -99,6 +108,21 @@ def test_provider_makes_one_schema_constrained_call() -> None:
     assert call["config"].response_mime_type == "application/json"
     assert call["config"].response_schema is not None
     assert call["config"].tools == []
+
+
+def test_provider_accepts_sdk_validated_parsed_response() -> None:
+    verdict = FitVerdict(
+        band="promising",
+        reasons=("The approved pipeline evidence supports core backend work.",),
+        evidence_ids=("pipeline",),
+    )
+    client = SimpleNamespace(models=_ParsedModels(verdict))
+    provider = GeminiFitEvaluationProvider(
+        api_key="secret-key",
+        client_factory=lambda _key, _timeout: client,
+    )
+
+    assert provider.evaluate(_inputs()) is verdict
 
 
 def test_prompt_delimits_untrusted_input_without_adding_claims() -> None:

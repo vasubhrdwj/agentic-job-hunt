@@ -26,7 +26,7 @@ FallbackReason = Literal[
 
 
 class _StrictModel(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True)
+    model_config = ConfigDict(extra="forbid", frozen=True, str_strip_whitespace=True)
 
 
 class FitEvaluationPosting(_StrictModel):
@@ -62,7 +62,11 @@ class FitEvaluationProfile(_StrictModel):
 
 
 class FitEvaluationEvidence(_StrictModel):
-    id: str = Field(min_length=1, max_length=64, pattern=r"^[A-Za-z0-9][A-Za-z0-9_-]*$")
+    id: str = Field(
+        min_length=1,
+        max_length=32,
+        pattern=r"^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$",
+    )
     statement: str = Field(min_length=1, max_length=2_000)
     skills: tuple[str, ...] = Field(default=(), max_length=80)
 
@@ -85,8 +89,8 @@ class FitVerdict(_StrictModel):
     """Exact structured output accepted from a fit-evaluation provider."""
 
     band: FitBand
-    reasons: tuple[str, ...] = Field(min_length=1, max_length=5)
-    gaps: tuple[str, ...] = Field(default=(), max_length=5)
+    reasons: tuple[str, ...] = Field(min_length=1, max_length=3)
+    gaps: tuple[str, ...] = Field(default=(), max_length=3)
     evidence_ids: tuple[str, ...] = Field(default=(), max_length=20)
 
     @model_validator(mode="after")
