@@ -25,7 +25,10 @@ from .contact_providers import SerpAPIContactProvider
 from .contact_search_repository import CONTACT_SEARCH_JOB_KIND
 from .database import database_from_env
 from .opportunity_fit_worker import (
+    DEFAULT_FIT_BACKFILL_BATCH_SIZE,
     FIT_EVALUATION_JOB_KIND,
+    OpportunityFitBackfillBatch,
+    enqueue_missing_opportunity_fit_evaluations,
     fit_evaluation_jobs_enabled,
 )
 from .opportunity_scan_worker import SCAN_JOB_KIND
@@ -96,19 +99,26 @@ class EmbeddedScanWorker:
             next_scheduler_tick = 0.0
             while not self._stop.is_set():
                 monotonic_now = time.monotonic()
-                if (
-                    SCAN_JOB_KIND in supported_kinds
-                    and monotonic_now >= next_scheduler_tick
-                ):
+                if monotonic_now >= next_scheduler_tick and supported_kinds & {
+                    SCAN_JOB_KIND,
+                    FIT_EVALUATION_JOB_KIND,
+                }:
                     try:
-                        scheduled = _run_scheduled_scan_tick(
-                            database,
-                            limit=self.scheduler_batch_size,
-                        )
-                        if scheduled.invalid_search_count:
-                            LOGGER.warning(
-                                "embedded scan scheduler skipped invalid searches count=%s",
-                                scheduled.invalid_search_count,
+                        if SCAN_JOB_KIND in supported_kinds:
+                            scheduled = _run_scheduled_scan_tick(
+                                database,
+                                limit=self.scheduler_batch_size,
+                            )
+                            if scheduled.invalid_search_count:
+                                LOGGER.warning(
+                                    "embedded scan scheduler skipped invalid searches "
+                                    "count=%s",
+                                    scheduled.invalid_search_count,
+                                )
+                        if FIT_EVALUATION_JOB_KIND in supported_kinds:
+                            _run_fit_backfill_tick(
+                                database,
+                                limit=DEFAULT_FIT_BACKFILL_BATCH_SIZE,
                             )
                     except Exception as exc:  # noqa: BLE001 - keep queue drain alive.
                         LOGGER.error(
@@ -146,6 +156,15 @@ class EmbeddedScanWorker:
 def _run_scheduled_scan_tick(database, *, limit: int) -> ScheduledScanBatch:
     with database.session() as session:
         return enqueue_due_saved_search_scans(session, limit=limit)
+
+
+def _run_fit_backfill_tick(
+    database,
+    *,
+    limit: int,
+) -> OpportunityFitBackfillBatch:
+    with database.session() as session:
+        return enqueue_missing_opportunity_fit_evaluations(session, limit=limit)
 
 
 def embedded_worker_job_kinds() -> frozenset[str]:

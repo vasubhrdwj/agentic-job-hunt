@@ -21,6 +21,7 @@ from job_hunt_agent.embedded_scan_worker import EmbeddedScanWorker
 from job_hunt_agent.job_queue import record_worker_heartbeat
 from job_hunt_agent.models import (
     BackgroundJob,
+    CandidateProfile,
     CareerTrack,
     HuntRun,
     JobObservation,
@@ -41,6 +42,7 @@ from job_hunt_agent.opportunity_fit_worker import (
     FIT_EVALUATION_JOB_KIND,
     FIT_EVALUATION_JOB_PRIORITY,
     OpportunityFitJobOutcome,
+    enqueue_missing_opportunity_fit_evaluations,
 )
 from job_hunt_agent.security import load_data_keyring
 from job_hunt_agent.sources.registry import load_company_pack
@@ -433,6 +435,58 @@ def test_new_posting_versions_enqueue_deduplicated_fit_jobs_only_when_enabled(
             )
         ) == len(jobs)
         assert session.scalar(select(func.count(JobPostingVersion.id))) == len(jobs)
+
+
+def test_fit_backfill_covers_existing_matches_and_requeues_after_profile_change(
+    scan_workspace: tuple[Database, SqlAlchemyOpportunityWorkspaceStore],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    database, store = scan_workspace
+    monkeypatch.setenv(FIT_EVALUATION_ENABLED_ENV, "1")
+    _create_scan(store, idempotency_key="fit-backfill")
+    assert _run_once(database, job_kinds={scan_worker.SCAN_JOB_KIND}).status == "succeeded"
+
+    with database.session() as session:
+        initial_count = session.scalar(
+            select(func.count(BackgroundJob.id)).where(
+                BackgroundJob.kind == FIT_EVALUATION_JOB_KIND
+            )
+        )
+        assert initial_count is not None and initial_count > 0
+        replay = enqueue_missing_opportunity_fit_evaluations(session, limit=100)
+        assert replay.enqueued_count == 0
+        session.add(
+            CandidateProfile(
+                id="profile-a",
+                owner_id=OWNER_ID,
+                encrypted_payload="private-profile-ciphertext",
+                encryption_key_id="local-dev",
+                onboarding_state="complete",
+                version=1,
+            )
+        )
+
+    with database.session() as session:
+        profile_backfill = enqueue_missing_opportunity_fit_evaluations(
+            session,
+            limit=100,
+        )
+        assert profile_backfill.enqueued_count == initial_count
+        profile = session.get(CandidateProfile, "profile-a")
+        assert profile is not None
+        profile.version += 1
+
+    with database.session() as session:
+        changed_backfill = enqueue_missing_opportunity_fit_evaluations(
+            session,
+            limit=100,
+        )
+        assert changed_backfill.enqueued_count == initial_count
+        assert session.scalar(
+            select(func.count(BackgroundJob.id)).where(
+                BackgroundJob.kind == FIT_EVALUATION_JOB_KIND
+            )
+        ) == initial_count * 3
 
 
 def test_fit_handler_runs_under_claim_lease_and_completes_independent_job(

@@ -122,7 +122,7 @@ secrets so restarts remain reproducible.
 | `USE_MOCKS` | Free deterministic demo | Set to `1`; no provider account or API key is needed. |
 | `SERPAPI_API_KEY` | Optional | Enables live public-profile contact discovery. Role scanning does not need it. |
 | `GOOGLE_API_KEY` | Optional | Enables Gemini-backed fit interpretation when the fit flag is on, plus the older legacy pipeline. |
-| `ENABLE_LLM_FIT_EVALUATION` | Optional, defaults off | Set to `1` to evaluate newly matched posting/profile snapshots in durable background jobs. Outages retain the deterministic result. |
+| `ENABLE_LLM_FIT_EVALUATION` | Optional, defaults off | Set to `1` to evaluate current posting/profile snapshots in durable background jobs. Existing matches are backfilled in bounded batches; profile changes create new fingerprints. Outages retain the deterministic result. |
 | `GEMINI_FIT_MODEL`, `GEMINI_FIT_TIMEOUT_MS` | Optional | Selects the structured fit model and bounds its single provider call (default 12 seconds). |
 | `PHOENIX_API_KEY`, `PHOENIX_COLLECTOR_ENDPOINT` | Optional | Enables legacy tracing and self-RAG experiments. |
 

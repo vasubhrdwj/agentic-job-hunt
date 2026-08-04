@@ -30,7 +30,11 @@ from .opportunity_repository import (
     PostingIdentityConflict,
     persist_scan_source_role,
 )
-from .opportunity_fit_worker import enqueue_opportunity_fit_evaluation
+from .opportunity_fit_worker import (
+    enqueue_opportunity_fit_evaluation,
+    fit_evaluation_jobs_enabled,
+    fit_profile_revision_token,
+)
 from .schemas import Company, JobCriteria, Role
 from .sources.base import FetchCompleteness, FetchScope, SourceFetchResult
 from .sources.registry import CompanyRegistry, RegistryError, load_company_pack
@@ -346,6 +350,15 @@ def _persist_source_result(
         if scan is None:
             return
         plan_saved_search_id = scan.saved_search_id
+        fit_revision_token = (
+            fit_profile_revision_token(
+                session,
+                owner_id=owned.owner_id,
+                saved_search_id=plan_saved_search_id,
+            )
+            if fit_evaluation_jobs_enabled()
+            else None
+        )
 
         warning_codes = set(result.warning_codes)
         # The repository increments persisted_count per observation, so pin
@@ -384,6 +397,7 @@ def _persist_source_result(
                         posting_id=persisted.posting_id,
                         posting_version_id=persisted.posting_version_id,
                         saved_search_id=plan_saved_search_id,
+                        profile_revision_token=fit_revision_token,
                     )
             except (ValueError, PostingIdentityConflict, OpportunityRepositoryError):
                 warning_codes.add("source_invalid_record")

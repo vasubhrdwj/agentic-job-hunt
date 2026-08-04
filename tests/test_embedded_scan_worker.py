@@ -11,6 +11,7 @@ from job_hunt_agent.contact_search_repository import CONTACT_SEARCH_JOB_KIND
 from job_hunt_agent.opportunity_fit_worker import (
     FIT_EVALUATION_ENABLED_ENV,
     FIT_EVALUATION_JOB_KIND,
+    OpportunityFitBackfillBatch,
 )
 from job_hunt_agent.opportunity_scan_worker import SCAN_JOB_KIND
 from job_hunt_agent.scheduled_scan_repository import ScheduledScanBatch
@@ -216,6 +217,64 @@ def test_contact_only_embedded_worker_never_enqueues_role_scans(monkeypatch) -> 
     worker.stop(timeout_seconds=2)
 
     assert scheduler_calls == 0
+    assert database.disposed is True
+
+
+def test_fit_only_embedded_worker_runs_bounded_backfill_tick(monkeypatch) -> None:
+    database = _FakeDatabase()
+    worker_called = Event()
+    fit_tick_called = Event()
+    scan_scheduler_calls = 0
+
+    monkeypatch.setattr(
+        embedded_scan_worker,
+        "database_from_env",
+        lambda *, required: database,
+    )
+    monkeypatch.setattr(
+        embedded_scan_worker,
+        "embedded_worker_job_kinds",
+        lambda: frozenset({FIT_EVALUATION_JOB_KIND}),
+    )
+
+    def fake_scan_scheduler(_database, *, limit):
+        nonlocal scan_scheduler_calls
+        scan_scheduler_calls += 1
+        return ScheduledScanBatch(items=())
+
+    def fake_fit_tick(_database, *, limit):
+        assert _database is database
+        assert limit > 0
+        fit_tick_called.set()
+        return OpportunityFitBackfillBatch(inspected_count=0, enqueued_count=0)
+
+    def fake_worker(**kwargs):
+        assert kwargs["job_kinds"] == {FIT_EVALUATION_JOB_KIND}
+        worker_called.set()
+        return WorkerResult(claimed=False)
+
+    monkeypatch.setattr(
+        embedded_scan_worker,
+        "_run_scheduled_scan_tick",
+        fake_scan_scheduler,
+    )
+    monkeypatch.setattr(
+        embedded_scan_worker,
+        "_run_fit_backfill_tick",
+        fake_fit_tick,
+    )
+    monkeypatch.setattr(embedded_scan_worker, "run_worker_once", fake_worker)
+
+    worker = embedded_scan_worker.EmbeddedScanWorker(
+        worker_id="embedded-fit-only",
+        idle_sleep_seconds=0.01,
+    )
+    worker.start()
+    assert worker_called.wait(timeout=2)
+    worker.stop(timeout_seconds=2)
+
+    assert fit_tick_called.is_set()
+    assert scan_scheduler_calls == 0
     assert database.disposed is True
 
 
