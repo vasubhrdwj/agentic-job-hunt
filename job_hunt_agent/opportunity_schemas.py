@@ -562,11 +562,11 @@ class TransparentMatchSummary(ContractModel):
                     "assessed matches require algorithm, input versions, band, and confidence"
                 )
             if self.fit_band is OpportunityFitBand.strong and (
-                self.confidence is not AssessmentConfidence.high
+                self.confidence is AssessmentConfidence.low
                 or self.eligibility is not OpportunityEligibility.eligible
             ):
                 raise ValueError(
-                    "strong matches require high confidence and eligible inputs"
+                    "strong matches require at least medium confidence and eligible inputs"
                 )
             if (
                 self.eligibility is OpportunityEligibility.likely_ineligible

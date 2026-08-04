@@ -336,7 +336,7 @@ def test_current_location_does_not_override_explicit_authorization() -> None:
     assert (result.fit_band, result.eligibility) == ("low", "likely_ineligible")
 
 
-def test_missing_work_mode_or_remote_geography_stays_uncertain() -> None:
+def test_unstated_work_mode_is_neutral_but_remote_geography_stays_uncertain() -> None:
     india_without_mode = assess_opportunity(
         posting=AssessmentPosting(
             title="Backend Engineer",
@@ -378,10 +378,144 @@ def test_missing_work_mode_or_remote_geography_stays_uncertain() -> None:
         evidence=EVIDENCE,
     )
 
-    assert india_without_mode.eligibility == "uncertain"
-    assert india_without_mode.fit_band != "strong"
+    assert india_without_mode.eligibility == "eligible"
+    assert india_without_mode.fit_band == "strong"
     assert remote_without_country.eligibility == "uncertain"
     assert remote_without_country.fit_band != "strong"
+
+
+def test_generic_software_engineer_is_an_exact_backend_title_match() -> None:
+    result = assess_opportunity(
+        posting=AssessmentPosting(
+            title="Software Engineer",
+            description=(
+                "Required: build Node.js services using AWS, REST APIs, Kafka, and "
+                "PostgreSQL for distributed systems. " * 6
+            ),
+            location="India",
+            employment_type="full_time",
+        ),
+        target=AssessmentTarget(
+            role_families=("Backend Engineer",),
+            seniority_levels=("junior", "mid"),
+            target_locations=("India",),
+        ),
+        profile=PROFILE,
+        resume_text=RESUME,
+        evidence=EVIDENCE,
+    )
+
+    assert result.fit_band == "strong"
+    assert all("adjacent to" not in gap for gap in result.gaps)
+    assert any("title aligns" in strength.casefold() for strength in result.strengths)
+
+
+def test_stretch_conditions_cap_good_matches_without_promoting_weak_ones() -> None:
+    result = assess_opportunity(
+        posting=AssessmentPosting(
+            title="Site Reliability Engineer",
+            description=(
+                "Required: Kubernetes, Terraform, Helm, Redis, MongoDB, GraphQL, "
+                "gRPC, PyTorch, QLoRA, and GRPO. " * 6
+            ),
+            location="India",
+            employment_type="full_time",
+        ),
+        target=AssessmentTarget(
+            role_families=("Backend Engineer",),
+            seniority_levels=("junior", "mid"),
+            target_locations=("India",),
+        ),
+        profile=PROFILE,
+        resume_text=RESUME,
+        evidence=EVIDENCE,
+    )
+
+    assert result.fit_band == "low"
+
+
+def test_go_requires_local_technology_context() -> None:
+    ordinary = assess_opportunity(
+        posting=AssessmentPosting(
+            title="Backend Engineer",
+            description=(
+                "Go to market with customer research and grow the commercial team. "
+                "Required: build AWS REST services. " * 8
+            ),
+            location="India",
+            employment_type="full_time",
+        ),
+        target=TARGET,
+        profile=PROFILE,
+        resume_text=RESUME,
+        evidence=EVIDENCE,
+    )
+    technical = assess_opportunity(
+        posting=AssessmentPosting(
+            title="Backend Engineer",
+            description=(
+                "Required: Go, Java, or Python, plus AWS and REST APIs. "
+                "Operate reliable Kafka services. " * 8
+            ),
+            location="India",
+            employment_type="full_time",
+        ),
+        target=TARGET,
+        profile=PROFILE,
+        resume_text=RESUME + " Built production services in Go.",
+        evidence=EVIDENCE,
+    )
+
+    assert "Go" not in ordinary.matched_terms
+    assert all("Go" not in gap for gap in ordinary.gaps)
+    assert "Go" in technical.matched_terms
+
+
+def test_explicit_go_evidence_skill_is_technical_context() -> None:
+    result = assess_opportunity(
+        posting=AssessmentPosting(
+            title="Backend Engineer",
+            description=(
+                "Required: Go programming language, AWS, REST APIs, and Kafka. " * 8
+            ),
+            location="India",
+            employment_type="full_time",
+        ),
+        target=TARGET,
+        profile=PROFILE,
+        resume_text="Built reliable backend systems.",
+        evidence=(
+            AssessmentEvidence(
+                id="go-service",
+                statement="Owned a production event processor.",
+                skills=("Go",),
+            ),
+        ),
+    )
+
+    assert "Go" in result.matched_terms
+    assert result.approved_evidence_ids == ("go-service",)
+
+
+def test_strong_band_can_have_medium_confidence() -> None:
+    result = assess_opportunity(
+        posting=AssessmentPosting(
+            title="Backend Engineer",
+            description=(
+                "Required: build Node.js services using AWS, REST APIs, Kafka, and "
+                "PostgreSQL. " * 3
+            ),
+            location="India",
+            employment_type="full_time",
+        ),
+        target=TARGET,
+        profile=PROFILE,
+        resume_text=RESUME,
+        evidence=EVIDENCE,
+    )
+
+    assert result.confidence == "medium"
+    assert result.fit_band == "strong"
 
 
 def test_decimal_and_preferred_experience_are_not_hard_failures() -> None:

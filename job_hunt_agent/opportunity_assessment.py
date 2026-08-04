@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from typing import Literal
 
 
-ASSESSMENT_ALGORITHM_VERSION = "backend-opportunity-fit-v4"
+ASSESSMENT_ALGORITHM_VERSION = "backend-opportunity-fit-v5"
 FitBand = Literal["strong", "promising", "stretch", "low", "insufficient_data"]
 AssessmentConfidence = Literal["high", "medium", "low"]
 EligibilityState = Literal["eligible", "uncertain", "likely_ineligible"]
@@ -109,7 +109,7 @@ _SKILL_PATTERNS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("TypeScript", (r"\btypescript\b",)),
     ("JavaScript", (r"\bjavascript\b",)),
     ("Python", (r"\bpython\b",)),
-    ("Go", (r"\bgolang\b", r"\bGo\b")),
+    ("Go", (r"\bgolang\b",)),
     ("Java", (r"\bjava\b",)),
     ("FastAPI", (r"\bfastapi\b",)),
     ("Express", (r"\bexpress[.]?js\b", r"\bexpress framework\b")),
@@ -266,6 +266,24 @@ _COUNTRY_PATTERNS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("DE", (r"\bgermany\b",)),
     ("SG", (r"\bsingapore\b",)),
 )
+_GO_ORDINARY_FOLLOW = re.compile(
+    r"\bGo\b\s+(?:to|live|forward|ahead|beyond|through|home|here|there)\b",
+    re.IGNORECASE,
+)
+_GO_TECH_CONTEXT = re.compile(
+    r"(?:\b(?:code(?:base|d)?|program(?:ming)?|language|software|backend|"
+    r"services?|microservices?|apis?|skills?|developer|engineer(?:ing)?|experience|"
+    r"proficiency|knowledge|using|used|build|built|develop(?:ed|ment)?|"
+    r"written|implemented|stack|technolog(?:y|ies)|production)\b"
+    r"(?:\W+\w+){0,6}\W+\bGo\b)|"
+    r"(?:\bGo\b\W+(?:programming\s+language|language|developer|engineer|"
+    r"services?|microservices?|apis?|codebase|runtime|sdk|tooling)\b)|"
+    r"(?:\b(?:Python|Java|JavaScript|TypeScript|Rust|C\+\+|C#)\b"
+    r"\s*(?:,|/|&|\band\b|\bor\b)\s*\bGo\b)|"
+    r"(?:\bGo\b\s*(?:,|/|&|\band\b|\bor\b)\s*"
+    r"\b(?:Python|Java|JavaScript|TypeScript|Rust|C\+\+|C#)\b)",
+    re.IGNORECASE,
+)
 
 
 def assess_opportunity(
@@ -278,7 +296,11 @@ def assess_opportunity(
 ) -> OpportunityAssessment:
     description = _normalize_description(posting.description)
     candidate_text = " ".join(
-        [resume_text, *(item.statement for item in evidence), *(" ".join(item.skills) for item in evidence)]
+        [
+            resume_text,
+            *(item.statement for item in evidence),
+            *(f"Technical skills: {' '.join(item.skills)}" for item in evidence),
+        ]
     )
     requirements = _classify_skill_requirements(description)
     jd_skills = set(requirements.all_skills)
@@ -294,7 +316,9 @@ def assess_opportunity(
                 index,
                 item.id,
                 required_skills
-                & _extract_skills(f"{item.statement} {' '.join(item.skills)}"),
+                & _extract_skills(
+                    f"{item.statement} Technical skills: {' '.join(item.skills)}"
+                ),
             )
             for index, item in enumerate(evidence)
         ),
@@ -478,31 +502,35 @@ def assess_opportunity(
         fit_band: FitBand = "low"
     elif not description_sufficient:
         fit_band = "insufficient_data"
-    elif (
-        role_uncertain
-        or role_adjacent
-        or above_target
-        or thin_skill_coverage
-        or preferred_experience_gap
-    ):
-        fit_band = "stretch"
-    elif (
-        normalized_score >= 70
-        and known >= 70
-        and len(matched_required_skills) >= 3
-        and evidence_supported_units >= 2
-        and eligibility == "eligible"
-        and confidence == "high"
-    ):
-        fit_band = "strong"
-    elif normalized_score >= 50 and known >= 50 and confidence != "low":
-        fit_band = "promising"
-    elif normalized_score >= 30 and confidence != "low":
-        fit_band = "stretch"
-    elif confidence != "low":
-        fit_band = "low"
     else:
-        fit_band = "insufficient_data"
+        stretch_cap = (
+            role_uncertain
+            or role_adjacent
+            or above_target
+            or thin_skill_coverage
+            or preferred_experience_gap
+        )
+        if (
+            normalized_score >= 70
+            and known >= 70
+            and len(matched_required_skills) >= 3
+            and evidence_supported_units >= 2
+            and eligibility == "eligible"
+        ):
+            base_band: FitBand = "strong"
+        elif normalized_score >= 50 and known >= 50 and confidence != "low":
+            base_band = "promising"
+        elif normalized_score >= 30 and confidence != "low":
+            base_band = "stretch"
+        elif confidence != "low":
+            base_band = "low"
+        else:
+            base_band = "insufficient_data"
+        fit_band = (
+            "stretch"
+            if stretch_cap and base_band in {"strong", "promising"}
+            else base_band
+        )
 
     strengths: list[str] = []
     if role_points >= 30:
@@ -534,10 +562,7 @@ def _extract_skills(text: str) -> set[str]:
     skills: set[str] = set()
     for name, patterns in _SKILL_PATTERNS:
         if name == "Go":
-            matched = bool(
-                re.search(r"\bgolang\b", text, re.IGNORECASE)
-                or re.search(r"\bGo\b", text)
-            )
+            matched = _mentions_go_technology(text)
         elif name == "REST":
             matched = bool(
                 re.search(r"\bREST(?:ful)?\b", text)
@@ -548,6 +573,19 @@ def _extract_skills(text: str) -> set[str]:
         if matched:
             skills.add(name)
     return skills
+
+
+def _mentions_go_technology(text: str) -> bool:
+    if re.search(r"\bgolang\b", text, re.IGNORECASE):
+        return True
+    for mention in re.finditer(r"\bGo\b", text):
+        window = text[max(0, mention.start() - 96) : mention.end() + 96]
+        local_start = mention.start() - max(0, mention.start() - 96)
+        if _GO_ORDINARY_FOLLOW.match(window, pos=local_start):
+            continue
+        if _GO_TECH_CONTEXT.search(window):
+            return True
+    return False
 
 
 def _classify_skill_requirements(description: str) -> _SkillRequirements:
@@ -645,6 +683,8 @@ def _role_alignment(
         return 30, 30, False, False, False
     if title_groups & target_groups:
         return 30, 30, False, False, False
+    if title_groups == {"software"} and "backend" in target_groups:
+        return 30, 30, False, False, False
     if title_groups & _ADJACENT_ROLE_GROUPS and target_groups & _ADJACENT_ROLE_GROUPS:
         return 20, 30, False, False, True
     # Provider titles such as "Member of Technical Staff" do not expose a
@@ -696,19 +736,6 @@ def _location_alignment(
             False,
             "The posting's offered work modes are outside your saved work modes.",
         )
-    if not posting_modes and allowed_modes and allowed_modes != {
-        "remote",
-        "hybrid",
-        "onsite",
-    }:
-        return (
-            0,
-            0,
-            False,
-            True,
-            "The posting does not state a work mode, so your work-mode preference needs verification.",
-        )
-
     posting_countries = _country_codes(posting_value or "")
     target_countries = set().union(
         *(_country_codes(target) for target in target_locations),

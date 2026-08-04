@@ -408,12 +408,26 @@ def test_match_summary_is_transparent_or_explicitly_not_assessed() -> None:
         "assessment_saved_search_id": "search1",
         "assessment_input_fingerprint": "b" * 64,
     }
+    medium_confidence_strong = TransparentMatchSummary(
+        **common,
+        fit_band="strong",
+        confidence="medium",
+        eligibility="eligible",
+    )
+    assert medium_confidence_strong.fit_band.value == "strong"
     with pytest.raises(ValidationError, match="strong matches"):
         TransparentMatchSummary(
             **common,
             fit_band="strong",
             confidence="low",
             eligibility="eligible",
+        )
+    with pytest.raises(ValidationError, match="strong matches"):
+        TransparentMatchSummary(
+            **common,
+            fit_band="strong",
+            confidence="high",
+            eligibility="uncertain",
         )
     with pytest.raises(ValidationError, match="likely-ineligible"):
         TransparentMatchSummary(
