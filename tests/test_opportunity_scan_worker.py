@@ -15,7 +15,7 @@ from sqlalchemy import delete, func, select
 
 import job_hunt_agent.opportunity_scan_worker as scan_worker
 import job_hunt_agent.run as hunt_run_module
-from job_hunt_agent import worker
+from job_hunt_agent import fit_evaluation_service, worker
 from job_hunt_agent.database import Database
 from job_hunt_agent.embedded_scan_worker import EmbeddedScanWorker
 from job_hunt_agent.job_queue import record_worker_heartbeat
@@ -36,6 +36,12 @@ from job_hunt_agent.models import (
     WorkerHeartbeat,
 )
 from job_hunt_agent.opportunity_schemas import ScanCreateRequest
+from job_hunt_agent.opportunity_fit_worker import (
+    FIT_EVALUATION_ENABLED_ENV,
+    FIT_EVALUATION_JOB_KIND,
+    FIT_EVALUATION_JOB_PRIORITY,
+    OpportunityFitJobOutcome,
+)
 from job_hunt_agent.security import load_data_keyring
 from job_hunt_agent.sources.registry import load_company_pack
 from job_hunt_agent.sqlalchemy_opportunity_workspace import (
@@ -60,6 +66,7 @@ def scan_workspace(
     monkeypatch.delenv("ENVIRONMENT", raising=False)
     monkeypatch.delenv("RENDER_GIT_COMMIT", raising=False)
     monkeypatch.delenv("APP_VERSION", raising=False)
+    monkeypatch.delenv(FIT_EVALUATION_ENABLED_ENV, raising=False)
     command.upgrade(Config("alembic.ini"), "head")
     database = Database(database_url)
     with database.session() as session:
@@ -164,6 +171,7 @@ def _run_once(
     *,
     worker_id: str = "scan-worker",
     job_kinds: set[str] | None = None,
+    fit_job_handler=None,
 ):
     return worker.run_worker_once(
         worker_id=worker_id,
@@ -174,6 +182,7 @@ def _run_once(
         durable_database=database,
         practical_mode=True,
         job_kinds=job_kinds,
+        fit_job_handler=fit_job_handler,
     )
 
 
@@ -372,9 +381,185 @@ def test_mock_scan_retries_idempotently_and_persists_only_public_job_facts(
         assert set(heartbeat.supported_kinds) == {scan_worker.SCAN_JOB_KIND}
         assert set(worker.PRACTICAL_JOB_KINDS) == {
             "discover_contacts",
+            FIT_EVALUATION_JOB_KIND,
             "legacy_hunt",
             scan_worker.SCAN_JOB_KIND,
         }
+
+
+def test_new_posting_versions_enqueue_deduplicated_fit_jobs_only_when_enabled(
+    scan_workspace: tuple[Database, SqlAlchemyOpportunityWorkspaceStore],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    database, store = scan_workspace
+    monkeypatch.setenv(FIT_EVALUATION_ENABLED_ENV, "1")
+
+    first = _create_scan(store, idempotency_key="fit-jobs-first")
+    assert _run_once(database, job_kinds={scan_worker.SCAN_JOB_KIND}).status == "succeeded"
+
+    with database.session() as session:
+        jobs = list(
+            session.scalars(
+                select(BackgroundJob)
+                .where(BackgroundJob.kind == FIT_EVALUATION_JOB_KIND)
+                .order_by(BackgroundJob.id)
+            )
+        )
+        versions = list(session.scalars(select(JobPostingVersion)))
+        assert len(jobs) == len(versions)
+        assert len(jobs) >= 1
+        assert all(job.status == "queued" for job in jobs)
+        assert all(job.priority == FIT_EVALUATION_JOB_PRIORITY for job in jobs)
+        assert all(job.owner_id == OWNER_ID for job in jobs)
+        assert {
+            (job.payload["job_posting_id"], job.payload["posting_version_id"])
+            for job in jobs
+        } == {(version.job_posting_id, version.id) for version in versions}
+        assert all(
+            set(job.payload)
+            == {"job_posting_id", "posting_version_id", "saved_search_id"}
+            for job in jobs
+        )
+        assert {job.payload["saved_search_id"] for job in jobs} == {SEARCH_ID}
+        first_scan = session.get(OpportunityScan, first.id)
+        assert first_scan is not None and first_scan.status == "partial"
+
+    _create_scan(store, idempotency_key="fit-jobs-repeat")
+    assert _run_once(database, job_kinds={scan_worker.SCAN_JOB_KIND}).status == "succeeded"
+    with database.session() as session:
+        assert session.scalar(
+            select(func.count(BackgroundJob.id)).where(
+                BackgroundJob.kind == FIT_EVALUATION_JOB_KIND
+            )
+        ) == len(jobs)
+        assert session.scalar(select(func.count(JobPostingVersion.id))) == len(jobs)
+
+
+def test_fit_handler_runs_under_claim_lease_and_completes_independent_job(
+    scan_workspace: tuple[Database, SqlAlchemyOpportunityWorkspaceStore],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    database, store = scan_workspace
+    monkeypatch.setenv(FIT_EVALUATION_ENABLED_ENV, "1")
+    created = _create_scan(store, idempotency_key="fit-handler")
+    assert _run_once(database, job_kinds={scan_worker.SCAN_JOB_KIND}).status == "succeeded"
+    observed: dict[str, str] = {}
+
+    def handler(claim, *, database, worker_id, keyring):
+        del keyring
+        with database.session() as session:
+            running = session.get(BackgroundJob, claim.job_id)
+            assert running is not None
+            assert running.status == "running"
+            assert running.lease_owner == worker_id
+            assert running.lease_token == claim.lease_token
+        observed["posting_id"] = claim.posting_id
+        observed["posting_version_id"] = claim.posting_version_id
+        observed["saved_search_id"] = claim.saved_search_id
+        return OpportunityFitJobOutcome(cache_written=True)
+
+    monkeypatch.setattr(
+        fit_evaluation_service,
+        "process_opportunity_fit_job",
+        handler,
+    )
+
+    result = _run_once(
+        database,
+        worker_id="fit-worker",
+        job_kinds={FIT_EVALUATION_JOB_KIND},
+    )
+    assert result.status == "succeeded"
+    assert result.run_id == observed["posting_version_id"]
+    assert observed["saved_search_id"] == SEARCH_ID
+
+    with database.session() as session:
+        job = session.scalar(
+            select(BackgroundJob).where(
+                BackgroundJob.kind == FIT_EVALUATION_JOB_KIND,
+                BackgroundJob.subject_id == result.run_id,
+            )
+        )
+        scan = session.get(OpportunityScan, created.id)
+        assert job is not None
+        assert job.status == "succeeded"
+        assert job.stage_checkpoint == "model_cache_written"
+        assert job.last_error is None
+        assert scan is not None and scan.status == "partial"
+
+
+def test_fit_provider_failure_completes_with_deterministic_fallback(
+    scan_workspace: tuple[Database, SqlAlchemyOpportunityWorkspaceStore],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    database, store = scan_workspace
+    monkeypatch.setenv(FIT_EVALUATION_ENABLED_ENV, "1")
+    created = _create_scan(store, idempotency_key="fit-provider-fallback")
+    assert _run_once(database, job_kinds={scan_worker.SCAN_JOB_KIND}).status == "succeeded"
+
+    def unavailable_provider(*_args, **_kwargs):
+        raise RuntimeError("private provider failure detail")
+
+    result = _run_once(
+        database,
+        worker_id="fit-fallback-worker",
+        job_kinds={FIT_EVALUATION_JOB_KIND},
+        fit_job_handler=unavailable_provider,
+    )
+    assert result.status == "succeeded"
+    with database.session() as session:
+        job = session.scalar(
+            select(BackgroundJob).where(
+                BackgroundJob.kind == FIT_EVALUATION_JOB_KIND,
+                BackgroundJob.subject_id == result.run_id,
+            )
+        )
+        scan = session.get(OpportunityScan, created.id)
+        assert job is not None
+        assert job.stage_checkpoint == "deterministic_fallback"
+        assert job.last_error is None
+        assert "private provider failure detail" not in str(job.__dict__)
+        assert scan is not None and scan.status == "partial"
+
+
+def test_invalid_fit_reference_is_rejected_before_provider_execution(
+    scan_workspace: tuple[Database, SqlAlchemyOpportunityWorkspaceStore],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    database, store = scan_workspace
+    monkeypatch.setenv(FIT_EVALUATION_ENABLED_ENV, "1")
+    created = _create_scan(store, idempotency_key="fit-invalid-reference")
+    assert _run_once(database, job_kinds={scan_worker.SCAN_JOB_KIND}).status == "succeeded"
+    with database.session() as session:
+        job = session.scalar(
+            select(BackgroundJob).where(
+                BackgroundJob.kind == FIT_EVALUATION_JOB_KIND
+            )
+        )
+        assert job is not None
+        job.payload = {**job.payload, "saved_search_id": "missing-search"}
+
+    def forbidden_handler(*_args, **_kwargs):
+        raise AssertionError("invalid fit reference reached provider execution")
+
+    result = _run_once(
+        database,
+        worker_id="fit-invalid-worker",
+        job_kinds={FIT_EVALUATION_JOB_KIND},
+        fit_job_handler=forbidden_handler,
+    )
+    assert result.status == "dead_letter"
+    with database.session() as session:
+        job = session.scalar(
+            select(BackgroundJob).where(
+                BackgroundJob.kind == FIT_EVALUATION_JOB_KIND,
+                BackgroundJob.status == "dead_letter",
+            )
+        )
+        scan = session.get(OpportunityScan, created.id)
+        assert job is not None
+        assert job.last_error == "InvalidFitEvaluationReference"
+        assert scan is not None and scan.status == "partial"
 
 
 def test_source_failure_preserves_previously_saved_opportunities(
@@ -664,6 +849,7 @@ def test_invalid_or_foreign_scan_claim_is_terminally_rejected(
         assert heartbeat is not None
         assert set(heartbeat.supported_kinds) == {
             "discover_contacts",
+            FIT_EVALUATION_JOB_KIND,
             "legacy_hunt",
             scan_worker.SCAN_JOB_KIND,
         }

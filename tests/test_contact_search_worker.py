@@ -1112,6 +1112,7 @@ def test_main_practical_worker_dispatches_contact_jobs_to_contact_execution(
         assert heartbeat is not None
         assert set(heartbeat.supported_kinds) == {
             "discover_contacts",
+            worker.FIT_EVALUATION_JOB_KIND,
             "legacy_hunt",
             "scan_saved_search",
         }

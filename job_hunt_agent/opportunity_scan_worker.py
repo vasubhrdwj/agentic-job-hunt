@@ -30,6 +30,7 @@ from .opportunity_repository import (
     PostingIdentityConflict,
     persist_scan_source_role,
 )
+from .opportunity_fit_worker import enqueue_opportunity_fit_evaluation
 from .schemas import Company, JobCriteria, Role
 from .sources.base import FetchCompleteness, FetchScope, SourceFetchResult
 from .sources.registry import CompanyRegistry, RegistryError, load_company_pack
@@ -336,6 +337,15 @@ def _persist_source_result(
         )
         if row is None:
             return
+        scan = session.scalar(
+            select(OpportunityScan).where(
+                OpportunityScan.owner_id == owned.owner_id,
+                OpportunityScan.id == row.opportunity_scan_id,
+            )
+        )
+        if scan is None:
+            return
+        plan_saved_search_id = scan.saved_search_id
 
         warning_codes = set(result.warning_codes)
         # The repository increments persisted_count per observation, so pin
@@ -359,13 +369,21 @@ def _persist_source_result(
                 warning_codes.add("untrusted_apply_url_skipped")
             try:
                 with session.begin_nested():
-                    persist_scan_source_role(
+                    persisted = persist_scan_source_role(
                         session,
                         owner_id=owned.owner_id,
                         scan_source_id=row.id,
                         role=safe_role,
                         first_party_url_verified=True,
                         now=completed_at,
+                    )
+                if persisted.version_created:
+                    enqueue_opportunity_fit_evaluation(
+                        session,
+                        owner_id=owned.owner_id,
+                        posting_id=persisted.posting_id,
+                        posting_version_id=persisted.posting_version_id,
+                        saved_search_id=plan_saved_search_id,
                     )
             except (ValueError, PostingIdentityConflict, OpportunityRepositoryError):
                 warning_codes.add("source_invalid_record")

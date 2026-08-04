@@ -24,6 +24,10 @@ from .contact_discovery import ContactProviderConfigurationError
 from .contact_providers import SerpAPIContactProvider
 from .contact_search_repository import CONTACT_SEARCH_JOB_KIND
 from .database import database_from_env
+from .opportunity_fit_worker import (
+    FIT_EVALUATION_JOB_KIND,
+    fit_evaluation_jobs_enabled,
+)
 from .opportunity_scan_worker import SCAN_JOB_KIND
 from .production_runtime import validate_contact_search_runtime
 from .scheduled_scan_repository import (
@@ -148,16 +152,23 @@ def embedded_worker_job_kinds() -> frozenset[str]:
     """Resolve only the work this in-process bridge can truthfully complete."""
 
     configured_value = os.getenv(WORKER_KINDS_ENV)
+    default_kinds = {SCAN_JOB_KIND}
+    if fit_evaluation_jobs_enabled():
+        default_kinds.add(FIT_EVALUATION_JOB_KIND)
     configured = resolve_practical_job_kinds(
-        {SCAN_JOB_KIND} if configured_value is None else configured_value
+        default_kinds if configured_value is None else configured_value
     )
     supported = {SCAN_JOB_KIND} if SCAN_JOB_KIND in configured else set()
+    if FIT_EVALUATION_JOB_KIND in configured:
+        # Even a temporarily unavailable provider is serviceable: the fit job
+        # completes against the deterministic fallback and never blocks scans.
+        supported.add(FIT_EVALUATION_JOB_KIND)
     if CONTACT_SEARCH_JOB_KIND in configured and _contact_search_runtime_ready():
         supported.add(CONTACT_SEARCH_JOB_KIND)
     if not supported:
         raise RuntimeError(
-            "embedded worker must enable scan_saved_search or a configured "
-            "discover_contacts capability"
+            "embedded worker must enable scan_saved_search, "
+            "evaluate_opportunity_fit, or a configured discover_contacts capability"
         )
     return frozenset(supported)
 

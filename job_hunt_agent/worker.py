@@ -43,8 +43,18 @@ from .models import (
     ContactPlan,
     HuntRun,
     JobObservation,
+    JobPostingVersion,
     OpportunityScan,
     OpportunityScanSource,
+    SavedSearchMatch,
+)
+from .opportunity_fit_worker import (
+    DETERMINISTIC_FALLBACK_OUTCOME,
+    FIT_EVALUATION_JOB_KIND,
+    FIT_EVALUATION_SUBJECT_TYPE,
+    OpportunityFitJobHandler,
+    OpportunityFitJobOutcome,
+    complete_opportunity_fit_evaluation,
 )
 from .opportunity_scan_worker import SCAN_JOB_KIND, process_claimed_opportunity_scan
 from .production_runtime import (
@@ -65,7 +75,12 @@ DEFAULT_RETRY_DELAY_SECONDS = 0
 DEFAULT_WORKER_HEARTBEAT_MAX_AGE_SECONDS = 90.0
 DEFAULT_BUSY_HEARTBEAT_INTERVAL_SECONDS = 30.0
 PRACTICAL_JOB_KINDS = frozenset(
-    {"legacy_hunt", SCAN_JOB_KIND, CONTACT_SEARCH_JOB_KIND}
+    {
+        "legacy_hunt",
+        SCAN_JOB_KIND,
+        CONTACT_SEARCH_JOB_KIND,
+        FIT_EVALUATION_JOB_KIND,
+    }
 )
 PROVIDER_JOB_KINDS = frozenset({"legacy_hunt", CONTACT_SEARCH_JOB_KIND})
 WORKER_KINDS_ENV = "JOB_HUNT_WORKER_KINDS"
@@ -112,6 +127,19 @@ class ClaimedPracticalContact:
 
     job_id: str
     run_id: str
+    lease_token: str
+    supported_kinds: frozenset[str]
+
+
+@dataclass(frozen=True)
+class ClaimedPracticalFit:
+    """Detached opaque references for one optional fit-evaluation claim."""
+
+    job_id: str
+    run_id: str
+    posting_id: str
+    posting_version_id: str
+    saved_search_id: str
     lease_token: str
     supported_kinds: frozenset[str]
 
@@ -178,6 +206,7 @@ def run_worker_once(
     durable_database: Database | None = None,
     practical_mode: bool | None = None,
     job_kinds: str | Iterable[str] | None = None,
+    fit_job_handler: OpportunityFitJobHandler | None = None,
 ) -> WorkerResult:
     """Claim and process one hunt from exactly one configured backend."""
 
@@ -226,6 +255,7 @@ def run_worker_once(
                 use_mocks=resolved_use_mocks,
                 enable_tracing=resolved_tracing,
                 supported_kinds=supported_kinds,
+                fit_job_handler=fit_job_handler,
             )
         except PracticalWorkerError:
             _clear_practical_current_job(
@@ -304,6 +334,7 @@ def _run_practical_worker_once(
     use_mocks: bool,
     enable_tracing: bool,
     supported_kinds: frozenset[str],
+    fit_job_handler: OpportunityFitJobHandler | None = None,
 ) -> WorkerResult:
     """Claim and dispatch one supported durable practical job."""
 
@@ -312,6 +343,7 @@ def _run_practical_worker_once(
     hunt_claim: ClaimedPracticalHunt | None = None
     scan_claim: ClaimedPracticalScan | None = None
     contact_claim: ClaimedPracticalContact | None = None
+    fit_claim: ClaimedPracticalFit | None = None
     with database.session() as session:
         current = datetime.now(timezone.utc)
         recover_stale_jobs(session, now=current)
@@ -405,6 +437,61 @@ def _run_practical_worker_once(
             scan_claim = ClaimedPracticalScan(
                 job_id=job.id,
                 run_id=scan.id,
+                lease_token=lease_token,
+                supported_kinds=supported_kinds,
+            )
+        elif job.kind == FIT_EVALUATION_JOB_KIND:
+            fit_reference = _opportunity_fit_reference(job)
+            version = (
+                session.scalar(
+                    select(JobPostingVersion).where(
+                        JobPostingVersion.owner_id == job.owner_id,
+                        JobPostingVersion.job_posting_id == fit_reference[0],
+                        JobPostingVersion.id == fit_reference[1],
+                    )
+                )
+                if fit_reference is not None
+                else None
+            )
+            matched_search = (
+                session.scalar(
+                    select(SavedSearchMatch.id).where(
+                        SavedSearchMatch.owner_id == job.owner_id,
+                        SavedSearchMatch.job_posting_id == fit_reference[0],
+                        SavedSearchMatch.saved_search_id == fit_reference[2],
+                    )
+                )
+                if fit_reference is not None
+                else None
+            )
+            if version is None or matched_search is None:
+                failed = fail_job_attempt(
+                    session,
+                    job.id,
+                    worker_id=worker_id,
+                    lease_token=lease_token,
+                    error_code="InvalidFitEvaluationReference",
+                    terminal=True,
+                )
+                _record_worker_state(
+                    session,
+                    worker_id=worker_id,
+                    current_job_id=None,
+                    supported_kinds=supported_kinds,
+                )
+                return WorkerResult(
+                    claimed=True,
+                    run_id=job.subject_id,
+                    status=failed.status if failed is not None else None,
+                    stage=failed.stage if failed is not None else None,
+                )
+            assert fit_reference is not None
+            fit_claim = ClaimedPracticalFit(
+                job_id=job.id,
+                run_id=version.id,
+                posting_id=fit_reference[0],
+                posting_version_id=fit_reference[1],
+                saved_search_id=fit_reference[2],
                 lease_token=lease_token,
                 supported_kinds=supported_kinds,
             )
@@ -522,6 +609,15 @@ def _run_practical_worker_once(
             lease_seconds=lease_seconds,
             retry_delay_seconds=retry_delay_seconds,
             use_mocks=use_mocks,
+        )
+    if fit_claim is not None:
+        return process_claimed_practical_fit(
+            fit_claim,
+            database=database,
+            keyring=keyring,
+            worker_id=worker_id,
+            lease_seconds=lease_seconds,
+            fit_job_handler=fit_job_handler,
         )
     assert hunt_claim is not None
     return process_claimed_practical_hunt(
@@ -930,6 +1026,84 @@ def process_claimed_practical_scan(
         )
 
 
+def process_claimed_practical_fit(
+    claim: ClaimedPracticalFit,
+    *,
+    database: Database,
+    keyring: DataKeyring,
+    worker_id: str,
+    lease_seconds: int = DEFAULT_LEASE_SECONDS,
+    fit_job_handler: OpportunityFitJobHandler | None = None,
+) -> WorkerResult:
+    """Run optional fit work outside the claim transaction under a live lease.
+
+    Fit evaluations are derived cache work. A disabled adapter or provider
+    failure therefore resolves to the deterministic read-path fallback and
+    completes this independent job; it never changes the source scan outcome.
+    """
+
+    heartbeat = _PracticalLeaseHeartbeat(
+        database,
+        claim,
+        worker_id=worker_id,
+        lease_seconds=lease_seconds,
+    )
+    heartbeat.start()
+    fatal_error = False
+    outcome = DETERMINISTIC_FALLBACK_OUTCOME
+    try:
+        handler = fit_job_handler
+        if handler is None:
+            # Lazy import keeps the provider/cache stack out of scan-only and
+            # legacy-only worker startup paths.
+            from .fit_evaluation_service import process_opportunity_fit_job
+
+            handler = process_opportunity_fit_job
+        try:
+            outcome = handler(
+                claim,
+                database=database,
+                worker_id=worker_id,
+                keyring=keyring,
+            )
+            if not isinstance(outcome, OpportunityFitJobOutcome):
+                raise TypeError("fit job handler returned an invalid outcome")
+        except Exception as exc:  # noqa: BLE001 - derived work falls back safely.
+            LOGGER.warning(
+                "fit evaluation used deterministic fallback posting_version_id=%s "
+                "error_type=%s",
+                claim.posting_version_id,
+                type(exc).__name__,
+            )
+            outcome = DETERMINISTIC_FALLBACK_OUTCOME
+
+        if heartbeat.lease_lost:
+            return _practical_worker_result(database, claim)
+        complete_opportunity_fit_evaluation(
+            database,
+            claim,
+            worker_id=worker_id,
+            outcome=outcome,
+        )
+        return _practical_worker_result(database, claim)
+    except Exception as exc:  # noqa: BLE001 - DB loss invalidates the live lease.
+        fatal_error = True
+        LOGGER.error(
+            "fit evaluation completion failed posting_version_id=%s error_type=%s",
+            claim.posting_version_id,
+            type(exc).__name__,
+        )
+        raise PracticalWorkerError("practical fit worker failed") from None
+    finally:
+        heartbeat.stop()
+        _clear_practical_current_job(
+            database,
+            worker_id=worker_id,
+            supported_kinds=claim.supported_kinds,
+            available=not fatal_error,
+        )
+
+
 def process_claimed_practical_contact(
     claim: ClaimedPracticalContact,
     *,
@@ -1138,6 +1312,27 @@ def _contact_plan_id(job: BackgroundJob) -> str | None:
     return normalized
 
 
+def _opportunity_fit_reference(job: BackgroundJob) -> tuple[str, str, str] | None:
+    payload = job.payload if isinstance(job.payload, dict) else {}
+    posting_id = payload.get("job_posting_id")
+    version_id = payload.get("posting_version_id")
+    saved_search_id = payload.get("saved_search_id")
+    if any(
+        not isinstance(value, str) or not value.strip() or len(value) > 128
+        for value in (posting_id, version_id, saved_search_id)
+    ):
+        return None
+    normalized_posting = posting_id.strip()
+    normalized_version = version_id.strip()
+    normalized_search = saved_search_id.strip()
+    if (
+        job.subject_type != FIT_EVALUATION_SUBJECT_TYPE
+        or job.subject_id != normalized_version
+    ):
+        return None
+    return normalized_posting, normalized_version, normalized_search
+
+
 def _finish_practical_failure(
     database: Database,
     claim: ClaimedPracticalHunt,
@@ -1218,7 +1413,12 @@ def _update_practical_stage(
 
 def _renew_practical_lease(
     database: Database,
-    claim: ClaimedPracticalHunt | ClaimedPracticalScan | ClaimedPracticalContact,
+    claim: (
+        ClaimedPracticalHunt
+        | ClaimedPracticalScan
+        | ClaimedPracticalContact
+        | ClaimedPracticalFit
+    ),
     *,
     worker_id: str,
     lease_seconds: int,
@@ -1259,7 +1459,12 @@ def _record_worker_state(
 
 def _practical_worker_result(
     database: Database,
-    claim: ClaimedPracticalHunt | ClaimedPracticalScan | ClaimedPracticalContact,
+    claim: (
+        ClaimedPracticalHunt
+        | ClaimedPracticalScan
+        | ClaimedPracticalContact
+        | ClaimedPracticalFit
+    ),
 ) -> WorkerResult:
     with database.session() as session:
         return _result_from_job(
@@ -1310,7 +1515,12 @@ class _PracticalLeaseHeartbeat:
     def __init__(
         self,
         database: Database,
-        claim: ClaimedPracticalHunt | ClaimedPracticalScan | ClaimedPracticalContact,
+        claim: (
+            ClaimedPracticalHunt
+            | ClaimedPracticalScan
+            | ClaimedPracticalContact
+            | ClaimedPracticalFit
+        ),
         *,
         worker_id: str,
         lease_seconds: int,

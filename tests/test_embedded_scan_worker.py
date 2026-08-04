@@ -8,6 +8,10 @@ from fastapi.testclient import TestClient
 
 from job_hunt_agent import embedded_scan_worker
 from job_hunt_agent.contact_search_repository import CONTACT_SEARCH_JOB_KIND
+from job_hunt_agent.opportunity_fit_worker import (
+    FIT_EVALUATION_ENABLED_ENV,
+    FIT_EVALUATION_JOB_KIND,
+)
 from job_hunt_agent.opportunity_scan_worker import SCAN_JOB_KIND
 from job_hunt_agent.scheduled_scan_repository import ScheduledScanBatch
 from job_hunt_agent.worker import WorkerResult
@@ -46,6 +50,21 @@ def test_embedded_worker_advertises_contacts_only_when_configured(monkeypatch) -
     monkeypatch.setenv("SERPAPI_API_KEY", "configured-test-key")
     assert embedded_scan_worker.embedded_worker_job_kinds() == frozenset(
         {SCAN_JOB_KIND, CONTACT_SEARCH_JOB_KIND}
+    )
+
+
+def test_embedded_worker_advertises_fit_only_when_enabled_by_default(
+    monkeypatch,
+) -> None:
+    monkeypatch.delenv("JOB_HUNT_WORKER_KINDS", raising=False)
+    monkeypatch.delenv(FIT_EVALUATION_ENABLED_ENV, raising=False)
+    assert embedded_scan_worker.embedded_worker_job_kinds() == frozenset(
+        {SCAN_JOB_KIND}
+    )
+
+    monkeypatch.setenv(FIT_EVALUATION_ENABLED_ENV, "1")
+    assert embedded_scan_worker.embedded_worker_job_kinds() == frozenset(
+        {SCAN_JOB_KIND, FIT_EVALUATION_JOB_KIND}
     )
 
 

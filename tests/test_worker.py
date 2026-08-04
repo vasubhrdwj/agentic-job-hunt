@@ -633,6 +633,7 @@ def test_practical_worker_processes_only_postgres_and_clears_current_job(
             assert heartbeat is not None
             assert set(heartbeat.supported_kinds) == {
                 "discover_contacts",
+                worker.FIT_EVALUATION_JOB_KIND,
                 "legacy_hunt",
                 "scan_saved_search",
             }
