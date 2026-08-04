@@ -47,6 +47,7 @@ from .opportunity import (
     OwnerOpportunity,
     SavedSearchMatch,
 )
+from .opportunity_fit import OpportunityFitEvaluation
 from .outreach import OutreachEvent, OutreachMessageVersion, OutreachReply, OutreachSequence
 from .weekly_review import ApplicationActionReview, ApplicationMetricSnapshot
 from .privacy import OwnerPrivacySetting, PrivacyDeletionReceipt
@@ -93,6 +94,7 @@ __all__ = [
     "OwnerPrivacySetting",
     "PrivacyDeletionReceipt",
     "OpportunityDecisionEvent",
+    "OpportunityFitEvaluation",
     "OpportunityScan",
     "OpportunityScanSource",
     "OutreachEvent",

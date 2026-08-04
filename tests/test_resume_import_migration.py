@@ -13,6 +13,7 @@ from job_hunt_agent.database import MIGRATION_HEAD, Database
 
 
 REVISION = "20260721_0020"
+CURRENT_REVISION = "20260804_0021"
 PREVIOUS_REVISION = "20260720_0019"
 
 
@@ -27,8 +28,8 @@ def test_resume_import_migration_matches_models_and_cascade_edges(
     command.check(config)
     database = Database(url)
     try:
-        assert MIGRATION_HEAD == REVISION
-        assert database.current_migration_revision() == REVISION
+        assert MIGRATION_HEAD == CURRENT_REVISION
+        assert database.current_migration_revision() == CURRENT_REVISION
         inspector = inspect(database.engine)
         assert "resume_imports" in inspector.get_table_names()
         foreign_keys = inspector.get_foreign_keys("resume_imports")
@@ -72,7 +73,7 @@ def test_resume_import_migration_empty_round_trip(
     command.upgrade(config, "head")
     upgraded = Database(url)
     try:
-        assert upgraded.current_migration_revision() == REVISION
+        assert upgraded.current_migration_revision() == CURRENT_REVISION
     finally:
         upgraded.dispose()
 

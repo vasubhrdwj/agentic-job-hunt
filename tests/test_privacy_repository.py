@@ -18,6 +18,9 @@ from job_hunt_agent.models import (
     Base,
     CandidateProfile,
     HuntRun,
+    JobPosting,
+    JobPostingVersion,
+    OpportunityFitEvaluation,
     Owner,
     OwnerCredential,
     OwnerPrivacySetting,
@@ -346,6 +349,154 @@ def test_resume_import_snapshot_is_exported_and_cascade_deleted_per_owner(
             select(func.count())
             .select_from(ResumeImport)
             .where(ResumeImport.owner_id == "owner-b")
+        ) == 1
+
+
+def test_fit_evaluation_is_exported_decrypted_and_cascade_deleted_per_owner(
+    privacy_db: Database,
+) -> None:
+    _seed_owner(privacy_db, "owner-a")
+    _seed_owner(privacy_db, "owner-b")
+    keyring = load_data_keyring(production=False)
+    verdicts = {
+        "owner-a": {
+            "band": "strong",
+            "reasons": ["Direct backend experience"],
+            "gaps": [],
+            "evidence_ids": ["evidence-a"],
+        },
+        "owner-b": {
+            "band": "promising",
+            "reasons": ["Adjacent systems experience"],
+            "gaps": ["No listed Go evidence"],
+            "evidence_ids": ["evidence-b"],
+        },
+    }
+    with privacy_db.session() as session:
+        for suffix in ("a", "b"):
+            owner_id = f"owner-{suffix}"
+            posting_id = f"posting-{suffix}"
+            version_id = f"posting-version-{suffix}"
+            evaluation_id = f"fit-{suffix}"
+            session.add(
+                JobPosting(
+                    id=posting_id,
+                    owner_id=owner_id,
+                    identity_kind="native",
+                    identity_key=f"source:example:{suffix}",
+                    identity_key_hash=suffix * 64,
+                    source="example",
+                    company_slug=f"example-{suffix}",
+                    source_job_id=suffix,
+                    canonical_url=f"https://careers.example.com/jobs/{suffix}",
+                    lifecycle_state="open",
+                    consecutive_complete_omissions=0,
+                    first_confirmed_at=NOW,
+                    last_confirmed_at=NOW,
+                    version=1,
+                )
+            )
+            session.flush()
+            session.add(
+                JobPostingVersion(
+                    id=version_id,
+                    owner_id=owner_id,
+                    job_posting_id=posting_id,
+                    version_number=1,
+                    content_hash=("1" if suffix == "a" else "2") * 64,
+                    source="example",
+                    source_job_id=suffix,
+                    company_name=f"Example {suffix.upper()}",
+                    title="Backend Engineer",
+                    canonical_url=f"https://careers.example.com/jobs/{suffix}",
+                    apply_urls=[f"https://careers.example.com/jobs/{suffix}"],
+                    location="Remote",
+                    summary="Build reliable backend systems.",
+                    description="Design APIs and event-driven services.",
+                    employment_type="full_time",
+                    source_facts={},
+                    source_confidence=1.0,
+                    observed_at=NOW,
+                )
+            )
+            session.flush()
+            envelope = encrypt_private_payload(
+                keyring,
+                record_kind="opportunity_fit_evaluation",
+                owner_id=owner_id,
+                record_id=evaluation_id,
+                payload=verdicts[owner_id],
+            )
+            session.add(
+                OpportunityFitEvaluation(
+                    id=evaluation_id,
+                    owner_id=owner_id,
+                    job_posting_id=posting_id,
+                    posting_version_id=version_id,
+                    posting_hash=("3" if suffix == "a" else "4") * 64,
+                    profile_input_fingerprint=("5" if suffix == "a" else "6") * 64,
+                    input_fingerprint=("7" if suffix == "a" else "8") * 64,
+                    evaluator_version="fit-policy-v1",
+                    provider="google-gemini",
+                    model="gemini-2.5-flash",
+                    result_schema_version=1,
+                    encrypted_payload=envelope.ciphertext,
+                    encryption_key_id=envelope.key_id,
+                    version=1,
+                    created_at=NOW,
+                )
+            )
+
+    with privacy_db.session() as session:
+        owner_b_evaluation = session.scalar(
+            select(OpportunityFitEvaluation).where(
+                OpportunityFitEvaluation.owner_id == "owner-b"
+            )
+        )
+        assert owner_b_evaluation is not None
+        exported = export_owner_workspace(
+            session,
+            owner_id="owner-a",
+            keyring=keyring,
+            now=NOW,
+        )
+
+    assert exported.counts["opportunity_fit_evaluations"] == 1
+    exported_evaluation = exported.tables["opportunity_fit_evaluations"][0]
+    assert exported_evaluation["id"] == "fit-a"
+    assert exported_evaluation["provider"] == "google-gemini"
+    assert exported_evaluation["model"] == "gemini-2.5-flash"
+    assert exported_evaluation["private_payload"] == verdicts["owner-a"]
+    serialized = json.dumps(exported_evaluation, sort_keys=True, default=str)
+    assert "encrypted_payload" not in serialized
+    assert "encryption_key_id" not in serialized
+    assert "input_fingerprint" not in serialized
+    assert "profile_input_fingerprint" not in serialized
+    assert "posting_hash" not in serialized
+    assert owner_b_evaluation.id not in exported.model_dump_json()
+
+    with privacy_db.session() as session:
+        preview = preview_owner_deletion(session, owner_id="owner-a", now=NOW)
+        assert preview.row_counts["opportunity_fit_evaluations"] == 1
+        delete_owner_workspace(
+            session,
+            owner_id="owner-a",
+            confirmation="DELETE WORKSPACE owner-a",
+            idempotency_key="delete-owner-a-fit-cache",
+            receipt_secret=RECEIPT_SECRET,
+            now=NOW,
+        )
+
+    with privacy_db.session() as session:
+        assert session.scalar(
+            select(func.count())
+            .select_from(OpportunityFitEvaluation)
+            .where(OpportunityFitEvaluation.owner_id == "owner-a")
+        ) == 0
+        assert session.scalar(
+            select(func.count())
+            .select_from(OpportunityFitEvaluation)
+            .where(OpportunityFitEvaluation.owner_id == "owner-b")
         ) == 1
 
 
