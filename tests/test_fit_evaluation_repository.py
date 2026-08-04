@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from cryptography.fernet import Fernet
@@ -15,6 +17,8 @@ from job_hunt_agent.fit_evaluation_repository import (
     prepare_fit_evaluation,
     store_fit_verdict,
 )
+from job_hunt_agent.fit_evaluation_service import process_opportunity_fit_job
+from job_hunt_agent.job_queue import claim_next_job, enqueue_job
 from job_hunt_agent.models import (
     AchievementEvidence,
     Base,
@@ -200,6 +204,104 @@ def test_profile_version_change_misses_old_cache(
     assert cached is None
 
 
+def test_background_service_calls_provider_between_short_transactions(
+    fit_repository: tuple[Database, DataKeyring],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    database, keyring = fit_repository
+    claim = _claim_fit_job(database)
+    active_sessions = 0
+    original_session = database.session
+
+    @contextmanager
+    def tracked_session():
+        nonlocal active_sessions
+        active_sessions += 1
+        try:
+            with original_session() as session:
+                yield session
+        finally:
+            active_sessions -= 1
+
+    monkeypatch.setattr(database, "session", tracked_session)
+
+    class Provider:
+        provider_name = "google_gemini"
+        model = "gemini-test"
+        prompt_version = "opportunity-fit-v1"
+        calls = 0
+
+        def evaluate(self, _inputs):
+            self.calls += 1
+            assert active_sessions == 0
+            return FitVerdict(
+                band="strong",
+                reasons=("Production pipeline evidence supports this role.",),
+                evidence_ids=("evidence-a",),
+            )
+
+    provider = Provider()
+    outcome = process_opportunity_fit_job(
+        claim,
+        database=database,
+        worker_id="worker-a",
+        keyring=keyring,
+        provider_factory=lambda: provider,
+    )
+    cached_outcome = process_opportunity_fit_job(
+        claim,
+        database=database,
+        worker_id="worker-a",
+        keyring=keyring,
+        provider_factory=lambda: provider,
+    )
+
+    assert outcome.cache_written is True
+    assert cached_outcome.cache_written is True
+    assert provider.calls == 1
+    with original_session() as session:
+        assert session.scalar(select(func.count(OpportunityFitEvaluation.id))) == 1
+
+
+def test_background_service_discards_verdict_when_inputs_change_during_call(
+    fit_repository: tuple[Database, DataKeyring],
+) -> None:
+    database, keyring = fit_repository
+    claim = _claim_fit_job(database)
+
+    class MutatingProvider:
+        provider_name = "google_gemini"
+        model = "gemini-test"
+        prompt_version = "opportunity-fit-v1"
+
+        def evaluate(self, _inputs):
+            with database.session() as session:
+                profile = session.scalar(
+                    select(CandidateProfile).where(
+                        CandidateProfile.owner_id == "owner-a"
+                    )
+                )
+                assert profile is not None
+                profile.version += 1
+            return FitVerdict(
+                band="strong",
+                reasons=("Production pipeline evidence supports this role.",),
+                evidence_ids=("evidence-a",),
+            )
+
+    outcome = process_opportunity_fit_job(
+        claim,
+        database=database,
+        worker_id="worker-a",
+        keyring=keyring,
+        provider_factory=MutatingProvider,
+    )
+
+    assert outcome.cache_written is False
+    with database.session() as session:
+        assert session.scalar(select(func.count(OpportunityFitEvaluation.id))) == 0
+
+
 def _prepare(session, keyring: DataKeyring, suffix: str):
     return prepare_fit_evaluation(
         session,
@@ -209,6 +311,42 @@ def _prepare(session, keyring: DataKeyring, suffix: str):
         identity=IDENTITY,
         keyring=keyring,
     )
+
+
+def _claim_fit_job(database: Database):
+    claim_time = datetime.now(timezone.utc)
+    with database.session() as session:
+        enqueue_job(
+            session,
+            kind="evaluate_opportunity_fit",
+            dedupe_key="posting-version:version-a:search:search-a",
+            owner_id="owner-a",
+            subject_type="job_posting_version",
+            subject_id="version-a",
+            payload={
+                "job_posting_id": "posting-a",
+                "posting_version_id": "version-a",
+                "saved_search_id": "search-a",
+            },
+            priority=110,
+            run_after=claim_time,
+        )
+    with database.session() as session:
+        job = claim_next_job(
+            session,
+            worker_id="worker-a",
+            lease_token="lease-a",
+            kinds={"evaluate_opportunity_fit"},
+            now=claim_time,
+        )
+        assert job is not None
+        return SimpleNamespace(
+            job_id=job.id,
+            posting_id="posting-a",
+            posting_version_id="version-a",
+            saved_search_id="search-a",
+            lease_token="lease-a",
+        )
 
 
 def _seed_owner_graph(session, keyring: DataKeyring, suffix: str) -> None:
